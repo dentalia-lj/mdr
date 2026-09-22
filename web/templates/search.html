@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}Search — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>Search</h1>
+{% call ui.intro("One box over items, documents and manufacturers.") %}
+  Paste an item number, an item name, a manufacturer's article number, a certificate number
+  or a document number. Each section below shows the first {{ 10 }} matches and links to the
+  page that owns the full list.
+{% endcall %}
+
+<div class="card">
+  <form method="get" action="/search" class="filter-row">
+    <div class="field">
+      <label>Search</label>
+      <input type="text" name="q" value="{{ q }}" autofocus
+             placeholder="707180, IVOTION, G15 043306 0282, 3Shape, 1516">
+    </div>
+    <div class="field filter-actions">
+      <button type="submit">Search</button>
+      <a class="btn-clear" href="/search">Clear</a>
+    </div>
+  </form>
+</div>
+
+{% if q %}
+
+{% if doc_by_id %}
+<div class="card">
+  <h2>Document #{{ doc_by_id.doc_id }}</h2>
+  <p class="hint">A bare number is read as a document id as well as text.</p>
+  <p><a href="/documents/{{ doc_by_id.doc_id }}">{{ doc_by_id.type | doc_type }} · {{ doc_by_id.regulation }}
+    {%- if doc_by_id.cert_number %} · {{ doc_by_id.cert_number }}{% endif %}</a>
+    <span class="badge badge-{{ doc_by_id.status }}">{{ doc_by_id.status | word }}</span></p>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Items <span class="badge badge-pending">{{ items|length }}</span></h2>
+  {% if items %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Item no.</th><th>Name</th><th>Manufacturer</th></tr></thead>
+    <tbody>
+      {% for row in items %}
+      <tr>
+        <td><a href="/items/{{ row.item_ref }}">{{ row.item_ref }}</a></td>
+        <td>{{ row.name or "—" }}</td>
+        <td>{{ row.manufacturer or "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="hint"><a href="/items?q={{ q|urlencode }}">All matching items</a></p>
+  {% else %}
+  <p class="hint">No item number, item name or manufacturer's article number matches.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Documents <span class="badge badge-pending">{{ documents|length }}</span></h2>
+  {% if documents %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>#</th><th>Type</th><th>Regulation</th><th>Cert number</th>
+      <th>Valid to</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for row in documents %}
+      <tr>
+        <td><a href="/documents/{{ row.doc_id }}">{{ row.doc_id }}</a></td>
+        <td>{{ row.type | doc_type }}</td>
+        <td>{{ row.regulation }}</td>
+        <td>{{ row.cert_number or "—" }}</td>
+        <td>{{ row.validity_to or "—" }}</td>
+        <td><span class="badge badge-{{ row.status }}">{{ row.status | word }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="hint"><a href="/documents?q={{ q|urlencode }}">All matching documents</a></p>
+  {% else %}
+  <p class="hint">No certificate number or file fingerprint matches.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Manufacturers <span class="badge badge-pending">{{ manufacturers|length }}</span></h2>
+  {% if manufacturers %}
+  <table>
+    <thead><tr><th>{{ "canonical entity" | word }}</th><th>Items</th></tr></thead>
+    <tbody>
+      {% for row in manufacturers %}
+      <tr>
+        <td><a href="/manufacturers/{{ row.canonical_name | urlencode }}">{{ row.canonical_name }}</a></td>
+        <td>{{ row['items'] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="hint"><a href="/manufacturers?q={{ q|urlencode }}">All matching manufacturers</a></p>
+  {% else %}
+  <p class="hint">No manufacturer name or Business Central code matches.</p>
+  {% endif %}
+</div>
+
+{% endif %}
+{% endblock %}

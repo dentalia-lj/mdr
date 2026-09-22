@@ -1,0 +1,51 @@
+{
+  "manufacturer": "EDENTA",
+  "aliases": [
+    "Edenta AG"
+  ],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "009"
+    }
+  ],
+  "domains": [
+    "edenta.com"
+  ],
+  "contacts": [
+    "info@edenta.com",
+    "info@edenta.ch"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "IFU",
+      "kind": "portal",
+      "url": "https://www.edenta.com/en/instructions-for-use-and-safety-guidelines",
+      "note": "Fetched 2026-08-20, HTTP 200. 11 IFU/safety documents, hrefs in the served HTML. URLs carry NO .pdf extension (/zoolu-website/media/document/{id}/{Title+With+Plus}) -- a fetcher keying on extension misses every Edenta document; key on Content-Type. Titles carry an MM-YYYY version date and the language set (\"B10+-+Allgemein+04-2025+-+DE-GB-FR-IT-ES-PT-RU\"), so a T0 filename-derived date needs no PDF parse. B10-B23 are product-family codes, not article numbers, so links land on name-family and cap at staged. robots.txt is `User-agent: *` with no rules at all. RE-AUTHORED portal 2026-08-21: this is an HTML LISTING page, not a document. It was kind:\"direct\" while nothing read that key; the playbook DISCOVER rung now fetches direct sources, and FETCH has no content-type gate -- a listing page would be archived as an unreadable PDF and dead-end at EXTRACT silently. Turning it into documents is the crawl recipe (docs/superpowers/specs/2026-08-21-playbook-crawl-recipe-design.md)."
+    },
+    {
+      "doc_type": "EC",
+      "kind": "portal",
+      "url": "https://www.edenta.com/en/iso-certificates",
+      "note": "Named in the download-centre nav on 2026-08-20 but NOT fetched. Two EC certificates were seen in the search index on the same media server (documents 584 and 351, both naming Edenta AG) and are also unverified."
+    }
+  ],
+  "crawl": [
+    {
+      "index_url": "https://www.edenta.com/en/instructions-for-use-and-safety-guidelines",
+      "link_pattern": "/zoolu-website/media/document/",
+      "max_links": 50,
+      "note": "VERIFIED LIVE 2026-09-03 with app.crawl.harvest against the served HTML of a plain GET: 40 anchors, 13 matching documents, 0 off-host, no browser needed. robots.txt is `User-agent: *` with no rules -- re-read the same day, unchanged since 2026-08-20. The 2026-08-20 note recorded ELEVEN documents; there are now 13, which is the reason a recipe beats a hand-copied URL list. `link_pattern` matches the PATH, not an extension: Edenta serves every document from /zoolu-website/media/document/{id}/{Title} with NO .pdf suffix, and a `\\\\.pdf$` pattern was measured matching ZERO of the 40 anchors on this page. No `doc_type_from` authored: only 4 of the 13 filenames were read, which is not enough to map titles to types without guessing -- T0 classifies them instead. Titles carry an MM-YYYY version date and the language set, so a filename-derived date needs no PDF parse."
+    },
+    {
+      "index_url": "https://www.edenta.com/en/iso-certificates",
+      "link_pattern": "/zoolu-website/media/document/",
+      "max_links": 50,
+      "doc_type_from": {
+        "13485": "ISO",
+        "zertifikat": "EC"
+      },
+      "note": "VERIFIED LIVE 2026-09-03, and it CORRECTS the doc_source note below that called this page unfetched and its certificates unverified. 36 anchors, 9 raw matches deduping to 3 real documents (each is linked three times on the page), 0 off-host: 13485-2021 Edenta Etablissement CERTIFICATE englisch 2026-05, 2019_EG Zertifikat Edenta Etabl_en, and 2025_MDR Zertifikat Edenta Etabl_englisch. `doc_type_from` is authored from those three filenames and no others: '13485' appears only in the ISO certificate, and 'zertifikat' only in the two EC ones (the ISO file spells it CERTIFICATE), so the two rules do not overlap on any document measured. Re-check the mapping if a fourth certificate appears."
+    }
+  ]
+}

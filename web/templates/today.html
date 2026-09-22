@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}Today — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+{#- Today (office UI redesign spec § 4): the office's first screen. Four lists
+    of what is waiting for a person, then the failures they can act on, then
+    the one figure the client asks for, then the week's report.
+
+    Every number here is counted live and every number says what it counts
+    (spec § 1, rules 6 and 7). The four lists are ordered the way the day runs
+    and the same way the menu lists them.
+
+    The four lists end in a plain text LINK, not a button (Denis, 2026-09-14).
+    A button on this page means the press changes something: the only two are
+    on Failed tasks, and both POST. Everything else here only navigates, and a
+    row of pill buttons down the page made four ordinary destinations look like
+    four decisions.
+
+    `| num` is the shared thousands separator (`web/words.py`, registered in
+    `web/app.py`). "1460 of 4265" is a figure an office reader has to count
+    digits in; this page carried its own macro until slice P7a gave every
+    screen the one filter. -#}
+
+<h1>Today</h1>
+<p class="page-lede">What is waiting for you right now, newest counts every time
+  you open the page.</p>
+
+{#- The four lists sit in a grid, not a column (Denis, 2026-09-15): they are
+    four peers of the same shape, and stacked they pushed the coverage figure
+    and the week's report below the fold. The grid auto-fits, so a narrow
+    window gets one column back without a breakpoint of its own. -#}
+<div class="today-lists">
+
+<section class="card today-list" id="today-review">
+  <h2>Documents to review <span class="today-n">{{ review.n | num }}</span></h2>
+  <p>Documents the system found and will not publish without your decision.</p>
+  {% if review.n %}
+  <p class="hint">Oldest waiting since {{ review.oldest | day }}{% if review.top %} ·
+    {% for name, n in review.top %}{{ name }} {{ n | num }}{{ " · " if not loop.last }}{% endfor %}{% endif %}</p>
+  {% else %}
+  <p class="hint">Nothing waiting.</p>
+  {% endif %}
+  <p class="today-go"><a href="/staging">Start reviewing</a></p>
+</section>
+
+<section class="card today-list" id="today-missing">
+  <h2>Missing documents <span class="today-n">{{ missing.n | num }}</span></h2>
+  <p>Items the system searched for without finding a document. Upload one you
+    find, or have it search again.</p>
+  {% if missing.n %}
+  <p class="hint">{% if missing.oldest %}Oldest waiting since {{ missing.oldest | day }}{% endif %}{% if missing.top %}{{ " · " if missing.oldest }}
+    {% for name, n in missing.top %}{{ name }} {{ n | num }}{{ " · " if not loop.last }}{% endfor %}{% endif %}</p>
+  {% else %}
+  <p class="hint">Nothing waiting.</p>
+  {% endif %}
+  <p class="today-go"><a href="/missing">Open the list</a></p>
+</section>
+
+<section class="card today-list" id="today-expiring">
+  <h2>Expiring certificates <span class="today-n">{{ expiring.total | num }}</span></h2>
+  <p>Certificates that have lapsed or are about to. One line per certificate,
+    however many documents cite it.</p>
+  {#- D7: each figure names its own window, here and everywhere else it appears. -#}
+  <p class="hint">{{ expiring.soon | num }} {{ "lapses" if expiring.soon == 1 else "lapse" }}
+    in the next {{ EXPIRING_WINDOW_DAYS }} days ·
+    {{ expiring.recent | num }} lapsed in the last {{ EXPIRED_LOOKBACK_DAYS }} days</p>
+  <p class="today-go"><a href="/expiry">See which</a></p>
+</section>
+
+<section class="card today-list" id="today-drafts">
+  <h2>Renewal emails to send <span class="today-n">{{ drafts | num }}</span></h2>
+  <p>Written by the system from what is expiring. It never sends them: read,
+    edit, send from your own mailbox, then mark as sent.</p>
+  {% if not drafts %}<p class="hint">Nothing waiting.</p>{% endif %}
+  <p class="today-go"><a href="/drafts">Open drafts</a></p>
+</section>
+
+</div>
+
+{#- The Failed split, as three lines rather than a page (spec § 4). A line
+    whose count is zero is not rendered: a screen that lists "0 websites took
+    too long" every morning teaches people to skip the section. The two
+    buttons post to the routes /dead owns, so one implementation decides what
+    is retried, and each asks once, stating its count (rule 4). -#}
+{% set timeout = failed["timeout"] %}
+{% set gone = failed["dead-address"] %}
+{% set developer = failed["developer"] %}
+{% if timeout or gone or developer %}
+<section class="card" id="today-failed">
+  <h2>Failed tasks</h2>
+  {% if timeout %}
+  <p>{{ timeout | num }} supplier website{{ "" if timeout == 1 else "s" }} took too long to
+    answer. Usually temporary. Trying again often works.</p>
+  <form hx-post="/dead/retry-timeouts" hx-target="#today-retry-result" hx-swap="innerHTML"
+        hx-confirm="Try the {{ timeout | num }} again now?">
+    <button type="submit">Try the {{ timeout | num }} again</button>
+  </form>
+  <div id="today-retry-result" class="result"></div>
+  {% endif %}
+
+  {% if gone %}
+  <p>{{ gone | num }} document address{{ "" if gone == 1 else "es" }}
+    {{ "no longer works" if gone == 1 else "no longer work" }}. Trying the same address
+    again would fail the same way. Searching again looks for each document's new address.</p>
+  <form hx-post="/dead/search-again" hx-target="#today-search-result" hx-swap="innerHTML"
+        hx-confirm="Search again for {{ 'this address' if gone == 1 else 'these ' ~ (gone | num) ~ ' addresses' }}? The system looks for where each document lives now.">
+    <button type="submit">Search again</button>
+  </form>
+  <div id="today-search-result" class="result"></div>
+  {% endif %}
+
+  {% if developer %}
+  <p>{{ developer | num }} technical fault{{ "" if developer == 1 else "s" }}
+    {{ "is" if developer == 1 else "are" }} waiting for the developer.
+    Nothing to do here. <a href="/dead">What are they?</a></p>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="card" id="today-coverage">
+  {#- D4, the figure to quote to Dentalia, from the one helper and the one
+      macro the System status board also renders -- the sentence has to read
+      identically wherever it appears. `coverage.total - coverage.covered` is
+      exactly the "No Declaration of Conformity" count on /coverage: both read
+      `_HAS_DECLARATION`. -#}
+  {{ ui.coverage_sentence(coverage) }}
+</section>
+
+<section class="card" id="today-weekly">
+  <h2>The week's report</h2>
+  {% if weeks %}
+  <p><a href="{{ weeks[0].href }}">{{ weeks[0].label }}</a>
+    {%- if weeks|length > 1 %} · before that <a href="{{ weeks[1].href }}">{{ weeks[1].label }}</a>{% endif %}</p>
+  {% else %}
+  <p class="hint">No weekly report yet. The first one appears after the weekly report runs.</p>
+  {% endif %}
+  <p class="hint"><a href="/reports">All weekly reports</a></p>
+</section>
+{% endblock %}

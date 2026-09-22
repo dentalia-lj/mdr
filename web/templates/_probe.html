@@ -1,0 +1,198 @@
+{#
+  One crawl-recipe probe: what a manufacturer's library yields, before the
+  pipeline is committed to fetching any of it.
+
+  Order is the design's (spec §3.3) and is not cosmetic: the VERDICT comes
+  before any number, because "we were refused" and "we found nothing" look
+  identical in a count and mean opposite things. The unclassified bucket is
+  rendered whenever anything was harvested, never folded away -- a thin harvest
+  must not read as a complete one.
+
+  Swaps itself (`hx-swap="outerHTML"`) and re-arms the poll ONLY while there is
+  no result, so a finished probe stops asking and a dead job says so instead of
+  spinning forever.
+#}
+<div class="probe" id="probe-{{ job_id | replace('.', '-') }}">
+  {% if polling %}
+  <p hx-get="/playbooks/{{ slug }}/probe/{{ job_id }}"
+     hx-trigger="every 2s" hx-target="#probe-{{ job_id | replace('.', '-') }}" hx-swap="outerHTML">
+    {% if probe is none %}
+      Queued as job #{{ job_id }}. Waiting for a worker…
+    {% else %}
+      Looking at {{ probe.index_url }}…
+      <span class="hint">A page that needs a browser takes about 30 seconds.</span>
+    {% endif %}
+  </p>
+
+  {% elif stopped_without_result %}
+  <p class="error">
+    Job #{{ job_id }} died without writing a result{% if job and job.last_error %}:
+    {{ job.last_error }}{% else %}.{% endif %}
+  </p>
+
+  {% else %}
+  {# 1. The verdict, before any number. A refusal is a RESULT, not an error. #}
+  {% if probe.status == "refused" %}
+  {# Three different situations used to render as one paragraph telling you not
+     to re-probe: the operator's own refusal list, the manufacturer's Disallow,
+     and OUR failure to reach robots.txt. The third is worth retrying and the
+     first two are not, so they are split (2026-09-07: a DNS blip reported
+     ultradent.com as refusing us, citing a file it is not named in). #}
+  {% if "unreachable" in (probe.robots_verdict or "") %}
+  <p class="error">
+    <strong>Could not ask.</strong> We never reached
+    <code>robots.txt</code>, so we have no permission and fetched nothing —
+    but this is our side, not a refusal. A DNS failure, a dropped connection
+    or a 5xx all land here. <strong>Probe again</strong>; if it keeps
+    happening, the host is genuinely unreachable and a developer should look.
+  </p>
+  {% else %}
+  <p class="error">
+    <strong>Refused.</strong> {{ probe.robots_verdict or "disallow" }}{% if probe.error %} — {{ probe.error }}{% endif %}.
+    Nothing was fetched. A host we may not crawl is a decision recorded in
+    <code>playbooks/robots_refused.txt</code> and in this probe row; it is not
+    changed by re-probing.
+  </p>
+  {% endif %}
+  {% elif probe.status == "failed" %}
+  <p class="error">
+    <strong>Could not read it.</strong> {{ probe.error }}
+    robots.txt allowed the request, so this is the site, not a permission.
+  </p>
+  {% else %}
+  <p>
+    <strong>robots.txt allows this.</strong>
+    Read with {{ "a browser" if probe.tier == "rendered" else "a plain request" }}.
+    A real crawl would ask this host once every
+    {{ "%.1f"|format(politeness_ms / 1000) }}s.
+  </p>
+  {% endif %}
+
+  {% if probe.status == "done" %}
+  {# 2. The counts. Classified buckets lead; unclassified is always visible. #}
+  <table>
+    <tbody>
+      <tr>
+        <th>Links matching the pattern</th>
+        <td><strong>{{ counts.links_kept }}</strong>
+          of {{ counts.anchors_seen }} link{{ "" if counts.anchors_seen == 1 else "s" }} on the page</td>
+      </tr>
+      {% if counts.links_capped %}
+      <tr><th>Not shown</th>
+        <td class="error">{{ counts.links_capped }} more matched and were dropped at
+          the cap. Raise <em>max links</em> or narrow the pattern — a capped
+          harvest silently under-reports the library.</td></tr>
+      {% endif %}
+      {% if counts.off_host %}
+      <tr><th>Off-host</th>
+        <td>{{ counts.off_host }} matched but point somewhere other than this
+          site, and were not kept. If that is where the documents actually
+          live — a supplier that lists on its own site and serves the files
+          from a delivery host — name that host under <em>Other hosts</em> and
+          probe again.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+
+  {% if breakdown %}
+  <table>
+    <thead><tr><th>Reads as</th><th>Links</th></tr></thead>
+    <tbody>
+      {% for name, n in breakdown %}
+      <tr{% if name == "unclassified" %} class="differs"{% endif %}>
+        <th>{{ "unclassified" if name == "unclassified" else name }}</th>
+        <td>{{ n }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="hint">
+    <strong>“Reads as” is a guess from the URL, not a reading of the file.</strong>
+    Filenames lie, and nothing here is evidence: no probe output reaches
+    extraction, validation or the registry. A large <em>unclassified</em> count
+    means the pattern is broader than the recipe can type — add a rule below,
+    or accept that those files are harvested and left untyped.
+  </p>
+  {% endif %}
+
+  {# 3. A sample, labelled as a sample. #}
+  {% if sample %}
+  <details open>
+    <summary>First {{ sample | length }} of {{ counts.links_kept }} link{{ "" if counts.links_kept == 1 else "s" }}</summary>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Reads as</th><th>URL</th></tr></thead>
+      <tbody>
+        {% for row in sample %}
+        <tr{% if not row.reads_as %} class="differs"{% endif %}>
+          <td>{{ row.reads_as or "—" }}</td>
+          <td><a href="{{ row.url }}" rel="noopener noreferrer" target="_blank">{{ row.url }}</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </details>
+  {% elif counts.links_kept == 0 %}
+  {# Deliberately NOT "the pattern is wrong". Measured against NSK on
+     2026-09-04: 5 anchors, 1.362 PDFs — the library puts every document on a
+     `<tr data-href>` that a script turns into a click, and the harvester reads
+     `<a href>`. The pattern was right and the page was right. Naming one cause
+     confidently would have sent the operator to edit a correct pattern. #}
+  <p class="error">
+    Nothing matched.
+    {% if counts.anchors_seen %}
+      {{ counts.anchors_seen }} link{{ "" if counts.anchors_seen == 1 else "s" }}
+      {{ "was" if counts.anchors_seen == 1 else "were" }} on the page, so it
+      loaded — but none of them matched. Either the pattern is wrong, or this
+      library lists its documents in a way the system cannot follow: some sites
+      build the list with JavaScript and hold each address in a table row
+      rather than in a link. Open the page and check whether the documents are
+      ordinary links before editing the pattern.
+    {% else %}
+      The page had no links at all, which usually means the list is drawn by
+      JavaScript, or that this is not the library page.
+    {% endif %}
+  </p>
+  {% endif %}
+  {% endif %}
+
+  {# 4. Two actions. Neither is automatic: a probe never writes a playbook. #}
+  <div class="probe-actions">
+    <button type="submit" form="crawl-probe-form">Probe again</button>
+    {% if probe.status == "done" and counts.links_kept and recipe %}
+    {% if rev %}
+    <form hx-post="/playbooks/{{ slug }}/crawl" hx-target="#result" hx-swap="innerHTML">
+      <input type="hidden" name="rev" value="{{ rev }}">
+      <input type="hidden" name="index_url" value="{{ recipe.index_url }}">
+      <input type="hidden" name="link_pattern" value="{{ recipe.link_pattern }}">
+      <input type="hidden" name="max_links" value="{{ recipe.max_links or '' }}">
+      {# Textareas, not hidden inputs: both values are newline-separated and an
+         attribute value would not survive it. `allow_hosts` has to travel with
+         the rest -- the recipe that was PROBED is the recipe that gets saved,
+         and a save missing it would store a narrower crawl than the one whose
+         harvest is on screen. #}
+      <textarea name="allow_hosts" hidden>{% for h in (recipe.allow_hosts or []) %}{{ h }}
+{% endfor %}</textarea>
+      <textarea name="doc_type_from" hidden>{% for needle, t in (recipe.doc_type_from or {}).items() %}{{ needle }}={{ t or "" }}
+{% endfor %}</textarea>
+      <input type="text" name="note" size="40" placeholder="why this recipe (recorded on the revision)">
+      <button type="submit">Save this recipe</button>
+    </form>
+    <p class="hint">
+      Saving stores the recipe; it does not run it. DISCOVER crawls it on this
+      manufacturer's next discovery job, and the save is a normal playbook
+      revision — refused if someone else saved since this page opened, and
+      revertable afterwards.
+    </p>
+    {% else %}
+    <p class="hint">
+      This playbook is not in the database yet, so there is nothing to save
+      into. Import it first with
+      <code>python -m app.cli manufacturers seed --apply</code>.
+    </p>
+    {% endif %}
+    {% endif %}
+  </div>
+  {% endif %}
+</div>

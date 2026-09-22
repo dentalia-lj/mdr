@@ -1,0 +1,32 @@
+{
+  "manufacturer": "CARL MARTIN",
+  "aliases": [
+    "Carl Martin GmbH"
+  ],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "081"
+    }
+  ],
+  "domains": [
+    "carlmartin.de"
+  ],
+  "contacts": [
+    "info@carlmartin.de"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "DoC",
+      "kind": "direct",
+      "url": "https://carlmartin.de/images/2021/downloads/QSF_203_EN.pdf",
+      "note": "Fetched 2026-08-20, HTTP 200. MDR Class I declaration, EU 2017/745 Annex IV, version 9, valid 2026-06-29 to 2028-12-31, notified body TUV Rheinland LGA Products GmbH (0197), SRN DE-MF-000005066 printed on page 1. BOTH PAGES ARE SCANNED IMAGES with zero text characters -- T0 and T1 return nothing, this needs T2 vision or OCR. It carries NO REF or article list: coverage is 44 rows of Product Group / Group No. / Risk Class / Basic-UDI-DI, all HIBCC ++ codes. So invariant 3's REF gate has no REF list for this manufacturer and Basic UDI-DI is the only production-capable identifier."
+    },
+    {
+      "doc_type": "DoC",
+      "kind": "portal",
+      "url": "https://carlmartin.de/en/information-en/download-archive",
+      "note": "Fetched 2026-08-20, HTTP 200. No login, no JS gate, plain HTML. The complete regulatory set is five flat PDFs under three prefixes (/images/downloads/, /images/2021/downloads/, /images/bildmaterial/) plus QSA_313_{LANG}.pdf reprocessing instructions in 19 languages. No per-article URL pattern exists -- there is nothing to template."
+    }
+  ]
+}

@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}Scheduler — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>Scheduler</h1>
+{% call ui.intro("The cron producer: what it fires, when it last fired, and what the weekly report said.") %}
+  The crons run on the queue: one perpetual, self-deferring <code>scheduler.tick</code> job per
+  cron, claimed by the worker like any other job. They run no business logic — each tick reads
+  state and enqueues the next stage's job(s) — and record one row per (cron, period) in
+  <code>scheduler_run</code> so a restart cannot re-fire a period that already ran. That ledger is
+  what this page reads.
+  <p>A daily cron writes the ledger once a day however often it ticks, so freshness alone cannot
+  prove the process is alive. The verdict below is <em>whether the current period is recorded</em>:
+  <strong>ok</strong> it is · <strong>due</strong> it is not yet, but the previous run is recent ·
+  <strong>stale</strong> nothing for more than two of this cron's own periods ·
+  <strong>never</strong> this cron has no ledger row at all.</p>
+  <p>Emission flags are read from this container's <code>SCHEDULER_*</code> environment, which
+  Compose fills from the same <code>.env</code> as the scheduler's own.</p>
+{% endcall %}
+
+<div class="card">
+  {% if last_ledger_write %}
+  <p class="hint">Ledger last written {{ last_ledger_write.strftime("%Y-%m-%d %H:%M") }} UTC;
+    tick interval {{ tick_interval_s }}s.</p>
+  {% else %}
+  <div class="result error">
+    No cron has ever run against this database — <code>scheduler_run</code> is empty.
+    The crons are claimed by the worker, so start the stack with
+    <code>docker compose up -d</code>; if the worker is up, check the Armed column below.
+  </div>
+  {% endif %}
+
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Cron</th><th>Cadence</th><th>Current period</th><th>Last recorded</th>
+        <th class="nowrap">Ran at</th><th>Job</th><th>State</th><th>Armed</th><th>Run now</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr data-cron="{{ row.key }}" data-verdict="{{ row.verdict }}">
+        <td>
+          <strong>{{ row.label }}</strong>
+          <div class="cell-muted"><code>{{ row.ledger }}</code></div>
+          <div class="cell-muted">{{ row.note }}</div>
+        </td>
+        <td class="nowrap">{{ row.cadence }}</td>
+        <td class="nowrap"><code>{{ row.current_period }}</code></td>
+        <td class="nowrap">{% if row.last %}<code>{{ row.last.period_key }}</code>{% else %}—{% endif %}</td>
+        <td class="nowrap">
+          {%- if row.last -%}
+          {{ row.last.ran_at.strftime("%Y-%m-%d %H:%M") }}
+          <div class="cell-muted">{{ "%.0f"|format(row.age_h) }}h ago</div>
+          {%- else -%}—{%- endif -%}
+        </td>
+        <td class="nowrap">
+          {%- if row.last and row.last.job_id and row.last.job_status -%}
+          <a href="/jobs/{{ row.last.job_id }}">#{{ row.last.job_id }}</a>
+          <span class="badge badge-{{ row.last.job_status }}">{{ row.last.job_status }}</span>
+          {%- elif row.last and row.last.job_id -%}
+          {# `scheduler_run.job_id` is a soft reference (migration 013): the queue
+             may be pruned on any schedule without breaking the ledger. Name the
+             id, do not link it — the row is gone and /jobs/{id} would 404. #}
+          <span class="cell-muted">#{{ row.last.job_id }} (pruned)</span>
+          {%- elif row.last -%}
+          <span class="cell-muted">no job (scan only)</span>
+          {%- else -%}—{%- endif -%}
+        </td>
+        <td><span class="badge badge-verdict-{{ row.verdict }}">{{ row.verdict }}</span></td>
+        <td>
+          {# Whether a live scheduler.tick row exists for this cron. Absence is
+             the failure this column exists for: a cron that broke five times
+             dead-letters, and `dead` is outside the active-only dedupe index,
+             so it stays stopped until a worker restart re-arms it. #}
+          {% if row.armed %}
+          <span class="badge badge-verdict-ok">armed</span>
+          <span class="cell-muted nowrap">next poll {{ row.next_poll.strftime('%H:%M') }}</span>
+          {% else %}
+          <span class="badge badge-verdict-stale">not armed</span>
+          {# `row.key` contains a dot on every cron (`report.weekly`, `email.poll`,
+             `eudamed.certregister`). Interpolated raw into an id selector,
+             `#run-result-report.weekly` reads as "id run-result-report, class weekly" --
+             matches nothing, so htmx raised `htmx:targetError` and ABORTED WITHOUT
+             ISSUING THE REQUEST. Every Run now and Re-arm button on this page was inert
+             until 2026-09-02, while the client guide documented them as working; the
+             routes were always fine, which is why the server-side tests passed. The dot
+             is replaced in BOTH the target and the id, so they cannot drift apart. #}
+          <form hx-post="/scheduler/arm/{{ row.key }}" hx-target="#run-result-{{ row.key | replace('.', '-') }}"
+                hx-swap="innerHTML">
+            <button type="submit" class="btn-clear">Re-arm</button>
+          </form>
+          {% endif %}
+        </td>
+        <td>
+          {% if row.job_type %}
+          <form hx-post="/scheduler/run/{{ row.key }}" hx-target="#run-result-{{ row.key | replace('.', '-') }}"
+                hx-swap="innerHTML" data-runnable="{{ row.key }}">
+            <button type="submit" class="btn-clear">Run now</button>
+          </form>
+          {% else %}
+          {# No job type exists for this tick — the scan runs inside the scheduler
+             process and the job_type enum is closed (invariant 7). Say so rather
+             than render a button with a 404 behind it. #}
+          <span class="cell-muted">runs in-process — no job to enqueue</span>
+          {% endif %}
+          {# OUTSIDE the job_type branch on purpose. Re-arm targets this div too,
+             and a row that cannot be run (`coverage-scan`) can still be
+             re-armed -- when the div lived inside the branch, that button had
+             no target and htmx aborted it exactly as the dotted selector did.
+             One div per row serves both forms. #}
+          <div id="run-result-{{ row.key | replace('.', '-') }}" class="result"></div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="hint">Run now enqueues exactly what the cron would enqueue, under the cron's own
+    dedupe key — so a hand-run and the next tick collapse into one job. It does not write the
+    ledger: marking a period run would make the scheduler skip the period you just helped with.</p>
+</div>
+
+<div class="card">
+  <h2>Latest weekly report</h2>
+  {% if report %}
+  <p class="hint">
+    Week <code>{{ report.period_key }}</code> · job
+    <a href="/jobs/{{ report.job_id }}">#{{ report.job_id }}</a>
+    <span class="badge badge-{{ report.job_status }}">{{ report.job_status }}</span>
+    {% if report.at %}· {{ report.at.strftime("%Y-%m-%d %H:%M") }} UTC{% endif %}
+  </p>
+  <div class="stat-row">
+    <div class="stat-tile">
+      <div class="n" data-report-expiring="{{ report.expiring|length }}">{{ report.expiring|length }}</div>
+      <div class="label">expiring ahead</div>
+    </div>
+    <div class="stat-tile {{ 'tile-alert' if report.lapsed else '' }}">
+      <div class="n" data-report-lapsed="{{ report.lapsed|length }}">{{ report.lapsed|length }}</div>
+      <div class="label">already lapsed</div>
+    </div>
+    <div class="stat-tile {{ 'tile-alert' if report.dead_jobs else '' }}">
+      <div class="n" data-report-dead-jobs="{{ report.dead_jobs if report.dead_jobs is not none else 0 }}">{{ report.dead_jobs if report.dead_jobs is not none else "—" }}</div>
+      <div class="label">dead jobs</div>
+    </div>
+  </div>
+
+  {% if report.lapsed or report.expiring %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Document</th><th>Type</th><th>Regulation</th><th>Expires</th><th>Basis</th><th>State</th></tr></thead>
+    <tbody>
+      {# lapsed first: a certificate that already died needs the chase more than
+         one lapsing next month (report.py's own split, 2026-08-18) #}
+      {% for doc in report.lapsed + report.expiring %}
+      <tr>
+        <td><a href="/documents/{{ doc.doc_id }}">{{ doc.doc_id }}</a></td>
+        <td>{{ doc.type }}</td>
+        <td>{{ doc.regulation }}</td>
+        <td class="nowrap">{{ doc.validity_to }}</td>
+        <td>{{ doc.basis }}{% if doc.inherited %} <span class="badge-inherited">(inherited)</span>{% endif %}</td>
+        <td>{% if doc.lapsed %}<span class="badge badge-rejected">lapsed</span>{% else %}<span class="badge badge-staged">upcoming</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="hint">Nothing expiring within the renewal horizon when this report ran.</p>
+  {% endif %}
+
+  {% if report.job_counts %}
+  <details class="technical">
+    <summary>Job counts as of that report</summary>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Type</th><th>Status</th><th>Jobs</th></tr></thead>
+      <tbody>
+        {% for c in report.job_counts %}
+        <tr><td><code>{{ c.type }}</code></td><td>{{ c.status }}</td><td>{{ c.n }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </details>
+  {% endif %}
+  {% else %}
+  <p class="hint">No <code>report.weekly</code> job has produced a result yet. Use <em>Run now</em>
+    above once a worker is up.</p>
+  {% endif %}
+</div>
+{% endblock %}

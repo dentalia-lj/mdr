@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}Manual — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>Manual</h1>
+{% call ui.intro("Open work items. Which tab resolves one depends on its kind — most of these are actioned from Review, not here.") %}
+  <strong>gate-manual</strong> tasks (including manufacturer-binding candidates) resolve on the
+  <a href="/staging">Review</a> tab, since that's where the document and its evidence live —
+  resolving a task there is a side effect of the <code>gate.apply</code> decision, not a
+  separate action here. <strong>discovery-dead-end</strong> tasks resolve here: re-running
+  discovery may turn up a source it missed before (a new known URL, a fresh search result, a
+  newly-added contact). <strong>dead-job-followup</strong> has no producing handler yet, so
+  it's read-only for now.
+{% endcall %}
+
+<form class="filter-row" method="get" action="/manual">
+  <div class="field">
+    <label>Search</label>
+    <input type="text" name="q" value="{{ q }}"
+           placeholder="manufacturer, filename, cert no, UDI, doc id">
+  </div>
+  <div class="field filter-actions">
+    <button type="submit">Filter</button>
+    <a class="btn-clear" href="/manual">Clear</a>
+  </div>
+</form>
+
+{% if not tasks %}
+<div class="card"><p class="hint">
+  {% if q %}No open manual task matches &ldquo;{{ q }}&rdquo;. A
+  <strong>discovery-dead-end</strong> task is about a product group rather than a
+  document, so it can only match on its payload.{% else %}No open manual tasks.{% endif %}
+</p></div>
+{% endif %}
+
+{% for task in tasks %}
+<div class="card">
+  {# The heading is WHAT IS WAITING, not what kind of record holds it. A queue
+     headed "Task #3 — gate-manual" over forty lines of tier_attempts JSON made
+     a person read model confidences to find out they were looking at an
+     IVOCLAR declaration. Same headline the review board uses, so one document
+     does not describe itself two ways on two screens. Tasks with no document
+     (discovery-dead-end) keep the kind as their heading — for those it IS the
+     subject. #}
+  <h2>
+    {% if task.doc %}
+    {{ task.doc.type_label }}
+    {# the review board puts the manufacturer in its own grid column, so there
+       is no shared rule to inherit a separator from: write it out #}
+    {%- if task.doc.manufacturer_name %} — {{ task.doc.manufacturer_name }}{% endif %}
+    {% else %}
+    Task #{{ task.id }} — {{ task.kind }}
+    {% endif %}
+    {% if task.kind == 'gate-manual' and task.payload.route == 'mfr-binding' %}
+    <span class="badge badge-failed">mfr-binding</span>
+    {% endif %}
+  </h2>
+  {% if task.doc %}
+  <p class="hint">
+    Task #{{ task.id }} &middot; {{ task.kind }} &middot;
+    {{ task.doc.regulation_label }} &middot;
+    {% if task.doc.validity_to %}valid until {{ task.doc.validity_to }}{% else %}no expiry date{% endif %}
+    &middot; {{ task.doc.coverage_label }}
+    {%- if task.doc.cert_number %} &middot; {{ task.doc.cert_number }}{% endif %}
+  </p>
+  {% endif %}
+  <table>
+    <tbody>
+      <tr><th>Doc</th><td>{% if task.doc_id %}<a href="/staging?doc={{ task.doc_id }}#doc-{{ task.doc_id }}">#{{ task.doc_id }}</a>{% else %}—{% endif %}</td></tr>
+      <tr><th>Group</th><td>{{ task.group_id or "—" }}</td></tr>
+      <tr><th>Created at</th><td>{{ task.created_at }}</td></tr>
+    </tbody>
+  </table>
+  {# The payload is the evidence behind the headline, not the headline. Behind
+     the same `technical` disclosure every other board uses — it is what you
+     open when the plain-language line is not enough, which is rarely. #}
+  <details class="technical">
+    <summary>Payload</summary>
+    <pre class="payload">{{ task.payload_pretty }}</pre>
+  </details>
+
+  {% if task.kind == 'discovery-dead-end' %}
+  <h3>Resolve</h3>
+  <form hx-post="/manual/{{ task.id }}/resolve" hx-target="#result-{{ task.id }}" hx-swap="innerHTML">
+    <p class="hint">Re-enqueues <code>discover.group</code> at interactive priority.</p>
+    <button type="submit">Resolve — retry discovery</button>
+  </form>
+  <div id="result-{{ task.id }}" class="result"></div>
+  <p class="hint"><a href="/upload?group_id={{ task.group_id }}&manual_task_id={{ task.id }}">Upload document</a></p>
+  {% elif task.kind == 'gate-manual' %}
+  {# This link was already here and already works — `?doc=` resolves which page
+     of the board the row is on and opens its detail — but it read as a
+     footnote under a wall of JSON rather than as the action the task exists
+     for. Same destination, stated as the thing to do. #}
+  <h3>Resolve</h3>
+  <p><a href="/staging?doc={{ task.doc_id }}#doc-{{ task.doc_id }}">Open this document in Review</a></p>
+  <p class="hint">
+    The decision lives there, with the document and its evidence — resolving this task is a
+    side effect of the <code>gate.apply</code> decision, not a separate action here.
+  </p>
+  {% else %}
+  <p class="hint">No resolve action yet (no producing handler).</p>
+  {% endif %}
+</div>
+{% endfor %}
+{% endblock %}

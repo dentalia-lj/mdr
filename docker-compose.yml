@@ -1,0 +1,495 @@
+# Dentalia Compliance Pipeline — local dev stack.
+# One image (Dockerfile, playwright/python base) for worker-side services.
+# Default `docker compose up` runs: postgres -> migrate (one-shot) -> worker ->
+# web. There is no `scheduler` service: the crons run ON THE QUEUE as seven
+# perpetual, self-deferring `scheduler.tick` jobs claimed by `worker` (migrations
+# 054/055). The standalone process was deleted 2026-09-02 — it had been
+# `full`-profile-gated until 2026-08-31, and the consequence was ten days in
+# which no cron ran at all and nobody could see that.
+#
+# `web` (the producer UI: status/KPI board + ingest + staging/manual/dead review + JSON read API) is a
+# DELIBERATE DEVIATION from "one image" (user-directed this session, see
+# PHASES.md gap note): its own slim image (Dockerfile.web), connects to
+# Postgres directly as `dentalia_api` (never the schema owner — Invariant 1),
+# and does not depend on `worker` — it is a pure job producer.
+#
+# No `name:` on purpose. Compose then derives the project name from the
+# directory this file sits in: `dentalia` for the main checkout (unchanged from
+# the old hardcoded `name: dentalia`), and the worktree's own directory name
+# under `.claude/worktrees/`. That is what stops two worktrees sharing one
+# stack. Override with COMPOSE_PROJECT_NAME in .env for an explicit name:
+#
+#   COMPOSE_PROJECT_NAME=dentalia-wt-eudamed
+#
+# `container_name:` is gone from every service for the same reason: a fixed
+# container name is global to the docker daemon, so it collides across projects
+# whatever the project is called — which is why two plan docs carry a scratch
+# `compose.wt*.yml` override as a workaround. Containers are now
+# `<project>-<service>-<n>`, so `dentalia-postgres-1` where docs said
+# `dentalia-postgres`. `docker compose exec <service>` addresses them without
+# depending on the name at all.
+
+# Shared config for every service built from the app image.
+x-app: &app
+  build:
+    context: .
+    dockerfile: Dockerfile
+    # Explicit stage: the Dockerfile now ends with a `test` stage, and an
+    # untargeted build would resolve to that instead of the runtime image.
+    target: app
+  image: dentalia-app:latest
+  environment:
+    # In-container, reach Postgres by service name (not localhost). Overrides
+    # config's host-dev default.
+    DATABASE_URL: postgresql://${POSTGRES_USER:-dentalia}:${POSTGRES_PASSWORD:-dentalia}@postgres:5432/${POSTGRES_DB:-dentalia}
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dentalia}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dentalia}
+      POSTGRES_DB: ${POSTGRES_DB:-dentalia}
+      # Data lives in a subdir so the bind-mount root can hold lost+found etc.
+      # without colliding with initdb's empty-dir check.
+      PGDATA: /var/lib/postgresql/data/pgdata
+    # No `ports:` here. The test path never needs one — scripts/test.sh execs
+    # pytest INSIDE the stack, so it reaches Postgres at `postgres:5432` on the
+    # compose network. Publishing 5432 is a host-global claim, so two worktrees
+    # that both published it could not run at once, which is the collision this
+    # change exists to remove.
+    #
+    # Host access is a DEV need (psql, a GUI client, host-side pytest), so it
+    # moved to docker-compose.dev.yml. Compose merges `ports` lists additively
+    # and cannot subtract, so the publish has to live in the overlay rather than
+    # the base — the base is the safe default and dev opts in:
+    #
+    #   COMPOSE_FILE=docker-compose.yml:docker-compose.dev.yml   # in .env
+    #
+    # See .env.example.
+    volumes:
+      # External, WSL-native ext4 path (see CLAUDE session decision). Must NOT
+      # point at a Windows /mnt drive (9p breaks PG).
+      #
+      # REQUIRED, deliberately without a default (2026-09-11). The old default
+      # was the registry's own directory, so every worktree that ran
+      # `docker compose up` started a second Postgres on the SAME files; one did
+      # from 08-27 to 09-09 and left the registry unstartable
+      # (docs/state/2026-09-11.md). The main checkout's .env names the registry;
+      # a worktree's .env must name a directory of its own.
+      - ${PGDATA_HOST:?set PGDATA_HOST in .env - the main checkout names the registry, a worktree its own directory, see docs/runbook.md}:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dentalia} -d ${POSTGRES_DB:-dentalia}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    # The machine has 12 cores shared by several sessions. Uncapped, a suite run
+    # with -n 4 lets Postgres take whatever it wants and starves the other
+    # worktrees' stacks. 4 cores leaves room for the 4 pytest workers on the
+    # test container plus the host. 2g is well clear of what this workload uses
+    # (the test databases hold a handful of rows per test) and exists to bound a
+    # runaway, not to right-size.
+    cpus: 4.0
+    mem_limit: 2g
+
+  # One-shot: apply pending migrations, then exit 0. Worker waits on this.
+  migrate:
+    <<: *app
+    command: ["python", "-m", "app.cli", "migrate"]
+    restart: "no"
+
+  # Queue worker. Scale with `docker compose up --scale worker=N`; replicas are
+  # `<project>-worker-1..N`, which is now how every service is named.
+  worker:
+    <<: *app
+    command: ["python", "-m", "app.workers.runner"]
+    restart: unless-stopped
+    # Liveness, not port-liveness: the worker listens on nothing, so the only
+    # honest question is whether its loop is still turning over. It beats into
+    # `service_heartbeat` before each poll and probes its OWN row here --
+    # per-container, so that under `--scale worker=N` a wedged replica fails
+    # while its healthy neighbours pass. 60s against a 1s poll is 60 missed
+    # iterations, generous enough that a long T2 vision call (which beats
+    # before it starts) never trips it.
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.cli", "healthcheck", "--service", "worker"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+    # A local `environment:` key replaces (not merges with) the *app anchor's
+    # environment per YAML merge-key semantics (see the `test` service below,
+    # which redeclares DATABASE_URL the same way). DATABASE_URL is restated
+    # here so worker keeps its Postgres connection alongside the archive vars.
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dentalia}:${POSTGRES_PASSWORD:-dentalia}@postgres:5432/${POSTGRES_DB:-dentalia}
+      STORAGE_LOCAL_ROOT: /archive
+      STORAGE_BASE_URL: /archive
+      # The worker RUNS the crons now (scheduler.tick), so every SCHEDULER_* key
+      # is read in THIS process. Compose injects no .env -- it reads it for ${}
+      # interpolation only -- so a key missing here is a cron running on a
+      # hardcoded default with no way to change it.
+      # tests/test_compose_config.py holds all three services to this list.
+      SCHEDULER_TICK_INTERVAL_S: ${SCHEDULER_TICK_INTERVAL_S:-300}
+      SCHEDULER_INGEST_WATCH_DIR: ${SCHEDULER_INGEST_WATCH_DIR:-}
+      SCHEDULER_INGEST_GLOB: ${SCHEDULER_INGEST_GLOB:-*.xlsx}
+      SCHEDULER_INGEST_CATALOGUE: ${SCHEDULER_INGEST_CATALOGUE:-LJ}
+      SCHEDULER_EXPIRY_SCAN_INTERVAL_HOURS: ${SCHEDULER_EXPIRY_SCAN_INTERVAL_HOURS:-24}
+      SCHEDULER_EXPIRY_EMAIL_ENABLED: ${SCHEDULER_EXPIRY_EMAIL_ENABLED:-false}
+      SCHEDULER_REPORT_DIR: ${SCHEDULER_REPORT_DIR:-/archive/reports}
+      SCHEDULER_EXPIRY_REDISCOVER_ENABLED: ${SCHEDULER_EXPIRY_REDISCOVER_ENABLED:-false}
+      SCHEDULER_EXPIRY_REDISCOVER_CAP: ${SCHEDULER_EXPIRY_REDISCOVER_CAP:-25}
+      # The only push notification in the system: one POST when a job
+      # dead-letters. Empty disables it, which is right everywhere but the one
+      # machine that runs this for real. The URL is the whole credential -- an
+      # ntfy topic is readable AND writable by anyone who knows its name.
+      ALERTS_WEBHOOK_URL: ${ALERTS_WEBHOOK_URL:-}
+      SCHEDULER_COVERAGE_SCAN_ENABLED: ${SCHEDULER_COVERAGE_SCAN_ENABLED:-false}
+      SCHEDULER_COVERAGE_SCAN_CAP: ${SCHEDULER_COVERAGE_SCAN_CAP:-25}
+      SCHEDULER_FAILURE_MONITOR_INTERVAL_HOURS: ${SCHEDULER_FAILURE_MONITOR_INTERVAL_HOURS:-24}
+      SCHEDULER_FAILURE_WINDOW_DAYS: ${SCHEDULER_FAILURE_WINDOW_DAYS:-30}
+      SCHEDULER_FAILURE_MISS_RATE_THRESHOLD: ${SCHEDULER_FAILURE_MISS_RATE_THRESHOLD:-0.5}
+      SCHEDULER_FAILURE_MIN_SAMPLE: ${SCHEDULER_FAILURE_MIN_SAMPLE:-5}
+      SCHEDULER_FAILURE_REONBOARD_ENABLED: ${SCHEDULER_FAILURE_REONBOARD_ENABLED:-false}
+      SCHEDULER_EMAIL_POLL_ENABLED: ${SCHEDULER_EMAIL_POLL_ENABLED:-false}
+      SCHEDULER_EMAIL_POLL_INTERVAL_HOURS: ${SCHEDULER_EMAIL_POLL_INTERVAL_HOURS:-6}
+      SCHEDULER_EUDAMED_CERTREGISTER_ENABLED: ${SCHEDULER_EUDAMED_CERTREGISTER_ENABLED:-false}
+      SCHEDULER_EUDAMED_CERTREGISTER_INTERVAL_DAYS: ${SCHEDULER_EUDAMED_CERTREGISTER_INTERVAL_DAYS:-30}
+      SCHEDULER_EUDAMED_SWEEP_INTERVAL_DAYS: ${SCHEDULER_EUDAMED_SWEEP_INTERVAL_DAYS:-90}
+      # The LLM credential. It had never been declared here — `ANTHROPIC_API_KEY`
+      # appears in no commit of this file on any branch — because extraction had
+      # only ever been run on the host, where the operator's shell loaded .env.
+      # config.py reads os.environ only and .env is not baked into the image, so
+      # the first containerised run (the GC pilot, 2026-08-12) failed 79 of 149
+      # extractions on "Could not resolve authentication method". The worker now
+      # refuses to start without it rather than dead-lettering the queue.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in .env}
+      # Discovery's search credential. Inert while DISCOVER_HOLD is on, declared
+      # now so unwinding the hold does not repeat the mistake above in the one
+      # stage that spends money per call.
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      # Extraction transport. `batch` halves the LLM bill (Batch API discount)
+      # and is what the PRD asks for on sweep work, but the code default is
+      # `sync` and every extraction run so far has been sync — all 112 rows in
+      # the cost ledger carried batch=false — so the batch path has never met
+      # the real API. Surfaced here rather than left to an undocumented env var
+      # an operator has to know about: running the sweep without it silently
+      # pays double. Flip per-run with EXTRACT_MODE=batch in .env.
+      DENTALIA_EXTRACT_MODE: ${EXTRACT_MODE:-sync}
+      # Corpus-first cold start. RESOLVE must run before BACKFILL (it builds the
+      # groups a backfill document resolves against), but at that moment nothing
+      # is covered, so resolve.py's C3 "already has a doc" suppression cannot
+      # fire and EVERY group web-searches for documents already sitting in
+      # /imports. With the hold on, RESOLVE builds groups and emits no
+      # discovery; the corpus is mined first; discovery later runs against a
+      # registry that knows what it already has.
+      #
+      # Declared here rather than left to .env because the code default is
+      # `false` ("steady state discovers") and nothing in the stack said so:
+      # with an empty registry and a live Brave key, re-resolving the catalogue
+      # would have fired ~5.831 searches for documents we already hold. Unwind
+      # with DISCOVER_HOLD=false plus `cli regroup --apply` once the corpus is
+      # in; the discover dedupe key carries a fixed _RESOLVE_CYCLE and dedupe is
+      # active-scope only, so discovery then fires for exactly the groups the
+      # corpus did not cover.
+      DISCOVER_HOLD: ${DISCOVER_HOLD:-true}
+      # S2.4 EMAIL inbound (`email.poll`). The handler runs HERE, so everything
+      # it reads must be named in this block: a local `environment:` REPLACES
+      # the *app anchor's, so an unlisted key simply never reaches the
+      # container -- the same trap that cost 79 extractions above.
+      #
+      # Empty defaults keep the rung inert rather than broken:
+      # ImapEmailAdapter raises EmailNotConfigured on a blank host/user/password
+      # and email.poll records a SKIPPED rung, not a dead job. The fake mailbox
+      # (`greenmail`, profile `email-dev`) and the client's real compliance
+      # inbox (GAP G8) differ in these values and nothing else -- no code path
+      # and no image is fake-specific.
+      EMAIL_ADAPTER: ${EMAIL_ADAPTER:-imap}
+      IMAP_HOST: ${IMAP_HOST:-}
+      IMAP_PORT: ${IMAP_PORT:-993}
+      IMAP_SSL: ${IMAP_SSL:-true}
+      IMAP_FOLDER: ${IMAP_FOLDER:-INBOX}
+      IMAP_USER: ${IMAP_USER:-}
+      IMAP_PASSWORD: ${IMAP_PASSWORD:-}
+      EMAIL_POLL_MAX_MESSAGES: ${EMAIL_POLL_MAX_MESSAGES:-200}
+    volumes:
+      - archive_data:/archive
+      # The corpus backfill.scan walks, read-only: the worker archives FROM here
+      # INTO /archive, and must never write to a hand-managed dump. Same mount
+      # point as `web` uses, so a path recorded in one container resolves in the
+      # other. Without this the worker cannot see the corpus at all and the scan
+      # has to be run on the host, which is what recorded 57 host paths as
+      # archive_url and made them unreadable everywhere else.
+      - ${IMPORTS_HOST:-./imports}:/imports:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # Standalone producer UI (status board + KPI board + ingest + staging +
+  # manual + dead jobs + JSON read API). Own image (Dockerfile.web) — NOT the
+  # *app anchor: no worker deps, connects to Postgres as dentalia_api
+  # (007/008 migrations), never the schema owner.
+  #
+  # No published port — G3 v0 (S1.6): the `caddy` service below is the SOLE
+  # ingress, terminating HTTP Basic auth before anything reaches this
+  # container. WEB_REQUIRE_AUTHENTICATED_USER=true makes `web` trust
+  # X-Forwarded-User for gate.apply's `decided_by` and reject (403) any
+  # request missing it — structurally impossible from the host since only
+  # `caddy` can reach `web:8000` (same compose network, no publish here).
+  # WEB_HOST=0.0.0.0 makes it reachable from `caddy` inside the container
+  # network namespace.
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    image: dentalia-web:latest
+    environment:
+      API_DATABASE_URL: postgresql://dentalia_api:${DENTALIA_API_PASSWORD:-dentalia_api}@postgres:5432/${POSTGRES_DB:-dentalia}
+      WEB_HOST: 0.0.0.0
+      WEB_IMPORTS_DIR: /imports
+      WEB_REQUIRE_AUTHENTICATED_USER: "true"
+      WEB_ARCHIVE_ROOT: /archive
+      # Read-only, from the same volume the worker writes the report into.
+      WEB_REPORTS_DIR: /archive/reports
+      # document.archive_url records the path as seen by whatever wrote it —
+      # for backfilled corpus documents that is a HOST path, which does not
+      # exist in here (the same bytes are mounted at /imports). Declare the
+      # mapping so the "open the document" links resolve directly; set
+      # IMPORTS_HOST_ABS in .env to the absolute host path of the imports
+      # mount. Without it the file route still works, via a slower
+      # content-hash-verified search, so this is an optimisation not a
+      # requirement.
+      WEB_PATH_REWRITES: "${IMPORTS_HOST_ABS:-}=/imports"
+      # Access credentials for the two non-browser caller classes (spec §8).
+      # Secrets: set both in .env, never inline here.
+      WEB_API_KEYS: ${WEB_API_KEYS:-}
+      WEB_BC_LINK_KEY: ${WEB_BC_LINK_KEY:-}
+      WEB_PUBLIC_BASE_URL: ${WEB_PUBLIC_BASE_URL:-}
+      # Which Caddy logins count as operators (office UI redesign spec § 2, D3).
+      # Comma-separated, matched exactly against X-Forwarded-User. EMPTY -- the
+      # default, and how every deployment stands today -- means EVERY login is an
+      # operator, which is what keeps a single shared login working unchanged.
+      # Fill it and the operator menu group hides itself from everyone else and
+      # the four D3 writes answer them 403.
+      #
+      # Declared here rather than left to .env because compose injects no .env:
+      # without this line the key is unsettable and the guard can never be
+      # switched on at all, which is what it was until 2026-09-15.
+      WEB_OPERATOR_USERS: ${WEB_OPERATOR_USERS:-}
+      # The /scheduler panel names the cadences and emission flags the crons run
+      # on, read from THIS container's own SCHEDULER_* env. The crons themselves
+      # now run in `worker`, so any SCHEDULER_* var must be declared on BOTH
+      # services or the panel states a code default while the crons run on
+      # something else. tests/test_compose_config.py keeps the two in step.
+      SCHEDULER_TICK_INTERVAL_S: ${SCHEDULER_TICK_INTERVAL_S:-300}
+      SCHEDULER_INGEST_WATCH_DIR: ${SCHEDULER_INGEST_WATCH_DIR:-}
+      SCHEDULER_INGEST_GLOB: ${SCHEDULER_INGEST_GLOB:-*.xlsx}
+      SCHEDULER_INGEST_CATALOGUE: ${SCHEDULER_INGEST_CATALOGUE:-LJ}
+      SCHEDULER_EXPIRY_SCAN_INTERVAL_HOURS: ${SCHEDULER_EXPIRY_SCAN_INTERVAL_HOURS:-24}
+      SCHEDULER_EXPIRY_EMAIL_ENABLED: ${SCHEDULER_EXPIRY_EMAIL_ENABLED:-false}
+      SCHEDULER_REPORT_DIR: ${SCHEDULER_REPORT_DIR:-/archive/reports}
+      SCHEDULER_EXPIRY_REDISCOVER_ENABLED: ${SCHEDULER_EXPIRY_REDISCOVER_ENABLED:-false}
+      SCHEDULER_EXPIRY_REDISCOVER_CAP: ${SCHEDULER_EXPIRY_REDISCOVER_CAP:-25}
+      # The only push notification in the system: one POST when a job
+      # dead-letters. Empty disables it, which is right everywhere but the one
+      # machine that runs this for real. The URL is the whole credential -- an
+      # ntfy topic is readable AND writable by anyone who knows its name.
+      ALERTS_WEBHOOK_URL: ${ALERTS_WEBHOOK_URL:-}
+      SCHEDULER_COVERAGE_SCAN_ENABLED: ${SCHEDULER_COVERAGE_SCAN_ENABLED:-false}
+      SCHEDULER_COVERAGE_SCAN_CAP: ${SCHEDULER_COVERAGE_SCAN_CAP:-25}
+      SCHEDULER_FAILURE_MONITOR_INTERVAL_HOURS: ${SCHEDULER_FAILURE_MONITOR_INTERVAL_HOURS:-24}
+      SCHEDULER_FAILURE_WINDOW_DAYS: ${SCHEDULER_FAILURE_WINDOW_DAYS:-30}
+      SCHEDULER_FAILURE_MISS_RATE_THRESHOLD: ${SCHEDULER_FAILURE_MISS_RATE_THRESHOLD:-0.5}
+      SCHEDULER_FAILURE_MIN_SAMPLE: ${SCHEDULER_FAILURE_MIN_SAMPLE:-5}
+      SCHEDULER_FAILURE_REONBOARD_ENABLED: ${SCHEDULER_FAILURE_REONBOARD_ENABLED:-false}
+      # S2.4: gates EMISSION of email.poll only -- the handler is the worker's.
+      # Default off; the poll fires once per interval bucket when on.
+      SCHEDULER_EMAIL_POLL_ENABLED: ${SCHEDULER_EMAIL_POLL_ENABLED:-false}
+      SCHEDULER_EMAIL_POLL_INTERVAL_HOURS: ${SCHEDULER_EMAIL_POLL_INTERVAL_HOURS:-6}
+      SCHEDULER_EUDAMED_CERTREGISTER_ENABLED: ${SCHEDULER_EUDAMED_CERTREGISTER_ENABLED:-false}
+      SCHEDULER_EUDAMED_CERTREGISTER_INTERVAL_DAYS: ${SCHEDULER_EUDAMED_CERTREGISTER_INTERVAL_DAYS:-30}
+      SCHEDULER_EUDAMED_SWEEP_INTERVAL_DAYS: ${SCHEDULER_EUDAMED_SWEEP_INTERVAL_DAYS:-90}
+    restart: unless-stopped
+    volumes:
+      - ${IMPORTS_HOST:-./imports}:/imports:ro
+      - archive_data:/archive:ro
+      # READ-ONLY, AND NEVER THE LOADER'S INPUT. Slice 4 (2026-08-27) removed
+      # this mount because the web process reads playbooks from
+      # `manufacturer.body` and the refused-host list from `refused_host`
+      # (migration 048), and a second copy re-opened the question of which one
+      # an edit lands in. That still holds: `playbooks.set_source` points the
+      # loader at rows, and `load_playbooks()` with no argument returns rows
+      # whether or not this directory exists.
+      #
+      # It is back for ONE caller -- `registry.playbook_drift`, which passes
+      # this path EXPLICITLY to compare the authoring record against the store
+      # (2026-09-02). Comparison needs both sides; there is no way to see that
+      # a file has gone stale without reading the file. `:ro` is the guard that
+      # the web process can never write back, which would be the actual
+      # ambiguity slice 4 was avoiding.
+      #
+      # Absent in the deployed image (`Dockerfile.web` COPYs only `app/` and
+      # `web/`), and the banner renders nothing when the directory is missing.
+      # The worker image COPYs the directory for real, because
+      # `dentalia manufacturers seed` imports those files into the database and
+      # has to be runnable in a container.
+      - ./playbooks:/app/playbooks:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # G3 v0 auth (PHASES.md gap G3): HTTP Basic reverse proxy in front of `web`
+  # (see Caddyfile). Sole ingress on API_PORT — `web` itself publishes
+  # nothing. Pinned to 2.8+ (basic_auth was `basicauth` before 2.8).
+  caddy:
+    image: caddy:2.8
+    # Caddy is the sole ingress (G3 v0), so if it is down nothing is reachable
+    # and the UI cannot report its own unreachability. This probe is for
+    # `docker compose ps` and for restart policy, not for the status strip.
+    # Its own admin API on :2019 answers without traversing the proxy, so a
+    # broken upstream does not read as a broken Caddy. busybox wget, no curl
+    # in this image.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    environment:
+      DENTALIA_WEB_USER: ${DENTALIA_WEB_USER:-admin}
+      # Generate with: docker compose run --rm caddy caddy hash-password --plaintext 'your-password'
+      DENTALIA_WEB_PASSWORD_HASH: "${DENTALIA_WEB_PASSWORD_HASH:?set DENTALIA_WEB_PASSWORD_HASH in .env}"
+    restart: unless-stopped
+    ports:
+      # BOTH loopback stacks, and the second line is not redundant: Windows
+      # resolves `localhost` to ::1 first, so with only the IPv4 bind a browser
+      # on the host tries [::1]:8000, finds nothing listening, and reports the
+      # site as down — while `127.0.0.1:8000` works and `curl`/PowerShell also
+      # work, because they fall back to IPv4 and browsers here do not. That
+      # combination reads as "the app is broken" or "my login is wrong"
+      # (2026-08-17: it cost most of a day, diagnosed as auth twice).
+      #
+      # Still loopback-only. Neither line exposes the UI beyond this host, so
+      # the G3 posture is unchanged — HTTP Basic in `caddy` remains the sole
+      # ingress and `web` still publishes nothing.
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+      - "[::1]:${API_PORT:-8000}:8000"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # One file per person, `<username> <bcrypt hash>` a line, pulled into the
+      # Caddyfile's single basic_auth block by `import /etc/caddy/users/*.caddy`
+      # (D2). Read-only: Caddy reads logins, it never writes them. The directory
+      # is committed and its *.caddy contents are gitignored, so a fresh clone
+      # has somewhere for this mount to land and no password hash in git. Empty
+      # is fine -- the glob then matches nothing and the proxy runs on the
+      # DENTALIA_WEB_USER pair alone.
+      - ./caddy/users:/etc/caddy/users:ro
+      - caddy_data:/data
+    depends_on:
+      web:
+        condition: service_healthy
+
+  # Fake mailbox for the S2.4 `email.poll` live path (profile `email-dev`):
+  #   docker compose --profile email-dev up -d greenmail
+  #
+  # Why it exists: every email test passes against FakeEmailAdapter, so the
+  # IMAP WIRE path in app/adapters/email.py (login, SELECT, UIDVALIDITY capture,
+  # UID SEARCH UNSEEN, UID FETCH RFC822 -- all `pragma: no cover`) has never
+  # executed. GreenMail is a real IMAP server, so it exercises exactly that,
+  # with no credentials and no client dependency (GAP G8).
+  #
+  # Real-like on purpose: `users.login=email` makes the IMAP login the FULL
+  # address, so the mailbox is `dokumentacija@dentalia.si` here and at the
+  # client, and `adapter.mailbox_id` ("{host}/{user}/{folder}") keeps the same
+  # shape. Auth stays ON (the image default -Dgreenmail.auth.disabled is
+  # dropped) so conn.login() is genuinely tested rather than waved through.
+  #
+  # Storage is IN-MEMORY: every message is lost on restart, and the mailbox is
+  # rebuilt by tools/seed_fake_mailbox.py, which is the source of truth.
+  greenmail:
+    image: greenmail/standalone:2.1.12
+    profiles: ["email-dev"]
+    environment:
+      # hostname=0.0.0.0 is REQUIRED: without it GreenMail binds inside its own
+      # loopback and `worker` cannot reach it at all. setup.test.all = every
+      # protocol on its +3000 test port (IMAP 3143, SMTP 3025).
+      GREENMAIL_OPTS: >-
+        -Dgreenmail.setup.test.all
+        -Dgreenmail.hostname=0.0.0.0
+        -Dgreenmail.users=${GREENMAIL_USER_SPEC:-dokumentacija:dentalia@dentalia.si}
+        -Dgreenmail.users.login=email
+        -Dgreenmail.verbose
+    ports:
+      # Loopback only, same posture as caddy. Published for the host-side seed
+      # script (SMTP 3025) and hand-inspection (IMAP 3143); `worker` needs
+      # neither -- it reaches greenmail:3143 on the compose network.
+      - "127.0.0.1:${GREENMAIL_SMTP_PORT:-3025}:3025"
+      - "127.0.0.1:${GREENMAIL_IMAP_PORT:-3143}:3143"
+    restart: unless-stopped
+
+  # In-container pytest at the real runtime (3.12; host venv is 3.11). Gated
+  # behind its own profile so a plain `up` never starts it:
+  #
+  #   docker compose --profile test up -d test     # start it once
+  #   ./scripts/test.sh                            # every run after that
+  #
+  # It is now LONG-LIVED (`sleep infinity`) rather than the old one-shot
+  # `run --rm --build`. scripts/test.sh drives it with `docker compose exec`,
+  # which needs a container already running: `run` would start a fresh one per
+  # invocation and pay container setup on every single-test run, and `--build`
+  # would rebuild the image mid-loop. The repo bind-mount at /app means the
+  # running container already sees uncommitted changes, so neither is needed —
+  # rebuild only when the Dockerfile or the dependency set changes.
+  #
+  # conftest.py creates/drops a per-run `dentalia_test*` DB on the compose
+  # Postgres, so this never touches the real `dentalia` database.
+  test:
+    <<: *app
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test
+    image: dentalia-test:latest
+    profiles: ["test"]
+    command: ["sleep", "infinity"]
+    # 5 cores for 4 xdist workers plus the parent process; the flock semaphore
+    # in scripts/test.sh caps concurrent RUNS across worktrees, and this caps
+    # what any one run can take. 4g covers 4 workers plus PyMuPDF page
+    # rasterisation, which is the memory-hungriest thing the suite does.
+    cpus: 5.0
+    mem_limit: 4g
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dentalia}:${POSTGRES_PASSWORD:-dentalia}@postgres:5432/${POSTGRES_DB:-dentalia}
+      DENTALIA_TEST_ADMIN_URL: postgresql://${POSTGRES_USER:-dentalia}:${POSTGRES_PASSWORD:-dentalia}@postgres:5432/${POSTGRES_DB:-dentalia}
+      DENTALIA_TEST_URL: postgresql://${POSTGRES_USER:-dentalia}:${POSTGRES_PASSWORD:-dentalia}@postgres:5432/dentalia_test
+      # Passed through so the opt-in live schema check can actually run here.
+      # Without it that test SKIPS, which is how a schema the API rejects
+      # shipped green: two 400s that killed every extraction, caught by no test
+      # because every test asserted the schema dict and none ever sent it.
+      # Empty default keeps the suite runnable with no key (the test skips).
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # test_web.py connects as the write-less `dentalia_api` role (invariant 1
+      # is asserted structurally, not just at app level). Its default is a
+      # host-side `localhost` URL, which in here resolves to this container --
+      # without this line the whole web suite fails on connection refused while
+      # every other test passes, which reads as "the web app is broken".
+      DENTALIA_TEST_API_URL: postgresql://dentalia_api:dentalia_api@postgres:5432/dentalia_test
+    volumes:
+      - .:/app
+    restart: "no"
+
+volumes:
+  # Caddy's own state (autosave config, OCSP cache) — no TLS certs in the
+  # loopback-only v0 posture, but Caddy still wants a writable /data.
+  caddy_data:
+  # The document archive. Hash-addressed, append-only, 10-year retention:
+  # end-state output 2. Worker writes, web serves read-only.
+  archive_data:

@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% import "_pager.html" as pg %}
+{% import "_ui.html" as ui %}
+{% block title %}Documents — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>Documents</h1>
+{% call ui.intro("Every compliance document the registry holds, whatever state it is in.") %}
+  <strong>{{ "production" | word }}</strong> is what a consumer sees;
+  <strong>{{ "staged" | word }}</strong> is waiting on a person;
+  <strong>{{ "filed" | word }}</strong> is genuine and covers none of our items;
+  <strong>{{ "superseded" | word }}</strong> was published and a newer document has taken its
+  place. A replaced document is not an error and is never deleted. The system files it into
+  the chain by itself as soon as a newer one arrives with a date it can compare.
+{% endcall %}
+
+<div class="card">
+  <form method="get" action="/documents" class="filter-row">
+    <div class="field">
+      <label>Type</label>
+      <select name="type">
+        <option value="">any</option>
+        {% for t in ["DoC", "EC", "IFU", "ISO", "SPP", "other"] %}
+        <option value="{{ t }}" {% if t == type %}selected{% endif %}>{{ t | doc_type }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label>Status</label>
+      <select name="status">
+        <option value="">any</option>
+        {# `filed` (migration 025) was missing here, so the largest status in the
+           registry could only be reached by typing ?status= into the URL #}
+        {# The word is what a person picks; the value is what the query runs
+           against, because the filter is a WHERE clause over the column. #}
+        {% for s in ["staged", "production", "filed", "rejected", "superseded"] %}
+        <option value="{{ s }}" {% if s == status %}selected{% endif %}>{{ s | word }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label>Search</label>
+      <input type="text" name="q" value="{{ q }}"
+             placeholder="manufacturer, filename, cert no, UDI, doc id">
+    </div>
+    <div class="field filter-actions">
+      <button type="submit">Filter</button>
+      <a class="btn-clear" href="/documents">Clear</a>
+    </div>
+  </form>
+
+  {% if rows %}
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>#</th><th>Type</th><th>Manufacturer</th><th>Regulation</th>
+        <th>Valid from</th><th>Valid to</th>
+        <th>Status</th><th>Cert number</th><th>Items covered</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td><a href="/documents/{{ row.doc_id }}">{{ row.doc_id }}</a></td>
+        <td>{{ row.type | doc_type }}</td>
+        {# Linked only when the spelling resolves to exactly one canonical, the
+           same guard the document page uses — a miss or an ambiguous fold is
+           left as plain text rather than pointed at a 404 or an arbitrary pick. #}
+        <td>
+          {% if row.manufacturer_page %}
+          <a href="/manufacturers/{{ row.manufacturer_page | urlencode }}">{{ row.manufacturer }}</a>
+          {% elif row.manufacturer %}{{ row.manufacturer }}
+          {% else %}—{% endif %}
+        </td>
+        <td>{{ row.regulation }}</td>
+        <td>{{ row.validity_from or "—" }}</td>
+        {# document_effective_expiry, same as /items and both detail pages. The
+           basis is marked rather than left to be guessed: a review horizon is
+           Dentalia's five-year rule, not a date the declaration claims, and on a
+           list of 50 the difference has to fit in a word. #}
+        <td>{{ row.expires or "—" }}{% if row.expiry_basis == 'inherited' %}
+          <span class="hint">(inherited)</span>{% elif row.expiry_basis == 'staleness' %}
+          <span class="hint">(review)</span>{% endif %}</td>
+        {# a staged document's badge IS the way to its review row — the board
+           it lives on renders one page of 50, so the anchor needs ?doc= #}
+        <td>
+          {% if row.status == 'staged' %}
+          <a href="/staging?doc={{ row.doc_id }}#doc-{{ row.doc_id }}"><span class="badge badge-{{ row.status }}">{{ row.status | word }}</span></a>
+          {% else %}
+          <span class="badge badge-{{ row.status }}">{{ row.status | word }}</span>
+          {% endif %}
+        </td>
+        <td>{{ row.cert_number or "—" }}</td>
+        {# Production leads: it is the only figure a consumer ever sees. Staged
+           and rejected are shown when present rather than folded in, because
+           "nobody has accepted this link yet" and "a human said no" are
+           different answers to "does this document cover anything?", and the
+           single merged count gave them the same one. #}
+        <td>{{ row.items_production }}{% if row.items_staged %}
+          <span class="hint">+{{ row.items_staged }} waiting</span>{% endif %}{% if row.items_rejected %}
+          <span class="hint">{{ row.items_rejected }} rejected</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="hint">No documents match this filter.</p>
+  {% endif %}
+
+  {# the filter has to survive Next, or page 2 silently widens the question #}
+  {{ pg.pager_links(pager, "/documents", [
+       ("type=" ~ type|urlencode) if type else None,
+       ("status=" ~ status|urlencode) if status else None,
+       ("q=" ~ q|urlencode) if q else None,
+     ]|select|join("&")) }}
+</div>
+{% endblock %}

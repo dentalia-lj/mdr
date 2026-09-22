@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% import "_pager.html" as pg %}
+{% block title %}Coverage gaps — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>Coverage gaps</h1>
+<p class="hint">
+  Which items are missing which paperwork — counted, then listed. The Status board answers
+  "how covered are we" with a percentage; this answers "which ones, and what exactly is missing",
+  which is the form the question takes when somebody is going to act on it. Three separate
+  questions, deliberately: "no declaration" means one thing by document type and another by the
+  regulation it was issued under, and both are worth seeing.
+</p>
+
+<div class="card">
+  <table>
+    <thead><tr><th>Gap</th><th>Device items</th></tr></thead>
+    <tbody>
+      <tr><td><a href="/coverage?gap=none">No document at all</a></td><td>{{ summary.none }}</td></tr>
+      <tr><td><a href="/coverage?gap=doc">No Declaration of Conformity</a></td><td>{{ summary.doc }}</td></tr>
+      <tr><td><a href="/coverage?gap=regime">No MDR or MDD document</a></td><td>{{ summary.regime }}</td></tr>
+      <tr><td class="cell-muted">Device items in total</td><td>{{ summary.md_items }}</td></tr>
+    </tbody>
+  </table>
+  {# Reported, never folded in: we do not know whether an unclassified item
+     needs a declaration, and a list that guessed would be a list nobody could
+     work. Naming the number is the honest alternative to hiding it. #}
+  <p class="hint">A further <strong>{{ unclassified }}</strong> items have no device class from
+    Business Central and are not counted above — we cannot say what they need until that is filled in.</p>
+</div>
+
+<div class="card">
+  <form method="get" action="/coverage" class="filter-row">
+    <div class="field">
+      <label>Show</label>
+      <select name="gap">
+        {% for key, label in gaps %}
+        <option value="{{ key }}" {% if key == gap %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field filter-actions">
+      <button type="submit">List them</button>
+    </div>
+  </form>
+
+  <p class="hint">{{ gap_blurb }}</p>
+
+  {% if rows %}
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th>Item no.</th><th>Name</th><th>Manufacturer</th><th>What it does hold</th></tr>
+    </thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td><a href="/items/{{ r.item_ref | urlencode }}">{{ r.item_ref }}</a></td>
+        <td>{{ r.name }}</td>
+        <td>{% if r.manufacturer %}<a href="/manufacturers/{{ r.manufacturer | urlencode }}">{{ r.manufacturer }}</a>{% else %}<span class="cell-muted">unresolved</span>{% endif %}</td>
+        {# The point of the column: "no DoC" reads very differently when the
+           item holds an EC certificate than when it holds nothing. #}
+        <td>{% if r.types %}{{ r.types | join(", ") }}{% else %}<span class="cell-muted">nothing</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {{ pg.pager_links(pager, "/coverage", "gap=" ~ gap) }}
+  {% else %}
+  <p class="hint">No item has this gap.</p>
+  {% endif %}
+</div>
+{% endblock %}

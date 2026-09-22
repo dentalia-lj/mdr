@@ -1,0 +1,23 @@
+{
+  "manufacturer": "GC EUROPE N.V.",
+  "aliases": ["GC", "GC Corporation"],
+  "bc_codes": [{"catalogue": "LJ", "code": "008"}],
+  "domains": ["gc.dental/europe"],
+  "doc_sources": [
+    {
+      "doc_type": "DoC",
+      "kind": "portal",
+      "url": "https://www.gc.dental/europe/sl-SI/dealer-assets",
+      "note": "GC's dealer asset platform, named by GC Europe N.V. in a letter to Dentalia dated 2026-08-05. ENTERED 2026-08-24 with dealer credentials Dentalia supplied. Auth is Azure AD B2C, NOT a form login: the page carries a Drupal openid_connect_client_ad_login button that hands off to gcdentalprod.b2clogin.com (tenant gcdentalprod.onmicrosoft.com, policy B2C_1_signupsignin, client_id 30684d6e-82fb-4512-a29a-0b06df698dd2) and returns to /europe/openid-connect/ad_login. Unauthenticated the page is HTTP 403. httpx cannot do this flow; the browser tier can, and the session it leaves is an SSESS* Drupal cookie plus sso_token. Assets are per-PRODUCT zips at STABLE node URLs -- /europe/{lang}/node/{id}/download-dealer-asset, content-disposition gceProductAssets_{product}.zip -- so archive_url is feasible once a session exists. CORRECTION to GC's letter: the exposed filter (views-exposed-form-dealer-product-assets-block-1, GET param `title`) matches PRODUCT NAME only. Checked 2026-08-24: `Caviton` and `Fuji Plus` each return 1 asset, while `269071` (Art code), `000219` (Art code) and `10000084` (Material) all return ZERO. There is no article-number search here despite the letter saying there is."
+    },
+    {
+      "doc_type": "DoC",
+      "kind": "direct",
+      "url": "https://www.gc.dental/europe/system/files/2026-08/PPWR%20GC%20EUROPE.zip",
+      "note": "PACKAGING declarations, NOT medical-device evidence -- do NOT ingest. RULED OUT OF SCOPE 2026-08-26 by Denis after the full audit (docs/2026-08-26-ppwr-audit.md): they are dangerous and they add nothing, and they stay out unless Dentalia changes the directive. Linked from the dealer portal as 'Download PPWR Documents'; fetched 2026-08-24, 184 MB, 980 PDFs, one per article, named PPWR_DoC_{material}_{description}.pdf. Each declares a PACKAGE conformant to Regulation (EU) 2025/40 Article 39 and Regulation (EC) 1907/2006, listing packaging components (barcode label, cardboard box, bottle, cap, tape) with weights -- it is evidence about the box, not the device inside. Measured through t0_extract on 5 of them: doc_class=compliance-doc, type=DoC at confidence 1.0, manufacturer='GC EUROPE N.V.' at 0.97, validity_from=2026-07-29 at 0.95, and NO regulation (no MDR/MDD marker present), which `_ESCALATE_ALWAYS` sends to T1, whose schema admits only MDR|MDD|n.a. So these land as DoC/n.a. carrying a resolved GC manufacturer -- indistinguishable from a device declaration to every downstream stage. NOTHING LIMITS THE BLAST RADIUS -- an earlier note here claimed numbering did, and the audit disproved it. A PPWR DoC prints GC's 8-digit article number (10000084) and 115 of 124 GC MDR declarations print BOTH that space and the 6-character legacy one, in adjacent columns of the same table (000286 / 10000101, Caviton Jar White 30g), so the catalogue is matchable in both. Treat the exposure as all 980. Nor does T0's coverage_scope=manufacturer fallback protect them: measured on real T1 2026-08-26, coverage_scope comes back 'group' 3 of 3, which reopens ref_list at T2 and with it GATE's REF branch, the one with no device check (app/handlers/gate.py:814). See followups [non-md-doc-reaches-production-via-ref]."
+    }
+  ],
+  "match": {"anchors": ["gc europe"]},
+  "ref_strategy": "stitched-table",
+  "rev": 3
+}

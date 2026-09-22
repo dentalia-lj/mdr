@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}{{ facts.canonical_name }} — onboarding{% endblock %}
+{% block content %}
+<h1>{{ facts.canonical_name }}</h1>
+<p class="page-lede">Step 1 of 4: is this a manufacturer, and what do we call
+  its playbook?</p>
+<p class="hint"><a href="/onboarding">&laquo; Onboarding queue</a></p>
+
+{% if error %}<div class="result error">{{ error }}</div>{% endif %}
+
+{% set step = 1 %}{% include "_onboarding_steps.html" %}
+
+<div class="card">
+  <h2>What we know already</h2>
+  {# The context comes BEFORE the question. A person deciding whether this is
+     even a manufacturer needs the item count and the codes in front of them;
+     asking for a name first and the facts never is how a distributor ends up
+     with a playbook nobody wanted. #}
+  <table>
+    <tbody>
+      <tr><th>Items in Business Central</th><td>{{ facts['items'] | num }}</td></tr>
+      <tr><th>Supplier codes</th><td>{{ facts.codes | join(", ") or "—" }}</td></tr>
+      <tr><th>Documents we already hold</th>
+          <td>{{ facts.production_docs | num }}{% if facts.production_docs == 0 %}
+            — nothing, which is why this supplier is in the queue{% endif %}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Name the playbook</h2>
+  <form method="post" action="/onboarding/{{ facts.canonical_name | urlencode }}/start">
+    <label for="slug">Short name</label>
+    <input type="text" id="slug" name="slug" value="{{ facts.suggested_slug }}"
+           pattern="[a-z0-9]+(-[a-z0-9]+)*" required style="max-width:22em">
+    <p class="hint">
+      Lower-case letters, digits and single hyphens — it becomes the page
+      address. Shorter than the full legal name is normal
+      (<code>ivoclar</code>, not <code>ivoclar-vivadent-ag</code>).
+    </p>
+    <button type="submit">Start &amp; continue</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Or take it out of the queue</h2>
+  <p class="hint">
+    Not every supplier belongs here. A distributor or a reseller issues no
+    declarations of its own, so there is nothing to find. Say which and why —
+    the reason is required, because months later "this supplier files nothing"
+    and "we agreed it has nothing to file" look identical from the outside.
+  </p>
+  {# `hx-boost`, not a plain form: it is what makes `hx-confirm` fire at all
+     (htmx only checks it for a request it is itself issuing) -- same note as
+     the SRN and sweep-release forms in _ui.html. Boosted, this still lands on
+     the onboarding queue exactly as the plain post did. #}
+  <form method="post" action="/onboarding/{{ facts.canonical_name | urlencode }}/skip"
+        hx-boost="true"
+        hx-confirm="Take {{ facts.canonical_name }} out of the onboarding queue with this reason?">
+    <label for="state">Reason</label>
+    <select id="state" name="state">
+      {% for value, label in exits.items() %}
+      <option value="{{ value }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+    <label for="why">Why, in a few words</label>
+    <input type="text" id="why" name="reason" required style="width:100%"
+           placeholder="e.g. distributor — sells other manufacturers' products">
+    <button type="submit">Take out of the queue</button>
+  </form>
+</div>
+
+{% include "_onboarding_rail.html" %}
+{% endblock %}

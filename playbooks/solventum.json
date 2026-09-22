@@ -1,0 +1,21 @@
+{
+  "manufacturer": "SOLVENTUM",
+  "aliases": [],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "006"
+    }
+  ],
+  "domains": [
+    "solventum.com"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "IFU",
+      "kind": "portal",
+      "url": "https://eifu.solventum.com",
+      "note": "Located 2026-08-20 from Solventum's own nav, labelled \"Instructions for use & certificates\", linked from both their oral-care support page and their compliance-documents page. Returned HTTP 500 to a non-browser client (not 403) -- contents, search parameters and whether it carries DoCs alongside IFUs are UNVERIFIED. This answers the 3M question: no dental compliance document links to a 3M host any more. eifu.solventum.com/robots.txt is 404, i.e. unrestricted; solventum.com/robots.txt disallows /*/search/, which would block a search-URL discovery strategy. LEGAL ENTITY DELIBERATELY NOT AUTHORED: the 3M-to-Solventum entity rename table is published at solventum.com/content/dam/public/language-masters/en/entp/document/2024/Appendix-A-rev-2024.04.01.pdf (fetched, 177 KB, real PDF) and should be read before naming one. Items on this code are 3M/ESPE stock (Clinpro, Bowie & Dick, Victory MBT)."
+    }
+  ]
+}

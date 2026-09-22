@@ -1,0 +1,329 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}Document #{{ doc.doc_id }} — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+{# Rule 1: the document is named before it is numbered. `doc_display_name`
+   builds "⟨manufacturer⟩ · ⟨type⟩ (⟨regulation⟩)" from this same row and falls
+   back to the file name, then to the number, so a document with nothing
+   extracted still has a heading. #}
+<h1>{{ doc | doc_name }} <span class="badge badge-{{ doc.status }}">{{ doc.status | word }}</span></h1>
+{% call ui.intro("One document: what it says, which items it covers, and what the system read it out of.") %}
+  The table below is what was extracted from the file, not what anybody typed. Every value on
+  it is evidenced: which page of the document it came from, and in whose words. That evidence
+  reads under <strong>Technical details</strong> at the foot of the page. Nothing here can be
+  edited: a document is changed by replacing it, and the old one stays on file.
+{% endcall %}
+<p class="hint">Document #{{ doc.doc_id }}</p>
+
+{# Is anyone chasing a replacement? A lapsed document with no answer here is
+   work nobody has started; one with a draft is work in progress. Cross-link to
+   /drafts, the mirror of the "Chase" column on /expiry. #}
+{% if chases %}
+<div class="card">
+  <h2>Renewal chase</h2>
+  <ul class="plain">
+    {% for c in chases %}
+    <li>
+      {#- The § 9 word, the one /drafts and the draft page print. This pill
+          links straight there, and printed the stored value until 2026-09-15:
+          "cancelled" here, "Archived" one click away. -#}
+      <span class="badge badge-{{ 'staged' if c.status == 'draft' else ('production' if c.status in ('ready','sent') else 'superseded') }}">{{ c.status | draft_status }}</span>
+      <a href="/drafts/{{ c.draft_id }}">Renewal email #{{ c.draft_id }}</a>
+      <span class="hint">{{ c.manufacturer }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  <p class="hint">The mail is prepared here and sent by a person from
+    <code>mdr@dentalia.si</code> — nothing in this system sends.</p>
+  {# `renewal_request.period_key` is the key the cadence files a request
+     under. On the default weekly cadence it is an ISO week key, "2026-W37",
+     which is a string an engineer matches a draft by and not a date anybody
+     reads. It is machine-side (§ 9) and lives here. #}
+  <details class="technical">
+    <summary>Technical details</summary>
+    <table>
+      <thead><tr><th>Draft</th><th>Period key</th></tr></thead>
+      <tbody>
+        {% for c in chases %}
+        <tr><td>#{{ c.draft_id }}</td><td><code>{{ c.period_key }}</code></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+</div>
+{% endif %}
+
+<div class="card">
+  <table>
+    <tbody>
+      <tr><th>Type</th><td>{{ doc.type | doc_type }}</td></tr>
+      <tr><th>Regulation</th><td>{{ doc.regulation }}</td></tr>
+      {# Read off the document itself (evidence), never the catalogue: a
+         manufacturer-scope certificate has no item link to derive one from,
+         and for the rest the two can legitimately differ (the legal entity
+         printed on a PDF vs the BC vendor code). #}
+      {# Linked when the catalogue knows the name, plain text when it does not:
+         /items/{ref} already links its manufacturer, and a document page that
+         names one without a way through is a dead end in the middle of the
+         journey the registry exists to support (item -> document ->
+         manufacturer -> its other documents). `manufacturer_page` is set only
+         when a manufacturer_alias row resolves, so this never links a 404. #}
+      <tr><th>Manufacturer</th><td>
+        {% if doc.manufacturer_page %}
+        <a href="/manufacturers/{{ doc.manufacturer_page | urlencode }}">{{ doc.manufacturer }}</a>
+        {% elif doc.manufacturer %}{{ doc.manufacturer }}
+        {% else %}— (none extracted){% endif %}
+      </td></tr>
+      <tr><th>Coverage scope</th><td>{{ doc.coverage_scope }}</td></tr>
+      <tr><th>Basic UDI-DI</th><td>
+        {{ doc.basic_udi_di or "—" }}
+        {# The lookup is offered only where there is something to look up.
+           301 of 769 documents carry no Basic UDI-DI, and the POST refuses
+           for them anyway -- this keeps a dead button off those pages. #}
+        {% if doc.basic_udi_di %}
+        <form method="post" action="/documents/{{ doc.doc_id }}/eudamed" class="inline-form">
+          <button type="submit">Look up in EUDAMED</button>
+        </form>
+        {% endif %}
+      </td></tr>
+      <tr><th>Valid from</th><td>{{ doc.validity_from or "—" }}</td></tr>
+      {# document_effective_expiry, not the raw column: `basis` says which of the
+         three rules produced this date, and it is always rendered. A five-year
+         review horizon is Dentalia's own rule, not something the document claims
+         — printing it bare would assert an expiry MDR does not give a
+         declaration. #}
+      <tr><th>Valid to</th><td>
+        {{ doc.expires or "—" }}
+        {% if doc.expiry_basis == 'inherited' %}
+        <span class="hint">(inherited — MDR Annex IV requires only an issue date on a DoC; this is the expiry of the certificate cited below)</span>
+        {% elif doc.expiry_basis == 'staleness' %}
+        <span class="hint">(review horizon — five years after issue, Dentalia's rule, not an expiry: a DoC has none by regulation)</span>
+        {% elif not doc.expires and doc.type == 'DoC' %}
+        <span class="hint">(no expiry, and no issue date to review from)</span>
+        {% endif %}
+      </td></tr>
+      <tr><th>Cert number</th><td>{{ doc.cert_number or "—" }}</td></tr>
+      <tr><th>Cited certificate</th><td>
+        {% if doc.cert_doc_id %}
+        <a href="/documents/{{ doc.cert_doc_id }}">{{ doc.cert_type_label }} #{{ doc.cert_doc_id }}</a>
+        {%- if doc.cert_doc_number %}, {{ doc.cert_doc_number }}{% endif %}
+        {#- A rejected or staged certificate is still shown — what a declaration
+            cites is a fact, and an auditor needs to follow it. What it may NOT
+            do is lend out its date: only a production or superseded certificate
+            is evidence of an expiry, which is the same bar
+            validate._resolve_cited_certificate applies on the way in. #}
+        {%- if doc.cert_status in ['production', 'superseded'] %}
+        {%- if doc.cert_doc_validity_to %}, valid to {{ doc.cert_doc_validity_to }}{% endif %} —
+        the notified-body certificate this DoC cites; its own validity_to is the real expiry.
+        {%- else %} — <strong>{{ doc.cert_status }}</strong>, so its expiry is not evidence of
+        anything and is not inherited here; this declaration falls back to its own review horizon.
+        {%- endif %}
+        {% else %}
+        — (none recorded — Class I devices have no certificate, or we may not hold the cited one yet)
+        {% endif %}
+      </td></tr>
+      {# Where this file came from and when we took it. `source_url` is the
+         page or endpoint FETCH pulled it from — a document nobody can trace to
+         a source is evidence of nothing, and this column existed unrendered
+         from migration 005 until 2026-08-17. Backfilled corpus documents
+         legitimately have none: they arrived over SFTP, not off a site. #}
+      <tr><th>Fetched from</th><td>
+        {% if doc.source_url and doc.source_url.startswith("http") %}
+        <a href="{{ doc.source_url }}" target="_blank" rel="noopener noreferrer">{{ doc.source_url }}</a>
+        {% elif doc.source_url %}
+        {# A backfilled document's source is a corpus path (the SFTP drop), not
+           a URL. Wrapping it in an href produces a link the browser resolves
+           against THIS origin and 404s on — the same mistake `archive_url`
+           links used to make everywhere in this UI. #}
+        <code>{{ doc.source_url }}</code>
+        <div class="hint">A corpus path, not a web address — this document came from the
+          supplier drop rather than a fetch.</div>
+        {% else %}— <span class="hint">(no source recorded — uploaded by hand, or fetched before
+          this column was populated)</span>{% endif %}
+      </td></tr>
+      <tr><th>First recorded</th><td>
+        {{ doc.created_at.strftime("%Y-%m-%d %H:%M") if doc.created_at else "—" }}
+      </td></tr>
+      <tr><th>Links</th><td>
+        {# constructed, never the stored archive_url — that is a storage
+           handle (host path / file:// URI), not a browsable link #}
+        <a href="/documents/{{ doc.doc_id }}/file" target="_blank" rel="noopener">archived file</a>
+        &middot; <a href="/documents/{{ doc.content_hash }}/text">stored text</a>
+        {% if doc.status == 'staged' %}
+        &middot; <a href="/staging?doc={{ doc.doc_id }}#doc-{{ doc.doc_id }}">review this document</a>
+        {% endif %}
+      </td></tr>
+    </tbody>
+  </table>
+</div>
+
+{# The only way back out of `rejected`. Before 2026-09-04 a rejected document
+   was un-rejected by ACCIDENT -- any re-delivery overwrote the status,
+   silently and with no audit row -- and closing that hole
+   (`_upsert_document`, never move backward) removed the only escape with it.
+   This is the deliberate one, with a person's name on it.
+
+   Deliberately NOT a one-click button: a reject is a decision somebody made,
+   and undoing it should cost a sentence explaining why. The handler refuses
+   anything that is not currently rejected, so a stale page dead-letters
+   visibly rather than quietly doing nothing. #}
+{% if doc.status == 'rejected' %}
+<div class="card">
+  <h2>Reopen this document</h2>
+  <p class="hint">
+    Somebody rejected this. Reopening puts it back into
+    <a href="/staging">review</a> as a candidate waiting for a decision. It does
+    not approve it, and it does not bring its item links back: those stay rejected until
+    each is reopened on its own, which is what keeps a half-undone rejection
+    from looking like a reviewed document.
+  </p>
+  <form hx-post="/staging/{{ doc.doc_id }}/apply" hx-target="#reopen-result"
+        hx-swap="innerHTML">
+    <input type="hidden" name="decision" value="reopen">
+    <label for="reopen-by">Your name</label>
+    <input type="text" id="reopen-by" name="decided_by" required
+           placeholder="who is reopening this">
+    <button type="submit">Reopen for review</button>
+  </form>
+  <div id="reopen-result"></div>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Supersession chain</h2>
+  {% if doc.supersedes or doc.superseded_by %}
+  <p class="hint">
+    {% if doc.supersedes %}Supersedes <a href="/documents/{{ doc.supersedes }}">#{{ doc.supersedes }}</a>.{% endif %}
+    {% if doc.superseded_by %}Superseded by <a href="/documents/{{ doc.superseded_by }}">#{{ doc.superseded_by }}</a>.{% endif %}
+  </p>
+  {% endif %}
+  {% if chain %}
+  <table>
+    <thead><tr><th>#</th><th>Type</th><th>Regulation</th><th>Valid from</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for c in chain %}
+      <tr>
+        <td><a href="/documents/{{ c.doc_id }}">{{ c.doc_id }}</a></td>
+        <td>{{ c.type | doc_type }}</td><td>{{ c.regulation }}</td>
+        <td>{{ c.validity_from or "—" }}</td>
+        <td><span class="badge badge-{{ c.status }}">{{ c.status | word }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="hint">No supersession relationships — this is a standalone document.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Covered items{% if items %} ({{ items | length }}){% endif %}</h2>
+  {# A manufacturer-scope certificate covers everything we stock from that
+     manufacturer -- document 310 covers 356 items -- and printing all of them
+     inline pushed the evidence table, the thing an auditor actually asks for,
+     to 11.798px down the page. The rows stay (which items a certificate covers
+     is a real question); they scroll in their own box. #}
+  {% if items %}
+  <div class="table-wrap tall">
+  <table>
+    <thead><tr><th>Item no.</th><th>Name</th><th>Covers this item</th></tr></thead>
+    <tbody>
+      {% for it in items %}
+      <tr>
+        <td><a href="/items/{{ it.item_ref }}">{{ it.item_ref }}</a></td>
+        <td>{{ it.name or "—" }}</td>
+        <td><span class="badge badge-{{ it.status }}">{{ it.status | word }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="hint">No item links (manufacturer-scope document, or not yet grouped).</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Where every value came from</h2>
+  <p class="hint">Invariant 2: no value reaches a consumer without this. Each row names the page
+    of the document it was read off, the words it was read from, and what read it.</p>
+  {# Collapsed, not deleted: the evidence table is the answer to "on what
+     evidence?" and an auditor must be able to open it, but the model that read
+     the page and the content hash are machine-side facts (§ 9) and do not
+     belong in the body of an office screen. The item links are one card up,
+     and how each one was MADE is here for the same reason. #}
+  <details class="technical">
+    <summary>Technical details</summary>
+    {% if evidence %}
+    <h4>Evidence</h4>
+    <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Field</th><th>Value</th><th>Page</th><th>Verbatim</th><th>Tier</th><th>Model</th><th>Confidence</th><th>Rev</th></tr>
+      </thead>
+      <tbody>
+        {% for ev in evidence %}
+        <tr>
+          <td>{{ ev.field }}</td><td>{{ ev.value }}</td><td>{{ ev.page or "—" }}</td>
+          <td>{{ ev.verbatim }}</td><td>{{ ev.tier }}</td><td>{{ ev.model_id or "—" }}</td>
+          <td>{{ ev.confidence }}</td><td>{{ ev.extract_rev }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="hint">No evidence recorded.</p>
+    {% endif %}
+    <h4>Identity</h4>
+    <p class="hint">Content hash <code>{{ doc.content_hash }}</code></p>
+    {% if items %}
+    <h4>{{ "match basis" | word }}</h4>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Item no.</th><th>{{ "match basis" | word }}</th></tr></thead>
+      <tbody>
+        {% for it in items %}
+        <tr><td>{{ it.item_ref }}</td><td><code>{{ it.match_basis }}</code></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+  </details>
+</div>
+
+{# EUDAMED lookup (S2.3 stage 1). Post-redirect-get carries the outcome back
+   as a query param, the same way item_detail renders `?rediscover=`. #}
+{% if eudamed == "queued" %}
+<div class="result ok">EUDAMED lookup queued.</div>
+{% elif eudamed == "deduped" %}
+<div class="result ok">Already looked up today.</div>
+{% elif eudamed == "no-udi" %}
+<div class="result error">This document carries no Basic UDI-DI — nothing to look up.</div>
+{% endif %}
+
+{% if eudamed_rows %}
+<div class="card">
+  <h2>EUDAMED — devices in this Basic UDI-DI group</h2>
+  <p class="hint">EUDAMED's own record for this group. The catalogue number is
+    the article number the manufacturer registered for each device. Read-only:
+    nothing here is linked to a catalogue item, and none of it is evidence.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Catalogue number</th><th>Device</th><th>UDI-DI</th><th>Read</th></tr></thead>
+    <tbody>
+      {% for r in eudamed_rows %}
+      <tr>
+        <td>{{ r.reference or "—" }}</td>
+        <td>{{ r.device_name or "—" }}</td>
+        <td>{{ r.udi_di }}</td>
+        <td>{{ r.synced_at.date() | day }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

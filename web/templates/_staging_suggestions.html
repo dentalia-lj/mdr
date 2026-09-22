@@ -1,0 +1,60 @@
+{# One page of open grouping-suggestion summary rows. Swapped into
+   #staging-suggestions by both the search box and the pager; each row fetches
+   its candidate table, T1 rationale and assign form on first open. #}
+{% import "_pager.html" as pg %}
+
+<h2>Grouping suggestions <span class="badge badge-pending">{{ sugg_pager.total }}{% if q %} matching{% endif %}</span></h2>
+<p class="hint">
+  Ambiguous name-family clusters from RESOLVE (S1.2), staged for human review — a name
+  match is never auto-applied (invariant 3). Expand a row to assign the item to one of the
+  candidate groups, or start a new group if none fit. Either action enqueues
+  <code>resolve.group</code>; RESOLVE writes the membership and resolves the suggestion.
+</p>
+
+<form class="filter-row" hx-get="/staging/suggestions"
+      hx-target="#staging-suggestions" hx-swap="innerHTML">
+  <div class="field">
+    <label>Search item ref</label>
+    <input type="text" name="q" value="{{ q }}" placeholder="item ref">
+  </div>
+  <div class="field filter-actions">
+    <button type="submit">Filter</button>
+    <button type="button" class="btn-clear" hx-get="/staging/suggestions"
+            hx-target="#staging-suggestions" hx-swap="innerHTML">Clear</button>
+  </div>
+</form>
+
+{% if suggestions %}
+<div class="stage-list">
+  {% for s in suggestions %}
+  <details class="stage-row" id="suggestion-{{ s.id }}"
+           hx-get="/staging/suggestion/{{ s.id }}/detail" hx-trigger="toggle once"
+           hx-target="find .stage-body" hx-swap="innerHTML">
+    <summary>
+      <span class="c-id"><code>{{ s.item_ref }}</code></span>
+      <span class="c-type">score {{ s.score }}</span>
+      <span class="c-flag">
+        {% if s.t1_failed %}<span class="badge badge-failed">T1 error</span>{% endif %}
+      </span>
+      <span class="c-cert">top group {{ s.top_group or "—" }}</span>
+      <span class="c-date">{{ s.n_candidates }} candidate{{ "" if s.n_candidates == 1 else "s" }}</span>
+      {# The item's OWN name first, the destination group second: a reviewer is
+         judging a move, so both ends have to be on the row. Item name leads
+         because this column ellipsises -- truncating what you would move is
+         worse than truncating where it would go. #}
+      <span class="c-links">
+        <span class="c-name">{{ s.item_name or "name unknown" }}</span>
+        {% if s.top_sample_name %}<span class="c-dest">&rarr; {{ s.top_sample_name }}</span>{% endif %}
+      </span>
+    </summary>
+    <div class="stage-body"><p class="hint">Loading…</p></div>
+  </details>
+  {% endfor %}
+</div>
+{% else %}
+<p class="hint">
+  {% if q %}No open suggestions match <code>{{ q }}</code>.{% else %}No open grouping suggestions.{% endif %}
+</p>
+{% endif %}
+
+{{ pg.pager(sugg_pager, "/staging/suggestions", "#staging-suggestions", q) }}

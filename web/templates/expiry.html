@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}Expiry — Dentalia Compliance Registry{% endblock %}
+
+{# One table, rendered three times. The columns are identical in all three
+   sections and the wording is not: "days left" is a lie above a row that
+   lapsed two years ago, and "expired" is a lie above one that has not. #}
+{% macro lapse_table(rows, when_label, past) %}
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr>
+      <th class="nowrap">Expires</th><th class="nowrap">{{ when_label }}</th><th>Manufacturer</th>
+      <th>Type</th><th>Regulation</th><th>Cert number</th>
+      <th>Documents</th><th>Items affected</th><th>Chase</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    {# Urgent styling means "act on this", which is every already-lapsed row
+       and only the future ones inside the one expiring window (D7). #}
+    <tr{% if past or (row.days_left is not none and row.days_left <= EXPIRING_WINDOW_DAYS) %} class="row-urgent"{% endif %}>
+      <td class="nowrap">{{ row.expires }}</td>
+      <td class="nowrap">
+        {%- if row.days_left is none %}—
+        {%- elif row.days_left < 0 %}{{ -row.days_left }} days ago
+        {%- elif row.days_left == 0 %}today
+        {%- else %}{{ row.days_left }}{% endif %}
+      </td>
+      <td>{{ row.manufacturer }}</td>
+      <td>{{ row.type | doc_type }}</td>
+      <td>{{ row.regulation }}</td>
+      <td>
+        {{ row.cert_number or "—" }}
+        {% if row.inherited %}
+        <div class="hint badge-inherited">inherited from cited certificate</div>
+        {% elif row.staleness %}
+        <div class="hint badge-inherited">review — 5 years after issue, no expiry stated</div>
+        {% endif %}
+      </td>
+      <td>{{ row.documents }}</td>
+      {# the number that decides whether this is urgent: documents lapse,
+         but what the business loses is coverage on catalogue items #}
+      <td>{{ row.items_affected }}</td>
+      {# Is anyone already chasing this? Keyed on manufacturer, because one
+         draft covers every certificate under it (spec §7.2). #}
+      <td class="nowrap">
+        {%- set chase = drafts_by_mfr.get(row.manufacturer) %}
+        {%- if chase %}
+        <a href="/drafts/{{ chase.draft_id }}"><span class="badge badge-{{ 'staged' if chase.status == 'draft' else 'production' }}">{{ chase.status | draft_status }}</span></a>
+        {%- else %}<span class="hint">—</span>{% endif %}
+      </td>
+      <td><a href="/documents/{{ row.sample_doc_id }}">detail</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endmacro %}
+
+{% block content %}
+<h1>Expiry</h1>
+{% call ui.intro("What has already lapsed and what is about to — three separate questions, because they need three different answers.") %}
+  This board was one table under a single horizon filter, which selected everything expiring
+  <em>within</em> N days and so quietly included everything already expired. A certificate
+  that lapsed in May with 1.046 items on it is a different and worse problem than one lapsing
+  next month, and one table cannot say so.
+  <br><br>
+  A Declaration of Conformity usually carries no expiry of its own (MDR Annex IV requires only
+  an issue date) — where it cites a notified-body certificate, this board shows the
+  certificate's own date instead, marked <strong>inherited</strong>. On top of that every
+  declaration is listed five years after issue, marked <strong>review</strong> — Dentalia
+  ruled on 2026-08-18 that both apply, so whichever comes first is the date shown. It is a
+  review horizon rather than an expiry: Article 19(1) asks that a declaration be kept
+  continuously updated and names no validity period. Class I devices have no certificate at
+  all, so <em>review</em> is the only trigger they will ever have. The manufacturer is a
+  column rather than a heading because the soonest lapse can belong to any of them, and the
+  manufacturer is who gets the email.
+{% endcall %}
+
+<form method="get" action="/expiry" class="filter-row">
+  <div class="field">
+    <label>Expired within</label>
+    <select name="back">
+      {% for h in [30, 90, 180, 365] %}
+      <option value="{{ h }}" {% if h == back %}selected{% endif %}>{{ h }} days</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label>Expiring within</label>
+    <select name="ahead">
+      {% for h in [30, 90, 180, 365] %}
+      <option value="{{ h }}" {% if h == ahead %}selected{% endif %}>{{ h }} days</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field filter-actions">
+    <button type="submit">Filter</button>
+  </div>
+</form>
+<p class="hint">The windows start at {{ EXPIRED_LOOKBACK_DAYS }} days back and {{ EXPIRING_WINDOW_DAYS }} days ahead.
+  The count at the top of every page is the first two tables below at those settings, added together.</p>
+
+{# Already broken leads. It is the only one of the three sections that is a
+   live emergency, and the old board buried it under a heading claiming the
+   opposite. Most recent first: "expired last week" is more actionable than
+   "expired in 2020". #}
+{# Review due, not expired (F34). A declaration whose only date is Dentalia's
+   own five-year horizon has not lapsed in any legal sense -- Article 19(1) sets
+   no validity period -- and listing it under "Expired" reports a house rule as
+   a breach. Its own section rather than a badge inside the expired table: the
+   badge was already there and the heading above it still said the wrong thing,
+   which is the whole of this finding. Class I devices carry no certificate at
+   all, so this is the only trigger they will ever have. #}
+<div class="card">
+  <h2>Review due ({{ review | length }})</h2>
+  {% if review %}
+  <p class="hint">Five years past issue, with no expiry stated on the document and no
+    certificate to inherit one from. Nothing has lapsed and no coverage is lost: ask the
+    manufacturer to confirm the declaration is still current, rather than to renew it.</p>
+  {{ lapse_table(review, "Due since", true) }}
+  {#- One button per supplier, not per row: this table groups by manufacturer,
+      type, regulation, certificate number and date, so a supplier with four
+      review-due declarations is four rows and one letter. The letter asks them
+      to CONFIRM the declaration is still current -- never to renew it, which is
+      what the 2026-09-11 ruling forbids for a document that has not expired. -#}
+  {% if review_mfrs %}
+  <p class="hint">Ask a supplier to confirm theirs are still current. One letter
+    covers every declaration of theirs listed above. Nothing is sent: the draft
+    waits on <a href="/drafts">{{ "drafts out" | word }}</a>.</p>
+  <div class="form-actions">
+    {% for m in review_mfrs %}
+    <form method="post" action="/manufacturers/{{ m | urlencode }}/review-confirm"
+          style="display:inline-block; margin:0 8px 8px 0">
+      <button type="submit" class="btn-secondary">Ask {{ m }} ({{ review_counts[m] }})</button>
+    </form>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% else %}
+  <p class="hint">No declaration is past its five-year review point.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Expired in the last {{ back }} days ({{ recent | length }})</h2>
+  {% if recent %}
+  <p class="hint">Already lapsed, on a date the document or its certificate states. Every
+    catalogue item counted here has lost its {{ "production" | word | lower }} coverage
+    <strong>now</strong>, not at some point in the future: this is renewal work, not a watch
+    list. Declarations past Dentalia's own five-year review point are listed above instead,
+    because that horizon is a house rule and not an expiry.</p>
+  {{ lapse_table(recent, "Expired", true) }}
+  {% else %}
+  <p class="hint">Nothing lapsed in the last {{ back }} days.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Expiring in the next {{ ahead }} days ({{ soon | length }})</h2>
+  {% if soon %}
+  <p class="hint">Still valid. Renew before the date in the first column and no coverage is
+    ever lost.</p>
+  {{ lapse_table(soon, "Days left", false) }}
+  {% else %}
+  <p class="hint">Nothing lapses in the next {{ ahead }} days.
+    {%- if beyond %} The next one is {{ beyond_next }} days out.{% endif %}</p>
+  {% endif %}
+  {# Never drop rows silently: a board that shows nothing beyond its window and
+     says nothing about it reads as "all clear" (CLAUDE.md). #}
+  {% if beyond %}
+  <p class="hint">{{ beyond }} further certificate{{ " expires" if beyond == 1 else "s expire" }} beyond this window,
+    the soonest in {{ beyond_next }} days.
+    <a href="/expiry?back={{ back }}&amp;ahead=3650">Show everything</a>.</p>
+  {% endif %}
+</div>
+
+{# Kept rather than dropped. A lapsed certificate that still carries production
+   links is exposure we have to be able to evidence on request, and hiding the
+   row does not remove the exposure — it only removes our knowing about it.
+   Collapsed because it is not this week's work. #}
+{% if old %}
+<div class="card">
+  <h2>Long expired ({{ old | length }})</h2>
+  <p class="hint">Lapsed more than {{ back }} days ago. Still linked, still evidenced, still
+    ours to answer for — but not this week's renewal work.</p>
+  <details class="technical">
+    <summary>Show the {{ old | length }} certificate{{ "" if old | length == 1 else "s" }}
+      that lapsed more than {{ back }} days ago</summary>
+    {{ lapse_table(old, "Expired", true) }}
+  </details>
+</div>
+{% endif %}
+
+<p class="hint">One row per lapsing certificate, not per document citing it. "Documents" is how
+  many registry documents carry that date (a certificate's own expiry is inherited by every
+  declaration citing it), and "items affected" is how many catalogue items lose their
+  {{ "production" | word | lower }} coverage when it lapses.</p>
+
+{{ ui.cert_findings(cert_findings) }}
+{% endblock %}

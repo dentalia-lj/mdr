@@ -1,0 +1,30 @@
+{
+  "manufacturer": "SUN",
+  "aliases": [
+    "SUN Oberflächentechnik GmbH",
+    "PANTHER"
+  ],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "10176"
+    }
+  ],
+  "domains": [
+    "sun-dental.de"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "IFU",
+      "kind": "portal",
+      "url": "https://www.sun-dental.de/en/ifu-instructions",
+      "note": "Fetched 2026-08-20, HTTP 200. 22+ IFU and Processing Instruction PDFs in the served HTML, DE/EN/ES/FR/HR/IT/PL/SL/SV/TR/BG plus archived revisions. Filenames are IFU_ZP-{LANG}_{REV}.pdf -- ZP is a product-family code, not an article number, so one IFU covers a family across the 199 items; the trailing revision letter is a supersession signal. Assets are on cdn.prod.website-files.com (Webflow) with a 24-hex asset-id PREFIX that changes on re-upload, so a fetch ledger keyed on the full URL will re-fetch every revision as new -- the stable key is the trailing filename. RE-AUTHORED portal 2026-08-21: this is an HTML LISTING page, not a document. It was kind:\"direct\" while nothing read that key; the playbook DISCOVER rung now fetches direct sources, and FETCH has no content-type gate -- a listing page would be archived as an unreadable PDF and dead-end at EXTRACT silently. Turning it into documents is the crawl recipe (docs/superpowers/specs/2026-08-21-playbook-crawl-recipe-design.md)."
+    },
+    {
+      "doc_type": "EC",
+      "kind": "portal",
+      "url": "https://www.sun-dental.de/en/downloads",
+      "note": "Fetched 2026-08-20, HTTP 200. EU MDR certificate, EC certificate, ISO 13485 and environmental certificates, hrefs in the served HTML. Certificate-number family 50879-xx-xx-xx (MDR is 50879-60-00-00); the notified body was NOT identified and must not be inferred from that prefix. NO declaration of conformity is published -- certificates and IFUs only. The MDR certificate fetched is an image-only scan with no text layer. RE-AUTHORED portal 2026-08-21: this is an HTML LISTING page, not a document. It was kind:\"direct\" while nothing read that key; the playbook DISCOVER rung now fetches direct sources, and FETCH has no content-type gate -- a listing page would be archived as an unreadable PDF and dead-end at EXTRACT silently. Turning it into documents is the crawl recipe (docs/superpowers/specs/2026-08-21-playbook-crawl-recipe-design.md)."
+    }
+  ]
+}

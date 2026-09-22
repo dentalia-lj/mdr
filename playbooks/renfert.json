@@ -1,0 +1,29 @@
+{
+  "manufacturer": "RENFERT",
+  "aliases": [
+    "Renfert GmbH"
+  ],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "016"
+    }
+  ],
+  "domains": [
+    "renfert.com"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "DoC",
+      "kind": "portal",
+      "url": "https://www.renfert.com/en/downloads",
+      "note": "Fetched 2026-08-20, HTTP 200. Category dropdown names Declaration of conformity, Certificate, Instruction manual, Safety data sheet. Results render via JS -- no PDF hrefs in the served HTML, so this is a human/browser entry point, not a fetch target."
+    },
+    {
+      "doc_type": "DoC",
+      "kind": "direct",
+      "url": "https://www.renfert.com/en/content/download/17062/file/CONF_6100x000.pdf",
+      "note": "Fetched 2026-08-20, HTTP 200. 726 KB application/pdf, but no text layer recovered -- expect OCR. Reached from the SYMPRESS II product page, whose PDF hrefs ARE in the served HTML. Filename encodes the item-number family (items 61000000/61001000/61002000/61003000, variant digit masked as x). Instruction and repair manuals in the same tree are named by DOCUMENT number (211282, 216917), not item number -- do not read those as REFs. robots.txt sets Crawl-delay: 10 and disallows /*/products/replacementparts/."
+    }
+  ]
+}

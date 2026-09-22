@@ -1,0 +1,11 @@
+<!-- Tab icon: a document with a check, in the dentalia.si mint. Drawn rather
+     than derived from the logo PNG — a 16px downscale of the wordmark is an
+     unreadable smudge, and this has to be recognisable at tab size. SVG so it
+     stays sharp at every density and needs no raster variants. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Dentalia Compliance Registry">
+  <rect width="32" height="32" rx="7" fill="#56b088"/>
+  <path d="M10 7h8.5L23 11.5V25a1 1 0 0 1-1 1H10a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z" fill="#ffffff"/>
+  <path d="M18 7v4.5h4.5" fill="none" stroke="#c9e6d8" stroke-width="1.4" stroke-linejoin="round"/>
+  <path d="M12.5 18.5l2.5 2.5 5-5.5" fill="none" stroke="#56b088" stroke-width="2.6"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

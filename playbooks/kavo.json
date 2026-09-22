@@ -1,0 +1,23 @@
+{
+  "manufacturer": "KAVO DENTAL",
+  "aliases": [
+    "KaVo Dental GmbH"
+  ],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "011"
+    }
+  ],
+  "domains": [
+    "kavo.com"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "IFU",
+      "kind": "portal",
+      "url": "https://www.kavo.com/en/services/kavo-download-center?document_type=514",
+      "note": "ROBOTS-BLOCKED FOR OUR FETCHER. Denis's ruling 2026-08-20: reachable by a human, or by an independent Playwright session run deliberately outside the pipeline -- never by the automated fetcher. Authored as kind:\"portal\" precisely because DISCOVER only ever prefills a manual task from a portal source and never enqueues fetch.url for it. Discovery on kavo.com IS permitted and works: a browser renders the grid, and document_type=514 (Certificates) deep-links on a cold load, so no clicking is needed for the type axis. But the PDFs live on kavo.widen.net, whose robots.txt is `Disallow: /` for every agent except Twitterbot -- so the block lands on FETCH, the stage that would otherwise have been easy, and splitting discovery from fetching does not rescue it. NOT FETCHED. Asset URL shape is kavo.widen.net/content/{10-char id}/pdf/{filename}.pdf?u=pj169z; the u= key is byte-identical across every asset and no token exchange occurs, so the URLs are probably stable and plainly fetchable -- INFERRED, never verified. Filename convention {PREFIX}_{Subject}_{YYYYMMDD}_{rev}_{lang}.pdf with GA_ (IFU), CE_ (certificate), CS_ (conformity statement), BR_ (brochure). THE YIELD IS THE PROBLEM: \"Conformity Statements\" holds exactly ONE document site-wide and it is a VAH hygiene certificate, not a declaration; the 32 \"Certificates\" are all corporate/QMS (ISO 9001/13485/14001/50001, MDSAP, DEKRA). There are ZERO per-article MDR declarations here. The 7.271 IFUs are the only genuine per-product corpus, and a SKU/Part-number filter exists carrying KaVo material numbers in N.NNN.NNNN form -- a real mfr_ref axis, but it applies only via the AJAX body, not on cold load."
+    }
+  ]
+}

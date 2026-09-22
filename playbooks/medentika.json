@@ -1,0 +1,30 @@
+{
+  "manufacturer": "MEDENTIKA",
+  "aliases": [
+    "Medentika GmbH"
+  ],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "370"
+    }
+  ],
+  "domains": [
+    "cad.medentika.com",
+    "straumann.com/medentika"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "IFU",
+      "kind": "portal",
+      "url": "https://www.straumann.com/medentika/en/dental-professionals/downloads.html",
+      "note": "Checked 2026-08-20: HTTP 403, a WAF that serves robots.txt but blocks HTML (classic Akamai bot rule). CONTENTS UNVERIFIED. www.medentika.com 301-redirects into this Straumann path -- the brand site is fully absorbed. Straumann's robots.txt has no blanket /medentika/ rule and publishes a sitemap index, so the block is the WAF, not policy. A third host, medentika.de, appears in their contact address. Browser tier or manual."
+    },
+    {
+      "doc_type": "IFU",
+      "kind": "portal",
+      "url": "https://cad.medentika.com/en/downloads",
+      "note": "Fetched 2026-08-20, HTTP 200. States the libraries have MOVED to the Straumann website; carries a /en/register wall on parts of it. Its robots.txt explicitly disallows the IFU directory by name (/typo3conf/ext/bit_medentika/Resources/Public/Files/Ifu/, /fileadmin/MedentiCAD/), so a robots-respecting crawler is barred from the IFUs on this host regardless."
+    }
+  ]
+}

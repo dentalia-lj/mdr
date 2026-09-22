@@ -1,0 +1,85 @@
+{
+ "@odata.context": "http://bc.example.invalid:7048/BC-NAS/api/dentalia/api/v1.0/$metadata#companies(11111111-2222-3333-4444-555555555555)/dataitems",
+ "value": [
+  {
+   "@odata.etag": "W/\"c3ludGhldGljLWV0YWctMDAwMQ==\"",
+   "no": "0.900.0001",
+   "description": "HANDPIECE MOTOR, LED, WITH TUBING",
+   "pteValidDeclarationOfConformity": false,
+   "pteValidCECertificate": false,
+   "pteWarehouseURL": ""
+  },
+  {
+   "@odata.etag": "W/\"c3ludGhldGljLWV0YWctMDAwMg==\"",
+   "no": "0.900.0002",
+   "description": "SURGICAL CONSOLE",
+   "pteValidDeclarationOfConformity": false,
+   "pteValidCECertificate": false,
+   "pteWarehouseURL": ""
+  },
+  {
+   "@odata.etag": "W/\"c3ludGhldGljLWV0YWctMDAwMw==\"",
+   "no": "0.900.0003",
+   "description": "CEVKA ZA PREHOD VODE",
+   "pteValidDeclarationOfConformity": false,
+   "pteValidCECertificate": false,
+   "pteWarehouseURL": ""
+  },
+  {
+   "@odata.etag": "W/\"c3ludGhldGljLWV0YWctMDAwNA==\"",
+   "no": "0.900.0004",
+   "description": "SET CEVK ZA 3F PUSTER 10KOS",
+   "pteValidDeclarationOfConformity": false,
+   "pteValidCECertificate": false,
+   "pteWarehouseURL": ""
+  },
+  {
+   "@odata.etag": "W/\"c3ludGhldGljLWV0YWctMDAwNQ==\"",
+   "no": "0.900.0005",
+   "description": "PLOSCATO TESNILO",
+   "pteValidDeclarationOfConformity": false,
+   "pteValidCECertificate": false,
+   "pteWarehouseURL": ""
+  },
+  {
+   "@odata.etag": "W/\"c3ludGhldGljLWV0YWctMDAwNg==\"",
+   "no": "0.900.0006",
+   "description": "O-RING 2,5X1 5KOS",
+   "pteValidDeclarationOfConformity": false,
+   "pteValidCECertificate": false,
+   "pteWarehouseURL": ""
+  },
+  {
+   "@odata.etag": "W/\"c3ludGhldGljLWV0YWctMDAwNw==\"",
+   "no": "0.900.0006-R",
+   "description": "O-RING 2,5X1 1KOS",
+   "pteValidDeclarationOfConformity": false,
+   "pteValidCECertificate": false,
+   "pteWarehouseURL": ""
+  },
+  {
+   "@odata.etag": "W/\"c3ludGhldGljLWV0YWctMDAwOA==\"",
+   "no": "0.900.0007",
+   "description": "O-RING 900.0007",
+   "pteValidDeclarationOfConformity": false,
+   "pteValidCECertificate": false,
+   "pteWarehouseURL": ""
+  },
+  {
+   "@odata.etag": "W/\"c3ludGhldGljLWV0YWctMDAwOQ==\"",
+   "no": "0.900.0008",
+   "description": "O-RING 900.0008",
+   "pteValidDeclarationOfConformity": false,
+   "pteValidCECertificate": false,
+   "pteWarehouseURL": ""
+  },
+  {
+   "@odata.etag": "W/\"c3ludGhldGljLWV0YWctMDAxMA==\"",
+   "no": "0.900.0009",
+   "description": "POKROV ZA FILTER",
+   "pteValidDeclarationOfConformity": false,
+   "pteValidCECertificate": false,
+   "pteWarehouseURL": ""
+  }
+ ]
+}

@@ -1,0 +1,41 @@
+# Build context hygiene. Both images COPY only pyproject.toml, app/, web/,
+# migrations/, playbooks/ and tests/ -- but the context is the repo root, which
+# carries the 726 MB SFTP corpus and a 44 MB .git. Without this file every
+# `docker compose build` uploaded ~2 GB to the daemon before running a single
+# instruction (measured 2026-08-20 on a `build web` that was still streaming
+# context after several minutes).
+#
+# Keep in step with the COPY lines in Dockerfile / Dockerfile.web: this is a
+# deny list, so a NEW build input is included automatically and only needs
+# attention here if it lives under a path named below.
+
+# The document corpus and its outputs -- mounted at runtime, never baked in.
+imports/
+archive/
+analysis-out/
+# Database dumps written by scripts/deploy.sh.
+backups/
+
+# Secrets must never enter a build context, COPYed or not.
+.env
+.env.*
+!.env.example
+
+.git/
+.github/
+docs/
+tasks/
+*.md
+!README.md
+
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+
+*.log
+.claude/

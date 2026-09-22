@@ -1,0 +1,21 @@
+{
+  "manufacturer": "INTERDENT",
+  "aliases": [],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "043"
+    }
+  ],
+  "domains": [
+    "interdent.si"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "DoC",
+      "kind": "portal",
+      "url": "https://www.interdent.si/Download/",
+      "note": "Fetched 2026-08-20, HTTP 200. No login. Six categories including \"Izjave o skladnosti\" (50+ declarations) and \"Navodila za uporabo\" (70+ IFUs). Template https://www.interdent.si/f/docs/Download/{filename}.pdf, and the FILENAMES CARRY THE ARTICLE NUMBER (Interdent-Navodilo-2469-CCDiscZrHTMultilayer-2025-06-13-V38.pdf, IFU_3433_Interrock-New_08-2025.pdf, REF-3249_book_LC-Intertray_8.5.2026.pdf) -- the strongest filename-to-item signal found in the sweep. Found only via a Slovenian-language query; the English one missed this page entirely."
+    }
+  ]
+}

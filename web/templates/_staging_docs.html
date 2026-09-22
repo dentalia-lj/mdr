@@ -1,0 +1,119 @@
+{# One page of staged-document rows, grouped by manufacturer (office UI
+   redesign, spec § 6). A group header reads "⟨MANUFACTURER⟩ ⟨N⟩ documents",
+   N being the whole group under the current filter, not the part of it this
+   page shows; documents with no matched manufacturer come last under
+   "Manufacturer not known". Groups and rows run oldest first
+   (`_REVIEW_ORDER`). The reason chips filter on the server.
+
+   Three counts share this screen, and each says what it counts (spec rule 7,
+   fix round 2). The heading counts the WHOLE queue, filtered or not, and
+   labels itself "waiting in all" -- it is the number a reviewer watches go
+   down, so a chip must not move it. The group headers and the pager count
+   what the filter left, and a filter in force says so in one line above the
+   list rather than repeating itself on every group.
+
+   A row names the document before anything else ("⟨MANUFACTURER⟩ · ⟨type⟩
+   (⟨regulation⟩)"), then its file, dates and the plain reason it is waiting.
+   A collapsed row offers Open and nothing else (spec § 3, decision D5,
+   2026-09-11): the decisions live in the expanded panel, next to the
+   document, so nothing is approved or rejected from a summary line. "Open"
+   sits INSIDE the <summary>, in the gutter the row reserves on the right, so
+   it is the disclosure itself rather than a second control beside it.
+   Expanding fetches the body once -- hx-trigger="toggle once", native
+   disclosure, no JS -- and only that body holds the PDF, so this list loads
+   none. #}
+{% import "_pager.html" as pg %}
+
+<h2>Documents to review <span class="badge badge-pending">{{ queue_total | num }} waiting in all</span></h2>
+<p class="hint">
+  Each of these was found and read automatically, but something needs a person to
+  confirm before it counts. Open one to see the document beside what we read from it,
+  then approve or reject it.
+</p>
+
+<form class="filter-row" hx-get="/staging/docs"
+      hx-target="#staging-docs" hx-swap="innerHTML">
+  {# The chip in force travels with a search, so searching never quietly
+     widens the list back to every reason. #}
+  <input type="hidden" name="reason" value="{{ docs_reason }}">
+  <div class="field">
+    <label>Search</label>
+    <input type="text" name="q" value="{{ docs_q }}"
+           placeholder="manufacturer, filename, cert no, UDI, doc id">
+  </div>
+  <div class="field filter-actions">
+    <button type="submit">Filter</button>
+    <button type="button" class="btn-clear"
+            hx-get="/staging/docs{% if docs_reason %}?reason={{ docs_reason }}{% endif %}"
+            hx-target="#staging-docs" hx-swap="innerHTML">Clear</button>
+  </div>
+</form>
+
+{# Why a document is waiting, as one choice at a time (`REVIEW_REASON_CHIPS`).
+   The search in force travels with a chip, as the chip does with a search. #}
+<div class="reason-chips" role="group" aria-label="Show the documents waiting because">
+  {% for key, label in reason_chips %}
+  {%- set active = key == docs_reason %}
+  <button type="button" class="reason-chip{% if active %} is-active{% endif %}" aria-pressed="{{ 'true' if active else 'false' }}"
+          hx-get="/staging/docs?reason={{ key }}{% if docs_q %}&amp;q={{ docs_q|urlencode }}{% endif %}"
+          hx-target="#staging-docs" hx-swap="innerHTML">{{ label }}</button>
+  {%- endfor %}
+</div>
+
+{% if focus_missing_doc %}
+<p class="hint">Document #{{ focus_missing_doc }} is no longer awaiting review. It has
+  been approved, rejected or replaced since that link was made. Its record is on
+  <a href="/documents/{{ focus_missing_doc }}">its own page</a>.</p>
+{% endif %}
+
+{% if docs %}
+{% if docs_reason or docs_q %}
+{# What the filter left, said once. Without it the group headers and the pager
+   count one population while the heading counts another, and nothing on the
+   screen says which is which. #}
+<p class="hint">This filter leaves {{ docs_pager.total | num }} of the
+  {{ queue_total | num }} documents waiting for review. The counts below
+  count only these.</p>
+{% endif %}
+<div class="stage-list review-list">
+  {% set ns = namespace(group=none) %}
+  {% for d in docs %}
+  {% if loop.first or d.group_name != ns.group %}
+  {% set ns.group = d.group_name %}
+  <h3 class="review-group">
+    {{ d.group_name or "Manufacturer not known" }}
+    <span class="review-group-n">{{ d.group_total | num }} document{{ "" if d.group_total == 1 else "s" }}</span>
+    {%- if d.group_pos > 1 %} <span class="hint-inline">continued from the previous page</span>{% endif %}
+  </h3>
+  {% endif %}
+  {% set focus = focus_doc is not none and focus_doc == d.doc_id %}
+  <div class="stage-row{% if focus %} stage-row-focus{% endif %}" id="doc-{{ d.doc_id }}">
+    {# a row arrived at by deep link opens itself, and must therefore fetch its
+       own body: `toggle` only fires on a state CHANGE, so a server-rendered
+       `open` would leave it on "Loading…" forever. #}
+    <details class="stage-detail"{% if focus %} open{% endif %}
+             hx-get="/staging/{{ d.doc_id }}/detail"
+             hx-trigger="{% if focus %}load{% else %}toggle once{% endif %}"
+             hx-target="find .stage-body" hx-swap="innerHTML">
+      <summary>
+        <span class="c-toggle" aria-hidden="true"></span>
+        <span class="c-title">{{ d.title }}
+          {%- if d.title_from_document %} <span class="hint-inline">(as printed on the document)</span>{% endif %}
+          {%- if d.title_extra %} <span class="hint-inline">+{{ d.title_extra }} other manufacturer{{ '' if d.title_extra == 1 else 's' }} among its items</span>{% endif %}</span>
+        <span class="c-sub">{{ d.subline }}
+          {%- if d.validity_to and d.validity_to < today %} <span class="badge badge-rejected">expired {{ d.validity_to | day }}</span>{% endif %}</span>
+        <span class="row-reason">{{ d.reason }}</span>
+        <span class="c-open">Open</span>
+      </summary>
+      <div class="stage-body"><p class="hint">Loading…</p></div>
+    </details>
+  </div>
+  {% endfor %}
+</div>
+{% elif docs_reason or docs_q %}
+<p class="hint">No document waiting for review matches this filter.</p>
+{% else %}
+<p class="hint">Nothing to review right now.</p>
+{% endif %}
+
+{{ pg.pager(docs_pager, "/staging/docs", "#staging-docs", q=docs_q, params=docs_pager_params) }}

@@ -1,0 +1,333 @@
+{# Expanded body of one document row, written for the compliance reviewer
+   rather than the pipeline team (office UI redesign, spec § 6). Two columns:
+   the document itself on the left, what we read from it and what approving
+   does on the right, so the reviewer compares the page with the facts without
+   leaving the row. Everything engineer-facing is folded into "Technical
+   details" at the bottom — hidden, never removed.
+
+   The PDF is an <iframe> of `/documents/{id}/file`, drawn by the browser's own
+   viewer: no server-side rendering, and `Dockerfile.web` stays slim with no
+   PyMuPDF. It exists only here, in the opened panel, so the list itself loads
+   no PDF bytes; the file route answers with a long private cache, so opening
+   the same row again reads it from the browser. `loading="lazy"` adds nothing
+   for a frame that is visible on arrival and is there for the rare panel
+   opened below the fold. #}
+{% import "_staging_decide.html" as dec %}
+{% set doc_id = row.doc.doc_id %}
+{# `gate.apply`'s bind path drops edits (controller ruling, 2026-09-11), so a
+   whole-range approval offers no corrections at all rather than taking one and
+   losing it. Every other approval keeps them. #}
+{% set offer_corrections = not row.is_mfr_binding %}
+{% set expired = row.doc.validity_to and row.doc.validity_to < today %}
+
+{# The first `shown` items by number and name, then the rest folded under
+   "+ K more" (spec § 6). Plain disclosure, no JS. #}
+{% macro item_list(links, shown) %}
+<ul class="approve-items">
+  {% for lnk in links[:shown] %}
+  <li><a href="/items/{{ lnk.item_ref }}">{{ lnk.item_ref }}</a> · {{ lnk.name or "no name in Business Central" }}</li>
+  {% endfor %}
+</ul>
+{%- if links|length > shown %}
+<details class="more-items">
+  <summary>+ {{ (links|length - shown) | num }} more</summary>
+  <ul class="approve-items">
+    {% for lnk in links[shown:] %}
+    <li><a href="/items/{{ lnk.item_ref }}">{{ lnk.item_ref }}</a> · {{ lnk.name or "no name in Business Central" }}</li>
+    {% endfor %}
+  </ul>
+</details>
+{%- endif %}
+{% endmacro %}
+
+<div class="review-panel">
+  <div class="review-pdf">
+    <iframe class="review-pdf-frame" src="/documents/{{ doc_id }}/file#page=1&amp;view=FitH"
+            title="Page 1 of the document" loading="lazy"></iframe>
+    <p class="review-pdf-links">
+      <a href="/documents/{{ doc_id }}/file" target="_blank" rel="noopener">Open full size ↗</a>
+      <a class="btn-clear" href="/documents/{{ doc_id }}">Full record</a>
+    </p>
+  </div>
+
+  <div class="review-side">
+    {# The facts in plain words (spec § 6). The manufacturer is the one the
+       document prints: the row above already names the one it is filed under.
+       A missing date is "Not stated" and nothing more, never a guess. #}
+    <dl class="facts review-facts">
+      <dt>Manufacturer</dt>
+      <dd>{% if row.printed_manufacturer %}{{ row.printed_manufacturer }}
+          <span class="hint">as printed on the document</span>
+          {%- else %}Not stated{% endif %}</dd>
+      <dt>Rules</dt><dd>{{ row.regulation_words }}</dd>
+      <dt>Issued</dt><dd>{{ row.doc.validity_from | day if row.doc.validity_from else "Not stated" }}</dd>
+      <dt>Valid until</dt>
+      <dd>{% if row.doc.validity_to %}{{ row.doc.validity_to | day }}
+          {%- if expired %} <span class="badge badge-rejected">expired</span>{% endif %}
+          {%- else %}Not stated{% endif %}</dd>
+      <dt>Basic UDI-DI</dt><dd>{{ row.doc.basic_udi_di or "Not stated" }}</dd>
+      {% if row.doc.cert_number %}<dt>Certificate no.</dt><dd>{{ row.doc.cert_number }}</dd>{% endif %}
+    </dl>
+
+    <p class="why"><strong>Why it needs you:</strong> {{ row.reason }}</p>
+
+    {# Above the buttons: what approving makes the document count for. Only
+       what an approval actually publishes is promised (`row.approve_links`);
+       a link it leaves staged is listed apart, with what happens to it. #}
+    <section class="approve-scope">
+    {% if row.is_mfr_binding %}
+      {% if row.manufacturer_confirmed and row.bind_items is defined and row.bind_items is not none %}
+      {# Three counts, three sentences. A count of 0 cannot reach here today --
+         `_mfr_bind_target` answers None on it and the picker takes over -- but
+         the branch exists so this can never read "for all 0 X items" over a
+         hint about every X device item if that guard ever moves. #}
+      {% if row.bind_items == 0 %}
+      <p class="approve-line">Approving records the supplier, but it counts for no
+        items yet.</p>
+      <p class="hint">Business Central marks no {{ row.manufacturer_confirmed }} item as a
+        medical device. They start counting it once someone fills that in.</p>
+      {% else %}
+      <p class="approve-line">Approving makes it count for
+        {% if row.bind_items == 1 %}the one {{ row.manufacturer_confirmed }} item
+        {%- else %}all {{ row.bind_items | num }} {{ row.manufacturer_confirmed }} items{% endif %}</p>
+      <p class="hint">Every {{ row.manufacturer_confirmed }} item Business Central marks as a
+        medical device.</p>
+      {% endif %}
+      {% endif %}
+      {# Without a confirmed manufacturer the picker below says what approving
+         does for the one chosen; a count here could not follow the choice. #}
+    {% elif row.approve_links %}
+      {% set n = row.approve_links|length %}
+      <p class="approve-line">Approving makes it count for
+        {% if n == 1 %}this item{% else %}these {{ n | num }} items{% endif %}</p>
+      {{ item_list(row.approve_links, items_shown) }}
+      <p class="hint">Matched through {{ row.approve_basis }}.</p>
+      {% if row.held_links %}
+      {% set c = row.held_links|length %}
+      <p>It is also linked to {{ c | num }} more item{{ "" if c == 1 else "s" }} only by
+        {{ row.held_basis }}. Approving does not make it count for
+        {{ "that one" if c == 1 else "those" }}: confirm each one afterwards under
+        <a href="#staged-links">Links waiting for review on published documents</a>.</p>
+      {{ item_list(row.held_links, items_shown) }}
+      {% endif %}
+    {% elif row.held_links %}
+      {% set c = row.held_links|length %}
+      <p class="approve-line">Approving publishes it, but it will not count for any item yet.</p>
+      <p>It is linked to {% if c == 1 %}this item{% else %}these {{ c | num }} items{% endif %}
+        only by {{ row.held_basis }}, which is not enough on its own. After you approve,
+        confirm each one under <a href="#staged-links">Links waiting for review on published documents</a>.</p>
+      {{ item_list(row.held_links, items_shown) }}
+    {% else %}
+      <p class="approve-line">Nothing links it to an item yet, so approving it makes it count for no items.</p>
+    {% endif %}
+    </section>
+
+    {# The correction fields' own form (fix round 1, F2, 2026-09-11). They are
+       drawn inside the decision form below but belong to this one through their
+       `form` attribute, because pressing Enter in a text or date field clicks the
+       first submit button of the form the field belongs to, and in the decision
+       form that is Approve: Enter in "Certificate no." approved the document.
+       This form has no submit button and three text/date fields, and the HTML
+       spec's implicit submission does nothing in that case; `onsubmit` is the
+       belt to that brace. The decision form still sends the fields, through
+       `hx-include`. Empty on purpose: a form cannot nest inside a form. #}
+    {% if offer_corrections %}
+    <form id="corrections-{{ doc_id }}" class="corrections-form" onsubmit="return false;"></form>
+    {% endif %}
+
+    <form hx-post="/staging/{{ doc_id }}/apply"
+          hx-target="closest .stage-row" hx-swap="outerHTML"
+          {%- if offer_corrections %} hx-include="#corrections-{{ doc_id }}"{% endif %}>
+      {% if offer_corrections %}
+      {# Baseline of what this form was rendered with. The route compares against
+         it and sends only genuinely changed fields, so approving without touching
+         anything never writes human (T3) evidence over a machine extraction. #}
+      <input type="hidden" name="edit_baseline" value='{{ {
+        "type": row.doc.type, "regulation": row.doc.regulation,
+        "validity_from": row.doc.validity_from|string if row.doc.validity_from else "",
+        "validity_to": row.doc.validity_to|string if row.doc.validity_to else "",
+        "cert_number": row.doc.cert_number or ""
+      }|tojson }}'>
+      {% endif %}
+
+      {# `group_id` is the reject's retry hint, so it rides in the reject form
+         below, not here: no other decision reads it. #}
+      {% if row.is_mfr_binding and row.manufacturer_confirmed %}
+      <input type="hidden" name="manufacturer" value="{{ row.manufacturer_confirmed }}">
+      {% endif %}
+
+      {# The binding candidate the catalogue could not name. The document covers a
+         manufacturer's whole range, so there are no item links to derive the name
+         from, and without a name the approval is refused. Ask for it here, next to
+         the document, rather than leaving the reviewer with a dead button. #}
+      {% if row.is_mfr_binding and not row.manufacturer_confirmed %}
+      <div class="mfr-bind">
+        <label for="mfr-{{ doc_id }}">Which manufacturer does this cover?</label>
+        {% if row.mfr_suggestion %}
+        {% set s = row.mfr_suggestion %}
+        <p class="hint">
+          The document names <strong>{{ s.raw }}</strong> as its manufacturer,
+          {%- if s.preselect and s.same_spelling %}
+          which is the catalogue entity preselected below. Check it against the document
+          before approving.
+          {%- elif s.preselect %}
+          which resolves to the catalogue entity <strong>{{ s.preselect }}</strong>, preselected
+          below. Check it against the document before approving.
+          {%- elif s.canonicals %}
+          which matches {{ s.canonicals|length }} catalogue entities
+          ({{ s.canonicals|join(", ") }}), so choosing between them is yours, not ours.
+          {%- else %}
+          which no catalogue entity is spelled like. Pick the one it belongs to.
+          {%- endif %}
+        </p>
+        {% else %}
+        <p class="hint">Nothing in the extracted evidence names a manufacturer, so read the
+          document and pick the one it belongs to.</p>
+        {% endif %}
+        <select id="mfr-{{ doc_id }}" name="manufacturer" data-mfr-picker>
+          <option value="">(choose a manufacturer)</option>
+          {% for opt in row.mfr_options %}
+          <option value="{{ opt.canonical_name }}" data-items="{{ opt.md_items }}"
+                  data-search="{{ opt.canonical_name }}"
+                  {{ "selected" if row.mfr_suggestion and row.mfr_suggestion.preselect == opt.canonical_name }}>
+            {{ opt.canonical_name }} ({{ opt.md_items | num }} medical-device
+            item{{ "" if opt.md_items == 1 else "s" }})
+          </option>
+          {% endfor %}
+        </select>
+        {#- "items", not "products": § 9's word list has one word for a thing in
+            the catalogue, and the button two lines down already uses it. -#}
+        <p class="hint">Approving links this document to every medical-device item of the
+          manufacturer you choose, and records the manufacturer either way. A count of nought
+          means Business Central has no device class on record for anything we hold from them
+          (<a href="/data-quality?kind=md_class_blank">md_class_blank</a>): the binding is still
+          kept, and the item links follow once that class is filled in.</p>
+      </div>
+      {% endif %}
+
+      {# Optional and collapsed, so it sits directly above the bar rather than in
+         it: opening it pushes the decision down instead of rearranging the row of
+         buttons. The labels are the facts' own words. #}
+      {% if offer_corrections %}
+      <details class="corrections">
+        <summary>Correct a fact first</summary>
+        <p class="hint">Change only what is wrong on the document. Your corrections are saved
+          when you approve; anything you leave alone stays as it was read.</p>
+        <div class="field-grid">
+          {% set owner = "corrections-" ~ doc_id %}
+          <div class="field">
+            <label>Document type</label>
+            <select name="edit_type" form="{{ owner }}">
+              {% for value, label in type_choices %}
+              <option value="{{ value }}" {{ "selected" if row.doc.type == value }}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label>Rules</label>
+            <select name="edit_regulation" form="{{ owner }}">
+              {% for value, label in regulation_choices %}
+              <option value="{{ value }}" {{ "selected" if row.doc.regulation == value }}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label>Issued</label>
+            <input type="date" name="edit_validity_from" form="{{ owner }}" value="{{ row.doc.validity_from or '' }}">
+          </div>
+          <div class="field">
+            <label>Valid until</label>
+            <input type="date" name="edit_validity_to" form="{{ owner }}" value="{{ row.doc.validity_to or '' }}">
+          </div>
+          <div class="field">
+            <label>Certificate no.</label>
+            <input type="text" name="edit_cert_number" form="{{ owner }}" value="{{ row.doc.cert_number or '' }}">
+          </div>
+        </div>
+      </details>
+      {% endif %}
+
+      <div class="panel-actions">
+        {{ dec.buttons(doc_id, row.is_mfr_binding, row.manufacturer_confirmed,
+                       bind_items=(row.bind_items if row.bind_items is defined else none),
+                       has_picker=row.mfr_options is defined and row.mfr_options|length > 0,
+                       preselect=(row.mfr_suggestion.preselect if row.mfr_suggestion else none),
+                       preselect_items=(row.mfr_suggestion.preselect_items if row.mfr_suggestion else none),
+                       approve_count=row.approve_links|length) }}
+      </div>
+    </form>
+
+    {# Where a whole-range approval asks its question (`staging_apply`, two-step).
+       The button above targets it as `next .bind-confirm`, and the confirm form
+       and its Cancel address it by this id (`confirm_target`). It sits beside
+       the decision form, in the same parent, which is where base.html's picker
+       handler and Reject… look. #}
+    {% if row.is_mfr_binding %}
+    <div class="bind-confirm" id="bind-confirm-{{ doc_id }}"></div>
+    {% endif %}
+
+    {{ dec.reject_form(doc_id, reject_reasons, reject_note_max,
+                       group_id=(row.task.group_id if row.task else none)) }}
+  </div>
+</div>
+
+<details class="technical">
+  <summary>Technical details</summary>
+
+  <h4>Evidence</h4>
+  {% if row.evidence %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Field</th><th>Value</th><th>Tier</th><th>Model</th><th>Confidence</th><th>Page</th><th>Verbatim</th></tr></thead>
+    <tbody>
+      {% for ev in row.evidence %}
+      <tr>
+        <td>{{ ev.field }}</td><td>{{ ev.value }}</td><td>{{ ev.tier }}</td>
+        <td>{{ ev.model_id or "—" }}</td><td>{{ ev.confidence }}</td>
+        <td>{{ ev.page or "—" }}</td><td>{{ ev.verbatim }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="hint">No evidence recorded.</p>
+  {% endif %}
+
+  <h4>Links</h4>
+  {% if row.links %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Item ref</th><th>Match basis</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for lnk in row.links %}
+      <tr><td>{{ lnk.item_ref }}</td><td>{{ lnk.match_basis }}</td>
+        <td><span class="badge badge-{{ 'done' if lnk.status == 'production' else 'pending' }}">{{ lnk.status }}</span></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="hint">No item links.</p>
+  {% endif %}
+
+  <h4>Record</h4>
+  <table>
+    <tbody>
+      <tr><th>Doc id</th><td>{{ row.doc.doc_id }}</td></tr>
+      <tr><th>Type</th><td>{{ row.type_label }}</td></tr>
+      <tr><th>Coverage scope</th><td>{{ row.doc.coverage_scope }}</td></tr>
+      <tr><th>Basic UDI-DI</th><td>{{ row.doc.basic_udi_di or "—" }}</td></tr>
+      <tr><th>Content hash</th><td>{{ row.doc.content_hash }}</td></tr>
+      <tr><th>Source</th><td>{{ row.doc.source_url or "—" }}</td></tr>
+      <tr><th>Archive URL</th><td>{{ row.doc.archive_url }}</td></tr>
+      <tr><th>Flags</th><td>{{ row.flags|join(", ") if row.flags else "none" }}</td></tr>
+      {% if row.task %}<tr><th>Manual task</th><td>#{{ row.task.id }} ({{ row.task.kind }}){% if row.task.group_id %}, group {{ row.task.group_id }}{% endif %}</td></tr>{% endif %}
+    </tbody>
+  </table>
+
+  {% if row.tier_attempts_pretty %}
+  <h4>Extraction attempts</h4>
+  <pre class="payload">{{ row.tier_attempts_pretty }}</pre>
+  {% endif %}
+</details>

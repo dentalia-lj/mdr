@@ -1,0 +1,38 @@
+{
+  "manufacturer": "DENTSPLY",
+  "aliases": [
+    "DENSTPLY",
+    "Dentsply DeTrey GmbH",
+    "DENTSPLY Implants Manufacturing GmbH",
+    "DENTSPLY Implants N.V.",
+    "Dentsply Industria e Comercio Ltda.",
+    "Dentsply Indústria e Comércio Ltda.",
+    "Dentsply LLC",
+    "DENTSPLY IH Inc.",
+    "DeguDent GmbH",
+    "Dentsply Tulsa Dental Specialties"
+  ],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "035"
+    }
+  ],
+  "domains": [
+    "dentsplysirona.com"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "DoC",
+      "kind": "portal",
+      "url": "https://www.dentsplysirona.com/en-si/customer-support/download-center.html?downloadfilter=offset%3D2%26pageSize%3D20%26sort%3Ddate-desc%26filterTag%3Dasset-type%3Adocuments%2Fdeclaration-of-conformity%26filterTag%3Dlanguage%3Aen",
+      "note": "Filtered download-center query for DoC PDFs, sourced from imports/dentalia-sftp/DENSTPLY/DOWNLOADS DENTSPLY SIRONA.docx (see docs/dentalia-imports-corpus-analysis.md §8)."
+    }
+  ],
+  "match": {
+    "anchors": [
+      "dentsply"
+    ]
+  },
+  "ref_strategy": "table"
+}

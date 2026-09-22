@@ -1,0 +1,25 @@
+{
+  "manufacturer": "CATTANI",
+  "bc_codes": [
+    {
+      "code": "087"
+    }
+  ],
+  "domains": [
+    "cattani.it"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "DoC",
+      "kind": "portal",
+      "url": "https://www.cattani.it/en/download-area/",
+      "note": "The client sent only the root domain (http://www.cattani.it) with a message asking whether the documents were found there. Fetched 2026-08-27: the root is HTTP 200 and does link both this download area and /certificazioni/, robots ALLOW on all three. This page is 148.530 B and links exactly 2 PDFs, both privacy notices -- the actual documents are not in the served HTML, so a plain GET discovers nothing and this stays portal. Italian sibling of this URL is /area-download/. BC code `087` comes from the vendor master (`Proizvajalci.xlsx`, 2026-08-05) and carries **0 catalogue items** as of 2026-08-27 -- the sweep's older \"CATTANI claims DURR's 10015\" reading was a text-frequency artefact. So this playbook joins to the master but to no items yet; it is authored now so the entry points are on record when BC stocks any."
+    },
+    {
+      "doc_type": "EC",
+      "kind": "portal",
+      "url": "https://www.cattani.it/certificazioni/",
+      "note": "Fetched 2026-08-27, HTTP 200, robots ALLOW, 101.358 B, 2 PDF hrefs (privacy notices again, not certificates). Authored so the certificates page is on record as the right entry point rather than being re-derived from the bare root each time."
+    }
+  ]
+}

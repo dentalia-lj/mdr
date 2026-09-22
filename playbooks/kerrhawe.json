@@ -1,0 +1,22 @@
+{
+  "manufacturer": "KERRHAWE",
+  "aliases": [
+    "KERR"
+  ],
+  "bc_codes": [
+    {
+      "code": "021"
+    }
+  ],
+  "domains": [
+    "kerrdental.com"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "DoC",
+      "kind": "portal",
+      "url": "https://www.kerrdental.com/en-eu/download-center?f%5B0%5D=field_resource_document_type%3A629",
+      "note": "Client hand-off URL, already filtered to document-type ID 629. Fetched 2026-08-27: robots.txt ALLOWS the path, but the response is a 3.038 B F5 \"Client Challenge\" JavaScript bot-wall -- HTTP 200 with no content, 2 hrefs, 0 PDFs. The target shape is right and the page is technically unfetchable by anything that does not execute JS. This is a bot-wall, NOT a robots refusal, so kerrdental.com is deliberately NOT in robots_refused.txt: that file carries operator rulings, and adding a host to it is Denis's call, not an inference from a challenge page. Portal is both honest and sufficient -- a human clicks through the challenge; the fetcher never tries."
+    }
+  ]
+}

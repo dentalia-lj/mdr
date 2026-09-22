@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dentalia Pipeline: Flow &amp; State Map</title>
+<style>
+  /* Brand: shop.dentalia.si, tokens verified live 2026-07-24.
+     Cyan #2CA0C7 (buttons/menu/eyebrows), body #46565C, headings #333,
+     surfaces #E9F5F9 / #D6ECF4, tile greens #7FCBAE / #B6DDB6, yellow #F1D600.
+     Fonts: the shop's Centrale Sans Rounded where the reader has it,
+     otherwise the fallback stack below. */
+  :root {
+    --paper: #ffffff;
+    --surface: #f0f8fb;
+    --surface-2: #d6ecf4;
+    --ink: #333333;
+    --muted: #46565c;
+    --border: #c9e2ec;
+    --accent: #2ca0c7;
+    --accent-ink: #1d7d9e;
+    --live: #2f8f6b;
+    --live-bg: #e2f3ec;
+    --gated: #8f7500;
+    --gated-bg: #faf5d2;
+    --hole: #c24438;
+    --hole-bg: #f9e8e5;
+    --noop: #6e7e85;
+    --noop-bg: #edf2f4;
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+    --heading: "Centrale Sans Rounded", "Trebuchet MS", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --body: "Centrale Sans Rounded", "Trebuchet MS", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0e1a20; --surface: #14242c; --surface-2: #1a2f3a;
+      --ink: #dce9ee; --muted: #8fa6b0; --border: #29414d;
+      --accent: #4fb8da; --accent-ink: #7ccbe6;
+      --live: #57bd93; --live-bg: #133228;
+      --gated: #d9c235; --gated-bg: #322c0c;
+      --hole: #e06256; --hole-bg: #3a1f1b;
+      --noop: #8a99a0; --noop-bg: #1e2c33;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0e1a20; --surface: #14242c; --surface-2: #1a2f3a;
+    --ink: #dce9ee; --muted: #8fa6b0; --border: #29414d;
+    --accent: #4fb8da; --accent-ink: #7ccbe6;
+    --live: #57bd93; --live-bg: #133228;
+    --gated: #d9c235; --gated-bg: #322c0c;
+    --hole: #e06256; --hole-bg: #3a1f1b;
+    --noop: #8a99a0; --noop-bg: #1e2c33;
+  }
+  :root[data-theme="light"] {
+    --paper: #ffffff; --surface: #f0f8fb; --surface-2: #d6ecf4;
+    --ink: #333333; --muted: #46565c; --border: #c9e2ec;
+    --accent: #2ca0c7; --accent-ink: #1d7d9e;
+    --live: #2f8f6b; --live-bg: #e2f3ec;
+    --gated: #8f7500; --gated-bg: #faf5d2;
+    --hole: #c24438; --hole-bg: #f9e8e5;
+    --noop: #6e7e85; --noop-bg: #edf2f4;
+  }
+  body {
+    background: var(--paper); color: var(--muted);
+    font-family: var(--body); font-weight: 300; font-size: 15.5px; line-height: 1.55;
+    margin: 0; padding: 2.5rem 1.25rem 5rem;
+  }
+  b, strong, th, .k { font-weight: 600; }
+  main { max-width: 1080px; margin: 0 auto; }
+  h1, h2, h3 { font-family: var(--heading); font-weight: 600; color: var(--ink); text-wrap: balance; }
+  h1 { font-size: 1.8rem; margin: 0 0 .3rem; }
+  h2 { font-size: 1.25rem; margin: 0 0 .9rem; padding-top: 2.6rem; border-top: 1px solid var(--border); }
+  h2 .sec { color: var(--muted); font-weight: 500; margin-right: .5rem; }
+  h3 { font-size: 1.02rem; margin: 0; }
+  a { color: var(--accent-ink); }
+  code, .k { font-family: var(--mono); font-size: .84em; background: var(--surface-2); border-radius: 4px; padding: .08em .35em; white-space: nowrap; }
+  .sub { color: var(--muted); margin: 0 0 1.4rem; max-width: 62ch; }
+  .chips { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1.1rem 0 0; }
+  .chip { font-family: var(--heading); font-size: .78rem; font-weight: 600; padding: .3rem .7rem; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); }
+  .chip b { font-variant-numeric: tabular-nums; }
+  .chip.live { color: var(--live); border-color: var(--live); background: var(--live-bg); }
+  .chip.gated { color: var(--gated); border-color: var(--gated); background: var(--gated-bg); }
+  .chip.hole { color: var(--hole); border-color: var(--hole); background: var(--hole-bg); }
+  .chip.noop { color: var(--noop); border-color: var(--noop); background: var(--noop-bg); }
+  .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .6rem; margin: 0 0 .5rem; }
+  .legend div { display: flex; gap: .55rem; align-items: baseline; font-size: .86rem; }
+  .dot { width: .72rem; height: .72rem; border-radius: 3px; flex: none; position: relative; top: .07rem; }
+  .dot.live { background: var(--live); } .dot.gated { background: var(--gated); }
+  .dot.hole { background: var(--hole); } .dot.noop { background: var(--noop); }
+  .diagram { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: .75rem; overflow-x: auto; }
+  .card { border: 1px solid var(--border); border-left: 5px solid var(--live); border-radius: 10px; background: var(--surface); padding: 1rem 1.15rem 1.1rem; margin: 0 0 1.15rem; }
+  .card.gated { border-left-color: var(--gated); }
+  .card.hole { border-left-color: var(--hole); }
+  .card.noop { border-left-color: var(--noop); }
+  .card header { display: flex; flex-wrap: wrap; align-items: baseline; gap: .6rem .9rem; margin-bottom: .55rem; }
+  .pill { font-family: var(--heading); font-size: .68rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; padding: .18rem .55rem; border-radius: 999px; }
+  .pill.live { color: #fff; background: var(--live); }
+  .pill.gated { color: #3a3200; background: #f1d600; }
+  .pill.hole { color: #fff; background: var(--hole); }
+  .pill.noop { color: #fff; background: var(--noop); }
+  .meta { font-size: .82rem; color: var(--muted); }
+  .meta code { background: var(--surface-2); }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .875rem; margin: .5rem 0 .2rem; }
+  th { font-family: var(--heading); font-size: .69rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); text-align: left; padding: .38rem .65rem; border-bottom: 2px solid var(--border); }
+  td { padding: .42rem .65rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td.st { white-space: nowrap; font-family: var(--heading); font-size: .72rem; font-weight: 600; }
+  .s-live { color: var(--live); } .s-gated { color: var(--gated); }
+  .s-hole { color: var(--hole); } .s-noop { color: var(--noop); }
+  .notes { margin: .55rem 0 0; padding-left: 1.15rem; font-size: .85rem; color: var(--muted); }
+  .notes li { margin: .18rem 0; }
+  .notes .warn { color: var(--gated); font-weight: 600; }
+  .notes .bad { color: var(--hole); font-weight: 600; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 1rem; }
+  .caption { font-size: .82rem; color: var(--muted); margin: .45rem 0 0; }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); font-size: .82rem; color: var(--muted); }
+  @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+  pre.mermaid { font-family: var(--mono); font-size: .78rem; line-height: 1.4; margin: 0; }
+</style>
+</head>
+<body>
+<main>
+<h1>Dentalia pipeline: flow &amp; state map</h1>
+<p class="sub">As-built truth, 2026-07-24. Verified against the working tree (master as it stood that day, plus the drift-check C3 fix), not against the design docs. Test suite: 586 passed / 1 skipped.</p>
+
+<div class="chips">
+  <span class="chip live"><b>10</b> live handler tags</span>
+  <span class="chip noop"><b>5</b> enum tags on no-op</span>
+  <span class="chip gated"><b>4</b> seams/hooks not wired</span>
+  <span class="chip gated"><b>3</b> dormant branches</span>
+  <span class="chip hole"><b>4</b> open holes</span>
+</div>
+
+<h2><span class="sec">0</span>Legend</h2>
+<div class="legend">
+  <div><span class="dot live"></span><span><b>Live</b>: implemented, table-driven tests, on the proven path</span></div>
+  <div><span class="dot gated"></span><span><b>Gated / dormant</b>: code exists but a config flag, missing data, or an unwired seam keeps it from acting</span></div>
+  <div><span class="dot hole"></span><span><b>Hole</b>: known defect or contract risk, tracked in <code>tasks/followups.md</code></span></div>
+  <div><span class="dot noop"></span><span><b>Not built</b>: enum tag exists, handler is the logging no-op (Phase 2 scope)</span></div>
+</div>
+
+<h2><span class="sec">1</span>The spine, end to end</h2>
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  BC[("BC export<br/>(xlsx)")]:::ext --> ING
+  CLI["Operator CLI"]:::ext --> ING
+  WEB["Review UI<br/>(Caddy + Basic auth)"]:::ext -->|POST /ingest| ING
+  CORPUS[("Drive corpus")]:::ext --> BF["backfill.scan"]:::live
+
+  SCH["SCHEDULER<br/>(compose profile 'full')"]:::gated -.->|watch-dir unset| ING
+  SCH --> RW["report.weekly"]:::live
+  SCH -.->|flag off| ER["email.request"]:::noop
+  SCH -.->|flag off| PR["playbook.reonboard"]:::noop
+
+  ING["ingest.run"]:::live -->|per changed MD item| RES["resolve.group"]:::live
+  RES -->|group lacks doc/candidate| DIS["discover.group"]:::live
+  RES -.->|ambiguous name| GS["grouping_suggestion<br/>(staging)"]:::gated
+  DIS -->|top-k URLs| FET["fetch.url"]:::live
+  DIS -.->|dead end| MT["manual_task"]:::live
+  DIS -.->|contacts known| ER
+  FET -->|new hash| EXT["extract.doc"]:::live
+  FET -->|same hash / recency, C3| VAL
+  FET --> ARCH[("hash archive<br/>local live, gdrive raises")]:::hole
+  BF -->|new hash| EXT
+  EXT --> VAL["validate.doc"]:::live
+  VAL --> GC["gate.candidate"]:::live
+  GC --> REG[("registry:<br/>document + item_document + evidence")]:::live
+  GC -.->|manual| MT
+  WEB -->|approve / reject / bind| GA["gate.apply"]:::live
+  GA --> REG
+  GA -.->|reject, interactive| DIS
+  WEB -.->|assign / new group| RES
+  WEB -.->|dead-end resolve| DIS
+  WEB -.->|dead-job re-run| ANY(["any dead job"]):::ext
+
+  classDef live fill:#2f8f6b,color:#ffffff,stroke:#226b50
+  classDef gated fill:#f1d600,color:#3a3200,stroke:#8f7500
+  classDef hole fill:#c24438,color:#ffffff,stroke:#8f2f26
+  classDef noop fill:#6e7e85,color:#ffffff,stroke:#4d5b61
+  classDef ext fill:transparent,color:#6e7e85,stroke:#6e7e85,stroke-dasharray:4 3
+</pre>
+</div>
+<p class="caption">Solid arrows: the normal chain. Dashed: conditional or human-mediated. Every enqueue goes through <code>app/queue.py</code>; the topology is the enqueue graph, no stage calls another directly.</p>
+
+<h2><span class="sec">2</span>Every stage, every outcome</h2>
+
+<div class="card">
+<header><h3>ingest.run</h3><span class="pill live">live</span>
+<span class="meta">payload <code>{source: csv|bc_odata, ref, catalogue}</code> · dedupe <code>ingest:{cat}:{src}:{ref}</code> (UI) / <code>ingest.run:{cat}:{period}</code> (scheduler)</span></header>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Emits</th><th>Status</th></tr>
+<tr><td>Unparseable file / auth failure</td><td>job failed, backoff, then dead</td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>Row missing <code>item_ref</code></td><td><code>skipped</code> count + bounded sample, never silent</td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>Explicit non-MD (<code>NI MP</code>)</td><td>dropped, counted <code>non_md</code></td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>Blank device class (61% of LJ)</td><td>processed by default (<code>Ingest.process_md_unknown</code>), counted <code>md_unknown</code></td><td>as changed row</td><td class="st s-gated">policy open</td></tr>
+<tr><td>New or changed MD row</td><td><code>item_mirror</code> upsert, <code>mirror_rev</code> from sequence</td><td><code>resolve.group</code> per item, priority inherited</td><td class="st s-live">live</td></tr>
+<tr><td>Unchanged row</td><td>counted, nothing written</td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>Mirrored item declassified to non-MD</td><td>upsert to <code>md_flag=false</code>, counted <code>reclassified_non_md</code></td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td><code>bc_odata</code> source</td><td><code>BcApiAdapter.read()</code> raises without injected records</td><td>n/a</td><td class="st s-noop">v2 stub</td></tr>
+</table></div>
+<ul class="notes">
+<li>Proven live on the real 19,091-row LJ export; second cycle emitted 0 (two-cycle cheapness).</li>
+<li><span class="warn">Open:</span> <code>mfr_ref</code> per-supplier map is empty (G4); missing_mfr_ref is ~44% of processed items and bounds AC1.</li>
+<li><span class="warn">Open:</span> md-unknown default-on sends 11,693 unclassified items toward real fetch/extract spend from S1.7; needs sign-off.</li>
+<li>ZG scale (~100k rows): current per-row single-transaction loop flagged for a set-based rewrite before S2.5.</li>
+</ul>
+</div>
+
+<div class="card gated">
+<header><h3>resolve.group</h3><span class="pill live">live</span><span class="pill gated">2 dormant rungs, T1 seam unwired</span>
+<span class="meta">payload <code>{item_ref}</code> (+<code>group_id</code> forced, +<code>force_new_group</code>) · dedupe <code>resolve:{item_ref}:{rev}</code> / <code>resolve:manual:{item_ref}:{gid|new}</code></span></header>
+<div class="tablewrap"><table>
+<tr><th>Ladder rung (stop at first hit)</th><th>Outcome</th><th>Status</th></tr>
+<tr><td>Existing group link</td><td>keep group, original basis preserved</td><td class="st s-live">live</td></tr>
+<tr><td>UDI equality</td><td>join group</td><td class="st s-gated">dormant: <code>udi</code> always null in LJ export</td></tr>
+<tr><td>Basic UDI-DI</td><td>join group</td><td class="st s-gated">dormant: <code>item_group.basic_udi_di</code> has no writer anywhere</td></tr>
+<tr><td>Name-family score &ge; 0.90</td><td>join group (pg_trgm candidates, rapidfuzz score)</td><td class="st s-live">live, thresholds unseeded until S1.7</td></tr>
+<tr><td>Score 0.72&ndash;0.90</td><td>T1 adjudication, then <code>grouping_suggestion</code> staged for review</td><td class="st s-gated">T1 seam raises by default; suggestion still staged with <code>t1_error</code>, no work lost</td></tr>
+<tr><td>Below 0.72 / no candidates</td><td>singleton group, member basis <code>singleton</code></td><td class="st s-live">live</td></tr>
+<tr><td>Forced assign / force_new_group (review UI)</td><td>basis <code>manual</code>, open suggestion resolved</td><td class="st s-live">live</td></tr>
+</table></div>
+<ul class="notes">
+<li>Then: manufacturer canonicalization via <code>manufacturer_alias</code> (insert-on-miss); member <code>mfr_ref</code> materialized (C1).</li>
+<li>Emits <code>discover.group</code> (<code>discover:{gid}:0</code>) unless the group already has a staged or production doc+link. Staged counting is the 2026-07-24 fix; rejected/superseded never suppress.</li>
+<li><span class="warn">Inert hook:</span> <code>_apply_manufacturer_bindings</code> returns 0 by design (invariant 1); GATE-mediated mfr-scope link write is followup <code>resolve-c4</code>.</li>
+<li><span class="warn">Pre-S1.7 blocker:</span> live T1 adjudicator prompt/call (<code>resolve-t1-ranking</code>).</li>
+</ul>
+</div>
+
+<div class="card gated">
+<header><h3>discover.group</h3><span class="pill live">live</span><span class="pill gated">ranker unwired, G6 not built</span>
+<span class="meta">payload <code>{group_id}</code> · dedupe <code>discover:{gid}:{cycle}</code>, UI/reject variants <code>discover:manual:{task}</code> / <code>discover:gate-reject:{doc}:{gid}</code></span></header>
+<div class="tablewrap"><table>
+<tr><th>Ladder rung (first hit emits and stops)</th><th>Outcome</th><th>Status</th></tr>
+<tr><td>Recency</td><td>guard: filters known URLs to the stale subset, never returns by itself</td><td class="st s-live">live</td></tr>
+<tr><td>Known URL</td><td><code>fetch_log</code> rows reached via the group's existing doc links; emit <code>fetch.url</code> &times;k</td><td class="st s-live">live</td></tr>
+<tr><td>Playbook</td><td>tolerated-and-skipped if configured</td><td class="st s-noop">Phase 2 (S2.1)</td></tr>
+<tr><td>EUDAMED mirror</td><td>lookup runs against the mirror table</td><td class="st s-gated">mirror empty until S2.3: always a miss today</td></tr>
+<tr><td>Search (Brave, Serper fallback)</td><td>SERP candidates, T1 rank, threshold rule, emit top-k</td><td class="st s-gated">keyless = skipped rung; ranker seam raises by default and degrades to manual</td></tr>
+<tr><td>Vendor / distributor</td><td>folded into search (G6 decision); no separate case</td><td class="st s-live">by design</td></tr>
+<tr><td>Email (contacts known)</td><td>emit <code>email.request {group_id, ...}</code></td><td class="st s-noop">consumer is the no-op until S2.4</td></tr>
+<tr><td>Nothing left</td><td><code>manual_task(discovery-dead-end)</code> with prefilled search links; a later successful rung resolves it</td><td class="st s-live">live (resolution landed S1.6)</td></tr>
+</table></div>
+<ul class="notes">
+<li>Writes <code>discovery_log</code> per rung (hit / miss / skipped) for the failure monitor and hit-rate stats.</li>
+<li><span class="warn">Not built:</span> G6 HTML doc-library tiers (D0/D/R deterministic link extraction in FETCH, LLM tier A): MVP routes inconclusive pages to manual. FETCH Emits delta awaits sign-off.</li>
+<li><span class="warn">Pre-S1.7 blocker:</span> live T1 ranker (<code>discover-t1-ranking</code>); until then every search-path group lands in manual.</li>
+</ul>
+</div>
+
+<div class="card hole">
+<header><h3>fetch.url</h3><span class="pill live">live</span><span class="pill hole">default storage raises</span>
+<span class="meta">payload <code>{url, domain, group_id, source_rank}</code> · dedupe <code>fetch:{url_normalized}</code> (shared <code>app/urls.py</code>)</span></header>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Ledger</th><th>Emits</th><th>Status</th></tr>
+<tr><td>Domain lease contended</td><td>untouched</td><td>nothing: self-defer (<code>lease-wait</code>)</td><td class="st s-live">live</td></tr>
+<tr><td>Recency hit, extraction exists</td><td>untouched</td><td><code>validate.doc</code> for requesting group (<code>recency-skip-linked</code>, C3 parity)</td><td class="st s-live">live</td></tr>
+<tr><td>Recency hit, no extraction</td><td>untouched</td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>304 Not Modified</td><td><code>last_checked_at</code> touched</td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>New content hash</td><td>new row + archive via StorageAdapter</td><td><code>extract.doc</code></td><td class="st s-hole">LocalFsStore live and tested; <code>STORAGE_ADAPTER</code> <b>defaults to gdrive whose put() raises until G7</b>: a default stack dead-letters every fetch</td></tr>
+<tr><td>Same hash, new URL</td><td>URL row linked to existing <code>doc_id</code></td><td><code>validate.doc</code> (C3 hash-dedupe)</td><td class="st s-live">live</td></tr>
+<tr><td>HTTP 403</td><td>on Playwright success: domain flagged <code>needs_playwright</code></td><td>retry via Playwright tier; double failure backs off to dead (per URL)</td><td class="st s-live">live</td></tr>
+<tr><td>429 / 5xx / timeout</td><td>untouched</td><td>transient backoff, not a Playwright trigger</td><td class="st s-live">live</td></tr>
+<tr><td>JS challenge inside a 200</td><td>n/a</td><td>not detected; would flow through as a bad extraction</td><td class="st s-gated">known gap (<code>fetch-js-challenge</code>)</td></tr>
+</table></div>
+</div>
+
+<div class="card">
+<header><h3>extract.doc</h3><span class="pill live">live</span>
+<span class="meta">payload <code>{archive_url, content_hash, group_id, source_url|email_ref}</code> · dedupe <code>extract:{content_hash}</code> · rev = MAX+1</span></header>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Emits</th><th>Status</th></tr>
+<tr><td>T0 classifies business-doc / MSDS</td><td>no LLM spend, finalize immediately</td><td><code>validate.doc</code> (suppressed there)</td><td class="st s-live">live</td></tr>
+<tr><td>Compliance doc, fields at high T0 confidence</td><td>T0 only (filename conventions, anchors, 5 layout templates, pdfplumber REF tables)</td><td><code>validate.doc</code></td><td class="st s-live">live (S1.5 closed KOMET / IVOCLAR 206-REF / GC gaps)</td></tr>
+<tr><td>Low-confidence fields</td><td>per-field escalation T1 text, then T2 vision (corpus: 18/20 docs hit T2, the cost driver)</td><td><code>validate.doc</code></td><td class="st s-live">live, sync + batch transports</td></tr>
+<tr><td>Batch API pending</td><td><code>batch_ref</code> side table, self-defer poll, never resubmit (C9)</td><td>defers, then <code>validate.doc</code></td><td class="st s-live">live-proven</td></tr>
+</table></div>
+<ul class="notes">
+<li>Writes <code>extraction_attempt</code> (all tiers kept for T3 humans) + <code>extraction_cost</code> (measured, ~$0.028/doc on the corpus).</li>
+<li><span class="warn">Gap:</span> measured calibration factors exist in findings-phase0 but no <code>[calibration]</code> config section is populated: gate runs identity calibration today (G5).</li>
+</ul>
+</div>
+
+<div class="card gated">
+<header><h3>validate.doc</h3><span class="pill live">live, full rule set</span><span class="pill gated">C6 output inert downstream</span>
+<span class="meta">payload <code>{content_hash, extract_rev, group_id}</code> · stateless, writes nothing</span></header>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Status</th></tr>
+<tr><td>No extraction / required field missing (type, regulation, coverage_scope)</td><td>suppress, reason on job result</td><td class="st s-gated">correct but: <code>'n.a.'</code>-to-null suppresses legit regulation-less QMS certs before the binding flow (<code>validate-scope</code> ruling open)</td></tr>
+<tr><td>C4 pre-rule: manufacturer scope, no item identifiers</td><td><code>gate.candidate</code> route <code>mfr-binding</code>: one candidate no matter how many groups asked</td><td class="st s-live">live</td></tr>
+<tr><td>Group-scoped, Basic UDI-DI matches group</td><td>all members linked, basis <code>basic-udi-di</code></td><td class="st s-gated">dormant: no group carries a Basic UDI-DI yet</td></tr>
+<tr><td>Group-scoped, REF overlap on (manufacturer, mfr_ref) pairs</td><td>overlapping members linked, basis <code>ref-list</code>, <code>ref_gate=true</code></td><td class="st s-live">live</td></tr>
+<tr><td>Group-scoped, REF gate miss</td><td>all members linked, basis <code>fetch-context</code> (staged-capped by C5)</td><td class="st s-live">live, added 2026-07-24 (was doc-only)</td></tr>
+<tr><td>No group (backfill/email), manufacturer known</td><td>manufacturer-scoped group search; multi-hit resolves to lowest gid + <code>multi-group-match</code></td><td class="st s-live">live</td></tr>
+<tr><td>No group, no manufacturer, identifier hits something unscoped</td><td>flag <code>ref-unscoped</code>, never used as a pass</td><td class="st s-live">live</td></tr>
+<tr><td>No identifiers at all (non-mfr-scope)</td><td>flag <code>no-item-identifier</code> (blocking), no links fabricated</td><td class="st s-live">live</td></tr>
+</table></div>
+<ul class="notes">
+<li>Flags: blocking (force manual): <code>older-than-current</code>, <code>no-item-identifier</code>. Capping (max staged): <code>ref-unscoped</code>, <code>downgrade-uncomparable</code>, <code>multi-group-match</code>, <code>date-insane</code>, <code>expiry-on-certless-doc</code>.</li>
+<li><span class="warn">Inert end-to-end:</span> C6/C7 compute <code>supersedes</code> + <code>related_doc_id</code> (same subject/type/regulation, MDR and MDD as parallel chains) but GATE persists neither (<code>gate-c6</code>). No code path writes <code>superseded_by</code> anywhere.</li>
+</ul>
+</div>
+
+<div class="card hole">
+<header><h3>gate.candidate</h3><span class="pill live">live</span><span class="pill hole">evidence gate: 2 holes</span>
+<span class="meta">the only registry writer (with gate.apply): <code>document</code>, <code>item_document</code>, <code>evidence</code>, <code>audit_log</code>, <code>manual_task</code></span></header>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Status</th></tr>
+<tr><td>Any required field lacking verbatim / tier / confidence</td><td>hard error, zero writes (invariant 2)</td><td class="st s-hole">but <code>page</code> is not checked though the invariant lists it (<code>evidence-page</code> ruling)</td></tr>
+<tr><td>score &ge; 0.95, ref_gate, zero flags</td><td>document <code>production</code>, audit row with self-contained <code>job_snapshot</code></td><td class="st s-gated">thresholds are placeholders; measured proposals not applied (G5)</td></tr>
+<tr><td>score &ge; 0.75, no blocking flag</td><td>document <code>staged</code></td><td class="st s-live">live</td></tr>
+<tr><td>Otherwise / blocking flag</td><td><code>manual_task(gate-manual)</code> with all tier attempts attached</td><td class="st s-live">live</td></tr>
+<tr><td>Links, trusted basis (ref-list, udi, basic-udi-di, mfr-scope, manual)</td><td><code>production</code> only when doc is production and score &ge; HIGH, else staged</td><td class="st s-live">live</td></tr>
+<tr><td>Links, <code>name-family</code> / <code>fetch-context</code></td><td>always <code>staged</code>: handler logic AND the DB CHECK <code>item_document_trusted_basis_ck</code></td><td class="st s-live">structurally enforced</td></tr>
+<tr><td>Re-delivery, same content_hash + same rev</td><td>idempotent upserts, no duplicate evidence/audit</td><td class="st s-live">tested</td></tr>
+<tr><td>Re-extraction: same content_hash, NEW rev</td><td>overwrites all 7 field columns on a production doc while evidence stays at the old rev</td><td class="st s-hole">invariant-2 break, untested path; design ruling pending (<code>gate-evidence</code>, Slice 2)</td></tr>
+<tr><td>Route <code>mfr-binding</code></td><td>staged doc + exactly one binding review entry regardless of requesting groups</td><td class="st s-live">live (verification hook tested)</td></tr>
+</table></div>
+</div>
+
+<div class="card">
+<header><h3>gate.apply</h3><span class="pill live">live</span>
+<span class="meta">payload <code>{doc_id, decision, decided_by, edits?}</code>, <code>decided_by</code> from Caddy's <code>X-Forwarded-User</code> · dedupe <code>apply:{doc_id}:{decision}</code></span></header>
+<div class="tablewrap"><table>
+<tr><th>Decision</th><th>Outcome</th><th>Status</th></tr>
+<tr><td><code>approve</code></td><td>doc to production; staged links promoted <b>only for trusted bases</b> (fetch-context / name-family stay staged even under human approval); edits become T3 evidence on whitelisted fields</td><td class="st s-live">live</td></tr>
+<tr><td><code>reject</code></td><td>doc to rejected; optional <code>discover.group</code> at interactive priority</td><td class="st s-live">live</td></tr>
+<tr><td><code>bind-manufacturer</code></td><td>doc to production; mfr-scope production links derived for ALL MD items of that manufacturer; future items get the link at resolve time only via the inert <code>resolve-c4</code> hook</td><td class="st s-live">live (derivation), <span class="s-gated">future-item half deferred</span></td></tr>
+<tr><td>any decision</td><td>open manual_tasks for the doc resolved; audit row</td><td class="st s-live">live</td></tr>
+<tr><td>un-bind / severance</td><td>no such decision exists in code</td><td class="st s-noop">PRD describes it; not implemented</td></tr>
+</table></div>
+</div>
+
+<div class="card">
+<header><h3>backfill.scan</h3><span class="pill live">live</span>
+<span class="meta">payload <code>{drive_folder}</code> · walks local corpus, sha256, <code>fetch_log source=backfill</code></span></header>
+<ul class="notes" style="margin-top:0">
+<li>New hash: emits <code>extract.doc</code> with <code>group_id=null</code> (coverage resolved from document content at VALIDATE). Seen hash: nothing.</li>
+<li>Proven: 22-fixture spine run (22/22 extracted, $0.61); second cycle emitted 0 at $0 delta (C2/C3/AC5 hook).</li>
+</ul>
+</div>
+
+<div class="card gated">
+<header><h3>SCHEDULER + report.weekly</h3><span class="pill live">live process</span><span class="pill gated">2 of 4 crons emit-gated</span>
+<span class="meta">compose profile <code>full</code>: a plain <code>docker compose up</code> runs no crons · <code>scheduler_run</code> ledger prevents restart double-fire</span></header>
+<div class="tablewrap"><table>
+<tr><th>Cron</th><th>Behavior</th><th>Status</th></tr>
+<tr><td>Monthly ingest</td><td>globs <code>ingest_watch_dir</code> by mtime, enqueues <code>ingest.run</code></td><td class="st s-gated">inert: watch dir defaults empty (GAP D, needs a real drop location)</td></tr>
+<tr><td>Expiry scan</td><td>query live, feeds the weekly report; <code>email.request:doc:{doc_id}</code> emission behind flag</td><td class="st s-gated">flag defaults false; when flipped without S2.4 the same request re-emits weekly (known)</td></tr>
+<tr><td>Failure monitor</td><td>discovery_log miss-rate spikes; <code>playbook.reonboard</code> emission behind flag</td><td class="st s-gated">flag defaults false (S2.1 consumer missing)</td></tr>
+<tr><td>Weekly report</td><td><code>report.weekly</code>: expiring docs, job counts, dead count, failure spikes; read-only</td><td class="st s-live">live</td></tr>
+</table></div>
+</div>
+
+<div class="card">
+<header><h3>Review UI (web/) + read API</h3><span class="pill live">live</span>
+<span class="meta">job producer only: zero write grants on registry tables (enforced by DB GRANTs, migration 007) · Caddy is the sole ingress (Basic auth, G3 closed)</span></header>
+<div class="tablewrap"><table>
+<tr><th>Surface</th><th>Does</th><th>Status</th></tr>
+<tr><td><code>GET /</code></td><td>status board + KPI board K1-K8 (production-visibility views only)</td><td class="st s-live">live</td></tr>
+<tr><td><code>/staging</code></td><td>staged docs, staged links on production docs, binding candidates, per-field evidence; apply enqueues <code>gate.apply</code>; grouping suggestions with assign / start-new-group</td><td class="st s-live">live</td></tr>
+<tr><td><code>/manual</code>, <code>/dead</code></td><td>manual_task list with resolve; dead jobs with re-run (same dedupe key, interactive)</td><td class="st s-live">live</td></tr>
+<tr><td><code>/api/items/{ref}/documents</code>, <code>/api/documents/{id}</code>, <code>/api/kpi</code></td><td>JSON, production-visibility only</td><td class="st s-live">live</td></tr>
+<tr><td>Real dev database</td><td>migrated only through 010: grouping-suggestions section and <code>/api/kpi</code> 500 there until <code>migrate</code> runs</td><td class="st s-hole">operational (<code>s1.6-migrate-real-db</code>)</td></tr>
+</table></div>
+</div>
+
+<div class="card noop">
+<header><h3>Not built: 5 enum tags on the no-op handler</h3><span class="pill noop">phase 2</span></header>
+<div class="tablewrap"><table>
+<tr><th>Tag</th><th>Planned role</th><th>Produced today?</th></tr>
+<tr><td><code>email.request</code></td><td>outbound renewal / discovery-exhausted contact (S2.4)</td><td>yes: DISCOVER (<code>{group_id}</code>) and SCHEDULER (<code>doc:{doc_id}</code>, flag off); both land on the no-op</td></tr>
+<tr><td><code>playbook.reonboard</code></td><td>re-onboarding trigger on failure spikes (S2.1)</td><td>yes: SCHEDULER (flag off) and nothing consumes it</td></tr>
+<tr><td><code>email.poll</code></td><td>inbound mailbox to <code>extract.doc</code> (S2.4)</td><td>no producer</td></tr>
+<tr><td><code>email.reminder</code></td><td>renewal reminder branch (S2.4)</td><td>no producer</td></tr>
+<tr><td><code>eudamed.sync</code></td><td>EUDAMED mirror refresh (S2.3)</td><td>no producer; DISCOVER's mirror rung reads an empty table meanwhile</td></tr>
+</table></div>
+</div>
+
+<h2><span class="sec">3</span>State machines</h2>
+<div class="grid2">
+<div class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  direction LR
+  [*] --> pending: enqueue (active-scope dedupe)
+  pending --> running: claim, attempts+1
+  running --> done: finish (frees dedupe key)
+  running --> pending: defer (batch poll, attempt refunded)
+  running --> failed: error (exp backoff)
+  running --> pending2: visibility timeout 300s
+  pending2: reclaimable
+  pending2 --> running
+  failed --> running: retry after run_after
+  failed --> dead: attempts exhausted
+  dead --> running: UI re-run (same key, interactive)
+  done --> [*]
+</pre>
+<p class="caption">Job lifecycle. done and dead free the dedupe key (C2): re-enqueue is normal, not a schema fight. All live.</p>
+</div>
+<div class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  direction LR
+  [*] --> staged: gate (score below HIGH or flagged)
+  [*] --> production: gate (HIGH + ref_gate + no flags)
+  staged --> production: approve / bind / high-score redelivery
+  staged --> rejected: reject
+  production --> production: never downgraded (CASE guard)
+  superseded: superseded (enum value, NEVER written - C6 inert)
+</pre>
+<p class="caption">document.status. The red flag here: a same-hash re-extraction at a new rev overwrites a production row's field values (evidence stays old rev).</p>
+</div>
+<div class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  direction LR
+  [*] --> staged: any basis
+  [*] --> production: trusted basis + doc production + HIGH
+  staged --> production: approve, trusted bases only
+  staged --> staged: fetch-context / name-family, forever (C5 CHECK)
+  rejected: rejected (enum value, no writer today - severance unimplemented)
+</pre>
+<p class="caption">item_document.status. Consumers see a doc for an item only when doc AND link are production.</p>
+</div>
+<div class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  direction LR
+  state "manual_task: open" as mo
+  state "manual_task: resolved" as mr
+  [*] --> mo: gate-manual | discovery-dead-end
+  mo --> mr: any gate.apply on the doc / later discover rung hits
+  state "suggestion: open" as so
+  state "suggestion: resolved" as sr
+  [*] --> so: ambiguous name cluster (unique open per item)
+  so --> sr: forced assign / force_new_group
+</pre>
+<p class="caption">Review work items. manual_kind 'dead-job-followup' exists in the enum with no producer.</p>
+</div>
+</div>
+
+<h2><span class="sec">4</span>Loose ends, honestly</h2>
+<div class="tablewrap"><table>
+<tr><th>Class</th><th>Item</th><th>Ref</th></tr>
+<tr><td class="st s-hole">hole</td><td>Default <code>STORAGE_ADAPTER=gdrive</code> raises until G7: default stack dead-letters every fetch</td><td><code>storage-default</code></td></tr>
+<tr><td class="st s-hole">hole</td><td>Re-extraction overwrites production doc fields without evidence refresh (invariant 2)</td><td><code>gate-evidence</code>, Slice 2 ruling</td></tr>
+<tr><td class="st s-hole">hole</td><td>Real dev DB migrated through 010 only; staging suggestions + KPI API 500 there</td><td><code>s1.6-migrate-real-db</code></td></tr>
+<tr><td class="st s-hole">hole</td><td><code>evidence.page</code> unchecked though invariant 2 lists it</td><td><code>evidence-page</code> ruling</td></tr>
+<tr><td class="st s-gated">blocker before S1.7</td><td>T1 ranker (discover) and T1 adjudicator (resolve) unwired: search-path groups and ambiguous names all fall to manual</td><td><code>discover-t1-ranking</code>, <code>resolve-t1-ranking</code></td></tr>
+<tr><td class="st s-gated">blocker before S1.7</td><td>Gate thresholds are placeholders; measured calibration factors not applied</td><td>G5 / <code>gate-thresholds</code></td></tr>
+<tr><td class="st s-gated">inert by design</td><td>C6 supersession computed, never persisted; C4 resolve-time binding hook returns 0</td><td><code>gate-c6</code>, <code>resolve-c4</code></td></tr>
+<tr><td class="st s-gated">dormant</td><td>UDI / Basic-UDI-DI resolution and gating: <code>item_group.basic_udi_di</code> has no writer until EUDAMED (S2.3); inheritance semantics undecided</td><td><code>udi-group-key</code></td></tr>
+<tr><td class="st s-gated">ruling for Denis</td><td><code>'n.a.'</code> regulation normalized to null suppresses legit QMS certs before the binding flow</td><td><code>validate-scope</code></td></tr>
+<tr><td class="st s-gated">ruling for Denis</td><td>md-unknown default-on: 11,693 unclassified items head into real spend at S1.7</td><td><code>s1.1-ingest</code></td></tr>
+<tr><td class="st s-gated">ruling for Denis</td><td>~10 dedupe-key shapes live beyond the PRD table; ingest has two namespaces</td><td><code>dedupe-conventions</code></td></tr>
+<tr><td class="st s-gated">client-gated</td><td>G4 <code>mfr_ref</code> per-supplier map empty (44% missing bounds AC1) · G7 Drive auth · G8 mailbox · G15 AC registry undefined</td><td>gap register</td></tr>
+<tr><td class="st s-noop">hardening</td><td>JS-challenge-in-200 undetected · domain flag not persisted on double bot-wall failure · ZG-scale ingest single-tx · staging SLA/aging (G10)</td><td><code>fetch-js-challenge</code>, <code>fetch-domain-flag-persist</code>, followups</td></tr>
+</table></div>
+
+<footer>
+Sources: direct code reads of <code>app/</code>, <code>web/</code>, <code>migrations/</code> plus six verification passes (2026-07-24 drift-check); contracts: PRD v3, job-type handbook, PHASES.md. Suite at build time: 586 passed / 1 skipped. Working-tree state includes the uncommitted C3 fix and docs sync.
+</footer>
+</main>
+<script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+mermaid.initialize({ startOnLoad: true, theme: dark ? "dark" : "neutral" });
+</script>
+</body>
+</html>

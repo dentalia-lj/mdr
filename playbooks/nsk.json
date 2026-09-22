@@ -1,0 +1,62 @@
+{
+  "manufacturer": "NSK",
+  "aliases": [],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "099"
+    }
+  ],
+  "domains": [
+    "nsk-library.com"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "DoC",
+      "kind": "portal",
+      "url": "https://www.nsk-library.com/",
+      "note": "Re-probed 2026-08-27 with DentaliaComplianceBot/1.0. **The 2026-08-20 note on this source was wrong** and is replaced: it said the PDF href sits behind a Download button and that a plain GET yields no document URLs. A plain GET returns 1.362 PDF URLs, 1.329 unique, all under /admin/wp-content/uploads/. **Corrected 2026-09-04: they are NOT hrefs.** Every one sits on a `<tr data-href=\"...\">` that a script turns into a click; the page has exactly FIVE `<a href>` anchors. The 2026-08-27 count string-matched `.pdf` and read that as links. Measured by probing it through the live pipeline (job 37745): robots ALLOW, 200, 1.402.370 B, `app.crawl.harvest` -> 5 anchors, 0 matched. robots.txt disallows only /admin/wp-admin/, so that path is ALLOW under app/robots.py. Two were downloaded and are real PDFs (000018-12-21-04_008_EC_Doc_VA-SET.pdf 5.747.074 B, CE_623882_BSI_NL.pdf 391.181 B). Page labels count 160 Declaration of Conformity, 446 Safety Data Sheet, 22 Certificate. Stays kind:'portal' deliberately -- this is a LISTING page, and a listing authored 'direct' is archived as an unreadable PDF and dead-ends at EXTRACT silently. What changed is not the kind but the discovery route: 1.329 URLs are reachable from a plain GET with no browser tier, which was read as making this the strongest crawl-recipe candidate in the corpus (S2.1). **That conclusion is withdrawn**: 1.329 URLs are present in the HTML but NOT reachable by an anchor harvester, so no crawl recipe authorable today harvests this page. Whether `app.crawl.harvest` should also read `data-href` is an open question with corpus-wide blast radius -- followup `[crawl-harvest-data-href]`. **WITHDRAWN 2026-09-09 — the 09-04 correction was true of the code as it stood that morning and is now stale.** `app.crawl.harvest` reads `<tr data-href>` as well as `<a href>`, so this page yields **1329 unique documents** again: re-measured live 2026-09-09, 1367 anchors seen, 1362 matching, 1329 kept, 0 off-host, 0 capped, no browser tier. The 09-04 probe that saw `5 anchors, 0 matched` (job 37745) predates that harvest change. A `crawl` recipe IS authored on this playbook now, and this note no longer withdraws it."
+    },
+    {
+      "doc_type": "EC",
+      "kind": "direct",
+      "url": "https://www.uk.nsk-dental.com/admin/wp-content/uploads/CE_623882_BSI_NL.pdf",
+      "note": "BSI 'EC Certificate - Full Quality Assurance System', CE 623882, NSK Europe GmbH. Verified 2026-08-27: 200, 391.181 B, %PDF-. First issued 2016-06-19, EXPIRY 2024-05-26 -- expired, and authored anyway because it is what the manufacturer publishes; supersession is the registry's job, not the playbook's."
+    },
+    {
+      "doc_type": "ISO",
+      "kind": "direct",
+      "url": "https://www.uk.nsk-dental.com/admin/wp-content/uploads/MD_623878.pdf",
+      "note": "BSI Certificate of Registration, QMS ISO 13485:2016 / EN ISO 13485:2016, MD 623878, NSK Europe GmbH. Verified 2026-08-27: 200, 744.581 B, %PDF-."
+    },
+    {
+      "doc_type": "ISO",
+      "kind": "direct",
+      "url": "https://www.uk.nsk-dental.com/admin/wp-content/uploads/EN_ISO13485_NAKAN_SX-2002410-1_extsigned.pdf",
+      "note": "TÜV Rheinland EN ISO 13485:2016 (+AC:2018, +A11:2021), reg. SX 2002410-1, Nakanishi Inc. Verified 2026-08-27: 200, 547.167 B, %PDF-."
+    },
+    {
+      "doc_type": "ISO",
+      "kind": "direct",
+      "url": "https://www.uk.nsk-dental.com/admin/wp-content/uploads/13485-cert-SWE-ENG-valid-until-20241024.pdf",
+      "note": "RISE Research Institutes of Sweden, certificate 5911 issue 4, ISO 13485. Verified 2026-08-27: 200, 74.249 B, %PDF-. The filename states valid until 2024-10-24 -- expired, authored for the same reason as CE 623882."
+    },
+    {
+      "doc_type": "ISO",
+      "kind": "portal",
+      "url": "https://www.uk.nsk-dental.com/support/certificates/",
+      "note": "The corporate certificate page. The 2026-08-20 note called this 'unfetched'; probed 2026-08-27, robots.txt 404 (unrestricted), 200, 7 statically-linked PDFs, all verified %PDF-. FOUR are authored 'direct' above. The other three are deliberately NOT authored: DAkkS_ISO9001_EN_20250430.pdf (ISO 9001, generic quality) and ISO140012015_091048119.ENG_.pdf (ISO 14001, environmental) are not medical-device evidence and would cost an extraction to file something no compliance question asks; HD601485080001.pdf has NO TEXT LAYER (1.033.876 B scan), so typing it needs the paid vision tier -- left here as a known unknown rather than guessed at. All seven are corporate/QMS certificates for Nakanishi Inc. or NSK Europe GmbH, not per-article device documents."
+    }
+  ],
+  "crawl": [
+    {
+      "index_url": "https://www.nsk-library.com/",
+      "link_pattern": "\\.pdf$",
+      "max_links": 1500,
+      "doc_type_from": {
+        "sds": null
+      },
+      "note": "AUTHORED 2026-09-09, every number measured live the same day with `app.crawl.harvest` against the served HTML of a plain GET: 1367 anchors, 1362 matching, **1329 kept, 0 off-host, 0 capped**, no browser tier. robots.txt disallows only /admin/wp-admin/, and the documents sit under /admin/wp-content/uploads/. `doc_type_from` is an EXCLUSION and the needle is `sds`, NOT `sds_`: the filenames are `NSK-SDS-001-DE-EU_Rev000.pdf` and the underscore form the design notes quote reaches only 13 of them. Measured over all 1329 links, `sds` hits **444 of 444** safety-data-sheet-labelled documents and **0 of 124** declarations -- a clean separator. Without it those 444 would be fetched and extracted. By the page's own labels the library is 444 safety data sheets, 124 declarations of conformity, 8 certificates and 761 unlabelled. `max_links` 1500 covers the 1329 with headroom under the 2000 ceiling."
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+# Exact versions for every package the images install, direct and transitive.
+# Applied with `pip install -c constraints.txt` in all three builds (worker,
+# web, test), so a build on the server installs what dev ran, and the suite
+# runs on the versions production runs. Without it pyproject's `>=` floors let
+# each build take whatever PyPI had that day: on 2026-09-18 the three dev
+# images already disagreed (anthropic 1.5.0 in worker, 1.1.0 in test).
+#
+# Taken 2026-09-18 from `pip freeze` of the running images: worker first, then
+# the web-only and test-only packages. playwright stays in lockstep with the
+# Dockerfile base image tag, as pyproject.toml says.
+#
+# To change one: edit its line, rebuild. To add a dependency: add it to
+# pyproject.toml AND pin it here (tests/test_build_pins.py fails otherwise),
+# rebuild the test image, then add any new transitive packages from
+#   docker compose exec -T test pip freeze --exclude pip --exclude dentalia
+
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anthropic==1.5.0
+anyio==4.15.1
+certifi==2026.7.22
+cffi==2.1.1
+charset-normalizer==3.5.1
+click==8.5.0
+cryptography==50.0.1
+distlib==0.4.3
+docstring_parser==0.18.0
+et_xmlfile==2.0.0
+execnet==2.1.2
+fastapi==0.141.1
+filelock==3.29.4
+greenlet==3.5.6
+h11==0.16.0
+httpcore==1.0.9
+httpcore2==2.13.0
+httptools==0.8.0
+httpx==0.28.1
+httpx2==2.13.0
+idna==3.19
+iniconfig==2.3.0
+Jinja2==3.1.6
+jiter==0.17.0
+MarkupSafe==3.0.3
+numpy==2.5.3
+openpyxl==3.1.5
+packaging==26.3
+pandas==3.0.5
+pdfminer.six==20260107
+pdfplumber==0.11.10
+pillow==12.3.0
+platformdirs==4.10.0
+playwright==1.61.0
+pluggy==1.6.0
+psycopg==3.3.5
+psycopg-binary==3.3.5
+pycparser==3.0
+pydantic==2.13.5
+pydantic_core==2.46.5
+pyee==13.0.1
+Pygments==2.21.0
+pymupdf==1.28.2
+pypdfium2==5.13.0
+pytest==9.1.1
+pytest-xdist==3.8.0
+python-dateutil==2.9.0.post0
+python-discovery==1.4.2
+python-dotenv==1.2.3
+python-multipart==0.0.32
+PyYAML==6.0.3
+RapidFuzz==3.14.6
+six==1.17.0
+sniffio==1.3.1
+starlette==1.6.0
+truststore==0.10.4
+typing_extensions==4.16.0
+typing-inspection==0.4.4
+uvicorn==0.53.0
+uvloop==0.22.1
+virtualenv==21.5.1
+watchfiles==1.2.0
+websockets==17.1

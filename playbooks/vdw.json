@@ -1,0 +1,21 @@
+{
+  "manufacturer": "VDW",
+  "aliases": [],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "010"
+    }
+  ],
+  "domains": [
+    "vdw-dental.com"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "DoC",
+      "kind": "portal",
+      "url": "https://www.vdw-dental.com/en/service/document-download/",
+      "note": "Fetched 2026-08-20, HTTP 200. The page states downloads are free with no login. Categories include Declaration of Conformity and ISO/EC Certificates. Stable TYPO3 template /fileadmin/Dokumente/Service/Informationsmaterial/{category}/{file}.pdf; robots.txt disallows only /typo3/ and /typo3_src/, so /fileadmin/ is permitted, and a sitemap is published. VDW is a Dentsply Sirona company: DoCs and certificates stay here, but IFUs are pushed to dentsplysirona.com/en/lp/vdw-ifus.html -- that host is claimed by dentsply-sirona.json and is deliberately NOT repeated in this file's domains."
+    }
+  ]
+}

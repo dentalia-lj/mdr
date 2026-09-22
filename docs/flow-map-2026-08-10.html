@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dentalia Pipeline: Flow &amp; State Map</title>
+<style>
+  /* Brand: shop.dentalia.si, tokens verified live 2026-07-24.
+     Cyan #2CA0C7 (buttons/menu/eyebrows), body #46565C, headings #333,
+     surfaces #E9F5F9 / #D6ECF4, tile greens #7FCBAE / #B6DDB6, yellow #F1D600.
+     Fonts: the shop's Centrale Sans Rounded where the reader has it,
+     otherwise the fallback stack below. */
+  :root {
+    --paper: #ffffff;
+    --surface: #f0f8fb;
+    --surface-2: #d6ecf4;
+    --ink: #333333;
+    --muted: #46565c;
+    --border: #c9e2ec;
+    --accent: #2ca0c7;
+    --accent-ink: #1d7d9e;
+    --live: #2f8f6b;
+    --live-bg: #e2f3ec;
+    --gated: #8f7500;
+    --gated-bg: #faf5d2;
+    --hole: #c24438;
+    --hole-bg: #f9e8e5;
+    --noop: #6e7e85;
+    --noop-bg: #edf2f4;
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+    --heading: "Centrale Sans Rounded", "Trebuchet MS", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --body: "Centrale Sans Rounded", "Trebuchet MS", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0e1a20; --surface: #14242c; --surface-2: #1a2f3a;
+      --ink: #dce9ee; --muted: #8fa6b0; --border: #29414d;
+      --accent: #4fb8da; --accent-ink: #7ccbe6;
+      --live: #57bd93; --live-bg: #133228;
+      --gated: #d9c235; --gated-bg: #322c0c;
+      --hole: #e06256; --hole-bg: #3a1f1b;
+      --noop: #8a99a0; --noop-bg: #1e2c33;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0e1a20; --surface: #14242c; --surface-2: #1a2f3a;
+    --ink: #dce9ee; --muted: #8fa6b0; --border: #29414d;
+    --accent: #4fb8da; --accent-ink: #7ccbe6;
+    --live: #57bd93; --live-bg: #133228;
+    --gated: #d9c235; --gated-bg: #322c0c;
+    --hole: #e06256; --hole-bg: #3a1f1b;
+    --noop: #8a99a0; --noop-bg: #1e2c33;
+  }
+  :root[data-theme="light"] {
+    --paper: #ffffff; --surface: #f0f8fb; --surface-2: #d6ecf4;
+    --ink: #333333; --muted: #46565c; --border: #c9e2ec;
+    --accent: #2ca0c7; --accent-ink: #1d7d9e;
+    --live: #2f8f6b; --live-bg: #e2f3ec;
+    --gated: #8f7500; --gated-bg: #faf5d2;
+    --hole: #c24438; --hole-bg: #f9e8e5;
+    --noop: #6e7e85; --noop-bg: #edf2f4;
+  }
+  body {
+    background: var(--paper); color: var(--muted);
+    font-family: var(--body); font-weight: 300; font-size: 15.5px; line-height: 1.55;
+    margin: 0; padding: 2.5rem 1.25rem 5rem;
+  }
+  b, strong, th, .k { font-weight: 600; }
+  main { max-width: 1080px; margin: 0 auto; }
+  h1, h2, h3 { font-family: var(--heading); font-weight: 600; color: var(--ink); text-wrap: balance; }
+  h1 { font-size: 1.8rem; margin: 0 0 .3rem; }
+  h2 { font-size: 1.25rem; margin: 0 0 .9rem; padding-top: 2.6rem; border-top: 1px solid var(--border); }
+  h2 .sec { color: var(--muted); font-weight: 500; margin-right: .5rem; }
+  h3 { font-size: 1.02rem; margin: 0; }
+  a { color: var(--accent-ink); }
+  code, .k { font-family: var(--mono); font-size: .84em; background: var(--surface-2); border-radius: 4px; padding: .08em .35em; white-space: nowrap; }
+  .sub { color: var(--muted); margin: 0 0 1.4rem; max-width: 62ch; }
+  .chips { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1.1rem 0 0; }
+  .chip { font-family: var(--heading); font-size: .78rem; font-weight: 600; padding: .3rem .7rem; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); }
+  .chip b { font-variant-numeric: tabular-nums; }
+  .chip.live { color: var(--live); border-color: var(--live); background: var(--live-bg); }
+  .chip.gated { color: var(--gated); border-color: var(--gated); background: var(--gated-bg); }
+  .chip.hole { color: var(--hole); border-color: var(--hole); background: var(--hole-bg); }
+  .chip.noop { color: var(--noop); border-color: var(--noop); background: var(--noop-bg); }
+  .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .6rem; margin: 0 0 .5rem; }
+  .legend div { display: flex; gap: .55rem; align-items: baseline; font-size: .86rem; }
+  .dot { width: .72rem; height: .72rem; border-radius: 3px; flex: none; position: relative; top: .07rem; }
+  .dot.live { background: var(--live); } .dot.gated { background: var(--gated); }
+  .dot.hole { background: var(--hole); } .dot.noop { background: var(--noop); }
+  .diagram { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: .75rem; overflow-x: auto; }
+  .card { border: 1px solid var(--border); border-left: 5px solid var(--live); border-radius: 10px; background: var(--surface); padding: 1rem 1.15rem 1.1rem; margin: 0 0 1.15rem; }
+  .card.gated { border-left-color: var(--gated); }
+  .card.hole { border-left-color: var(--hole); }
+  .card.noop { border-left-color: var(--noop); }
+  .card header { display: flex; flex-wrap: wrap; align-items: baseline; gap: .6rem .9rem; margin-bottom: .55rem; }
+  .pill { font-family: var(--heading); font-size: .68rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; padding: .18rem .55rem; border-radius: 999px; }
+  .pill.live { color: #fff; background: var(--live); }
+  .pill.gated { color: #3a3200; background: #f1d600; }
+  .pill.hole { color: #fff; background: var(--hole); }
+  .pill.noop { color: #fff; background: var(--noop); }
+  .meta { font-size: .82rem; color: var(--muted); }
+  .meta code { background: var(--surface-2); }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .875rem; margin: .5rem 0 .2rem; }
+  th { font-family: var(--heading); font-size: .69rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); text-align: left; padding: .38rem .65rem; border-bottom: 2px solid var(--border); }
+  td { padding: .42rem .65rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td.st { white-space: nowrap; font-family: var(--heading); font-size: .72rem; font-weight: 600; }
+  .s-live { color: var(--live); } .s-gated { color: var(--gated); }
+  .s-hole { color: var(--hole); } .s-noop { color: var(--noop); }
+  .notes { margin: .55rem 0 0; padding-left: 1.15rem; font-size: .85rem; color: var(--muted); }
+  .notes li { margin: .18rem 0; }
+  .notes .warn { color: var(--gated); font-weight: 600; }
+  .notes .bad { color: var(--hole); font-weight: 600; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 1rem; }
+  .caption { font-size: .82rem; color: var(--muted); margin: .45rem 0 0; }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); font-size: .82rem; color: var(--muted); }
+  @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+  pre.mermaid { font-family: var(--mono); font-size: .78rem; line-height: 1.4; margin: 0; }
+</style>
+</head>
+<body>
+<main>
+<h1>Dentalia pipeline: flow &amp; state map</h1>
+<p class="sub">As-built truth, 2026-08-10. Verified against the <code>s1.8-vendor-master</code> working tree (all seven S1.8 tasks landed plus the final review), not against the design docs. Test suite: 916 passed / 1 skipped.</p>
+
+<div class="chips">
+  <span class="chip live"><b>11</b> live handler tags</span>
+  <span class="chip noop"><b>5</b> enum tags on no-op</span>
+  <span class="chip gated"><b>5</b> seams/hooks not wired</span>
+  <span class="chip gated"><b>4</b> dormant data paths</span>
+  <span class="chip hole"><b>3</b> open holes</span>
+</div>
+
+<h2><span class="sec">0</span>Legend</h2>
+<div class="legend">
+  <div><span class="dot live"></span><span><b>Live</b>: implemented, table-driven tests, on the proven path</span></div>
+  <div><span class="dot gated"></span><span><b>Gated / dormant</b>: code exists but a config flag, missing data, or an unwired seam keeps it from acting</span></div>
+  <div><span class="dot hole"></span><span><b>Hole</b>: known defect or contract risk, tracked in <code>tasks/followups.md</code></span></div>
+  <div><span class="dot noop"></span><span><b>Not built</b>: enum tag exists, handler is the logging no-op (Phase 2 scope)</span></div>
+</div>
+
+<h2><span class="sec">1</span>The spine, end to end</h2>
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  BC[("BC item export")]:::ext --> ING
+  OPS["Operator CLI<br/>vendor-master · playbooks · regroup"]:::live -.->|alias seed, regroup| RES
+  WEB["Review UI<br/>(Caddy + Basic auth)"]:::ext -->|POST /ingest| ING
+  WEB -->|POST /upload| UP["upload.ingest"]:::live
+  CORPUS[("SFTP corpus")]:::ext --> BF["backfill.scan"]:::live
+  SCH["SCHEDULER<br/>(profile 'full')"]:::gated -.->|watch-dir unset| ING
+  SCH --> RW["report.weekly"]:::live
+  SCH -.->|flag off| ER["email.request"]:::noop
+
+  ING["ingest.run"]:::live -->|per changed MD item| RES["resolve.group"]:::live
+  RES -->|group lacks doc| DIS["discover.group"]:::live
+  RES -.->|ambiguous name| GS["grouping_suggestion"]:::gated
+  DIS -->|top-k URLs| FET["fetch.url"]:::live
+  DIS -.->|dead end| MT["manual_task"]:::live
+  DIS -.->|flag off| ER
+  FET -->|new hash| EXT["extract.doc"]:::live
+  FET -.->|same hash, C3| VAL
+  FET --> ARCH[("hash archive<br/>volume, served /archive")]:::live
+  UP --> ARCH
+  UP --> EXT
+  BF --> EXT
+  EXT --> DT[("document_text")]:::live
+  EXT --> VAL["validate.doc"]:::live
+  VAL --> GC["gate.candidate"]:::live
+  GC --> REG[("registry: document +<br/>item_document + evidence")]:::live
+  GC -.->|manual| MT
+  WEB -->|approve / reject / bind| GA["gate.apply"]:::live
+  GA --> REG
+  WEB -.->|assign, re-run, resolve| ANY(["RESOLVE · DISCOVER ·<br/>any dead job"]):::ext
+
+  classDef live fill:#2f8f6b,color:#ffffff,stroke:#226b50
+  classDef gated fill:#f1d600,color:#3a3200,stroke:#8f7500
+  classDef hole fill:#c24438,color:#ffffff,stroke:#8f2f26
+  classDef noop fill:#6e7e85,color:#ffffff,stroke:#4d5b61
+  classDef ext fill:transparent,color:#6e7e85,stroke:#6e7e85,stroke-dasharray:4 3
+</pre>
+</div>
+<p class="caption">Solid arrows: the normal chain. Dashed: conditional or human-mediated. Every enqueue goes through <code>app/queue.py</code>; the topology is the enqueue graph, no stage calls another directly. New since 2026-07-24: <code>upload.ingest</code> as a second byte-entry point, the archive as a durable volume served back through the UI, and a parsed-text sidecar. Cross-cutting, so not drawn: every handler's <code>Result</code> envelope lands in <code>job.result</code> and its anomalies in <code>data_anomaly</code>, in the transaction that finishes the job. <code>playbook.reonboard</code> (SCHEDULER, flag off) and the three unproduced Phase-2 tags are omitted here and listed in full below.</p>
+
+<h2><span class="sec">2</span>Every stage, every outcome</h2>
+
+<div class="card">
+<header><h3>ingest.run</h3><span class="pill live">live</span><span class="pill live">result envelope + anomaly ledger</span></header>
+<p class="meta">payload <code>{source: csv|bc_odata, ref, catalogue}</code> · dedupe <code>ingest.run:web:{cat}:{src}:{ref}</code> (UI) / <code>ingest.run:sched:{cat}:{period}</code> (scheduler)</p>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Emits</th><th>Status</th></tr>
+<tr><td>Unparseable file / auth failure</td><td>job <code>failed</code>, backoff, then <code>dead</code></td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>Row missing <code>item_ref</code></td><td>skipped count + bounded sample (cap 50, total reported)</td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>Explicit non-MD (<code>NI MP</code>)</td><td>dropped, counted <code>non_md</code></td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>Blank device class (61% of LJ)</td><td>processed by default (<code>Ingest.process_md_unknown=True</code>), anomaly <code>md_class_blank</code> per item</td><td>as changed row</td><td class="st s-gated">policy open</td></tr>
+<tr><td>New or changed MD row</td><td><code>item_mirror</code> upsert, <code>mirror_rev</code> from sequence</td><td><code>resolve.group</code> per item</td><td class="st s-live">live</td></tr>
+<tr><td>Missing / prose <code>mfr_ref</code>, blank manufacturer code</td><td>anomalies <code>mfr_ref_missing</code> / <code>mfr_ref_prose</code> / <code>manufacturer_code_blank</code> into <code>data_anomaly</code></td><td>nothing extra</td><td class="st s-live">live (S1.8)</td></tr>
+<tr><td>Mirrored item declassified to non-MD</td><td>upsert to <code>md_flag=false</code>, counted <code>reclassified_non_md</code></td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td><code>bc_odata</code> source</td><td><code>BcApiAdapter.read()</code> raises without injected records</td><td>n/a</td><td class="st s-gated">v2 stub</td></tr>
+</table></div>
+<p class="note">Every handler now returns the <code>app/results.py</code> <code>Result</code> envelope (counts, bounded samples, notes, anomalies); the runner writes it to <code>job.result</code> in the same transaction that finishes the job, and appends anomalies to the standing <code>data_anomaly</code> ledger keyed <code>(kind, subject)</code>.</p>
+<p class="note">Proven on the real 19,091-row LJ export, and on the first single-manufacturer run (KOMET/077, 399 rows).</p>
+<p class="note">Open: <code>md_flag</code> tri-state ruling (Denis's "confirmed-manufacturer only" middle path is not yet code — the shipped toggle is still a global boolean). ZG scale (~100k rows): per-row single-transaction loop still flagged for a set-based rewrite before S2.5.</p>
+</div>
+
+<div class="card">
+<header><h3>resolve.group</h3><span class="pill live">live</span><span class="pill gated">2 dormant rungs, T1 seam unwired</span><span class="pill live">repair path added</span></header>
+<p class="meta">payload <code>{item_ref}</code> (+ <code>group_id</code> forced, + <code>force_new_group</code>) · dedupe <code>resolve:{item_ref}:{rev}</code> / <code>resolve:manual:{item_ref}:{gid|new}</code></p>
+<div class="tablewrap"><table>
+<tr><th>Ladder rung (stop at first hit)</th><th>Outcome</th><th>Status</th></tr>
+<tr><td>Existing group link</td><td>keep group, original basis preserved</td><td class="st s-live">live</td></tr>
+<tr><td>UDI equality</td><td>join group</td><td class="st s-gated">dormant: <code>udi</code> always null in the LJ export</td></tr>
+<tr><td>Basic UDI-DI</td><td>join group</td><td class="st s-gated">dormant: <code>item_group.basic_udi_di</code> still has no writer anywhere</td></tr>
+<tr><td>Name-family score &ge; 0.90</td><td>join group (pg_trgm candidates, rapidfuzz score)</td><td class="st s-live">live, thresholds unseeded</td></tr>
+<tr><td>Score 0.72&ndash;0.90</td><td>T1 adjudication, then <code>grouping_suggestion</code> staged for review</td><td class="st s-gated">T1 seam raises by default; suggestion still staged with <code>t1_error</code>, no work lost</td></tr>
+<tr><td>Below 0.72 / no candidates</td><td>singleton group, member basis <code>singleton</code></td><td class="st s-live">live</td></tr>
+<tr><td>Forced assign / <code>force_new_group</code> (review UI)</td><td>basis <code>manual</code>, open suggestion resolved</td><td class="st s-live">live</td></tr>
+</table></div>
+<p class="note">Then: manufacturer canonicalization via <code>manufacturer_alias</code> (insert-on-miss); member <code>mfr_ref</code> materialized (C1). Alias rows now carry provenance (migration 017): <code>self-seed</code> (RESOLVE's own insert-on-miss, the default for every pre-existing row), <code>vendor-master</code>, <code>playbook</code> — so a re-sync can tell its own rows from RESOLVE's.</p>
+<p class="note"><code>canonical_manufacturer</code> is effectively write-once (the ladder short-circuits on <code>_existing_link</code>). <code>dentalia regroup</code> (S1.8) is the repair path: drops groups so RESOLVE rebuilds them, dry-run by default, and <strong>refuses outright</strong> if any selected group has <code>item_document</code> rows — dropping those would throw away a real document-to-item link that nothing rebuilds.</p>
+<p class="note">Inert hook: <code>_apply_manufacturer_bindings</code> returns 0 by design (invariant 1); GATE-mediated mfr-scope link write is followup <code>resolve-c4</code>. Live T1 adjudicator prompt/call still unwired (<code>resolve-t1-ranking</code>).</p>
+</div>
+
+<div class="card">
+<header><h3>discover.group</h3><span class="pill live">live</span><span class="pill gated">ranker unwired, email rung flag-off</span></header>
+<p class="meta">payload <code>{group_id}</code> · dedupe <code>discover:{gid}:{cycle}</code>, UI/reject variants <code>discover:manual:{task}</code> / <code>discover:gate-reject:{doc}:{gid}</code></p>
+<div class="tablewrap"><table>
+<tr><th>Ladder rung (first hit emits and stops)</th><th>Outcome</th><th>Status</th></tr>
+<tr><td>Recency guard</td><td>filters known URLs to the stale subset, never returns by itself; synthetic <code>upload:</code> pseudo-URLs excluded</td><td class="st s-live">live</td></tr>
+<tr><td>Known URL</td><td><code>fetch_log</code> rows reached via the group's existing doc links; emit <code>fetch.url</code> &times;k</td><td class="st s-live">live</td></tr>
+<tr><td>Playbook</td><td><code>playbooks/{slug}.json</code> supplies official <code>domains</code> (<code>site:</code>-restricted query, one wide retry on a restricted miss) and portal URLs for the manual prefill</td><td class="st s-live">live since S1.7 (was "Phase 2")</td></tr>
+<tr><td>EUDAMED mirror lookup</td><td>runs against the mirror table</td><td class="st s-gated">mirror empty until S2.3: always a miss today</td></tr>
+<tr><td>Search (Brave, Serper fallback)</td><td>SERP candidates, T1 rank, threshold rule, emit top-k</td><td class="st s-gated">keyless = skipped rung; ranker seam raises by default and degrades to manual</td></tr>
+<tr><td>Vendor / distributor</td><td>folded into search (G6 decision); no separate case by design</td><td class="st s-live">by design</td></tr>
+<tr><td>Email (contacts known)</td><td>emit <code>email.request {group_id}</code>, dedupe <code>email.request:group:{gid}</code></td><td class="st s-gated">producer gated by <code>Discovery.email_rung_enabled</code>, default false</td></tr>
+<tr><td>Nothing left</td><td><code>manual_task(discovery-dead-end)</code> with prefilled search links + playbook portals; a later successful rung resolves it</td><td class="st s-live">live</td></tr>
+</table></div>
+<p class="note">Writes <code>discovery_log</code> per rung (hit / miss / skipped) for the failure monitor and hit-rate stats.</p>
+<p class="note">Not built: G6 HTML doc-library tiers (D0/D/R deterministic link extraction in FETCH, LLM tier A); MVP routes inconclusive pages to manual. Blocker: live T1 ranker (<code>discover-t1-ranking</code>) — until then every search-path group lands in manual, which is exactly what the first real run produced (51 <code>discovery-dead-end</code> tasks).</p>
+</div>
+
+<div class="card">
+<header><h3>fetch.url</h3><span class="pill live">live</span><span class="pill live">durable archive</span></header>
+<p class="meta">payload <code>{url, domain, group_id, source_rank}</code> · dedupe <code>fetch:{url_normalized}</code> (shared <code>app/urls.py</code>)</p>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Ledger</th><th>Emits</th><th>Status</th></tr>
+<tr><td>Domain lease contended</td><td>untouched</td><td>nothing: self-defer (<code>lease-wait</code>)</td><td class="st s-live">live</td></tr>
+<tr><td>Recency hit, extraction exists</td><td>untouched</td><td><code>validate.doc</code> for requesting group (C3 parity)</td><td class="st s-live">live</td></tr>
+<tr><td>Recency hit, no extraction</td><td>untouched</td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>304 Not Modified</td><td><code>last_checked_at</code> touched</td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>New content hash</td><td>new row + archive via <code>StorageAdapter</code></td><td><code>extract.doc</code></td><td class="st s-live">live: <code>STORAGE_ADAPTER</code> defaults to <code>local</code>, compose mounts <code>archive_data:/archive</code>, config warns on a relative root</td></tr>
+<tr><td>Same hash, new URL</td><td>URL row linked to existing <code>doc_id</code></td><td><code>validate.doc</code> (C3 hash-dedupe)</td><td class="st s-live">live</td></tr>
+<tr><td>HTTP 403</td><td>on Playwright success: domain flagged <code>needs_playwright</code></td><td>retry via Playwright tier; double failure backs off to dead (per URL)</td><td class="st s-live">live</td></tr>
+<tr><td>429 / 5xx / timeout</td><td>untouched</td><td>transient backoff, not a Playwright trigger</td><td class="st s-live">live</td></tr>
+<tr><td>JS challenge inside a 200</td><td>n/a</td><td>not detected; would flow through as a bad extraction</td><td class="st s-noop">known gap (<code>fetch-js-challenge</code>)</td></tr>
+</table></div>
+<p class="note">The archive/ledger/emit tail is shared with <code>upload.ingest</code> via <code>app/handlers/archiving.py</code>. <code>GoogleDriveStore.put()</code> still raises until G7 — but it is now opt-in, not the default.</p>
+</div>
+
+<div class="card">
+<header><h3>upload.ingest</h3><span class="pill live">live</span><span class="pill live">new tag since the last map</span></header>
+<p class="meta">payload <code>{upload_id, manual_task_id?}</code> · dedupe <code>upload:{uid}</code> · bytes spooled in <code>upload_inbox</code> (migration 014_upload)</p>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Emits</th><th>Status</th></tr>
+<tr><td>New content</td><td>archive + fetch-ledger upsert (<code>source=upload</code>)</td><td><code>extract.doc</code></td><td class="st s-live">live</td></tr>
+<tr><td>Seen hash, extracted, group known</td><td>no re-archive</td><td><code>validate.doc</code> (C3 link candidate)</td><td class="st s-live">live</td></tr>
+<tr><td>Seen hash, extracted, no group</td><td>nothing to link</td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>Seen hash, not yet extracted</td><td>carries the group forward</td><td><code>extract.doc</code></td><td class="st s-live">live</td></tr>
+<tr><td>Upload came from a dead-end manual task</td><td>resolves that task worker-side (web is SELECT-only on <code>manual_task</code>)</td><td>as above</td><td class="st s-live">live</td></tr>
+</table></div>
+<p class="note">FETCH minus the HTTP fetch. Producer only (invariant 1): writes <code>fetch_log</code> + the archived file, never the registry. The spool row is deleted on success, so a retry after a committed delete is a no-op. Web inserts into <code>upload_inbox</code> with INSERT-only grant and reads the id back through <code>currval()</code> — it may never read the spool.</p>
+</div>
+
+<div class="card">
+<header><h3>extract.doc</h3><span class="pill live">live</span><span class="pill live">text sidecar</span></header>
+<p class="meta">payload <code>{archive_url, content_hash, group_id, source_url|email_ref}</code> · dedupe <code>extract:{content_hash}</code> · rev = MAX+1</p>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Emits</th><th>Status</th></tr>
+<tr><td>Every document, before anything else</td><td><code>document_text</code> upsert per content hash (PyMuPDF, <code>source='pdf-text'</code>); re-extraction reuses it instead of re-parsing. Called at the top of the handler on every entry, so a batch job re-parses the same PDF on each poll/defer cycle rather than once per extraction (cost, not correctness, against invariant 6&rsquo;s intent)</td><td>&mdash;</td><td class="st s-live">live (S1.8, migration 018)</td></tr>
+<tr><td>PDF has no text layer (a scan)</td><td>row written with <code>source='none'</code>, anomaly <code>no_text_layer</code></td><td>continues to vision tiers</td><td class="st s-live">live</td></tr>
+<tr><td>PDF cannot be opened at all</td><td>no <code>document_text</code> row; counted <code>unreadable_pdf</code> + note, handler returns early</td><td>nothing (nothing to validate)</td><td class="st s-live">live</td></tr>
+<tr><td>T0 classifies business-doc / MSDS</td><td>no LLM spend, finalize immediately</td><td><code>validate.doc</code> (suppressed there)</td><td class="st s-live">live</td></tr>
+<tr><td>Compliance doc, fields at high T0 confidence</td><td>T0 only (filename conventions, anchors, playbook layout templates, pdfplumber REF tables)</td><td><code>validate.doc</code></td><td class="st s-live">live</td></tr>
+<tr><td>Low-confidence fields</td><td>per-field escalation T1 text, then T2 vision (corpus: 18/20 docs hit T2, the cost driver)</td><td><code>validate.doc</code></td><td class="st s-live">live, sync + batch transports</td></tr>
+<tr><td>Batch API pending</td><td><code>batch_ref</code> side table, self-defer poll, never resubmit (C9)</td><td>defers, then <code>validate.doc</code></td><td class="st s-live">live-proven</td></tr>
+</table></div>
+<p class="note">Writes <code>extraction_attempt</code> (all tiers kept for T3 humans) + <code>extraction_cost</code> (measured, ~$0.028/doc on the corpus). T0 layout templates live in <code>playbooks/{slug}.json</code> since S1.7, not in <code>app/extract/t0_layout/</code>.</p>
+<p class="note">Gap unchanged: measured calibration factors exist in findings-phase0 but no <code>[calibration]</code> config section is populated — gate runs identity calibration today (G5).</p>
+</div>
+
+<div class="card">
+<header><h3>validate.doc</h3><span class="pill live">live, full rule set</span><span class="pill live">cert inheritance</span></header>
+<p class="meta">payload <code>{content_hash, extract_rev, group_id}</code> · stateless, writes nothing</p>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Status</th></tr>
+<tr><td>No extraction / required field missing (type, regulation, coverage_scope)</td><td>suppress, reason on job result</td><td class="st s-gated">correct but: <code>'n.a.'</code>-to-null still suppresses legit regulation-less QMS certs (<code>validate-scope</code> ruling open)</td></tr>
+<tr><td>C4 pre-rule: manufacturer scope, no item identifiers</td><td><code>gate.candidate</code> route <code>mfr-binding</code>: one candidate no matter how many groups asked</td><td class="st s-live">live</td></tr>
+<tr><td>Group-scoped, Basic UDI-DI matches group</td><td>all members linked, basis <code>basic-udi-di</code></td><td class="st s-gated">dormant: no group carries a Basic UDI-DI yet</td></tr>
+<tr><td>Group-scoped, REF overlap on <code>(manufacturer, mfr_ref)</code></td><td>overlapping members linked, basis <code>ref-list</code>, <code>ref_gate=true</code></td><td class="st s-live">live</td></tr>
+<tr><td>Group-scoped, REF gate miss</td><td>all members linked, basis <code>fetch-context</code> (staged-capped by C5)</td><td class="st s-live">live</td></tr>
+<tr><td>Candidate older than the current production doc, both dates present</td><td>emits <strong>both</strong> <code>superseded_by_doc_id</code> and the blocking flag <code>older-than-current</code> (plus <code>auto-superseded</code>) — GATE decides which applies</td><td class="st s-live">live (S1.8 task 5, fix round 1)</td></tr>
+<tr><td>Either date null</td><td>no comparison; flag <code>downgrade-uncomparable</code>, caps at staged</td><td class="st s-live">live</td></tr>
+<tr><td>DoC citing a certificate number we hold</td><td><code>cert_doc_id</code> resolved from <code>cert_number</code> / <code>referenced_docs</code> against production or superseded EC/ISO docs</td><td class="st s-live">live (S1.8, migration 020)</td></tr>
+<tr><td>DoC cites a certificate we do not hold</td><td>flag <code>cert-unresolved</code> (non-blocking, caps at staged); self-corrects via GATE back-resolution</td><td class="st s-live">live</td></tr>
+<tr><td>No group (backfill/email/upload), manufacturer known</td><td>manufacturer-scoped group search; multi-hit resolves to lowest gid + <code>multi-group-match</code></td><td class="st s-live">live</td></tr>
+<tr><td>No identifiers at all (non-mfr-scope)</td><td>flag <code>no-item-identifier</code> (blocking), no links fabricated</td><td class="st s-live">live</td></tr>
+</table></div>
+<p class="note">Flags: blocking (force manual unless GATE's fast path applies): <code>older-than-current</code>, <code>no-item-identifier</code>. Capping (max staged): <code>ref-unscoped</code>, <code>downgrade-uncomparable</code>, <code>multi-group-match</code>, <code>date-insane</code>, <code>expiry-on-certless-doc</code>, <code>cert-unresolved</code>. <code>date-insane</code> caps <em>and</em> vetoes GATE's auto-supersede fast path: <code>validity_from</code> is excluded from LLM escalation, so a T0 extraction carries a flat high confidence that clears the threshold however wrong the year is, and on a scanned corpus a garbled year is the expected failure.</p>
+<p class="note">C6/C7 output is no longer inert: <code>supersedes</code> and <code>related_doc_id</code> are persisted by GATE (migration 015), and the inverse case now has its own signal.</p>
+</div>
+
+<div class="card">
+<header><h3>gate.candidate</h3><span class="pill live">live</span><span class="pill live">supersession persisted</span><span class="pill live">evidence per rev</span></header>
+<p class="meta">the only registry writer (with <code>gate.apply</code>): <code>document</code>, <code>item_document</code>, <code>evidence</code>, <code>audit_log</code>, <code>manual_task</code></p>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Status</th></tr>
+<tr><td>Any required field lacking verbatim / tier / confidence</td><td>hard error, zero writes (invariant 2)</td><td class="st s-live">live</td></tr>
+<tr><td>T1/T2 evidence without <code>page</code></td><td>hard error; T0 filename-derived and T3 human evidence are legitimately pageless</td><td class="st s-live">live (<code>evidence-page</code> ruling, closed)</td></tr>
+<tr><td>Re-extraction at a new rev</td><td>evidence keyed <code>(doc_id, field, extract_rev)</code>: the current value is always backed by evidence from the call that wrote it; prior revs kept</td><td class="st s-live">live (migration 014_evidence_rev)</td></tr>
+<tr><td><code>superseded_by_doc_id</code> present, no other blocking flag, <strong>no <code>date-insane</code></strong>, and <code>validity_from</code> confidence &ge; HIGH — all four</td><td>disposition <code>superseded</code>: auto-filed into the chain, archived and evidenced, no human. Writes the pointer directly rather than through <code>_apply_supersession</code>, so it <em>skips that function&rsquo;s live (type, regulation) re-verification</em> &mdash; a human edit to the target racing an in-flight candidate could write a mismatched pointer</td><td class="st s-live">live (S1.8) — guarded fast path</td></tr>
+<tr><td>Same, but the guard fails</td><td><code>older-than-current</code> is back in <code>BLOCKING_FLAGS</code> and forces <code>manual</code> — never production, never a silent downgrade</td><td class="st s-live">live (round-1 fix)</td></tr>
+<tr><td>Fast path qualifies but the target row is already <code>production</code></td><td>the chain pointer is withheld (the UPDATE requires <code>status='superseded'</code>) and reported on the job result — never a row serving <code>{"status":"production","superseded_by":N}</code> to consumers</td><td class="st s-live">live (2026-08-10 write-side fix)</td></tr>
+<tr><td>score &ge; 0.95, ref_gate, zero flags</td><td>document <code>production</code>, audit row with self-contained <code>job_snapshot</code>; <code>supersedes</code> applied to the older doc</td><td class="st s-gated">thresholds are still placeholders (G5)</td></tr>
+<tr><td>score &ge; 0.75, no blocking flag</td><td>document <code>staged</code>; <code>document.supersedes</code> written sticky, applied later at the production transition</td><td class="st s-live">live</td></tr>
+<tr><td>Otherwise / blocking flag</td><td><code>manual_task(gate-manual)</code> with all tier attempts attached</td><td class="st s-live">live</td></tr>
+<tr><td>Candidate is itself an EC/ISO certificate</td><td>back-resolution: every earlier DoC citing that <code>cert_number</code> gets <code>cert_doc_id</code> set, so resolution does not depend on fetch order</td><td class="st s-live">live (S1.8)</td></tr>
+<tr><td>Links, trusted basis (ref-list, udi, basic-udi-di, mfr-scope, manual)</td><td><code>production</code> only when doc is production and score &ge; HIGH, else staged; an existing production link never has its <code>match_basis</code>/<code>udi</code> overwritten</td><td class="st s-live">live (provenance fix, S1.8)</td></tr>
+<tr><td>Links, name-family / fetch-context</td><td>always <code>staged</code>: handler logic AND the DB CHECK <code>item_document_trusted_basis_ck</code></td><td class="st s-live">structurally enforced</td></tr>
+<tr><td>Re-delivery, same content_hash + same rev</td><td>idempotent upserts, no duplicate evidence/audit; a superseded doc is never resurrected by re-delivery</td><td class="st s-live">tested</td></tr>
+</table></div>
+</div>
+
+<div class="card">
+<header><h3>gate.apply</h3><span class="pill live">live</span></header>
+<p class="meta">payload <code>{doc_id, decision, decided_by, edits?}</code>, <code>decided_by</code> from Caddy's <code>X-Forwarded-User</code> · dedupe <code>apply:{doc_id}:{decision}</code></p>
+<div class="tablewrap"><table>
+<tr><th>Decision</th><th>Outcome</th><th>Status</th></tr>
+<tr><td><code>approve</code></td><td>doc to production; staged links promoted only for trusted bases; edits become T3 evidence stamped past the highest known rev; a staged candidate's <code>supersedes</code> is applied here — the human path of the production transition</td><td class="st s-live">live</td></tr>
+<tr><td><code>reject</code></td><td>doc to <code>rejected</code> <strong>and every link cascaded to <code>rejected</code></strong>, one <code>link-rejected</code> audit row each; optional <code>discover.group</code> at interactive priority</td><td class="st s-live">live (S1.8 cascade)</td></tr>
+<tr><td><code>bind-manufacturer</code></td><td>doc to production; mfr-scope production links derived for ALL MD items of that manufacturer, resolved <em>through <code>manufacturer_alias</code></em> so raw BC spellings bind</td><td class="st s-live">live; future-item half still deferred (<code>resolve-c4</code>)</td></tr>
+<tr><td>any decision</td><td>open <code>manual_tasks</code> for the doc resolved; audit row — production writes are now audited on the human promote paths too, not only the machine path</td><td class="st s-live">live</td></tr>
+<tr><td>un-bind / severance</td><td>no such decision exists in code</td><td class="st s-noop">PRD describes it; not implemented</td></tr>
+</table></div>
+</div>
+
+<div class="card">
+<header><h3>backfill.scan</h3><span class="pill live">live</span></header>
+<p class="meta">payload <code>{drive_folder}</code> · walks the local corpus, sha256, <code>fetch_log source=backfill</code> · dedupe <code>extract:{content_hash}</code></p>
+<p class="note">New hash: emits <code>extract.doc</code> with <code>group_id=null</code> (coverage resolved from document content at VALIDATE). Seen hash: nothing. <code>.PDF</code> matched case-insensitively (S1.7 fix). Proven: 22-fixture spine run (22/22 extracted, $0.61); second cycle emitted 0 at $0 delta.</p>
+</div>
+
+<div class="card">
+<header><h3>SCHEDULER + report.weekly</h3><span class="pill live">live process</span><span class="pill gated">2 of 4 crons emit-gated</span></header>
+<p class="meta">compose profile <code>full</code>: a plain <code>docker compose up</code> runs no crons · <code>scheduler_run</code> ledger prevents restart double-fire</p>
+<div class="tablewrap"><table>
+<tr><th>Cron</th><th>Behavior</th><th>Status</th></tr>
+<tr><td>Monthly ingest</td><td>globs <code>ingest_watch_dir</code> by mtime, enqueues <code>ingest.run</code></td><td class="st s-gated">inert: watch dir defaults empty (GAP D)</td></tr>
+<tr><td>Expiry scan</td><td>now inherits the renewal date through <code>cert_doc_id</code> (<code>COALESCE(d.validity_to, c.validity_to)</code>), so a DoC with no expiry of its own is no longer invisible; Class I with no certificate still never expires</td><td class="st s-live">live (S1.8); <code>email.request</code> emission behind a flag, default false</td></tr>
+<tr><td>Failure monitor</td><td><code>discovery_log</code> miss-rate spikes; <code>playbook.reonboard</code> emission behind flag</td><td class="st s-gated">flag defaults false (S2.1 consumer missing)</td></tr>
+<tr><td>Weekly report</td><td><code>report.weekly</code>: expiring docs (with an <code>inherited</code> marker), job counts, dead count, failure spikes; read-only</td><td class="st s-live">live</td></tr>
+</table></div>
+</div>
+
+<div class="card">
+<header><h3>Review UI (web/) + read API</h3><span class="pill live">live</span><span class="pill live">registry now visible</span></header>
+<p class="meta">job producer only: zero write grants on registry tables (DB GRANTs, migration 007) · Caddy is the sole ingress (Basic auth, G3 closed)</p>
+<div class="tablewrap"><table>
+<tr><th>Surface</th><th>Does</th><th>Status</th></tr>
+<tr><td><code>GET /</code></td><td>status board + KPI board K1&ndash;K8 (production-visibility views only)</td><td class="st s-live">live</td></tr>
+<tr><td><code>/items</code>, <code>/items/{item_ref}</code></td><td>browse the catalogue with coverage in three buckets that partition every linked document: production, staged, superseded; <code>next_expiry</code> inherits through <code>cert_doc_id</code> so the board and the expiry scan cannot disagree. <strong>Input gap:</strong> <code>page</code> takes no upper bound, so an oversized value reaches <code>OFFSET</code> as <code>numeric</code> and 500s</td><td class="st s-gated">live, 1 input gap</td></tr>
+<tr><td><code>/documents</code>, <code>/documents/{doc_id}</code></td><td>document list + detail with evidence per field; non-numeric id 404s rather than 422. <strong>Parity gap:</strong> the list shows raw <code>validity_to</code> with no <code>cert_doc_id</code> COALESCE, so a DoC with an inherited expiry reads &ldquo;&mdash;&rdquo; here while <code>/items</code> shows the real date &mdash; three pages, two answers</td><td class="st s-gated">live, parity gap</td></tr>
+<tr><td><code>/documents/{content_hash}/text</code></td><td>the parsed text we actually read out of the PDF</td><td class="st s-live">live (S1.8)</td></tr>
+<tr><td><code>/archive/{path}</code></td><td>serves the archived file read-only from the <code>archive_data</code> volume, so <code>archive_url</code> is openable instead of a <code>file://</code> URI. Containment is checked with <code>is_relative_to</code>; a percent-encoded null byte raises before that check (500, not a traversal bypass)</td><td class="st s-gated">live, 1 input gap</td></tr>
+<tr><td><code>/data-quality</code></td><td><code>data_anomaly</code> ledger by kind and subject — the standing question list for BC/IT</td><td class="st s-live">live (S1.8)</td></tr>
+<tr><td><code>/expiry</code></td><td>what is about to lapse, grouped by manufacturer (who gets the email); inherits the date through <code>cert_doc_id</code> and marks it <code>inherited</code>. <code>days</code> is bounded 0&ndash;3650 because it reaches Postgres as <code>current_date + %s</code> and an out-of-range value crashes the page rather than emptying it. <strong>But the <code>cert_doc_id</code> join carries no status filter</strong>, so a certificate a human rejected can still supply the date (hole below)</td><td class="st s-gated">live, feeds the hole below</td></tr>
+<tr><td><code>/inflight</code></td><td>documents moving through the pipeline counted by <strong>content hash</strong>, not by job — one PDF can hold several jobs, and the status board only ever answers the job question</td><td class="st s-live">live (S1.8)</td></tr>
+<tr><td><code>/staging</code></td><td>staged docs, staged links on production docs, binding candidates, per-field evidence; apply enqueues <code>gate.apply</code>; grouping suggestions with assign / start-new-group</td><td class="st s-live">live</td></tr>
+<tr><td><code>/manual</code>, <code>/dead</code></td><td>manual tasks with resolve (dead-ends link straight to <code>/upload</code>); dead jobs with re-run</td><td class="st s-live">live</td></tr>
+<tr><td><code>/upload</code></td><td>hand a document to the pipeline; enqueues <code>upload.ingest</code></td><td class="st s-live">live</td></tr>
+<tr><td><code>/api/items/{ref}/documents</code>, <code>/api/documents/{id}</code>, <code>/api/kpi</code></td><td>JSON, production-visibility only</td><td class="st s-live">live</td></tr>
+</table></div>
+<p class="note">CLAUDE.md's UI scope line was amended on this branch to cover registry visibility (items, documents, expiry, in-flight, data quality) alongside exception handling — the nine new routes are that amendment, not scope creep past it.</p>
+</div>
+
+<div class="card">
+<header><h3>Operator CLI (not the queue)</h3><span class="pill live">live</span><span class="pill live">new in S1.8</span></header>
+<div class="tablewrap"><table>
+<tr><th>Verb</th><th>Does</th><th>Status</th></tr>
+<tr><td><code>vendor-master --file … [--apply] [--allow-renames]</code></td><td>mirrors BC's 390-row manufacturer master into <code>vendor_master</code> (migration 016). Dry run by default; a code that would re-point to a different name is <strong>refused</strong> unless <code>--allow-renames</code>, because <code>canonical_manufacturer</code> is write-once</td><td class="st s-live">live</td></tr>
+<tr><td><code>playbooks validate</code></td><td>operator gate: raises on malformed/conflicting playbook files</td><td class="st s-live">live</td></tr>
+<tr><td><code>playbooks reconcile</code></td><td>read-only: do the authored playbooks actually join to what BC emits? Entity-level (codes grouped by vendor-master name or co-claim), sized in items from a live export or the mirror</td><td class="st s-live">live</td></tr>
+<tr><td><code>playbooks sync</code></td><td>projects <code>bc_codes</code> into <code>manufacturer_alias</code> with <code>source</code> provenance; reports orphaned groups</td><td class="st s-live">live</td></tr>
+<tr><td><code>regroup [--manufacturer|--group|--all]</code></td><td>drops groups so RESOLVE rebuilds them and re-enqueues <code>resolve.group</code>; refuses the whole selection if any group carries documents</td><td class="st s-live">live</td></tr>
+</table></div>
+<p class="note">Nothing in this row reads at runtime: <code>vendor_master</code> is a mirror, and <code>manufacturer_alias</code> stays the projection RESOLVE and GATE actually use.</p>
+</div>
+
+<div class="card">
+<header><h3>Not built: 5 enum tags on the no-op handler</h3><span class="pill noop">phase 2</span></header>
+<div class="tablewrap"><table>
+<tr><th>Tag</th><th>Planned role</th><th>Produced today?</th></tr>
+<tr><td><code>email.request</code></td><td>outbound renewal / discovery-exhausted contact (S2.4)</td><td><strong>no</strong> — both producers (DISCOVER, SCHEDULER expiry scan) are behind flags that default false</td></tr>
+<tr><td><code>playbook.reonboard</code></td><td>re-onboarding trigger on failure spikes (S2.1)</td><td>SCHEDULER only, flag off; nothing consumes it</td></tr>
+<tr><td><code>email.poll</code></td><td>inbound mailbox to <code>extract.doc</code> (S2.4)</td><td>no producer</td></tr>
+<tr><td><code>email.reminder</code></td><td>renewal reminder branch (S2.4)</td><td>no producer</td></tr>
+<tr><td><code>eudamed.sync</code></td><td>EUDAMED mirror refresh (S2.3)</td><td>no producer; DISCOVER's mirror rung reads an empty table meanwhile</td></tr>
+</table></div>
+</div>
+
+<h2><span class="sec">3</span>State machines</h2>
+
+<div class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  direction LR
+  [*] --> pending: enqueue (active-scope dedupe)
+  pending --> running: claim, attempts+1
+  running --> done: finish(result) — job.result written in the same tx
+  running --> pending: defer (batch poll, attempt refunded)
+  running --> failed: error (exp backoff)
+  running --> pending2: visibility timeout 300s
+  pending2: reclaimable
+  pending2 --> running
+  failed --> running: retry after run_after
+  failed --> dead: attempts exhausted
+  dead --> running: UI re-run (same key, interactive)
+  done --> [*]
+</pre>
+</div>
+<p class="caption">Job lifecycle. <code>done</code> and <code>dead</code> free the dedupe key (C2). New since the last map: the handler's <code>Result</code> envelope is persisted to <code>job.result</code> and its anomalies appended to <code>data_anomaly</code>, both in the finishing transaction — a done job and its report can never disagree.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  direction LR
+  [*] --> staged: gate (score below HIGH or flagged)
+  [*] --> production: gate (HIGH + ref_gate + no flags)
+  [*] --> superseded: gate fast path (older, guard passes)
+  staged --> production: approve / bind / high-score redelivery
+  staged --> rejected: reject
+  production --> superseded: a newer doc supersedes it (C6, at production transition)
+  production --> production: never downgraded (CASE guard)
+</pre>
+</div>
+<p class="caption"><code>document.status</code>. <code>superseded</code> now has two writers, both audited and idempotent: <code>_apply_supersession</code> (a newer document arrives) and the guarded auto-file fast path (this document is the older one). A superseded document is never resurrected by re-delivery.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  direction LR
+  [*] --> staged: any basis
+  [*] --> production: trusted basis + doc production + HIGH
+  staged --> production: approve, trusted bases only
+  staged --> staged: fetch-context / name-family, forever (C5 CHECK)
+  production --> rejected: gate.apply reject cascades every link
+  staged --> rejected: gate.apply reject cascades every link
+</pre>
+</div>
+<p class="caption"><code>item_document.status</code>. Consumers see a doc for an item only when doc AND link are production. <code>rejected</code> is no longer a writerless enum value: no link may outlive its document's rejection. Note the asymmetry the <code>/items</code> board has to handle — supersession flips only the document's status, so a superseded document can still carry a production-status link.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  direction LR
+  state "manual_task: open" as mo
+  state "manual_task: resolved" as mr
+  [*] --> mo: gate-manual | discovery-dead-end
+  mo --> mr: any gate.apply on the doc / later discover rung hits / upload from the dead-end
+  state "suggestion: open" as so
+  state "suggestion: resolved" as sr
+  [*] --> so: ambiguous name cluster (unique open per item)
+  so --> sr: forced assign / force_new_group
+</pre>
+</div>
+<p class="caption">Review work items. <code>manual_kind 'dead-job-followup'</code> still exists in the enum with no producer.</p>
+
+<h2><span class="sec">4</span>Loose ends, honestly</h2>
+<div class="tablewrap"><table>
+<tr><th>Class</th><th>Item</th><th>Ref</th></tr>
+<tr><td class="st s-live">closed same day</td><td><strong>The real dev DB was three migrations behind this branch</strong> (<code>schema_migrations</code> through <code>017</code>), so EXTRACT would have written to a missing <code>document_text</code>, every <code>finish()</code> to a missing <code>job.result</code>, and GATE to a missing <code>document.cert_doc_id</code>. <strong>Migrated 2026-08-10:</strong> <code>018</code>/<code>019</code>/<code>020</code> applied after a <code>pg_dump</code>; all 24 pre-existing table counts identical pre/post (only <code>schema_migrations</code> moved, 18 &rarr; 21), <code>document_text</code> and <code>data_anomaly</code> present and readable by <code>dentalia_api</code></td><td><code>s1.8-dev-db-migrations</code></td></tr>
+<tr><td class="st s-hole">hole</td><td>4 of 9 <code>ANOMALY_KINDS</code> have no producer anywhere: <code>cert_reference_unresolved</code> (VALIDATE only appends the <code>cert-unresolved</code> flag), <code>code_shape_unexpected</code>, <code>reclassified_non_md</code>, <code>blocked_item</code>. A closed vocabulary with unreachable members reads as coverage that does not exist</td><td><code>task4-cert-anomaly</code></td></tr>
+<tr><td class="st s-hole">hole</td><td><code>item_document_production</code> (schema sketch) selects <code>d.validity_to</code> raw while <code>expiring_documents</code> inherits through <code>cert_doc_id</code> — two readers of "when does this expire" that now disagree</td><td><code>task4-cert-view</code></td></tr>
+<tr><td class="st s-hole">hole</td><td><strong>A rejected certificate can still drive the renewal loop.</strong> <code>_resolve_cited_certificate</code> restricts to <code>production</code>/<code>superseded</code> when it sets <code>cert_doc_id</code>, but every surface that later <em>reads</em> through it joins unfiltered &mdash; <code>report.py:36</code> (weekly report and the scheduler expiry scan), <code>web/app.py:501</code>/<code>533</code>/<code>638</code> (<code>/items</code>, <code>/items/{ref}</code>, <code>/expiry</code>). Confirmed critical in the 2026-08-10 final review</td><td><code>final-cert-status-join</code></td></tr>
+<tr><td class="st s-gated">blocker</td><td>T1 ranker (discover) and T1 adjudicator (resolve) still unwired: search-path groups and ambiguous names all fall to manual. The first real manufacturer run produced 51 dead-end tasks and 154 open grouping suggestions against 49 groups</td><td><code>discover-t1-ranking</code>, <code>resolve-t1-ranking</code></td></tr>
+<tr><td class="st s-gated">blocker</td><td>Gate thresholds are placeholders; measured calibration factors still not applied (no <code>[calibration]</code> section exists)</td><td>G5 / <code>gate-thresholds</code></td></tr>
+<tr><td class="st s-gated">inert by design</td><td>C4 resolve-time binding hook returns 0 (invariant 1 forbids the write at RESOLVE)</td><td><code>resolve-c4</code></td></tr>
+<tr><td class="st s-gated">dormant</td><td>UDI / Basic-UDI-DI resolution and gating: <code>udi</code> is always null in the LJ export and <code>item_group.basic_udi_di</code> still has no writer until EUDAMED (S2.3); <code>eudamed_mirror</code> is empty, so DISCOVER's mirror rung is always a miss</td><td><code>udi-group-key</code></td></tr>
+<tr><td class="st s-gated">stub</td><td><code>GoogleDriveStore.put()</code> raises (G7) — opt-in now, not the default · <code>BcApiAdapter.read()</code> raises without injected records (v2)</td><td><code>fetch-gdrive</code></td></tr>
+<tr><td class="st s-gated">ruling for Denis</td><td><code>'n.a.'</code> regulation normalized to null suppresses legit QMS certs before the binding flow</td><td><code>validate-scope</code></td></tr>
+<tr><td class="st s-gated">ruling for Denis</td><td>md-unknown default-on is still a global boolean; the decided "confirmed-manufacturer codes only" middle path is not code yet</td><td><code>s1.1-ingest</code></td></tr>
+<tr><td class="st s-gated">ruling for Denis</td><td><code>playbooks/dentsply-sirona.json</code> now claims code <code>035</code>, so its <code>manufacturer</code> string is live and write-once for 53 items. Brand-to-parent (VDW, Dentsply, Sirona, Maillefer under Dentsply Sirona) is a second relation the data model does not have</td><td><code>playbooks-dentsply-name</code></td></tr>
+<tr><td class="st s-gated">client-gated</td><td>G7 Drive auth · G8 mailbox · G11 ZG data state · G15 AC pass/fail targets. G4 is largely answered: the vendor master resolves all 381 LJ codes</td><td>gap register</td></tr>
+<tr><td class="st s-noop">hardening</td><td>JS-challenge-in-200 undetected · domain flag not persisted on double bot-wall failure · ZG-scale ingest single-tx · staging SLA/aging (G10) · <code>conftest</code> truncates queue tables only, so committed-row tests carry local workarounds · two migration files share the <code>014</code> prefix (documented in architecture.md, applies deterministically)</td><td><code>fetch-js-challenge</code>, <code>playbooks-conftest-truncate</code>, followups</td></tr>
+<tr><td class="st s-noop">hardening</td><td>Two unhandled 500s on user input (<code>/items?page=</code> unbounded, <code>/archive/{path}</code> with <code>%00</code>) &middot; the auto-supersede fast path skips the live C6 recheck under a human-edit race (reviewer flagged this one uncertain) &middot; <code>store_text</code> re-parses per batch poll cycle</td><td><code>final-500s</code>, <code>final-c6-recheck-race</code>, <code>final-text-store-reparse</code></td></tr>
+<tr><td class="st s-noop">not built (Phase 2)</td><td><strong>This table lists what is broken or undecided, not everything unbuilt.</strong> Also outstanding, by design and tracked elsewhere: the five Phase-2 enum tags on the no-op handler (<code>email.poll</code>, <code>email.reminder</code>, <code>eudamed.sync</code>, and the flag-gated <code>email.request</code> / <code>playbook.reonboard</code>) and G6&rsquo;s deterministic link-extraction tiers in FETCH, where the MVP routes inconclusive HTML pages to manual instead of enumerating their PDF links. Both have their own cards in section 2</td><td>PHASES.md G6 + Phase 2 sessions, <code>discover-tier-a</code></td></tr>
+</table></div>
+
+<footer>
+Sources: direct code reads of <code>app/</code>, <code>web/</code>, <code>migrations/</code>, <code>playbooks/</code> on <code>s1.8-vendor-master</code> (2026-08-07), plus read-only queries against the dev database for the migration and pipeline-state claims; contracts: PRD v3, job-type handbook, PHASES.md, <code>tasks/followups.md</code>. Suite at build time: 916 passed / 1 skipped (214s). Re-verified end to end 2026-08-10 against that branch tip, including the six findings from that day&rsquo;s final review, each traced to code rather than to the followup text.
+</footer>
+</main>
+<script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+mermaid.initialize({ startOnLoad: true, theme: dark ? "dark" : "neutral" });
+</script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+{
+  "manufacturer": "KURARAY DENTAL",
+  "aliases": [
+    "Kuraray Noritake Dental Inc.",
+    "Kuraray Europe GmbH"
+  ],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "278"
+    },
+    {
+      "catalogue": "LJ",
+      "code": "10071"
+    }
+  ],
+  "domains": [
+    "kuraraynoritake.eu",
+    "kuraraynoritake.com"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "IFU",
+      "kind": "portal",
+      "url": "https://www.kuraraynoritake.eu/en/downloads",
+      "note": "Located 2026-08-20 and robots-permitted, but CONTENTS NEVER READ: the server returned a body exceeding 10 MB and the fetch aborted, then the host returned HTTP 429 on the next request. robots.txt sets Crawl-delay: 2 and fully disallows several named bots. No Declaration of Conformity or EC certificate was found on any Kuraray domain. The legal manufacturer is the Japanese entity, read from their own corporate page; whether Kuraray Europe GmbH is the EU authorised representative, the importer or a sales office was NOT established, so its alias here is an identity spelling only."
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "manufacturer": "IMES-ICORE",
+  "aliases": [
+    "imes-icore GmbH"
+  ],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "053"
+    }
+  ],
+  "domains": [
+    "imes-icore.com"
+  ],
+  "doc_sources": []
+}

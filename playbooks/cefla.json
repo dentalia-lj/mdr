@@ -1,0 +1,34 @@
+{
+  "manufacturer": "CEFLA",
+  "aliases": [
+    "Cefla s.c."
+  ],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "10015"
+    },
+    {
+      "catalogue": "LJ",
+      "code": "CEFLA"
+    }
+  ],
+  "domains": [
+    "cefla.com",
+    "castellini.com"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "IFU",
+      "kind": "portal",
+      "url": "https://www.castellini.com/en/resources/downloads",
+      "note": "Fetched 2026-08-20, HTTP 200. 10 PDF hrefs in the served HTML, the remainder behind a \"load more\" control. Document-type filters are Manual, Quick Start Guide, Brochure, Certifications, Dose Declaration, Hygiene Protocol -- there is NO Declaration of Conformity category. Filenames are 9-digit Cefla publication codes, not article numbers (970506815_CAST_Full_Touch_2013_IT.pdf), so matching caps at name-family and therefore staged. Found via an Italian-language query."
+    },
+    {
+      "doc_type": "DoC",
+      "kind": "portal",
+      "url": "https://extranetmedical.cefla.it/",
+      "note": "Dealer-restricted extranet for Anthos/Stern Weber/Castellini documentation, seen as a link target on castellini.com and NOT fetched (no credentials). Declarations of conformity appear to live here rather than on the public site. COVERAGE GAP: these 1699 items likely span several Cefla brands (Anthos, Stern Weber, MyRay, NewTom, Mocom) whose domains were never checked."
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Job #{{ job.id }} — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<p><a href="/status">&larr; back to System status</a></p>
+<h1>Job #{{ job.id }}</h1>
+
+<div class="card">
+  <div class="stat-row">
+    <div class="stat-tile">
+      <div class="n">{{ stage }}</div>
+      <div class="label">stage</div>
+    </div>
+    <div class="stat-tile">
+      <div class="n"><span class="badge badge-{{ job.status }}">{{ job.status }}</span></div>
+      <div class="label">status</div>
+    </div>
+    <div class="stat-tile">
+      <div class="n">{{ job.priority }}</div>
+      <div class="label">priority</div>
+    </div>
+    <div class="stat-tile">
+      <div class="n">{{ job.attempts }}/{{ job.max_attempts }}</div>
+      <div class="label">attempts</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Details</h2>
+  <table>
+    <tbody>
+      <tr><th>Type</th><td>{{ job.type }}</td></tr>
+      <tr><th>Dedupe key</th><td>{{ job.dedupe_key }}</td></tr>
+      <tr><th>Created at</th><td>{{ job.created_at }}</td></tr>
+      <tr><th>Run after</th><td>{{ job.run_after }}</td></tr>
+      <tr><th>Claimed by</th><td>{{ job.claimed_by or "—" }}</td></tr>
+      <tr><th>Claimed at</th><td>{{ job.claimed_at or "—" }}</td></tr>
+      <tr><th>Caused by</th><td>{% if parent %}<a href="/jobs/{{ parent.id }}">#{{ parent.id }} ({{ parent.type }})</a>{% else %}—{% endif %}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Caused</h2>
+  {% if children %}
+  <table>
+    <tbody>
+      {% for c in children %}
+      <tr>
+        <td><a href="/jobs/{{ c.id }}">#{{ c.id }}</a></td>
+        <td>{{ c.type }}</td>
+        <td><span class="badge badge-{{ c.status }}">{{ c.status }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No jobs enqueued by this one.</p>
+  {% endif %}
+</div>
+
+{% if job.last_error %}
+<div class="card">
+  <h2>Last error</h2>
+  <div class="result error">{{ job.last_error }}</div>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Payload</h2>
+  <pre class="payload">{{ payload_pretty }}</pre>
+</div>
+{% endblock %}

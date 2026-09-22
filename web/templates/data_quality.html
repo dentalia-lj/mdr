@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% import "_pager.html" as pg %}
+{% import "_ui.html" as ui %}
+{% block title %}Data quality — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>Data quality</h1>
+{% call ui.intro("Standing ledger of catalogue weirdness: every row is something the BC export did that the pipeline could not interpret, counted rather than guessed at.") %}
+  <code>data_anomaly</code>, migration 019. <code>kind</code> is a closed vocabulary
+  (<code>app/results.py</code> <code>ANOMALY_KINDS</code>) — a repeat observation bumps the
+  counter and last-seen date rather than inserting again, so this table stays the size of the
+  problem, not the size of the corpus. Click a kind to filter the detail list below it.
+{% endcall %}
+
+<div class="card">
+  <h2>By kind</h2>
+  {% if summary %}
+  <table>
+    <thead><tr><th>Kind</th><th>Distinct subjects</th><th>Observations</th></tr></thead>
+    <tbody>
+      {% for row in summary %}
+      <tr>
+        <td><a href="/data-quality?kind={{ row.kind }}">{{ row.kind }}</a></td>
+        <td>{{ row.subjects }}</td>
+        <td>{{ row.observations }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="hint">No anomalies recorded yet.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Detail{% if kind %} — {{ kind }}{% endif %}</h2>
+  {% if kind %}
+  <p class="hint"><a href="/data-quality">Clear filter</a></p>
+  {% endif %}
+  {% if rows %}
+  <table>
+    <thead>
+      <tr><th>Kind</th><th>Subject</th><th>Name</th><th>Catalogue</th><th>Detail</th><th>Count</th><th>Last seen</th></tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.kind }}</td>
+        {# whichever table claimed the subject decides where it points; neither
+           claiming it leaves plain text rather than an href to a 404 #}
+        <td>
+          {% if row.is_item %}<a href="/items/{{ row.subject }}">{{ row.subject }}</a>
+          {% elif row.doc_id %}<a href="/documents/{{ row.doc_id }}">{{ row.subject }}</a>
+          {% else %}{{ row.subject }}{% endif %}
+        </td>
+        <td>{{ row.subject_name or "—" }}</td>
+        <td>{{ row.catalogue or "—" }}</td>
+        {# `detail` is a JSON blob wide enough to push every column after it off
+           the edge — the reader wants kind, subject and count first and this
+           last, so it opens on demand instead of setting the table's width #}
+        <td>
+          {% if row.detail %}
+          <details class="cell-json"><summary>show</summary><pre>{{ row.detail_pretty }}</pre></details>
+          {% else %}—{% endif %}
+        </td>
+        <td>{{ row.seen_count }}</td>
+        <td class="nowrap">{{ row.last_seen.strftime("%Y-%m-%d %H:%M") if row.last_seen else "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="hint">No anomalies match this filter.</p>
+  {% endif %}
+
+  {{ pg.pager_links(pager, "/data-quality", ("kind=" ~ kind|urlencode) if kind else "") }}
+</div>
+
+<div class="card">
+  <h2>Device class vs BC</h2>
+  {% call ui.intro("What BC says an item's risk class is, beside what the item's production documents state.") %}
+    <code>item_class_check</code>, migration 033. <strong>BC stays the source of truth</strong> —
+    nothing here writes <code>item_mirror.product_class</code>; this is evidence for a person to
+    act on. <code>fillable</code> is a blank BC class a held document could fill;
+    <code>conflict</code> is a class the document contradicts. <code>agree-family</code> is not a
+    disagreement: documents almost never print the class I subclasses, so BC <code>Ir</code>
+    against a document's <code>I</code> is the document being less specific.
+  {% endcall %}
+
+  {% if class_summary %}
+  <table>
+    <thead><tr><th>Verdict</th><th>Items</th></tr></thead>
+    <tbody>
+      {% for row in class_summary %}
+      <tr><td>{{ row.verdict }}</td><td>{{ row.n }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="hint">No production document states a class yet, so there is nothing to compare.</p>
+  {% endif %}
+
+  {% if class_rows %}
+  <h3>To look at</h3>
+  <table>
+    <thead>
+      <tr><th>Verdict</th><th>Item</th><th>BC class</th><th>Document states</th><th>Document</th></tr>
+    </thead>
+    <tbody>
+      {% for row in class_rows %}
+      <tr>
+        <td>{{ row.verdict }}</td>
+        <td><a href="/items/{{ row.item_ref }}">{{ row.item_ref }}</a></td>
+        <td>{{ row.bc_class or "—" }}</td>
+        <td>{{ row.doc_class }}</td>
+        <td><a href="/documents/{{ row.doc_id }}">{{ row.type }} {{ row.doc_id }}</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {# a capped list must say what it is not showing, or it reads as the whole list #}
+  <p class="hint">
+    Showing {{ class_rows|length }} of {{ class_total }} item(s) needing a look
+    {%- if class_total > class_shown %} (capped at {{ class_shown }}){% endif %}.
+    <code>agree</code> and <code>agree-family</code> are counted above and not listed.
+  </p>
+  {% endif %}
+</div>
+{% endblock %}

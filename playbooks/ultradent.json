@@ -1,0 +1,55 @@
+{
+  "manufacturer": "ULTRADENT",
+  "bc_codes": [
+    {
+      "code": "168"
+    }
+  ],
+  "domains": [
+    "ultradent.com"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "IFU",
+      "kind": "portal",
+      "url": "https://www.ultradent.com/resources/product-instructions",
+      "note": "Fetched 2026-08-27, HTTP 200, robots ALLOW: 147 IFU PDFs are linked in the STATIC HTML of a plain GET, no browser tier needed, and one was fetched at 845.107 B with a real %PDF- magic. Kept portal and not direct because the URL is the listing page, not a document -- the 147 targets underneath it are what a crawl recipe (S2.1) would harvest, and this is one of the better candidates in the corpus. The client's own hand-off pointed instead at /resources/safety-data-sheets, which serves SDS only and zero PDF hrefs; that URL is deliberately not authored here."
+    },
+    {
+      "doc_type": "EC",
+      "kind": "portal",
+      "url": "https://www.ultradent.com/resources/certifications",
+      "note": "Fetched 2026-08-27, HTTP 200, 98.975 B, 3 PDF hrefs. robots.txt DISALLOWS this path (`Disallow: /resources/certifications`), so the page itself stays portal: a human may click it, the fetcher structurally cannot. The three documents it lists are authored `direct` below on assets.ctfassets.net, which returns 404 for robots.txt and is therefore permitted. **That split is Denis's ruling of 2026-08-27**, taken deliberately rather than by inference -- the question was whether a listing page's Disallow travels with the assets it links, and the answer here is no. Do not generalise it into a rule without asking again."
+    },
+    {
+      "doc_type": "ISO",
+      "kind": "direct",
+      "url": "https://assets.ctfassets.net/wfptrcrbtkd0/3Yhat7q0ZNTSJDZWtoLBnu/55991d85632e0af17461370cc66b330f/Ultradent_ISO_13485_Cert_26-1601-Q.pdf",
+      "note": "ISO 13485 certificate 26-1601-Q, Ultradent Products Inc. Verified 2026-08-27 by fetching it: 200, 488.019 B, magic `%PDF-`, content-type application/pdf. Host assets.ctfassets.net returns robots.txt 404 (109 B), so it restricts nothing. Corporate/QMS evidence for the legal manufacturer, not a per-article device document."
+    },
+    {
+      "doc_type": "ISO",
+      "kind": "direct",
+      "url": "https://assets.ctfassets.net/wfptrcrbtkd0/42mSHAXg5IUhRL5EFTmTie/0be3f44cf0950a0a6b74e337d7536563/Ultradent_EN_ISO_13485_Cert_44_221_090234.pdf",
+      "note": "EN ISO 13485 certificate 44 221 090234, Ultradent Products Inc. Verified 2026-08-27 by fetching it: 200, 247.967 B, magic `%PDF-`, content-type application/pdf. Host assets.ctfassets.net returns robots.txt 404 (109 B), so it restricts nothing. Corporate/QMS evidence for the legal manufacturer, not a per-article device document."
+    },
+    {
+      "doc_type": "ISO",
+      "kind": "direct",
+      "url": "https://assets.ctfassets.net/wfptrcrbtkd0/3mxQZyKDD733grEQ1OrPiX/27a1d9b08b9b12707bfa7ad30d16fe7c/Ultradent_MDSAP_Cert_26-1602-M.pdf",
+      "note": "MDSAP certificate 26-1602-M, Ultradent Products Inc. Typed ISO because MDSAP is a QMS audit certificate and `doc_type` has no MDSAP value; the document itself says which scheme it is. Verified 2026-08-27 by fetching it: 200, 473.781 B, magic `%PDF-`, content-type application/pdf. Host assets.ctfassets.net returns robots.txt 404 (109 B), so it restricts nothing. Corporate/QMS evidence for the legal manufacturer, not a per-article device document."
+    }
+  ],
+  "crawl": [
+    {
+      "index_url": "https://www.ultradent.com/resources/product-instructions",
+      "link_pattern": "\\.pdf$",
+      "max_links": 200,
+      "allow_hosts": [
+        "assets.ctfassets.net",
+        "downloads.ctfassets.net"
+      ],
+      "note": "AUTHORED 2026-09-09, measured live the same day: 277 anchors, 149 matching, **147 kept with `allow_hosts`, 0 without** -- every document is served from assets.ctfassets.net, so the harvest is 0 of 149 off-host until those hosts are named. That key is the only host-widening mechanism (crawl design 4.3); `same_host_only` stays true. robots.txt ALLOWS this path. The four 2026-09-07 probes of this page all returned `refused / disallow (unreachable)` -- a WSL2 DNS drop cached as a robots verdict for 24h, which was fixed the same day by giving a transport failure a five-minute window; re-fetched clean 2026-09-09. No `doc_type_from`: this page is IFUs throughout, and the three certificates are authored `direct` below."
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{# An error a person can get out of (spec § 9, P7a). The default was FastAPI's
+   `{"detail": "..."}`, which is a JSON blob in a browser window with no menu,
+   no way back and a word ("detail") that means nothing to an office reader.
+
+   This page extends base.html, so it carries the menu: whatever went wrong,
+   the four queues are one click away and the person is not stranded.
+
+   `/api/*` still answers JSON and an HTMX request still gets the `_result.html`
+   error partial -- both decided in `web/app.py`'s handler, not here. #}
+{% block title %}{{ heading }} — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>{{ heading }}</h1>
+<p class="page-lede">{{ explanation }}</p>
+
+<div class="card">
+  <p><a class="btn" href="/">Go to Today</a></p>
+  <p class="hint">If you reached this by pressing something on a screen, say
+    which screen and what you pressed. That is what a developer needs.</p>
+  <details class="technical">
+    <summary>Technical details</summary>
+    <p class="hint">HTTP {{ status_code }} · <code>{{ path }}</code>
+      {%- if detail %} · {{ detail }}{% endif %}</p>
+  </details>
+</div>
+{% endblock %}

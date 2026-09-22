@@ -1,0 +1,335 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}System status — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+{#- The board answers two different questions and used to answer them in one
+    stacked column of ten cards: "is anything wrong right now" (six numbers)
+    and "show me the underlying table" (five wide tables). The headline strip
+    below is the first question; everything else is demoted behind tabs.
+    Tabs are hidden radios + `:checked ~` sibling selectors — no JS, no build
+    step (CLAUDE.md: no Node). The active tab is also carried in `?tab=` so
+    the Recent-jobs filter form comes back to the tab it was submitted from
+    rather than resetting to the first one. -#}
+{% set tab = request.query_params.get('tab') %}
+{% set tab = tab if tab in ('coverage', 'queue', 'spend', 'jobs') else 'coverage' %}
+
+{%- set ref_missing = kpi.missing_mfr_ref.missing -%}
+{%- set ref_total = kpi.missing_mfr_ref.total -%}
+{%- set manual_open = kpi.manual_by_kind | sum(attribute='n') -%}
+
+<h1>System status</h1>
+{#- One chip per process, with its last beat in the title. The sidebar's health
+    line is the office half of the same reading (spec § 1, rule 8): three words
+    there, the detail here. `off` is deliberately not red -- a process that has
+    never beaten on this machine is absent, not broken. -#}
+{% if services %}
+<div class="svc-row" aria-label="Service health">
+  {%- for s in services %}
+  <span class="svc svc-{{ s.state }}" title="{{ s.title }}">{{ s.name }}</span>
+  {%- endfor %}
+</div>
+{% endif %}
+
+<div class="card headline">
+  {#- D4 (spec § 8): the acceptance metric, in words, with its definition on
+      screen. It replaced a 99.7% "any production paper" tile, which counted a
+      quality-system certificate as coverage. Rendered from the macro Today
+      renders, so the sentence quoted to the client cannot depend on which
+      screen it was read from. The four older coverage lines stay one click
+      down in the Coverage tab, each under its own name. -#}
+  {{ ui.coverage_sentence(coverage) }}
+  <div class="stat-row">
+    <div class="stat-tile">
+      <div class="n">{% if ref_total %}{{ (100.0 * ref_missing / ref_total) | round(1) }}%{% else %}—{% endif %}</div>
+      <div class="label">missing mfr_ref{% if ref_total %} · {{ ref_missing }}{% endif %}</div>
+    </div>
+    <a class="stat-tile" href="/staging">
+      <div class="n">{{ kpi.staging.staged_docs.n }}</div>
+      <div class="label">to review</div>
+    </a>
+    <a class="stat-tile" href="/manual">
+      <div class="n">{{ manual_open }}</div>
+      <div class="label">manual queue</div>
+    </a>
+    {#- What /dead actually lists, not every row with status='dead': a dead job
+        with newer work already queued for it is not waiting for anybody
+        (`failures.failed_counts`). `kpi.dead_jobs` is still the raw column and
+        is still what /api/kpi answers. -#}
+    <a class="stat-tile{% if failed_actionable %} tile-alert{% endif %}" href="/dead">
+      <div class="n">{{ failed_actionable }}</div>
+      <div class="label">dead jobs</div>
+    </a>
+    <a class="stat-tile" href="/manufacturers/sweep-due">
+      <div class="n">{{ kpi.sweep_due }}</div>
+      <div class="label">sweep due</div>
+    </a>
+    {#- The strip's definition (`_in_flight_docs`), not every pending or
+        running job: ten of those are perpetual `scheduler.tick` crons. -#}
+    <a class="stat-tile" href="/inflight">
+      <div class="n">{{ in_flight_docs }}</div>
+      <div class="label">Documents being read</div>
+    </a>
+    <div class="stat-tile">
+      <div class="n">€{{ kpi.spend.trailing_30d.eur }}</div>
+      <div class="label">30d · guideline €{{ kpi.spend.monthly_cap_eur }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="tabs">
+  <input type="radio" name="board-tab" id="tab-coverage" class="tab-radio"{% if tab == 'coverage' %} checked{% endif %}>
+  <input type="radio" name="board-tab" id="tab-queue" class="tab-radio"{% if tab == 'queue' %} checked{% endif %}>
+  <input type="radio" name="board-tab" id="tab-spend" class="tab-radio"{% if tab == 'spend' %} checked{% endif %}>
+  <input type="radio" name="board-tab" id="tab-jobs" class="tab-radio"{% if tab == 'jobs' %} checked{% endif %}>
+
+  <div class="tab-bar">
+    <label for="tab-coverage">Coverage</label>
+    <label for="tab-queue">Queue</label>
+    <label for="tab-spend">Spend</label>
+    <label for="tab-jobs">Recent jobs</label>
+  </div>
+
+  <div class="tab-panel" id="panel-coverage">
+    <div class="panel-grid">
+      <section>
+        <h3>Coverage</h3>
+        {% if kpi.coverage.strict_total or kpi.coverage.processed_total %}
+        {%- set cov = kpi.coverage -%}
+        <div class="table-wrap"><table>
+          <thead><tr><th>Strict</th><th>Processed scope</th>
+            <th title="Same denominator as Strict, but only items evidenced by a document issued under MDR or MDD. A quality-system certificate is production paper that says nothing about a given article's conformity, so it counts on the left and not here.">Device (MDR/MDD)</th>
+            <th title="Same denominator as Strict, but only items holding a Declaration of Conformity that has not expired, linked by any route, including a declaration for the manufacturer's whole range. The sentence at the top counts declarations linked to the item itself, expired or not.">Declared (DoC)</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>{{ cov.strict_covered }}/{{ cov.strict_total }}{% if cov.strict_pct is not none %} ({{ cov.strict_pct }}%){% endif %}</td>
+              <td>{{ cov.processed_covered }}/{{ cov.processed_total }}{% if cov.processed_pct is not none %} ({{ cov.processed_pct }}%){% endif %}</td>
+              <td>{{ cov.device_covered }}/{{ cov.device_total }}{% if cov.device_pct is not none %} ({{ cov.device_pct }}%){% endif %}</td>
+              <td>{{ cov.doc_covered }}/{{ cov.doc_total }}{% if cov.doc_pct is not none %} ({{ cov.doc_pct }}%){% endif %}</td>
+            </tr>
+          </tbody>
+        </table></div>
+        {% else %}
+        <p class="hint">No MD items ingested yet.</p>
+        {% endif %}
+      </section>
+
+      <section>
+        <h3>Missing mfr_ref</h3>
+        {% if kpi.missing_mfr_ref.total %}
+        <div class="table-wrap"><table>
+          <thead><tr><th>Missing</th><th>Total</th><th>Rate</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>{{ kpi.missing_mfr_ref.missing }}</td><td>{{ kpi.missing_mfr_ref.total }}</td>
+              <td>{% if kpi.missing_mfr_ref.rate_pct is not none %}{{ kpi.missing_mfr_ref.rate_pct }}%{% else %}—{% endif %}</td>
+            </tr>
+          </tbody>
+        </table></div>
+        {% else %}
+        <p class="hint">No MD items ingested yet.</p>
+        {% endif %}
+      </section>
+
+      <section>
+        <h3>Match basis (production links)</h3>
+        {% if kpi.match_basis %}
+        <div class="table-wrap"><table>
+          <thead><tr><th>Basis</th><th>Links</th></tr></thead>
+          <tbody>
+            {% for row in kpi.match_basis %}
+            <tr><td>{{ row.match_basis }}</td><td>{{ row.n }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table></div>
+        {% else %}
+        <p class="hint">No production links yet.</p>
+        {% endif %}
+      </section>
+
+      <section>
+        <h3>Item mirror (BC catalogue)</h3>
+        {% if item_mirror.n %}
+        <p class="metric">{{ item_mirror.n }} item(s) mirrored.</p>
+        {% else %}
+        <p class="hint">No items ingested yet. Use <a href="/import">Import</a> to bring in a Business Central export — it shows you the diff and writes nothing until you confirm.</p>
+        {% endif %}
+      </section>
+    </div>
+    <p class="hint">KPI board — Phase 1 metrics per <code>docs/specs/kpi.md</code>. Numbers read the
+      production-visibility view, never a raw table join.</p>
+  </div>
+
+  <div class="tab-panel" id="panel-queue">
+    <div class="panel-grid">
+      {# The header strip's counters each link to the page that expands them;
+         these panels linked nowhere, so the board was where you learned a
+         number and then had to go find its page. Headings and rows now carry
+         the link. The panels themselves are NOT duplicates of the strip and
+         must not be cut: only `staged docs` and `dead jobs` repeat a strip
+         counter, and everything around them -- the C5 staged-links exposure,
+         the grouping backlog and its age, manual by kind, the type x status
+         matrix -- exists nowhere else. `[status-page-repeats-the-pulse-strip]`,
+         UI audit 2026-09-04, corrected on measurement. #}
+      <section>
+        <h3><a href="/staging">Staging queue</a></h3>
+        <div class="table-wrap"><table>
+          <tbody>
+            <tr>
+              <td>staged docs</td>
+              <td>{{ kpi.staging.staged_docs.n }}</td>
+              <td class="cell-muted">{% if kpi.staging.staged_docs.oldest %}oldest {{ kpi.staging.staged_docs.oldest }}{% endif %}</td>
+            </tr>
+            <tr>
+              <td>staged links on production (C5)</td>
+              <td>{{ kpi.staging.staged_links_on_production.n }}</td><td></td>
+            </tr>
+            <tr>
+              <td>open grouping suggestions</td>
+              <td>{{ kpi.staging.open_suggestions.n }}</td>
+              <td class="cell-muted">{% if kpi.staging.open_suggestions.oldest %}oldest {{ kpi.staging.open_suggestions.oldest }}{% endif %}</td>
+            </tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <section>
+        <h3><a href="/manual">Manual queue</a> + <a href="/dead">dead jobs</a></h3>
+        <div class="table-wrap"><table>
+          <tbody>
+            {% for row in kpi.manual_by_kind %}
+            <tr><td><a href="/manual">{{ row.kind }}</a></td><td>{{ row.n }}</td></tr>
+            {% endfor %}
+            <tr><td><a href="/dead">dead jobs</a></td><td>{{ failed_actionable }}</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <section>
+        <h3>Jobs by status</h3>
+        <div class="table-wrap"><table>
+          <tbody>
+            {% for status, n in job_counts.items() %}
+            <tr><td><span class="badge badge-{{ status }}">{{ status }}</span></td><td>{{ n }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table></div>
+      </section>
+
+      <section class="span-2">
+        <h3>Jobs by type &amp; status</h3>
+        {% if kpi.jobs_by_type_status %}
+        <div class="table-wrap"><table>
+          <thead><tr><th>Type</th><th>Status</th><th>Count</th></tr></thead>
+          <tbody>
+            {% for row in kpi.jobs_by_type_status %}
+            <tr><td>{{ row.type }}</td><td><span class="badge badge-{{ row.status }}">{{ row.status }}</span></td><td>{{ row.n }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table></div>
+        {% else %}
+        <p class="hint">No jobs yet.</p>
+        {% endif %}
+      </section>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="panel-spend">
+    <div class="stat-row">
+      <div class="stat-tile">
+        <div class="n">€{{ kpi.spend.all_time.eur }}</div>
+        <div class="label">all-time (guideline €{{ kpi.spend.sweep_cap_eur }}) — ${{ kpi.spend.all_time.usd }}</div>
+      </div>
+      <div class="stat-tile">
+        <div class="n">€{{ kpi.spend.trailing_30d.eur }}</div>
+        <div class="label">trailing 30d (guideline €{{ kpi.spend.monthly_cap_eur }}) — ${{ kpi.spend.trailing_30d.usd }}</div>
+      </div>
+    </div>
+    <p class="hint">The two figures above are <strong>guidelines, not enforced limits</strong> — nothing stops a run exceeding them, so watch this tab rather than relying on it to stop (Denis, 2026-09-03).
+      Converted at {{ kpi.spend.eur_per_usd }} EUR/USD (approximate, not a live rate — <code>BUDGET_EUR_PER_USD</code>).
+      {% if kpi.spend.all_time.unpriced_calls %}
+      <strong>{{ kpi.spend.all_time.unpriced_calls }} call(s) have no price recorded (pricing gap)</strong> — excluded from the totals above.
+      {% endif %}
+    </p>
+    {% if kpi.spend.breakdown %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Model</th><th>Tier</th><th>Batch</th><th>Calls</th><th>Input tok</th><th>Output tok</th><th>Cost (USD)</th><th>Unpriced</th></tr></thead>
+      <tbody>
+        {% for row in kpi.spend.breakdown %}
+        <tr>
+          <td>{{ row.model_id }}</td><td>{{ row.tier }}</td><td>{{ row.batch }}</td>
+          <td>{{ row.calls }}</td><td>{{ row.input_tokens }}</td><td>{{ row.output_tokens }}</td>
+          <td>{{ row.cost_usd if row.cost_usd is not none else "—" }}</td><td>{{ row.unpriced_calls }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% endif %}
+  </div>
+
+  <div class="tab-panel" id="panel-jobs">
+    <form method="get" action="/status" class="filter-row">
+      {# Keeps the submit on this tab instead of bouncing back to Coverage. #}
+      <input type="hidden" name="tab" value="jobs">
+      <div class="field">
+        <label>Type</label>
+        <select name="type">
+          <option value="">any</option>
+          {% for t in job_types %}
+          <option value="{{ t }}" {% if t == filter_type %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label>Status</label>
+        <select name="status">
+          <option value="">any</option>
+          {% for s in job_statuses %}
+          <option value="{{ s }}" {% if s == filter_status %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label>Search (dedupe key or #id)</label>
+        <input type="text" name="q" value="{{ filter_q }}" placeholder="ingest:LJ:csv:... or 42">
+      </div>
+      <div class="field filter-actions">
+        <button type="submit">Filter</button>
+        <a class="btn-clear" href="/status?tab=jobs">Clear</a>
+      </div>
+    </form>
+
+    {% if recent_jobs %}
+    <div class="table-wrap"><table>
+      {# Finished and duration come before the dedupe key deliberately: "when
+         did this run and how long did it take" is the question this table is
+         opened for, and the key is a debugging handle that was displacing it
+         (migration 026 added the timestamp; before it there was no time column
+         at all). An em dash means still running, or a job that finished before
+         026 — never a fabricated time. #}
+      <thead>
+        <tr><th>#</th><th>Stage</th><th>Type</th><th>Status</th><th>Priority</th>
+          <th>Attempts</th><th>Queued</th><th>Finished</th><th>Took</th><th>Dedupe key</th></tr>
+      </thead>
+      <tbody>
+        {% for job in recent_jobs %}
+        <tr>
+          <td><a href="/jobs/{{ job.id }}">{{ job.id }}</a></td>
+          <td>{{ stage_by_type.get(job.type, job.type) }}</td>
+          <td>{{ job.type }}</td>
+          <td><span class="badge badge-{{ job.status }}">{{ job.status }}</span></td>
+          <td>{{ job.priority }}</td>
+          <td>{{ job.attempts }}</td>
+          <td class="nowrap">{{ job.created_at.strftime("%Y-%m-%d %H:%M") if job.created_at else "—" }}</td>
+          <td class="nowrap">{{ job.finished_at.strftime("%Y-%m-%d %H:%M") if job.finished_at else "—" }}</td>
+          <td class="nowrap">{{ job.duration_s | duration }}</td>
+          <td>{{ job.dedupe_key }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+    <p class="hint">No jobs match this filter.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

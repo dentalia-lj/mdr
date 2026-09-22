@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Upload a document — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>Upload a document</h1>
+{# Opened for a task (Missing documents, /manual), the page says what the
+   document is for, and the group and the task ride along as hidden inputs:
+   nobody types an internal group number (spec § 5). No priority field: the
+   route's default is `interactive`, what the old select sent unless changed. #}
+<p class="page-lede">A PDF you already have: the system reads it, and it appears
+  in Review or on the item itself.</p>
+{% if subject %}<p>{{ subject }}.</p>{% endif %}
+<form hx-post="/upload" hx-encoding="multipart/form-data" hx-target="#result">
+  <label>PDF file <input type="file" name="file" accept="application/pdf" required></label>
+  <input type="hidden" name="target_group_id" value="{{ prefill_group_id }}">
+  <input type="hidden" name="manual_task_id" value="{{ prefill_manual_task_id }}">
+  <button type="submit">Upload</button>
+</form>
+<div id="result"></div>
+{% endblock %}

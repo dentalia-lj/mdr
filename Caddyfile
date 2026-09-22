@@ -1,0 +1,122 @@
+# G3 v0 — UI/API auth for the standalone producer UI (PHASES.md gap G3,
+# docs/dentalia-s0.3-ui-proposal.md). HTTP Basic behind this reverse proxy,
+# TLS-free for local/loopback dev (S1.6). Caddy is the SOLE ingress to `web`
+# in docker-compose.yml (the web service's own port is not published) — that
+# is what makes X-Forwarded-User trustworthy: `web` accepts it as-is when
+# WEB_REQUIRE_AUTHENTICATED_USER=true, with no way to reach `web` around this
+# proxy from the host.
+#
+# `basic_auth` (renamed from `basicauth` in Caddy 2.8) hashes are bcrypt.
+# Generate one with, e.g.:
+#   docker compose run --rm caddy caddy hash-password --plaintext 'your-password'
+# then set DENTALIA_WEB_USER / DENTALIA_WEB_PASSWORD_HASH in .env.
+#
+# Pointing this site block at a real hostname instead of `:8000` is the one
+# line that turns on Caddy's automatic TLS — not done here (loopback-only v0).
+
+:8000 {
+	# Access logging is OFF by default in Caddy, which meant a rejected login
+	# left no trace anywhere: on 2026-08-17 "no 401s in the log" was read as
+	# evidence that a failing browser never reached the proxy, when in fact
+	# nothing was ever recorded either way. An auth proxy that cannot say who
+	# was refused is not much of an auth proxy.
+	#
+	# stdout, so it lands in `docker compose logs caddy` alongside everything
+	# else and needs no volume. The request URI is logged; the Authorization
+	# header is NOT (Caddy redacts it by default, and nothing here overrides
+	# that) -- the useful field is `user_id`, which carries the username Caddy
+	# matched, empty when the credentials were rejected.
+	log {
+		output stdout
+		format console
+	}
+
+	# Three caller classes now reach this app (spec §2), and only one of them
+	# has a browser:
+	#   - staff  -> Basic auth here, unchanged, X-Forwarded-User downstream
+	#   - service-> the webshop BACKEND, X-API-Key, validated by the app
+	#   - bc     -> a Business Central item-card hyperlink, ?k=, ditto
+	#
+	# `basic_auth` cannot express "Basic OR a key", so the two non-browser
+	# classes are excluded from the matcher and the APP is the authority on
+	# their credentials. A request with a BOGUS X-API-Key therefore skips
+	# Basic and is rejected downstream by web/access.py -- that is intended,
+	# not a hole: Caddy only decides whether to DEMAND Basic.
+	#
+	# /archive/* is deliberately NOT excluded. It serves the archive by path,
+	# which is walkable, so it stays staff-only at both layers.
+	# /static/* is excluded for the same reason /item/* is, and it is not
+	# optional: the BC item card skips Basic auth, so the stylesheet the page
+	# then requests carries no credential and would 401 here -- serving an
+	# unstyled page to the one consumer this surface exists for. Nothing under
+	# web/static/ is sensitive (CSS, a logo, no data), and web/access.py names
+	# it public in the policy table too, so the two layers agree.
+	@protected {
+		not path /healthz
+		not path /item/*
+		not path /static/*
+		not header X-API-Key *
+	}
+
+	# The machine-facing name (2026-09-18). On the client server the host Caddy
+	# sends two names here: cw.dentalia.si for the office and api.cw.dentalia.si
+	# for the webshop backend, the BC item link and document files. Both reach
+	# this one site and this one app, so without this rule the API name would
+	# serve the whole office UI behind the login. It answers 404 there for every
+	# path except the ones web/access.py opens to a non-staff caller;
+	# tests/test_access.py keeps the two lists equal. The office name is
+	# unchanged and still serves everything, /api/* included.
+	#
+	# Written BEFORE `handle @protected` on purpose: Caddy keeps `handle` blocks
+	# with named matchers in written order and runs the first that matches, so
+	# after it a staff path on the API name would get the login prompt.
+	@api_host_refused {
+		host api.cw.dentalia.si
+		not path /api/* /item/* /static/* /healthz
+		not path_regexp ^/documents/[0-9]+/file$
+	}
+	handle @api_host_refused {
+		respond "Not found" 404
+	}
+
+	# TWO handle blocks, not one reverse_proxy, and this is a security fix
+	# rather than a tidy-up. With a single `reverse_proxy ... header_up
+	# X-Forwarded-User {http.auth.user.id}`, a request that SKIPPED basic_auth
+	# still got the header -- set to the LITERAL, UNRESOLVED placeholder text
+	# `{http.auth.user.id}`. Measured 2026-08-25 against a real proxy: an echo
+	# upstream received `X-Forwarded-User='{http.auth.user.id}'`. That string is
+	# non-empty, so `web/access.py` read it as a signed-in staff user and any
+	# request carrying ANY `X-API-Key` value was granted full staff access to
+	# the whole UI -- /items, /staging, /archive/*, and `gate.apply` would have
+	# recorded `{http.auth.user.id}` as `decided_by`.
+	#
+	# Authenticated paths get the real username. Everything else has the header
+	# STRIPPED, which also stops a client from spoofing it directly.
+	# ONE basic_auth block holds every account, one `<username> <bcrypt hash>`
+	# line each (spec § 7, P5b, D2). The env pair stays the first line, so an
+	# existing deployment keeps working with nothing else configured; the
+	# `import` adds a line per named person from a file nobody has to redeploy
+	# the image to edit.
+	#
+	# The glob, not a literal path, and that is the whole point: Caddy treats a
+	# missing literal import as a fatal parse error, and a glob that matches
+	# nothing as a warning. So `caddy/users/` may be empty -- it is on a fresh
+	# clone, since the real file carries password hashes and is gitignored --
+	# and the proxy still starts on the env pair alone.
+	handle @protected {
+		basic_auth {
+			{$DENTALIA_WEB_USER} {$DENTALIA_WEB_PASSWORD_HASH}
+			import /etc/caddy/users/*.caddy
+		}
+
+		reverse_proxy web:8000 {
+			header_up X-Forwarded-User {http.auth.user.id}
+		}
+	}
+
+	handle {
+		reverse_proxy web:8000 {
+			header_up -X-Forwarded-User
+		}
+	}
+}

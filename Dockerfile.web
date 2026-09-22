@@ -1,0 +1,32 @@
+# Standalone producer UI — physically separate from the worker image
+# (Dockerfile), per Denis's instruction this session (deviation from CLAUDE.md
+# "one image"; recorded in PHASES.md). Slim base: no Playwright/Chromium, no
+# pymupdf/pdfplumber — this container only ever enqueues `job` rows as
+# `dentalia_api` (Invariant 1), it never touches EXTRACT/FETCH.
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# `.[web]` = core (psycopg) + fastapi/jinja2/uvicorn/python-multipart only.
+# Deliberately NOT `.[extract]` — see pyproject.toml comment. Pinned by
+# constraints.txt, the same file the worker and test images install from.
+COPY pyproject.toml constraints.txt ./
+COPY app/ ./app/
+COPY web/ ./web/
+RUN pip install -c constraints.txt ".[web]"
+
+# Migrations are applied by the shared `migrate` compose service, not this
+# image — nothing here runs app.db.migrate.
+
+EXPOSE 8000
+
+# Slim image has no curl; stdlib urllib probes /healthz so compose can gate
+# dependent services on web readiness.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=4)"]
+
+CMD ["python", "-m", "web.app"]

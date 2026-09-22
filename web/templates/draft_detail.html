@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}Renewal email{% if d.manufacturer %} to {{ d.manufacturer }}{% endif %} — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+{#- Rule 1: the name first, the number second. "Draft #12" named nothing a
+    person could recognise, and the number is still here -- under Technical
+    details, where a number belongs on an office screen (spec § 9). -#}
+<h1>Renewal email{% if d.manufacturer %} to {{ d.manufacturer }}{% endif %}
+  <span class="badge badge-{{ 'staged' if d.status == 'draft' else ('production' if d.status in ('ready','sent') else 'superseded') }}">{{ status_words.get(d.status, d.status) }}</span></h1>
+<p class="page-lede">Written by the system, sent by you.</p>
+
+<div class="card">
+  <div class="facts">
+    <div><span class="label">Manufacturer</span> <strong>{{ d.manufacturer or '—' }}</strong></div>
+    <div><span class="label">Week</span> {{ period_label }}</div>
+    <div><span class="label">What it asks</span> {{ kind_words.get(d.kind, d.kind) }}</div>
+    <div><span class="label">Why</span> {{ d.reason or '—' }}</div>
+    {% if d.edited_by %}<div><span class="label">Last edited</span> {{ d.edited_by }},
+      {{ d.edited_at | day }}</div>{% endif %}
+    {% if d.released_at %}<div><span class="label">Marked ready</span>
+      {{ d.released_at | day }}</div>{% endif %}
+  </div>
+  <details class="technical">
+    <summary>Technical details</summary>
+    <p class="hint">Draft #{{ d.id }} · stored state <code>{{ d.status }}</code>
+      {%- if d.period_key %} · period key <code>{{ d.period_key }}</code>{% endif %}
+      {%- if d.request_state %} · request state <code>{{ d.request_state }}</code>{% endif %}</p>
+  </details>
+</div>
+
+{# The editable email. Only `draft` is editable: once a person has approved the
+   text they are about to send by hand, it must not change under them. #}
+<div class="card">
+  <h2>The email</h2>
+  {% if d.status == 'draft' %}
+  <form id="draft-edit" hx-post="/drafts/{{ d.id }}" hx-target="#draft-result" hx-swap="innerHTML">
+    <label>To
+      <input type="text" name="to_addrs" value="{{ (d.to_addrs or []) | join(', ') }}"
+             size="60" required></label>
+    <label>Subject
+      <input type="text" name="subject" value="{{ d.subject }}" size="60" required></label>
+    <label>Body
+      <textarea name="body" rows="22" cols="90" required>{{ d.body }}</textarea></label>
+  </form>
+  {% else %}
+  <p class="hint">Not editable once it is {{ status_words.get(d.status, d.status) | lower }}.</p>
+  <pre>To: {{ (d.to_addrs or []) | join(", ") }}
+Subject: {{ d.subject }}
+
+{{ d.body }}</pre>
+  {% endif %}
+
+  {# One action row. `Save edit` reaches the form above by id (HTML5 `form`
+     attribute) so every button can sit on the same line: the status posts
+     carry their own hidden `action`, and a form cannot nest inside a form. #}
+  {% if d.status in ('draft', 'ready') %}
+  <div class="form-actions">
+    {% if d.status == 'draft' %}
+    <button type="submit" form="draft-edit">Save edit</button>
+    <form hx-post="/drafts/{{ d.id }}/status" hx-target="#draft-result" hx-swap="innerHTML">
+      <input type="hidden" name="action" value="ready">
+      <button type="submit">Mark ready to send</button>
+    </form>
+    {% endif %}
+    {% if d.status == 'ready' %}
+    <form hx-post="/drafts/{{ d.id }}/status" hx-target="#draft-result" hx-swap="innerHTML">
+      <input type="hidden" name="action" value="sent">
+      <button type="submit">I have sent this</button>
+    </form>
+    {% endif %}
+    {# "Archive", not "Cancel": the word people used for it, and since
+       2026-09-03 it also means something to the machine -- an archived draft
+       stops the system offering another one for the same chase. The stored
+       status stays `cancelled`; renaming a value nothing else reads would buy
+       a migration and no clarity. #}
+    <form hx-post="/drafts/{{ d.id }}/status" hx-target="#draft-result" hx-swap="innerHTML">
+      <input type="hidden" name="action" value="cancelled">
+      <button type="submit" class="btn-reject">Archive this draft</button>
+    </form>
+    <p class="hint">Archiving means we are not sending this one. The system will
+      not write another for this manufacturer and week; a new one follows only
+      when the next renewal period comes round.</p>
+  </div>
+  {% endif %}
+  <div id="draft-result"></div>
+</div>
+
+{# What the mail is chasing. Worst first, same ordering as /expiry. #}
+<div class="card">
+  <h2>Documents this email asks for <span class="badge badge-pending">{{ docs | length | num }}</span></h2>
+  {% if docs %}
+  <table>
+    <thead><tr><th>Expires</th><th>Document</th><th>Regulation</th>
+               <th>Certificate</th><th>Items</th></tr></thead>
+    <tbody>
+      {% for r in docs %}
+      <tr>
+        <td>{% if r.expires %}{% if r.expires < today %}
+            <span class="badge badge-rejected">expired {{ r.expires | day }}</span>
+            {% else %}{{ r.expires | day }}{% endif %}
+            {%- if r.expiry_basis == 'inherited' %} <span class="hint">(inherited)</span>{% endif %}
+            {% else %}<span class="hint">—</span>{% endif %}</td>
+        {#- The document by its name, not its number (rule 1). The number is
+            the address in the link, which is where a number is useful. -#}
+        <td><a href="/documents/{{ r.doc_id }}">{{ r.type_label }}</a></td>
+        <td>{{ r.regulation }}</td>
+        <td class="hint">{{ r.cert_number or '—' }}</td>
+        <td>{{ r['items'] | num }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="hint">No documents are linked to this request.</p>
+  {% endif %}
+</div>
+{% endblock %}

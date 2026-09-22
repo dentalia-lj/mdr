@@ -1,0 +1,29 @@
+{
+  "manufacturer": "PRITIDENTA",
+  "aliases": [
+    "pritidenta GmbH"
+  ],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "10084"
+    }
+  ],
+  "domains": [
+    "pritidenta.com"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "DoC",
+      "kind": "portal",
+      "url": "https://pritidenta.com/en/media-center/downloads",
+      "note": "ROBOTS-BLOCKED FOR OUR FETCHER. Denis's ruling 2026-08-20: reachable by a human, or by an independent Playwright session run deliberately outside the pipeline -- never by the automated fetcher. Authored as kind:\"portal\" precisely because DISCOVER only ever prefills a manual task from a portal source and never enqueues fetch.url for it. robots.txt carries `Disallow: /*.pdf` (also .xlsx/.doc/.docx and /fileadmin/user_upload/downloads/Handel/*), so every document on the domain is off limits to a crawler while the HTML listing itself is not. Fetched 2026-08-20, HTTP 200. The page is fully static and names Declaration of conformity, ISO 13485, MDSAP and EU QMS certificates, safety data sheets and studies. FILENAMES CARRY REF NUMBERS -- REF078, REF_062, REF%20377, REF_A20, plus Rev_002 revision tokens; three separator forms (glued, underscored, URL-encoded space) so any pattern must tolerate all three. The DoC filename also carries its own validity date (Konformitaetserklaerung__MDR__priti_Stand_2024-05-31.pdf). This is the highest-value filename signal in the whole sweep and it is the one we may not fetch. Legal entity confirmed against their own legal notice, and it corroborates the offline lead: GC's own spreadsheet in our corpus names \"Pritidenta GmbH\" as legal manufacturer of 76 GC articles."
+    },
+    {
+      "doc_type": "IFU",
+      "kind": "portal",
+      "url": "https://pritidenta.com/en/ifu/send-instructions-for-use",
+      "note": "Free paper-IFU request within 7 days, Fetched 2026-08-20, HTTP 200. A viable email.request route given the robots block on PDFs."
+    }
+  ]
+}

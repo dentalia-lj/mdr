@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}EUDAMED — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>EUDAMED checks</h1>
+{% call ui.intro("What the EU register says about every manufacturer at once: what has changed, and which declarations it lists that we do not hold.") %}
+  The same two questions the manufacturer page answers one supplier at a time. <strong>Changed</strong>
+  is measured against the last check somebody <em>looked at</em>, so a row only leaves this list once
+  it has been read. <strong>Missing</strong> counts Basic UDI-DIs EUDAMED registers for which we hold
+  no declaration. A blank <strong>Last checked</strong> means never checked, which is a different fact
+  from "no gaps" and is shown as its own state rather than as a zero.
+  Where a check is <strong>due</strong>, <strong>{{ "release" | word }}</strong> starts it from
+  here, the same action as on <a href="/manufacturers/sweep-due">{{ "sweep due" | word }}</a>,
+  which lists those rows on their own. A check is a real fetch against EUDAMED's rate limit, so it never starts by
+  itself, and a manufacturer with no confirmed {{ "srn" | word }} cannot start one at all. Missing
+  declarations are still asked for from the manufacturer's own page.
+{% endcall %}
+
+{#- The SRN queue and the sweep-due list left the menu on 2026-09-14 (office UI
+    redesign spec § 7). This page is where they belong: both are the same
+    question one step earlier -- which EUDAMED identity is ours, and which
+    manufacturer is due a check. -#}
+<nav class="link-row" aria-label="EUDAMED queues">
+  Also: <a href="/manufacturers/srn-queue">{{ "srn" | word }} queue</a> ·
+  <a href="/manufacturers/sweep-due">{{ "sweep due" | word }}</a>
+</nav>
+
+{% if rows %}
+<p class="hint">
+  {{ total }} manufacturer{{ "" if total == 1 else "s" }} with an EUDAMED footprint ·
+  {{ changed }} changed since the last check somebody read ·
+  {{ never_swept }} never checked.
+</p>
+<div class="card">
+<table>
+  <thead>
+    <tr>
+      <th>Manufacturer</th>
+      <th>New devices</th>
+      <th>Status changes</th>
+      <th>Missing</th>
+      <th>{{ "staged" | word }}</th>
+      <th>Covered</th>
+      <th>Last checked</th>
+      <th>{{ "sweep" | word }}</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><a href="/manufacturers/{{ r.canonical_name | urlencode }}">{{ r.canonical_name }}</a></td>
+      {# Zeros are rendered as a dash: a table of 27 rows reading "0 0 0" trains
+         the eye to skip it, and the two numbers that matter here are rare. #}
+      <td>{{ r.new_devices or "—" }}</td>
+      <td>{{ r.status_changes or "—" }}</td>
+      <td>{{ r.missing or "—" }}</td>
+      <td>{{ r.staged or "—" }}</td>
+      <td>{{ r.covered or "—" }}</td>
+      <td>
+        {%- if r.last_swept_at %}{{ r.last_swept_at | day }}
+        {%- else %}<span class="cell-muted">never checked</span>{% endif -%}
+      </td>
+      {# Only rows the scheduler has actually proposed carry the button:
+         `due_now` is `eudamed_sweep_due` membership, the same set
+         /manufacturers/sweep-due lists. A row that is not due shows nothing
+         rather than a disabled control -- 27 rows of greyed-out buttons is
+         noise, and the ruling is that a person releases what the scheduler
+         proposed, not whatever they fancy. Disabled-with-a-reason is kept for
+         the one case that IS actionable-looking but blocked: due, but no
+         trusted SRN, which the route itself refuses with 400. #}
+      <td>
+        {% if r.due_now %}
+        <form method="post" action="/manufacturers/{{ r.canonical_name | urlencode }}/sweep"
+              class="link-actions" hx-boost="true"
+              hx-confirm="Start the EUDAMED check for {{ r.canonical_name }} now?">
+          <input type="hidden" name="back" value="/manufacturers/eudamed">
+          <button type="submit" class="btn-approve"
+                  {% if not r.srns %}disabled{% endif %}
+                  title="{% if r.srns %}Start the EUDAMED check for {{ r.canonical_name }}{% else %}No confirmed EUDAMED ID on file, so there is nothing to check{% endif %}">
+            {{ "release" | word }}
+          </button>
+        </form>
+        {% else %}<span class="cell-muted">—</span>{% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div class="card"><p class="hint">No manufacturer has an EUDAMED footprint yet — nothing has been
+  checked and the certificate register has not been pulled. Start from
+  <a href="/manufacturers/sweep-due">{{ "sweep due" | word }}</a>.</p></div>
+{% endif %}
+{% endblock %}

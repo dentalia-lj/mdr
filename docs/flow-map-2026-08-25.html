@@ -1,0 +1,692 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dentalia Pipeline: Flow &amp; State Map</title>
+<style>
+  /* Brand: shop.dentalia.si, tokens verified live 2026-07-24.
+     Cyan #2CA0C7 (buttons/menu/eyebrows), body #46565C, headings #333,
+     surfaces #E9F5F9 / #D6ECF4, tile greens #7FCBAE / #B6DDB6, yellow #F1D600.
+     Fonts: the shop's Centrale Sans Rounded where the reader has it,
+     otherwise the fallback stack below. */
+  :root {
+    --paper: #ffffff;
+    --surface: #f0f8fb;
+    --surface-2: #d6ecf4;
+    --ink: #333333;
+    --muted: #46565c;
+    --border: #c9e2ec;
+    --accent: #2ca0c7;
+    --accent-ink: #1d7d9e;
+    --live: #2f8f6b;
+    --live-bg: #e2f3ec;
+    --gated: #8f7500;
+    --gated-bg: #faf5d2;
+    --hole: #c24438;
+    --hole-bg: #f9e8e5;
+    --noop: #6e7e85;
+    --noop-bg: #edf2f4;
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+    --heading: "Centrale Sans Rounded", "Trebuchet MS", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --body: "Centrale Sans Rounded", "Trebuchet MS", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0e1a20; --surface: #14242c; --surface-2: #1a2f3a;
+      --ink: #dce9ee; --muted: #8fa6b0; --border: #29414d;
+      --accent: #4fb8da; --accent-ink: #7ccbe6;
+      --live: #57bd93; --live-bg: #133228;
+      --gated: #d9c235; --gated-bg: #322c0c;
+      --hole: #e06256; --hole-bg: #3a1f1b;
+      --noop: #8a99a0; --noop-bg: #1e2c33;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0e1a20; --surface: #14242c; --surface-2: #1a2f3a;
+    --ink: #dce9ee; --muted: #8fa6b0; --border: #29414d;
+    --accent: #4fb8da; --accent-ink: #7ccbe6;
+    --live: #57bd93; --live-bg: #133228;
+    --gated: #d9c235; --gated-bg: #322c0c;
+    --hole: #e06256; --hole-bg: #3a1f1b;
+    --noop: #8a99a0; --noop-bg: #1e2c33;
+  }
+  :root[data-theme="light"] {
+    --paper: #ffffff; --surface: #f0f8fb; --surface-2: #d6ecf4;
+    --ink: #333333; --muted: #46565c; --border: #c9e2ec;
+    --accent: #2ca0c7; --accent-ink: #1d7d9e;
+    --live: #2f8f6b; --live-bg: #e2f3ec;
+    --gated: #8f7500; --gated-bg: #faf5d2;
+    --hole: #c24438; --hole-bg: #f9e8e5;
+    --noop: #6e7e85; --noop-bg: #edf2f4;
+  }
+  body {
+    background: var(--paper); color: var(--muted);
+    font-family: var(--body); font-weight: 300; font-size: 15.5px; line-height: 1.55;
+    margin: 0; padding: 2.5rem 1.25rem 5rem;
+  }
+  b, strong, th, .k { font-weight: 600; }
+  main { max-width: 1080px; margin: 0 auto; }
+  h1, h2, h3 { font-family: var(--heading); font-weight: 600; color: var(--ink); text-wrap: balance; }
+  h1 { font-size: 1.8rem; margin: 0 0 .3rem; }
+  h2 { font-size: 1.25rem; margin: 0 0 .9rem; padding-top: 2.6rem; border-top: 1px solid var(--border); }
+  h2 .sec { color: var(--muted); font-weight: 500; margin-right: .5rem; }
+  h3 { font-size: 1.02rem; margin: 0; }
+  a { color: var(--accent-ink); }
+  code, .k { font-family: var(--mono); font-size: .84em; background: var(--surface-2); border-radius: 4px; padding: .08em .35em; white-space: nowrap; }
+  .sub { color: var(--muted); margin: 0 0 1.4rem; max-width: 62ch; }
+  .chips { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1.1rem 0 0; }
+  .chip { font-family: var(--heading); font-size: .78rem; font-weight: 600; padding: .3rem .7rem; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); }
+  .chip b { font-variant-numeric: tabular-nums; }
+  .chip.live { color: var(--live); border-color: var(--live); background: var(--live-bg); }
+  .chip.gated { color: var(--gated); border-color: var(--gated); background: var(--gated-bg); }
+  .chip.hole { color: var(--hole); border-color: var(--hole); background: var(--hole-bg); }
+  .chip.noop { color: var(--noop); border-color: var(--noop); background: var(--noop-bg); }
+  .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .6rem; margin: 0 0 .5rem; }
+  .legend div { display: flex; gap: .55rem; align-items: baseline; font-size: .86rem; }
+  .dot { width: .72rem; height: .72rem; border-radius: 3px; flex: none; position: relative; top: .07rem; }
+  .dot.live { background: var(--live); } .dot.gated { background: var(--gated); }
+  .dot.hole { background: var(--hole); } .dot.noop { background: var(--noop); }
+  .diagram { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: .75rem; overflow-x: auto; }
+  .card { border: 1px solid var(--border); border-left: 5px solid var(--live); border-radius: 10px; background: var(--surface); padding: 1rem 1.15rem 1.1rem; margin: 0 0 1.15rem; }
+  .card.gated { border-left-color: var(--gated); }
+  .card.hole { border-left-color: var(--hole); }
+  .card.noop { border-left-color: var(--noop); }
+  .card header { display: flex; flex-wrap: wrap; align-items: baseline; gap: .6rem .9rem; margin-bottom: .55rem; }
+  .pill { font-family: var(--heading); font-size: .68rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; padding: .18rem .55rem; border-radius: 999px; }
+  .pill.live { color: #fff; background: var(--live); }
+  .pill.gated { color: #3a3200; background: #f1d600; }
+  .pill.hole { color: #fff; background: var(--hole); }
+  .pill.noop { color: #fff; background: var(--noop); }
+  .meta { font-size: .82rem; color: var(--muted); }
+  .meta code { background: var(--surface-2); }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .875rem; margin: .5rem 0 .2rem; }
+  th { font-family: var(--heading); font-size: .69rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); text-align: left; padding: .38rem .65rem; border-bottom: 2px solid var(--border); }
+  td { padding: .42rem .65rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td.st { white-space: nowrap; font-family: var(--heading); font-size: .72rem; font-weight: 600; }
+  .s-live { color: var(--live); } .s-gated { color: var(--gated); }
+  .s-hole { color: var(--hole); } .s-noop { color: var(--noop); }
+  .notes { margin: .55rem 0 0; padding-left: 1.15rem; font-size: .85rem; color: var(--muted); }
+  .notes li { margin: .18rem 0; }
+  .notes .warn { color: var(--gated); font-weight: 600; }
+  .notes .bad { color: var(--hole); font-weight: 600; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 1rem; }
+  .caption { font-size: .82rem; color: var(--muted); margin: .45rem 0 0; }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); font-size: .82rem; color: var(--muted); }
+  @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+  pre.mermaid { font-family: var(--mono); font-size: .78rem; line-height: 1.4; margin: 0; }
+</style>
+</head>
+<body>
+<main>
+<h1>Dentalia pipeline: flow &amp; state map</h1>
+<p class="sub">As-built truth, 2026-08-25. Verified against master as it stood that day, well past the last map's pin: every status re-derived from the code for this edition, none carried forward, and <b>ten</b> of the previous edition's statuses have flipped (listed in &sect;4 and &sect;5). HEAD moved on nine commits during the write-up, but <b>none of them touched <code>app/</code>, <code>web/</code> or <code>migrations/</code></b> (docs, specs, playbooks, tests and CLAUDE.md only), so every code citation below still resolves; each <code>web/app.py</code> line number was re-checked against the pinned revision of that file after that move. Test suite: 2088 passed &#47; 3 skipped. Ten migrations landed in that window (<code>028</code>&ndash;<code>037</code>): inbound and outbound email, the effective-expiry view, stated class, the class-check view, service heartbeats, a robots cache and job lineage. Three tags moved off the no-op onto real handlers. The registry grew from 314 documents to <b>769</b> and from 322 links to <b>8.563</b>. Written against a live checkout: <code>app/extract/t0_templates.py</code>, <code>playbooks/gc.json</code>, <code>tests/conftest.py</code> and three <code>tests/test_tools_*</code> files are uncommitted work outstanding at the time and are <b>not</b> described here; this page describes committed master as it stood on 2026-08-25.</p>
+
+<div class="chips">
+  <span class="chip live"><b>14</b> live handler tags</span>
+  <span class="chip noop"><b>2</b> enum tags on no-op</span>
+  <span class="chip gated"><b>6</b> seams/hooks not wired</span>
+  <span class="chip gated"><b>5</b> dormant data paths</span>
+  <span class="chip hole"><b>16</b> open contract deltas (&sect;5)</span>
+</div>
+
+<div class="card">
+<header><h3>Superseded since the pin</h3><span class="pill gated">read this first</span></header>
+<p class="meta">This page is a snapshot of master as it stood on 2026-08-25 and every claim on it was checked against that commit. Master has moved since, and two statements below are no longer true of the current tree. They are left in place rather than quietly rewritten, because a snapshot that edits itself is not a snapshot.</p>
+<div class="tablewrap"><table>
+<tr><th>What this page says</th><th>What is true at master now</th></tr>
+<tr><td><code>eudamed.sync</code> is one of two enum tags on the raising placeholder, with <b>no producer at all</b></td><td><b>Built.</b> <code>app/handlers/eudamed.py</code> registers the tag and <code>runner.py</code> imports it (2026-08-25, S2.3 stage 1: mirror fill only), and <code>web/app.py:1971</code> enqueues it from a EUDAMED lookup button on the document page (2026-08-25). That makes <b>15</b> live handler tags and <b>1</b> on the placeholder, not 14 and 2</td></tr>
+<tr><td><code>eudamed_mirror</code> holds 0 rows, so DISCOVER's EUDAMED rung is unreachable and RESOLVE's Basic-UDI-DI rung has nothing to join on</td><td>The mirror holds <b>591</b> rows, read 2026-08-25. The dormant-path count in the chips above is therefore <b>4</b>, not 5. Whether the two rungs now fire is <b>not</b> re-verified here &ndash; that needs a fresh pass, and migration <code>038</code> plus an uncommitted <code>039</code> landed with it</td></tr>
+</table></div>
+<p class="meta">Nothing else on this page was re-checked against the newer commits. Regenerate with <code>/flow-map</code> when the EUDAMED slice settles.</p>
+</div>
+<h2><span class="sec">0</span>Legend</h2>
+<div class="legend">
+  <div><span class="dot live"></span><span><b>Live</b>: implemented, table-driven tests, on the proven path</span></div>
+  <div><span class="dot gated"></span><span><b>Gated / dormant</b>: code exists but a config flag, missing data, or an unwired seam keeps it from acting</span></div>
+  <div><span class="dot hole"></span><span><b>Hole</b>: known defect or contract risk, tracked in <code>tasks/followups.md</code></span></div>
+  <div><span class="dot noop"></span><span><b>Not built</b>: enum tag exists, handler is the raising placeholder (Phase 2 scope)</span></div>
+</div>
+<h2><span class="sec">1</span>The spine, end to end</h2>
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  BC[("BC item export")]:::ext --> ING
+  OPS["Operator CLI, 14 subcommands<br/>vendor-master · playbooks · regroup · discover-item<br/>repair-ref-list · repair-archive-urls<br/>repair-stated-class · repair-mfr-overbind · komet-coverage"]:::live -.->|alias seed, regroup| RES
+  WEB["Review UI + read API<br/>(Caddy + Basic auth, 47 routes)"]:::ext -->|POST /ingest| ING
+  WEB -->|POST /upload| UP["upload.ingest"]:::live
+  CORPUS[("SFTP corpus<br/>imports/dentalia-sftp")]:::ext --> BF["backfill.scan"]:::live
+  MBOX[("mailbox<br/>mdr@dentalia.si")]:::ext -.->|creds absent, G8| EP["email.poll"]:::live
+  SCH["SCHEDULER (profile 'full')"]:::gated -.->|watch-dir unset| ING
+  SCH --> RW["report.weekly"]:::live
+  SCH -.->|flag off| ER["email.request"]:::live
+  SCH -.->|flag off| PR["playbook.reonboard"]:::noop
+  ING["ingest.run"]:::live -->|per changed MD item| RES["resolve.group"]:::live
+  RES -.->|DISCOVER_HOLD on| HOLD["discover_held<br/>(counted, not emitted)"]:::gated
+  RES -->|hold off| DIS["discover.group"]:::live
+  RES -.->|ambiguous name| GS["grouping_suggestion"]:::gated
+  DIS -->|top-k URLs| FET["fetch.url"]:::live
+  DIS -.->|all known fresh + extracted| VAL
+  DIS -.->|dead end| MT["manual_task"]:::live
+  DIS -.->|flag off| ER
+  ER --> DR[("email_draft<br/>a person sends it")]:::live
+  ER --> RM["email.reminder"]:::live
+  FET -->|new hash| EXT["extract.doc"]:::live
+  FET --> ARCH[("hash archive volume,<br/>served /archive")]:::live
+  UP --> ARCH
+  UP --> EXT
+  BF --> EXT
+  EP --> EXT
+  OPS -.->|re-validate stored rev| VAL
+  EXT --> DT[("document_text")]:::live
+  EXT --> VAL["validate.doc"]:::live
+  VAL --> GC["gate.candidate"]:::live
+  GC --> REG[("registry:<br/>document + item_document + evidence")]:::live
+  GC -.->|manual| MT
+  DEAD(["dead job"]):::ext -.->|auto| MT
+  WEB -->|approve / reject / bind| GA["gate.apply"]:::live
+  WEB -->|confirm / reject / reopen one link| GA
+  GA --> REG
+  OPS -.->|ruled inv-1 exception, audited| REG
+  classDef live fill:#2f8f6b,color:#ffffff,stroke:#226b50
+  classDef gated fill:#f1d600,color:#3a3200,stroke:#8f7500
+  classDef hole fill:#c24438,color:#ffffff,stroke:#8f2f26
+  classDef noop fill:#6e7e85,color:#ffffff,stroke:#4d5b61
+  classDef ext fill:transparent,color:#6e7e85,stroke:#6e7e85,stroke-dasharray:4 3
+</pre>
+</div>
+<p class="caption">Solid arrows: the normal chain. Dashed: conditional, flag-gated or human-mediated. Every enqueue goes through <code>app/queue.py</code>: <b>33</b> <code>queue.enqueue(</code> call sites across <b>16</b> modules, writing <b>26</b> literal dedupe format strings that reduce to <b>22</b> distinct shapes (<code>validate:</code> is written by four producers, <code>extract:</code>, <code>resolve:</code>, <code>resolve:manual:</code>, <code>email.reminder:</code> and <code>discover:refetch:</code> by two each). PRD &sect;0's conventions table lists <b>20</b>; the two it does not carry are <code>apply:{doc_id}:{item_ref}:{decision}</code> (C17's link decisions) and <code>email.reminder:req:{request_id}</code>, and one row it does carry has no producer in the code (&sect;5). Beyond the format strings, <code>cli enqueue</code> takes an operator-supplied key verbatim and the dead-jobs board re-uses the stored one. The shipped stack still holds discovery: <code>docker-compose.yml:125</code> sets <code>DISCOVER_HOLD: ${DISCOVER_HOLD:-true}</code>, so RESOLVE builds groups and emits no <code>discover.group</code>; the corpus is mined first and discovery runs later against a registry that knows what it already has. The config default is <code>False</code> (<code>app/config.py:633</code>): compose, not the app, is what makes the hold the norm.</p>
+<h2><span class="sec">2</span>Every stage: inputs, outputs, writes, outcomes</h2>
+
+<p class="sub">One card per live job type, fourteen of them. Payload tables list only the <em>stage-specific</em> fields; the envelope below is shared by all of them and is stated once. Column shapes are read from the migration that defines them, not from an ORM (there is none).</p>
+
+<div class="card">
+<header><h3>The shared job envelope</h3><span class="pill live">all tags</span></header>
+<p class="meta"><code>migrations/001_queue.sql</code> + <code>019</code> (<code>result</code>) + <code>026</code> (<code>finished_at</code>) + <code>037</code> (<code>caused_by</code>). PRD &sect;0.</p>
+<div class="tablewrap"><table>
+<tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+<tr><td><code>id</code></td><td>bigserial PK</td><td></td></tr>
+<tr><td><code>type</code></td><td><code>job_type</code> enum</td><td>Closed set of <b>16</b> values (invariant 7). <b>14</b> now have real handlers; <code>eudamed.sync</code> and <code>playbook.reonboard</code> are the two left on the placeholder.</td></tr>
+<tr><td><code>payload</code></td><td>jsonb NOT NULL</td><td><b>Immutable after enqueue</b> (C9). No handler rewrites its own payload; verified by grep, the only <code>UPDATE job</code> statements are in <code>app/queue.py</code> and touch status/attempts/result/finished_at, never payload.</td></tr>
+<tr><td><code>dedupe_key</code></td><td>text NOT NULL</td><td>Not globally unique. <code>job_dedupe_active_uq</code> is a <b>partial</b> unique index over <code>status IN ('pending','running','failed')</code> (<code>001:52</code>): C2 / invariant 8, so terminal jobs never block a re-enqueue.</td></tr>
+<tr><td><code>status</code></td><td><code>job_status</code></td><td><code>pending | running | done | failed | dead</code></td></tr>
+<tr><td><code>priority</code></td><td><code>job_priority</code></td><td><code>interactive | delta | sweep</code> (ordinal 0,1,2)</td></tr>
+<tr><td><code>run_after</code>, <code>attempts</code>, <code>max_attempts</code></td><td>timestamptz, int, int</td><td>Backoff + retry. Default <code>max_attempts</code> 5; exhaustion &rarr; <code>dead</code> and a <code>dead-job-followup</code> manual task (<code>app/queue.py:199</code>).</td></tr>
+<tr><td><code>caused_by</code></td><td>bigint, nullable</td><td><b>New (037).</b> Job lineage. <code>queue.enqueue</code> stamps it from a module-level <code>current_job_id</code> that <code>runner.py:69</code> publishes for the duration of the handler call only, inside a <code>try/finally</code> wrapping <b>exactly</b> the dispatch: a handler that raises must not leak its id onto an enqueue made by later bookkeeping. Soft reference, indexed partially (<code>WHERE caused_by IS NOT NULL</code>). Null for anything a person or a cron started.</td></tr>
+<tr><td><code>last_error</code>, <code>claimed_by</code>, <code>claimed_at</code>, <code>created_at</code>, <code>finished_at</code></td><td>text, text, timestamptz &times;3</td><td><code>finished_at</code> (026) stamps terminal jobs.</td></tr>
+<tr><td><code>result</code></td><td>jsonb</td><td>The handler's return value, written by <code>queue.finish()</code> in the finishing transaction (019). Shape is per-handler, not enforced. Only some handlers build the <code>app/results.py</code> <code>Result</code> envelope (<code>ingest</code>, <code>extract</code>, <code>validate</code>, <code>email.request</code>, <code>email.reminder</code>, <code>email.poll</code>) and even those flatten it on the way out; <code>resolve</code>, <code>discover</code>, <code>fetch</code>, <code>gate</code>, <code>backfill</code>, <code>upload</code> and <code>report</code> return hand-rolled dicts. The runner cares about exactly one key, <code>anomalies</code>, and ignores the rest (&sect;5).</td></tr>
+</table></div>
+<ul class="notes">
+<li>Claim is <code>SELECT &hellip; FOR UPDATE SKIP LOCKED</code>; claim, handler write and audit append share one transaction. A handler may return <code>{"_deferred": True}</code> instead of completing, in which case the runner commits its writes and skips <code>finish</code> (<code>runner.py:80</code>). Two do: EXTRACT while a Batch API job is unfinished, FETCH while another worker holds the domain lease.</li>
+<li><b>Anomalies</b> are never written by the handler. The runner's post-dispatch hook (<code>app/workers/runner.py:83</code>) is the single writer of <code>data_anomaly</code>, uniformly for every tag. The closed vocabulary is <code>ANOMALY_KINDS</code> in <code>app/results.py</code>: <b>9</b> kinds, <b>every one of which now has a producer</b> &ndash; <code>md_class_blank</code>, <code>mfr_ref_missing</code>, <code>mfr_ref_prose</code>, <code>manufacturer_code_blank</code>, <code>reclassified_non_md</code> (INGEST), <code>no_text_layer</code> (EXTRACT), <code>cert_reference_unresolved</code> (VALIDATE), <code>basic_udi_check_failed</code> and <code>t0_ref_template_miss</code> (T0). <code>code_shape_unexpected</code> and <code>blocked_item</code> were <b>removed</b> on 2026-08-19 for having no producer and no specification to build one against, closing the previous map's largest vocabulary hole. An unknown kind raises.</li>
+<li><code>data_anomaly</code> (019) is <code>(kind text, subject text, catalogue, detail jsonb, seen_count, first_seen, last_seen)</code> with <code>UNIQUE (kind, subject)</code>: a repeat observation bumps the counter rather than inserting. Live count <b>19.327</b> rows.</li>
+</ul>
+</div>
+<div class="card">
+<header><h3><code>ingest.run</code></h3><span class="pill live">live</span><span class="meta">PRD &sect;1 · handbook &sect;1 · <code>app/handlers/ingest.py</code></span></header>
+<p class="meta"><b>Entry points:</b> web ingest form (<code>web/app.py:2809</code>, priority from the form) · SCHEDULER monthly tick (<code>app/scheduler.py:87</code>, only when <code>SCHEDULER_INGEST_WATCH_DIR</code> is set; it defaults to <code>""</code>, so this producer is inert in the shipped stack) · <code>cli enqueue</code> with a hand-written dedupe key.</p>
+<div class="tablewrap"><table>
+<tr><th>Payload field</th><th>Type</th><th>Req</th><th>Meaning / example</th></tr>
+<tr><td><code>source</code></td><td>str</td><td>yes</td><td><code>"csv"</code> &rarr; <code>CsvExportAdapter</code>; <code>"bc_odata"</code> &rarr; <code>BcApiAdapter</code> (stub, raises without injected records)</td></tr>
+<tr><td><code>ref</code></td><td>str</td><td>yes</td><td>file path relative to <code>cfg.web.imports_dir</code>, or an OData delta window</td></tr>
+<tr><td><code>catalogue</code></td><td>str</td><td>yes</td><td><code>"LJ"</code> / <code>"ZG"</code>. Read directly only for the log line and the anomaly rows; the adapter carries it onto each row.</td></tr>
+</table></div>
+<p class="meta"><b>Dedupe:</b> <code>ingest.run:web:{catalogue}:{source}:{ref}</code> (form) · <code>ingest.run:sched:{catalogue}:{period_key}</code> (cron). The two tails differ deliberately: the cron's period key stops a monthly tick re-firing on the same watch-dir file, the form's ref key dedupes a resubmitted upload.</p>
+<p class="meta"><b>Reads:</b> the export file through <code>SourceAdapter</code>; <code>item_mirror</code> (columns <code>name</code>, <code>manufacturer_raw</code>, <code>mfr_ref</code>, <code>md_flag</code>, <code>product_class</code>, <code>udi</code>, <code>catalogue</code> &ndash; the diff tuple, <code>ingest.py:50</code>). <b>Config:</b> <code>ingest.process_md_unknown</code> (default <b>True</b>), <code>ingest.mfr_ref_source_by_code</code> (empty, G4), <code>web.imports_dir</code>.</p>
+<p class="meta"><b>Writes:</b> <code>item_mirror</code> only, matching the access matrix exactly. <code>mirror_rev</code> comes from a sequence (migration 011) and is consumed once per write: the column is omitted from the INSERT list so the DEFAULT supplies it on insert, with an explicit SET on conflict-update.</p>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Emits</th><th>Status</th></tr>
+<tr><td>Row missing <code>item_ref</code> or <code>name</code></td><td>skipped; counted + bounded sample (cap 50, true total reported as <code>skipped_sampled_of</code>)</td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>Explicit non-MD (<code>NI MP</code>), never mirrored</td><td>dropped, counted <code>non_md</code></td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>Mirrored item BC later declassifies to <code>NI MP</code></td><td>upserted to <code>md_flag=FALSE</code>, counted <code>reclassified_non_md</code> <b>and</b> raised as that anomaly (<code>ingest.py:163</code>)</td><td><b>nothing</b>, never a fresh resolve</td><td class="st s-live">live</td></tr>
+<tr><td>Blank device class</td><td>anomaly <code>md_class_blank</code> always; processed as a changed row because <code>process_md_unknown</code> defaults True</td><td>as for a changed row</td><td class="st s-gated">policy open</td></tr>
+<tr><td><code>mfr_ref</code> null</td><td>counted <code>missing_mfr_ref</code> + anomaly <code>mfr_ref_missing</code>; never a skip</td><td>as for a changed row</td><td class="st s-live">live</td></tr>
+<tr><td><code>mfr_ref</code> is Slovene prose, not a code</td><td><b>scrubbed to NULL</b> before the mirror write, counted <code>mfr_ref_prose</code>, original kept on the anomaly detail</td><td>as for a changed row</td><td class="st s-live">live</td></tr>
+<tr><td>Blank manufacturer code</td><td>anomaly <code>manufacturer_code_blank</code></td><td>as for a changed row</td><td class="st s-live">live</td></tr>
+<tr><td>Diff tuple identical to the mirror</td><td>counted <code>unchanged</code>, no write</td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>New or changed MD row</td><td><code>item_mirror</code> upsert, new <code>mirror_rev</code></td><td><code>resolve.group {item_ref}</code> (<code>ingest.py:203</code>)</td><td class="st s-live">live</td></tr>
+<tr><td><code>source="bc_odata"</code> with no injected records</td><td><code>BcApiAdapter.read()</code> raises &rarr; job fails &rarr; retries &rarr; dead</td><td>n/a</td><td class="st s-noop">v2 stub</td></tr>
+</table></div>
+<p class="meta"><b>Result:</b> a real <code>Result</code> envelope, flattened. Counts <code>seen</code>, <code>changed</code>, <code>unchanged</code>, <code>non_md</code>, <code>reclassified_non_md</code>, <code>md_unknown</code>, <code>missing_mfr_ref</code>, <code>mfr_ref_prose</code>, <code>skipped</code>, all pre-seeded to 0 so the shape is stable. <b>Anomaly kinds:</b> <code>md_class_blank</code>, <code>mfr_ref_missing</code>, <code>mfr_ref_prose</code>, <code>manufacturer_code_blank</code>, <code>reclassified_non_md</code> &ndash; five of the nine, and the only handler that raises more than two.</p>
+</div>
+
+<div class="card gated">
+<header><h3><code>resolve.group</code></h3><span class="pill live">live</span><span class="meta">2 dormant rungs · T1 seam unwired <em>and unreachable</em> · <code>app/handlers/resolve.py</code></span></header>
+<p class="meta"><b>Entry points:</b> INGEST per changed item (<code>ingest.py:203</code>) · web grouping-suggestion assign (<code>web/app.py:3046</code>, interactive) · <code>cli regroup --apply</code> (<code>app/regroup.py:259</code>, re-emits with the stored <code>mirror_rev</code>).</p>
+<div class="tablewrap"><table>
+<tr><th>Payload field</th><th>Type</th><th>Req</th><th>Meaning</th></tr>
+<tr><td><code>item_ref</code></td><td>str</td><td>yes</td><td>BC item number; the mirror PK</td></tr>
+<tr><td><code>group_id</code></td><td>int</td><td>no</td><td>Human's forced assignment from the suggestion UI &rarr; basis <code>manual</code>, and resolves the <code>grouping_suggestion</code> row</td></tr>
+<tr><td><code>force_new_group</code></td><td>bool</td><td>no</td><td>The "new group" branch of the same UI</td></tr>
+</table></div>
+<p class="meta"><b>Dedupe:</b> <code>resolve:{item_ref}:{mirror_rev}</code> · <code>resolve:manual:{item_ref}:{group_id|new}</code>. Both shapes are in PRD &sect;0.</p>
+<p class="meta"><b>Reads:</b> <code>item_mirror</code>, <code>manufacturer_alias</code> (<code>raw_name</code>), <code>item_group_member</code>, <code>item_group.basic_udi_di</code>, <code>document</code> + <code>item_document</code> (the C3 suppression probe). <b>Config:</b> <code>resolve.name_accept</code> 0.90, <code>resolve.name_suggest</code> <b>0.90</b> (set EQUAL to <code>name_accept</code>, which collapses the staging band to nothing), <code>resolve.name_candidate_k</code> 20, <code>discovery.hold</code>.</p>
+<p class="meta"><b>Writes:</b> <code>item_group</code> (<code>canonical_manufacturer</code>, <code>label</code>) · <code>item_group_member</code> (<code>group_id</code>, <code>item_ref</code>, <code>mfr_ref</code> &ndash; the C1 comparand materialized here &ndash; <code>match_basis</code>) · <code>manufacturer_alias</code> (<code>raw_name</code> &rarr; <code>canonical_name</code>, self-seeding) · <code>grouping_suggestion</code> (<code>candidates</code>, <code>suggestion</code>, <code>score</code> jsonb; status <code>open|resolved</code>). Never the registry. Matches the access matrix.</p>
+<div class="tablewrap"><table>
+<tr><th>Ladder rung (stop at first hit)</th><th>Outcome</th><th>Status</th></tr>
+<tr><td>Existing group link</td><td>keep group, original basis preserved</td><td class="st s-live">live</td></tr>
+<tr><td>UDI equality join</td><td>group by shared UDI-DI</td><td class="st s-gated">dormant: <code>item_mirror.udi</code> is always null, the LJ CSV profile has no UDI column</td></tr>
+<tr><td>Basic UDI-DI equality</td><td><code>item_group.basic_udi_di</code> match</td><td class="st s-gated">dormant: no writer populates that column anywhere in <code>app/</code> or <code>web/</code></td></tr>
+<tr><td>Name family, score &ge; <code>name_accept</code></td><td>assign, basis <code>name-family</code></td><td class="st s-live">live</td></tr>
+<tr><td>Name family, <code>name_suggest</code> &le; score &lt; <code>name_accept</code></td><td>T1 adjudication attempted &rarr; <code>grouping_suggestion</code> staged either way; a raising adjudicator is caught and stored as <code>t1_error</code>, the cluster still stages</td><td class="st s-gated"><b>band is empty</b> while the two thresholds are equal: path intact, unreachable</td></tr>
+<tr><td>No hit</td><td>new group, basis <code>manual</code>/heuristic</td><td class="st s-live">live</td></tr>
+<tr><td>Group already has a production doc <em>or</em> a staged candidate</td><td><code>emitted_discover=False</code>, settled</td><td class="st s-live">live</td></tr>
+<tr><td><code>discovery.hold</code> on (compose default)</td><td><code>emitted_discover=False</code> + <code>discover_held=1</code>: deferred, not decided</td><td class="st s-gated">gated on</td></tr>
+<tr><td>Otherwise</td><td>&mdash;</td><td class="st s-live">emits <code>discover.group {group_id}</code> (<code>resolve.py:243</code>)</td></tr>
+<tr><td>C4 binding for a newly-resolved item</td><td><code>_apply_manufacturer_bindings</code> returns <b>0</b>, always</td><td class="st s-hole">inert hook (followup <code>resolve-c4</code>)</td></tr>
+</table></div>
+<p class="meta"><b>Result keys:</b> <code>emitted_discover</code>, <code>discover_held</code>, <code>missing_mfr_ref</code>, <code>aliases_created</code>, <code>grouping_suggestions</code>, <code>bindings_applicable</code>. <b>No <code>Result</code> envelope, no anomalies:</b> RESOLVE emits none, so a data problem it sees never reaches <code>data_anomaly</code>. Live: <b>8.211</b> groups over 15.958 members, whose membership bases are only <code>singleton</code> (8.211) and <code>name-family</code> (7.747) &ndash; the two UDI rungs have produced nothing. All <b>5.831</b> grouping suggestions ever raised are <code>resolved</code>; none is open, which is what an empty SUGGEST band looks like from the other end.</p>
+</div>
+<div class="card gated">
+<header><h3><code>discover.group</code></h3><span class="pill live">live</span><span class="meta">held off in the shipped stack, but it has now reached the open web · <code>app/handlers/discover.py</code></span></header>
+<p class="meta"><b>Entry points, five of them:</b> RESOLVE (<code>resolve.py:243</code>) · GATE reject path (<code>gate.py:1274</code>, interactive) · web manual-tab re-run (<code>web/app.py:3230</code>, interactive) · <b>new</b> web item-page "look again" (<code>web/app.py:1932</code>, interactive, payload carries <code>ignore_recency: true</code>) · <b>new</b> <code>cli discover-item</code> (<code>app/cli.py:76</code>), which resolves the item's group so an admin does not have to. The last two share one dedupe shape and one date bucket, so a same-day repeat from either side dedupes against the other.</p>
+<div class="tablewrap"><table>
+<tr><th>Payload field</th><th>Type</th><th>Req</th><th>Meaning</th></tr>
+<tr><td><code>group_id</code></td><td>int</td><td>yes</td><td>The group to discover for (<code>discover.py:375</code>)</td></tr>
+<tr><td><code>ignore_recency</code></td><td>bool</td><td>no</td><td><b>Added 2026-08-24</b>, additively, with the PRD row written at the same time. Forces every known row stale at one override point (<code>discover.py:386</code>), which disarms both the recency rung and the known-url freshness filter, and is propagated onto every <code>fetch.url</code> this run emits. It bypasses the <em>window</em> only: conditional GET and hash dedupe still apply, so a forced refetch of unchanged bytes still ends in C3 dedupe.</td></tr>
+<tr><td><code>manufacturer_id</code>, <code>context</code></td><td>&mdash;</td><td>&mdash;</td><td>Listed in PRD &sect;3; <b>no producer has ever written either, and the handler never reads them</b> (&sect;5)</td></tr>
+</table></div>
+<p class="meta"><b>Dedupe, four shapes:</b> <code>discover:{group_id}:0</code> (the cycle token is the constant <code>_RESOLVE_CYCLE = 0</code>) · <code>discover:gate-reject:{doc_id}:{group_id}</code> · <code>discover:manual:{task_id}</code> · <code>discover:refetch:{group_id}:{today}</code>.</p>
+<p class="meta"><b>Reads:</b> <code>item_group</code> / <code>item_group_member.mfr_ref</code>, <code>fetch_log</code> (recency, and now also the ledger rows behind the playbook's own direct URLs), <code>extraction_attempt</code> (via <code>hash_extracted_rev</code>), <code>eudamed_mirror.cert_refs</code>, <code>manufacturer.contact_emails</code>, <code>manual_task</code>, and the manufacturer's playbook. <b>Config:</b> <code>discovery.default_source_priority</code> (now <code>recency &rarr; known_url &rarr; playbook &rarr; eudamed &rarr; search &rarr; email &rarr; manual</code>), a playbook's own <code>source_priority</code> (which wins over both config maps), <code>discovery.recency_days</code> 30, <code>discovery.topk</code> 3, <code>discovery.rank_threshold</code> 0.60, <code>discovery.max_search_candidates</code> 10, <code>discovery.email_rung_enabled</code> (default <b>False</b>).</p>
+<p class="meta"><b>Writes:</b> <code>discovery_log</code> (<code>group_id</code>, <code>source</code>, <code>outcome</code>, <code>detail</code> jsonb), one row per rung tried · <code>manual_task</code> (<code>kind='discovery-dead-end'</code>, prefilled search links + playbook portals) and the resolve of a stale one. Never fetches (invariant 12).</p>
+<div class="tablewrap"><table>
+<tr><th>Rung</th><th>Outcome</th><th>Emits</th><th>Status</th></tr>
+<tr><td><code>recency</code></td><td><b>No longer only a guard.</b> When every known row is ledger-fresh <em>and</em> the content is already extracted, the rung emits the link candidate itself and terminates the ladder. Its candidate set is the known-url hashes plus the ledger rows behind the playbook's authored <code>direct</code> URLs, which the playbook rung would otherwise dedupe away against another group's in-flight fetch. Fresh-but-unextracted still falls through; <code>ignore_recency</code> skips the whole branch.</td><td><code>validate.doc</code>, C3 re-entry with no network</td><td class="st s-live">live &ndash; new 2026-08-24</td></tr>
+<tr><td><code>known_url</code></td><td>stale known URLs &rarr; hit</td><td><code>fetch.url</code> &times;k, resolves the dead-end task</td><td class="st s-live">live</td></tr>
+<tr><td><code>playbook</code></td><td><b>Built.</b> Emits the playbook's authored <code>kind:"direct"</code> doc_sources, the cheapest discovery there is, and costs nothing for a manufacturer that has authored none. Only the crawl recipe over <code>kind:"portal"</code> is still Phase 2 (design at <code>docs/superpowers/specs/2026-08-21-playbook-crawl-recipe-design.md</code>).</td><td><code>fetch.url</code> per direct URL</td><td class="st s-live">live &ndash; 6 hits on the live registry, the rung that put the pipeline on the open web</td></tr>
+<tr><td><code>eudamed</code></td><td>mirror lookup by <code>basic_udi_di</code></td><td><code>fetch.url</code> on a hit</td><td class="st s-gated">dormant: <code>eudamed_mirror</code> holds 0 rows and has no producer</td></tr>
+<tr><td><code>search</code></td><td>SearchAdapter + T1 ranking, <code>site:</code>-restricted to playbook domains with one wide retry</td><td><code>fetch.url</code> for candidates over <code>rank_threshold</code></td><td class="st s-gated"><code>_default_rank</code> still raises <code>NotImplementedError</code>; caught by <code>_search</code> &rarr; logged miss &rarr; degrades to manual</td></tr>
+<tr><td>Empty search key</td><td><code>SearchNotConfigured</code> = skipped rung, never a dead-letter</td><td>falls through</td><td class="st s-live">live</td></tr>
+<tr><td><code>email</code></td><td>Rung disabled by default. <b>Its consumer now exists</b> (<code>email.request</code> is a real handler), so the flag is no longer protecting against a silent no-op; it is protecting against writing to manufacturers before a person has approved the copy.</td><td>logs <code>skipped</code>, falls through to manual</td><td class="st s-gated">flag off</td></tr>
+<tr><td><code>vendor</code></td><td>tolerated and skipped if a config ladder names it; absent from the default</td><td>nothing</td><td class="st s-noop">folded into search (G6)</td></tr>
+<tr><td>Ladder exhausted, or a misconfigured priority list runs off the end</td><td><code>manual_task</code> with prefilled links, <code>fallback: true</code> on the log row</td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>Unknown rung name in a config or playbook ladder</td><td><code>ValueError</code> &rarr; job fails loudly</td><td>n/a</td><td class="st s-live">live</td></tr>
+</table></div>
+<p class="meta"><b>Result keys:</b> <code>group_id</code>, <code>source</code>, <code>outcome</code>, <code>sources_tried</code>, <code>emitted_fetch</code>, <code>emitted_validate</code>, <code>emitted_email</code>, <code>manual_task</code>, <code>candidates_seen</code>. No anomalies. Live <code>discovery_log</code>: <b>12</b> rows, 6 <code>known_url</code> misses and <b>6 <code>playbook</code> hits</b> &ndash; the whole of discovery's production history, because the hold has been on since the cold start.</p>
+</div>
+
+<div class="card">
+<header><h3><code>fetch.url</code></h3><span class="pill live">live</span><span class="meta">PRD &sect;4 · <code>app/handlers/fetch.py</code> + <code>app/handlers/archiving.py</code></span></header>
+<p class="meta"><b>Entry points:</b> DISCOVER only (<code>discover.py:258</code>, via <code>_emit_fetch</code>). Nothing else enqueues this tag.</p>
+<div class="tablewrap"><table>
+<tr><th>Payload field</th><th>Type</th><th>Req</th><th>Meaning</th></tr>
+<tr><td><code>url</code></td><td>str</td><td>yes</td><td>Absent &rarr; <code>KeyError</code> &rarr; the job fails loudly, deliberately</td></tr>
+<tr><td><code>domain</code></td><td>str</td><td>yes</td><td>Politeness lease key</td></tr>
+<tr><td><code>group_id</code></td><td>int</td><td>no</td><td>The requesting group. Null on any non-group path; decides whether a hash-dedupe hit can produce a link candidate</td></tr>
+<tr><td><code>source_rank</code></td><td>str</td><td>set</td><td>Written by <code>_emit_fetch</code> (the rung name), <b>never read by the handler</b>: provenance only</td></tr>
+<tr><td><code>ignore_recency</code></td><td>bool</td><td>no</td><td><b>Added 2026-08-24.</b> Bypasses the <code>_fresh</code> skip at <code>fetch.py:141</code> and <b>nothing else</b>: the conditional GET still runs and the hash dedupe still applies, so a forced refetch of unchanged bytes deduplicates rather than duplicating.</td></tr>
+</table></div>
+<p class="meta"><b>Dedupe:</b> <code>fetch:{url_normalized}</code>. Normalization lives in <code>app/urls.py</code> and is shared with DISCOVER so the two cannot diverge.</p>
+<p class="meta"><b>Reads:</b> <code>fetch_log</code> (<code>url_normalized</code>, <code>etag</code>, <code>last_modified</code>, <code>content_hash</code>, <code>doc_id</code>, <code>last_checked_at</code>), <code>domain_lease.needs_playwright</code>, <code>extraction_attempt</code> (via <code>hash_extracted_rev</code>), <code>document</code> (for the stored archive handle on a C3 payload). <b>Config:</b> <code>fetch.politeness_ms</code> 2000, <code>fetch.recency_window_days</code> <b>21</b>, <code>adapters.storage</code> (<code>local</code>).</p>
+<p class="meta"><b>Writes:</b> <code>fetch_log</code> (upsert: <code>url_normalized</code>, <code>etag</code>, <code>last_modified</code>, <code>content_hash</code>, <code>fetched_at</code>, <code>last_checked_at</code>, <code>source='live'</code>, <code>doc_id</code>) · <code>domain_lease</code> (politeness upsert, and <code>needs_playwright=true</code> only after a <em>successful</em> Playwright fallback) · the archive file through <code>StorageAdapter</code> at <code>/archive/{manufacturer}/{type}/{hash12}__{filename}</code>.</p>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Emits</th><th>Status</th></tr>
+<tr><td>Domain lease held by another worker</td><td><code>lease-wait</code>, job deferred by <code>politeness_ms</code>; returns <code>_deferred</code>, so the runner does not finish it</td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>Ledger fresh, hash already extracted, <code>group_id</code> present</td><td><code>recency-skip-linked</code>, no network</td><td><code>validate.doc</code></td><td class="st s-live">live</td></tr>
+<tr><td>Ledger fresh, no extraction or no group</td><td><code>recency-skip</code></td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>304 Not Modified</td><td><code>last_checked_at</code> touched</td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>Same hash, new URL</td><td><code>hash-dedupe</code>: the URL row is linked to the existing <code>doc_id</code>. The emitted <code>validate.doc</code> now carries <code>archive_url</code>, read from <code>document</code> by hash, so GATE can no longer fall back to the ledger's remote source URL and overwrite a stored handle.</td><td><code>validate.doc</code> (C3) when a group asked</td><td class="st s-live">live</td></tr>
+<tr><td>New content hash</td><td>archived through the adapter, ledger row written</td><td><code>extract.doc</code></td><td class="st s-live">live</td></tr>
+<tr><td>HTTP 403</td><td>treated as a bot wall &rarr; Playwright retry; persistent &rarr; <code>FetchError</code> &rarr; backoff &rarr; dead</td><td>as above, or dead</td><td class="st s-gated">a 200-with-JS-challenge is undetected (followup <code>fetch-js-challenge</code>)</td></tr>
+<tr><td>429 / 5xx / timeout / any non-200</td><td>transient &rarr; <code>FetchError</code> &rarr; queue backoff, never Playwright</td><td>retry or dead</td><td class="st s-live">live</td></tr>
+<tr><td><b>robots.txt</b></td><td><code>app/robots.py</code> parses <code>User-agent</code>/<code>Disallow</code>/<code>Allow</code>/<code>Crawl-delay</code>, caches per host with a 24h TTL and writes <code>domain_lease.min_politeness_ms</code>; <code>queue.try_domain_lease</code> holds <code>GREATEST(politeness_ms, min_politeness_ms)</code>. <b>Nothing calls it.</b> <code>fetch.py</code> has no import of it, no handler does, and <code>robots_cache</code> holds 0 rows.</td><td>n/a</td><td class="st s-hole">built, tested, <b>unwired</b> (&sect;5)</td></tr>
+</table></div>
+<p class="meta"><b>Result keys:</b> <code>outcome</code> (one of the seven above), <code>content_hash</code>, <code>archive_url</code>, <code>via</code> (<code>httpx</code>|<code>playwright</code>), <code>emitted</code>, <code>bytes</code>, <code>group_id</code>. No <code>Result</code> envelope, no anomalies. Live ledger: <b>880</b> rows, of which <b>862</b> <code>backfill</code>, 17 <code>email</code> and exactly <b>1</b> <code>live</code> &ndash; the pipeline's whole recorded history of fetching from the internet.</p>
+</div>
+<div class="card">
+<header><h3><code>upload.ingest</code></h3><span class="pill live">live</span><span class="meta">web <code>/upload</code> hand-off · <code>app/handlers/upload.py</code></span></header>
+<p class="meta"><b>Entry points:</b> the web upload form only (<code>web/app.py:2882</code>). The route is producer-only: it INSERTs the bytes into <code>upload_inbox</code> and enqueues. <code>dentalia_api</code> holds no SELECT on that table, so the worker owns the read and the delete, and the boundary is a grant rather than a convention.</p>
+<div class="tablewrap"><table>
+<tr><th>Payload field</th><th>Type</th><th>Req</th><th>Meaning</th></tr>
+<tr><td><code>upload_id</code></td><td>int</td><td>yes</td><td><code>upload_inbox</code> row id. The row is deleted on success, so a retry after a committed delete is a no-op, not a duplicate</td></tr>
+<tr><td><code>manual_task_id</code></td><td>int</td><td>no</td><td>Lets a <code>/manual</code> discovery dead-end resolve itself worker-side</td></tr>
+</table></div>
+<p class="meta"><b>Dedupe:</b> <code>upload:{upload_id}</code>. <b>Reads:</b> <code>upload_inbox</code>, <code>item_group</code> (manufacturer for the archive path), <code>extraction_attempt</code>. <b>Writes:</b> <code>fetch_log</code> (<code>source='upload'</code>), the archive file, <code>DELETE FROM upload_inbox</code>, the <code>manual_task</code> resolve.</p>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Emits</th><th>Status</th></tr>
+<tr><td>Spool row already gone</td><td><code>already-processed</code></td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>Seen hash + a target group</td><td><code>linked</code></td><td><code>validate.doc</code> (C3-style)</td><td class="st s-live">live</td></tr>
+<tr><td>Seen hash, no group</td><td><code>duplicate</code>, nothing to link</td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>New hash</td><td><code>archived</code></td><td><code>extract.doc</code></td><td class="st s-live">live</td></tr>
+</table></div>
+<p class="meta">Live: <code>upload_inbox</code> is empty and no <code>fetch_log</code> row carries <code>source='upload'</code> &ndash; the path is built and tested, never used in anger.</p>
+</div>
+
+<div class="card">
+<header><h3><code>backfill.scan</code></h3><span class="pill live">live</span><span class="meta">corpus walker, the source of 862 of 880 ledger rows · <code>app/handlers/backfill.py</code></span></header>
+<p class="meta"><b>Entry points:</b> <code>cli enqueue</code> only; there is still no automatic producer. Payload <code>{drive_folder}</code>, a local path in the shipped stack (the Drive walker is the same code behind a different adapter).</p>
+<p class="meta"><b>The corpus is not the archive.</b> It is a hand-managed SFTP dump, cleared and re-dumped, mounted read-only, and visible at a different path in every container. So BACKFILL archives the bytes through the <code>StorageAdapter</code> exactly as FETCH does and emits the handle the store returns; recording the walked path as <code>archive_url</code> is what produced the handles <code>cli repair-archive-urls</code> later had to re-home, <b>389</b> of them by <code>archive-url-repair</code> audit count. All 769 documents now carry an <code>/archive/&hellip;</code> handle.</p>
+<p class="meta"><b>Reads:</b> the corpus tree, <code>fetch_log</code> (<code>_hash_seen</code>, the only guard against re-paying for an already-parsed document), the manufacturer's playbook (annex classification, exclusion rules, the coverage-map index sources). <b>Writes:</b> <code>fetch_log</code> (<code>source='backfill'</code>, <code>url_normalized</code> = the resolved absolute path) + archive files. <b>Emits:</b> <code>extract.doc</code> per unseen hash (<code>backfill.py:425</code>), dedupe <code>extract:{content_hash}</code>.</p>
+<p class="meta"><b>Result keys, twelve of them:</b> <code>scanned</code>, <code>emitted</code>, <code>seen</code>, <code>errors</code>, <code>annexes</code>, <code>companions_attached</code>, <code>companion_ambiguous</code>, <code>redundant</code>, <code>canonical_ambiguous</code>, <code>index_archived</code>, <code>excluded</code>, <code>excluded_by</code>. The last eight are all newer than the previous map and all encode the same lesson: a manufacturer does not ship one file per document. Komet issues a declaration and its product list as two PDFs, so the scan pairs them and files only one, attaching the annex's REF list under the annex's own handle; a coverage-map index (a spreadsheet or a Word table, not a PDF) is archived rather than parsed; and a file the playbook's rules exclude is counted with the rule that excluded it rather than dropped.</p>
+<ul class="notes">
+<li>Raises <code>BackfillError</code> rather than counting when the scan cannot be what the operator meant, so it lands on the dead-jobs board instead of reporting success.</li>
+<li><span class="warn">Coupled risk:</span> a registry <code>TRUNCATE &hellip; CASCADE</code> empties <code>fetch_log</code> through <code>fetch_log_doc_id_fk</code>, which is exactly the table this dedupe depends on (followup <code>truncate-cascade-eats-the-fetch-ledger</code>).</li>
+</ul>
+</div>
+
+<div class="card">
+<header><h3><code>email.poll</code></h3><span class="pill live">live</span><span class="meta">S2.4 inbound, new since the last map · <code>app/handlers/email_poll.py</code></span></header>
+<p class="meta"><b>Entry points:</b> SCHEDULER mailbox tick (<code>app/scheduler.py:236</code>, gated by <code>scheduler.email_poll_enabled</code>, default <b>False</b>) · the <code>/scheduler</code> panel's <b>Run now</b> (<code>web/scheduler_view.py:271</code>), which enqueues under the identical key so a hand-run and the next tick cannot produce two polls for one period.</p>
+<div class="tablewrap"><table>
+<tr><th>Payload field</th><th>Type</th><th>Req</th><th>Meaning</th></tr>
+<tr><td><code>mailbox</code></td><td>str</td><td>yes</td><td><code>"INBOX"</code></td></tr>
+<tr><td><code>since</code></td><td>str</td><td>yes</td><td>The period key, <code>YYYY-MM-DD:HH-band</code>, sized by <code>scheduler.email_poll_interval_hours</code> (6). A mailbox wants sub-day cadence, unlike the day-granularity scans.</td></tr>
+</table></div>
+<p class="meta"><b>Dedupe:</b> <code>email.poll:{period_key}</code>. <b>Two dedupes inside the handler, kept distinct:</b> the processed-email guard is <code>email_poll_log</code> keyed <code>(mailbox, uid_validity, uid)</code> and is the authority, explicitly <b>not</b> the IMAP <code>\Seen</code> flag; the content guard is <code>fetch_log</code> + <code>extract:{content_hash}</code>, one physical file however many messages carry it.</p>
+<p class="meta"><b>Reads:</b> the mailbox through <code>ImapEmailAdapter</code>, <code>extraction_attempt</code>, <code>email_poll_log</code>. <b>Writes:</b> <code>email_poll_log</code>, <code>fetch_log</code> (<code>source='email'</code>), archive files. <b>Config:</b> <code>email.imap_host/port/ssl/folder</code> (all empty by default &rarr; <code>EmailNotConfigured</code> &rarr; a SKIPPED rung, never a dead job), <code>email.poll_max_messages</code> 200, <code>email.zip_*</code> (archives are expanded, with member-count, per-member size, total size and compression-ratio caps), <code>email.summary_enabled</code> + <code>models.email_summary</code>.</p>
+<div class="tablewrap"><table>
+<tr><th>Per attachment</th><th>Outcome</th><th>Emits</th><th>Status</th></tr>
+<tr><td>Not a PDF</td><td>skipped, reason <code>non-pdf</code></td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>Archive (<code>.zip</code>)</td><td>expanded first, under the four caps, so a supplier sending <code>documents.zip</code> is sending documents rather than one refused blob</td><td>as per member</td><td class="st s-live">live</td></tr>
+<tr><td>MSDS / business noise</td><td>skipped, reason <code>noise-*</code>, via the same deterministic <code>classify_doc_class</code> the tiers use. <b>No LLM.</b></td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>New compliance content</td><td>archived, <code>source_url="email:{message_id}"</code></td><td><code>extract.doc</code>, <code>group_id=None</code></td><td class="st s-live">live</td></tr>
+<tr><td>Already-seen hash</td><td>deduped; a link candidate only if a <code>group_id</code> is present</td><td><code>validate.doc</code> iff grouped</td><td class="st s-gated">dormant: inbound <code>group_id</code> is always None until reply&rarr;request&rarr;group matching lands</td></tr>
+<tr><td>The message body</td><td>Read once, summarised by <code>app/email_summary.py</code>, and <b>dropped</b>. Only the summary reaches <code>email_poll_log</code> (migration 030). Runs <em>after</em> the attachments, so a slow or failing summariser can never cost the poll a document, and a re-scan summarises nothing.</td><td>nothing</td><td class="st s-live">the one LLM call here, cheap tier</td></tr>
+</table></div>
+<p class="meta">This is the widened invariant 12: the summary is UI context for <code>/emails</code>, never evidence, never a VALIDATE or GATE input, never re-read by another stage. Proposed and ratified by Denis on 2026-08-20. Live: <b>6</b> <code>email_poll_log</code> rows and 17 <code>fetch_log</code> rows at <code>source='email'</code>, all from the GreenMail fixture; the real mailbox is GAP G8 and the poll stays gated off until credentials exist.</p>
+</div>
+<div class="card">
+<header><h3><code>extract.doc</code></h3><span class="pill live">live</span><span class="meta">PRD &sect;5 · <code>app/handlers/extract.py</code> + <code>app/extract/</code></span></header>
+<p class="meta"><b>Entry points, four producers through two call sites:</b> FETCH new-hash, UPLOAD new-hash and EMAIL.POLL new-hash all go through <code>archiving.emit_extract</code> (<code>archiving.py:141</code>); BACKFILL emits per unseen corpus file (<code>backfill.py:425</code>). One dedupe shape for all four.</p>
+<div class="tablewrap"><table>
+<tr><th>Payload field</th><th>Type</th><th>Req</th><th>Meaning</th></tr>
+<tr><td><code>archive_url</code></td><td>str</td><td>yes</td><td>Our stored copy, the only handle the tiers open</td></tr>
+<tr><td><code>content_hash</code></td><td>str</td><td>yes</td><td>sha256; the dedupe key and the registry's document identity</td></tr>
+<tr><td><code>group_id</code></td><td>int</td><td>no</td><td>Requesting group; null on the backfill, corpus and inbound-email paths, carried through to <code>validate.doc</code></td></tr>
+<tr><td><code>companion_archive_url</code></td><td>str</td><td>no</td><td>An annex whose REF list belongs to this document; its codes are tagged with the <em>annex's</em> own handle so the evidence points at the page the numbers are actually on. <b>Named in no contract</b> (&sect;5)</td></tr>
+<tr><td><code>source_url</code> / <code>email_ref</code></td><td>str</td><td>&mdash;</td><td>Named in PRD &sect;5; <b>not read</b> by the handler. GATE recovers <code>source_url</code> from <code>fetch_log</code> by hash instead, which also answers on the replay path where no live payload exists</td></tr>
+</table></div>
+<p class="meta"><b>Dedupe:</b> <code>extract:{content_hash}</code>. <b>Config:</b> <code>connection.anthropic_api_key</code> (the worker refuses to start without it, after the GC pilot failed 79 of 149 extractions on a missing credential), <code>models.t1</code> <code>claude-haiku-4-5</code> / <code>models.t2</code> <code>claude-sonnet-5</code>, <code>DENTALIA_EXTRACT_MODE</code> (env, <code>sync</code> default; compose surfaces it explicitly because running a sweep without <code>batch</code> silently pays double), <code>batch.poll_interval_s</code> 900.</p>
+<p class="meta"><b>Target schema, now 11 fields</b> (<code>tiers.TARGET</code>): <code>type</code>, <code>regulation</code>, <code>validity_from</code>, <code>validity_to</code>, <code>coverage_scope</code>, <code>ref_list</code>, <code>basic_udi_di</code>, <code>referenced_docs</code>, <code>cert_number</code>, <code>manufacturer</code>, and <b><code>stated_class</code></b> (added 2026-08-21). <code>T0_PRODUCED</code> covers 9, <code>T0_EXEMPT</code> holds <code>referenced_docs</code> and <code>validity_from</code>; together they partition the list exactly, which is the contract that stops a field being half-wired the way <code>referenced_docs</code> silently was. <code>stated_class</code> is the one field <b>only</b> T0 ever produces: it is in no escalate set, so nothing above T0 is ever asked for it.</p>
+<p class="meta"><b>Writes:</b> <code>extraction_attempt</code> (<code>content_hash</code>, <code>tier</code>, live values <code>T0</code> 186 / <code>T0+T1</code> 250 / <code>T0+T1+T2</code> 1.083, <code>model_id</code>, <code>fields</code> jsonb = value + confidence + evidence per field, <code>extract_rev</code>, and since migration 031 <code>playbook_slug</code> + <code>playbook_rev</code> so an extraction records which playbook revision parsed it) &ndash; <b>every</b> tier attempt is kept, that is what a T3 human reads · <code>document_text</code> (the extracted text layer, served at <code>/documents/{hash}/text</code>, and now also read by VALIDATE's device-enumeration guard) · <code>extraction_cost</code> (migration 010, feeds the KPI board's <code>extraction_spend</code>) · <code>batch_ref</code> (<code>content_hash</code>, <code>tier</code>, <code>batch_id</code>, <code>submitted_at</code>, <code>resolved_at</code>).</p>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Emits</th><th>Status</th></tr>
+<tr><td>T0 template hit, every field confident</td><td>free parse, confidence 1.0, no model call</td><td><code>validate.doc</code></td><td class="st s-live">live</td></tr>
+<tr><td>Per-field low confidence</td><td>escalate that field only: T1 text, then T2 vision</td><td><code>validate.doc</code></td><td class="st s-live">live</td></tr>
+<tr><td>A Basic UDI-DI fails its own check-character pair</td><td>anomaly <code>basic_udi_check_failed</code>, subject = the offending value, so <code>seen_count</code> counts documents carrying the same misread string</td><td>continues</td><td class="st s-live">live, 0 observed</td></tr>
+<tr><td>Playbook REF template matched and parsed nothing</td><td>anomaly <code>t0_ref_template_miss</code>, subject = the playbook slug</td><td>continues</td><td class="st s-live">live, 3 subjects / 99 sightings</td></tr>
+<tr><td>No text layer (a scan)</td><td>anomaly <code>no_text_layer</code>; the vision tier handles it</td><td><code>validate.doc</code></td><td class="st s-live">live, 66 subjects</td></tr>
+<tr><td>Unreadable PDF</td><td>count <code>unreadable_pdf</code>, <b>no <code>document_text</code> row, nothing emitted</b>: there is nothing to validate</td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td>Batch mode, batch still running</td><td><code>{"_deferred": True}</code>: the <code>batch_ref</code> write commits, the runner skips <code>finish</code>, the job re-claims after <code>run_after</code></td><td>nothing yet</td><td class="st s-live">live in code, never met the real API</td></tr>
+<tr><td>Re-emitted <code>extract.doc</code> for already-parsed content</td><td>the tier ladder runs again, unconditionally: there is no <code>extraction_attempt</code> pre-check</td><td><code>validate.doc</code></td><td class="st s-hole">re-pays T1/T2 (followup <code>extract-not-idempotent-on-stored-attempts</code>)</td></tr>
+</table></div>
+<p class="meta"><b>Anomaly kinds:</b> <code>no_text_layer</code>, <code>basic_udi_check_failed</code>, <code>t0_ref_template_miss</code>. <b>Emits:</b> <code>validate.doc {content_hash, extract_rev, group_id, archive_url}</code> (<code>extract.py:151</code>), dedupe <code>validate:{hash}:{rev}:{group_id}</code>. Live: <b>1.519</b> attempts over <b>809</b> stored texts (743 <code>pdf-text</code>, <b>66 <code>none</code></b> &ndash; the scans), <b>1.489</b> cost rows, 8 <code>batch_ref</code> rows.</p>
+</div>
+
+<div class="card">
+<header><h3><code>validate.doc</code></h3><span class="pill live">live</span><span class="meta">PRD &sect;6 · <b>no longer strictly stateless</b> · <code>app/handlers/validate.py</code></span></header>
+<p class="meta"><b>Entry points, five:</b> EXTRACT (<code>extract.py:151</code>) · FETCH C3 hash-dedupe and recency-skip-linked (<code>archiving.py:133</code>) · UPLOAD seen-hash and EMAIL.POLL seen-hash (same helper) · DISCOVER's new recency rung (<code>discover.py</code>, via <code>archiving.emit_validate</code>) · <b>plus two operator CLIs</b>, <code>app/repair_ref_list.py:104</code> and <code>app/komet_coverage.py:283</code>, which re-validate a stored extraction against a group. The PRD's dedupe row names EXTRACT, FETCH and DISCOVER; the two CLIs are still unlisted (&sect;5).</p>
+<div class="tablewrap"><table>
+<tr><th>Payload field</th><th>Type</th><th>Req</th><th>Meaning</th></tr>
+<tr><td><code>content_hash</code></td><td>str</td><td>yes</td><td>Identifies the extraction to re-read</td></tr>
+<tr><td><code>extract_rev</code></td><td>int</td><td>yes</td><td>Which revision of it</td></tr>
+<tr><td><code>group_id</code></td><td>int</td><td>no</td><td>Null on the corpus and inbound-email paths, and it stringifies into the dedupe key as the literal <code>None</code>: an acknowledged implementation leak, with <code>:global</code> the proposed cleanup</td></tr>
+<tr><td><code>canonical_manufacturer</code></td><td>str</td><td>no</td><td>Pins the manufacturer for a coverage-map or CLI re-validate instead of re-deriving it</td></tr>
+<tr><td><code>archive_url</code>, <code>basic_udi_di</code></td><td>str</td><td>no</td><td><code>archive_url</code> is carried through to <code>gate.candidate</code> and never consumed here: GATE needs the stored copy's handle for <code>document</code> and <code>evidence</code></td></tr>
+</table></div>
+<p class="meta"><b>Reads:</b> <code>extraction_attempt</code>, <code>item_group</code> / <code>item_group_member</code> (both article numbers), <code>manufacturer_alias</code> (read-only, VALIDATE never self-seeds, so a garbled OCR name cannot mint a manufacturer), <code>document</code> (the current production doc of the same type + regulation), and <b>now <code>document_text</code></b> for the device-enumeration guard. <b>Writes: nothing</b>, verified by grep across the module. <b>Config:</b> <code>validate.min_unscoped_ref_len</code> 6 (85 catalogue REFs are 1&ndash;3 characters and worthless as identity).</p>
+<div class="tablewrap"><table>
+<tr><th>Rule</th><th>Flag raised</th><th>Class</th><th>Status</th></tr>
+<tr><td>REF gate: overlap on <code>mfr_ref</code> (basis <code>ref-list</code>) or <code>item_ref</code> (basis <code>ref-item</code>), manufacturer pinned first</td><td>&mdash;</td><td>production-capable</td><td class="st s-live">live &ndash; 1.150 + 794 production links</td></tr>
+<tr><td>REF list read out of the manufacturer's own article index (<code>ref_list</code> carries <code>source: "coverage-map"</code>)</td><td>basis <code>map-supplier</code></td><td>production-capable</td><td class="st s-live">live &ndash; 43 production, 260 staged</td></tr>
+<tr><td>Unscoped REF hit, no manufacturer</td><td><code>ref-unscoped</code>, basis <code>ref-catalogue</code></td><td>capping</td><td class="st s-live">live &ndash; 0 links survive today</td></tr>
+<tr><td>Unscoped REFs pointing at &gt;1 manufacturer</td><td><code>multi-manufacturer-ref</code></td><td>capping</td><td class="st s-live">live</td></tr>
+<tr><td>Manufacturer resolves to nothing</td><td><code>manufacturer-unresolved</code></td><td>blocking</td><td class="st s-live">live</td></tr>
+<tr><td>Resolves, but no group's REF list overlaps</td><td><code>no-ref-overlap</code></td><td>informational</td><td class="st s-live">live</td></tr>
+<tr><td>Members matched across several groups of one manufacturer</td><td><code>multi-group-match</code> (breadth, not loss: every member is linked)</td><td>informational</td><td class="st s-live">live</td></tr>
+<tr><td>Date outside [1990, 2100]</td><td><code>date-insane</code></td><td>blocking</td><td class="st s-live">live</td></tr>
+<tr><td>Candidate older than current, both dates present</td><td><code>older-than-current</code> + <code>superseded_by_doc_id</code> + <code>auto-superseded</code></td><td>blocking + fast-path signal</td><td class="st s-live">live &ndash; 4 superseded documents</td></tr>
+<tr><td>Either date null</td><td><code>downgrade-uncomparable</code>, never compared</td><td>capping</td><td class="st s-live">live</td></tr>
+<tr><td><code>validity_to</code> whose verbatim does not name it as an expiry</td><td><code>expiry-on-certless-doc</code></td><td>capping</td><td class="st s-hole">the name is historical and no longer describes the rule (followup <code>expiry-flag-name</code>)</td></tr>
+<tr><td>Non-manufacturer-scope doc with no <code>ref_list</code> and no <code>basic_udi_di</code></td><td><code>no-item-identifier</code></td><td>blocking</td><td class="st s-live">live</td></tr>
+<tr><td>Cited certificate not held</td><td><code>cert-unresolved</code>, <code>cert_doc_id=null</code></td><td>informational</td><td class="st s-live">live &ndash; 117 anomaly subjects</td></tr>
+<tr><td>REF list looks truncated by the tier that read it</td><td><code>ref-list-possibly-truncated</code></td><td>informational</td><td class="st s-gated">in <code>vocabulary.md</code> only, in neither the PRD nor the handbook (&sect;5)</td></tr>
+<tr><td>GATE's own evidence check finds a T1/T2 value with no page cite</td><td><code>evidence-page-missing</code></td><td>blocking</td><td class="st s-gated">raised in GATE, documented in the handbook, absent from the PRD (&sect;5)</td></tr>
+<tr><td>Manufacturer-scope doc with no item identifiers</td><td>routed to the C4 binding candidate</td><td>&mdash;</td><td class="st s-live">emits <code>gate:{hash}:{rev}:mfr-binding</code> (<code>validate.py:839</code>)</td></tr>
+<tr><td><b>New:</b> that binding candidate's own text enumerates the devices it covers</td><td><code>device-enumeration</code></td><td>capping, and an outright refusal of the C16 machine bind</td><td class="st s-live">live &ndash; the doc-310 rule</td></tr>
+</table></div>
+<p class="meta"><b>The device-enumeration guard is why VALIDATE is no longer purely a function of the extraction.</b> On the C4 route only, it reads the stored <code>document_text</code> for the candidate's hash and looks for three signals: a model/code annex, repeated per-device risk-class lines, and the restriction clause "valid only for the above mentioned Medical Devices". The clause is sufficient alone; the other two fire two-of-three. Measured across all 809 stored texts, it fires on exactly one document. A scan or a missing text (<code>document_text.source = 'none'</code>) is unmeasurable and keeps the old behaviour. It still writes nothing.</p>
+<p class="meta"><b>Emits:</b> <code>gate.candidate</code> carrying the write candidate + disposition + flags + <code>links[]</code> (one per covered item with its own <code>match_basis</code>) + <code>supersedes</code> + <code>related_doc_id</code> + <code>cert_doc_id</code> + <code>superseded_by_doc_id</code> (<code>validate.py:1089</code>). <b>Result:</b> merges <code>Result.as_dict()</code> with <code>emitted</code>, <code>route</code>, <code>reason</code>, <code>missing</code>, and the suppression counters <code>suppressed</code>, <code>suppressed_no_extraction</code>, <code>suppressed_incomplete_evidence</code> that closed the previous map's silent-skip hole. <b>Anomaly kinds:</b> <code>cert_reference_unresolved</code>.</p>
+</div>
+<div class="card">
+<header><h3><code>gate.candidate</code></h3><span class="pill live">live</span><span class="meta">PRD &sect;7 · the registry's only in-pipeline writer · <code>app/handlers/gate.py</code></span></header>
+<p class="meta"><b>Entry points:</b> VALIDATE only, on two routes &ndash; the normal one (<code>validate.py:1089</code>) and the C4 manufacturer-binding one (<code>validate.py:839</code>), which the payload's <code>route</code> field selects.</p>
+<div class="tablewrap"><table>
+<tr><th>Payload field</th><th>Type</th><th>Req</th><th>Meaning</th></tr>
+<tr><td><code>content_hash</code>, <code>extract_rev</code></td><td>str, int</td><td>yes</td><td>Which extraction to re-read and evidence against</td></tr>
+<tr><td><code>links[]</code></td><td>list</td><td>no</td><td>Each <code>{item_ref, match_basis, udi?}</code>; gated independently by basis</td></tr>
+<tr><td><code>flags[]</code></td><td>list[str]</td><td>no</td><td>VALIDATE's; GATE appends its own evidence findings before deciding</td></tr>
+<tr><td><code>ref_gate</code></td><td>bool</td><td>no</td><td>Whether the REF gate passed</td></tr>
+<tr><td><code>supersedes</code>, <code>related_doc_id</code>, <code>cert_doc_id</code>, <code>superseded_by_doc_id</code></td><td>int</td><td>no</td><td>All four persisted sticky (<code>COALESCE</code>); a re-delivery that fails to recompute one never erases it</td></tr>
+<tr><td><code>route</code>, <code>manufacturer</code>, <code>group_id</code>, <code>archive_url</code></td><td>str/int</td><td>no</td><td><code>route="mfr-binding"</code> selects the C4/C16 branch</td></tr>
+</table></div>
+<p class="meta"><b>Dedupe:</b> <code>gate:{hash}:{rev}:{group_id}</code> · <code>gate:{hash}:{rev}:mfr-binding</code>. <b>Config:</b> <code>gate.high</code> <b>0.92</b> (Denis's ruling of 2026-08-19, replacing the 0.95 scaffold placeholder; both loader fallbacks now read the dataclass rather than repeating a literal), <code>gate.med</code> 0.75 &ndash; still the placeholder &ndash; and a <code>calibration</code> map read through <code>getattr(cfg, "calibration", {})</code> at <code>gate.py:755</code> and <code>:861</code>. <b><code>Config</code> defines no such attribute</b>, so the map is always empty and calibration is the identity transform. <code>gate.high</code> gates four separate decisions: <code>coverage_scope</code> confidence on the binding route, the supersession fast path's <code>validity_from</code>, the document disposition, and per-link production.</p>
+<p class="meta"><b>Reads:</b> <code>extraction_attempt</code> (fields + evidence), <code>document</code>, <code>manufacturer_alias</code>, <code>item_mirror</code> (MD items under a canonical, for the C16 fan-out), <code>fetch_log</code> (to recover <code>source_url</code> by hash). <b>Writes &ndash; the only handler permitted to:</b></p>
+<div class="tablewrap"><table>
+<tr><th>Table</th><th>Columns written</th><th>Shape / guard</th></tr>
+<tr><td><code>document</code></td><td><code>type</code>, <code>regulation</code>, <code>validity_from</code>, <code>validity_to</code>, <code>coverage_scope</code>, <code>basic_udi_di</code>, <code>cert_number</code>, <code>stated_class</code>, <code>content_hash</code>, <code>source_url</code>, <code>archive_url</code>, <code>supersedes</code>, <code>referenced_doc_id</code>, <code>cert_doc_id</code>, <code>status</code></td><td>Upsert on <code>content_hash UNIQUE</code> (005): one registry row per physical file. <code>status</code> is a CASE that makes <code>production</code> and <code>superseded</code> sticky, so no re-delivery downgrades or resurrects a row. <code>supersedes</code>/<code>referenced_doc_id</code>/<code>cert_doc_id</code> are <code>COALESCE</code>-sticky. <code>coverage_scope</code> is CHECK-limited to <code>group|manufacturer</code> (022); <code>stated_class</code> to the seven MDR classes (032). <code>type</code> is bare text with <b>no</b> CHECK.</td></tr>
+<tr><td><code>item_document</code></td><td><code>item_ref</code>, <code>doc_id</code>, <code>udi</code>, <code>match_basis</code>, <code>status</code></td><td>PK <code>(item_ref, doc_id)</code>. <code>STICKY_LINK_STATUSES = ("production", "rejected")</code>: a later candidate re-proposing the same pair cannot rewrite either, which is C17's companion fix &ndash; before it, a machine candidate silently un-rejected coverage a human had refused. <code>retracted</code> is deliberately <b>not</b> sticky: new evidence reviving it is correct. <code>item_document_trusted_basis_ck</code> (021) bars <code>production</code> for <code>name-family</code>, <code>fetch-context</code> and <code>ref-catalogue</code>, structurally.</td></tr>
+<tr><td><code>evidence</code></td><td><code>doc_id</code>, <code>field</code>, <code>value</code>, <code>archive_url</code>, <code>page</code>, <code>verbatim</code>, <code>tier</code>, <code>model_id</code>, <code>confidence</code>, <code>extracted_at</code></td><td><code>_require_complete_evidence</code> runs <b>before any write</b> (invariant 2). <code>page</code> is required for T1/T2 only; T0 and T3 evidence is legitimately pageless.</td></tr>
+<tr><td><code>audit_log</code></td><td><code>event</code>, <code>doc_id</code>, <code>item_ref</code>, <code>decided_by</code>, <code>via_job</code>, <code>job_snapshot</code>, <code>detail</code></td><td>Self-contained (C8): <code>via_job</code> is a soft reference and <code>job_snapshot</code> is captured at write time, so deleting every <code>job</code> row leaves the trail interpretable. Ten event kinds are on the live trail, 1.414 rows: <code>filed</code> 450, <code>archive-url-repair</code> 389, <code>link-retracted</code> 357, <code>production-write</code> 197, <code>bind-manufacturer</code> 10, <code>approve</code> 4, <code>supersede</code> 2, <code>reject</code> 2, <code>auto-superseded</code> 2, <code>link-confirmed</code> 1. <code>link-rejected</code> and <code>link-reopened</code> exist in code and have never fired.</td></tr>
+<tr><td><code>manual_task</code></td><td><code>kind='gate-manual'</code>, <code>payload</code></td><td>Raised on the <code>manual</code> disposition and on a refused binding; resolved automatically for any disposition in <code>SETTLED_DISPOSITIONS = ("production","superseded","filed","mfr-bound")</code>.</td></tr>
+</table></div>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Disposition</th><th>Doc status</th><th>Status</th></tr>
+<tr><td>Payload's <code>extract_rev</code> is not the newest for this hash</td><td><b>nothing at all</b> &ndash; returns <code>skipped: superseded-rev</code> before reading or writing</td><td>untouched</td><td class="st s-live">live</td></tr>
+<tr><td>Fast path: <code>superseded_by_doc_id</code> present, no other blocking flag, no <code>date-insane</code>, and <code>validity_from</code>'s calibrated confidence &ge; <code>high</code></td><td><code>superseded</code></td><td><code>superseded</code> + chain pointer, re-verified live against both documents' <code>(type, regulation)</code></td><td class="st s-live">live &ndash; 4 documents</td></tr>
+<tr><td>score &ge; <code>high</code>, <code>ref_gate</code> true, nothing gating</td><td><code>production</code></td><td><code>production</code></td><td class="st s-live">live &ndash; 194</td></tr>
+<tr><td>score &ge; <code>med</code>, no blocking flag, and out of catalogue</td><td><code>filed</code> (C15): read correctly, attributed correctly, covering nothing Dentalia sells</td><td><code>filed</code></td><td class="st s-live">live &ndash; <b>443</b>, the largest class in the registry</td></tr>
+<tr><td>score &ge; <code>med</code>, no blocking flag</td><td><code>staged</code></td><td><code>staged</code></td><td class="st s-live">live &ndash; 126</td></tr>
+<tr><td>Anything else</td><td><code>manual</code> + a <code>gate-manual</code> task</td><td><code>staged</code></td><td class="st s-live">live &ndash; 100 open tasks</td></tr>
+<tr><td>The written document is itself an <code>EC</code>/<code>ISO</code></td><td>back-resolves every held DoC with a null <code>cert_doc_id</code> and a matching <code>cert_number</code></td><td>&mdash;</td><td class="st s-live">live: fetch order no longer decides whether a DoC gets an expiry</td></tr>
+<tr><td>Candidate is current rev</td><td>links upserted by basis, then <code>_retract_unsupported_links</code> flips <b>staged</b> links this rev no longer claims to <code>retracted</code> &ndash; scoped to the candidate's own group, so a document validated for group A cannot retract group B's links</td><td>&mdash;</td><td class="st s-live">live &ndash; 357 retracted</td></tr>
+</table></div>
+<p class="meta"><b>The C16 machine binding has five conditions, not the three the PRD names.</b> Alongside "resolves to exactly one canonical", "manufacturer confidence &ge; <code>med</code>" and "no <code>device-enumeration</code> flag", the code also requires <code>coverage_scope</code>'s own confidence to clear <code>high</code> (<code>scope_stated</code>, the guard between an unparsed REF list and a catalogue-wide write) and <code>_is_md_document</code>, which demands <code>regulation &isin; {MDR, MDD}</code> with exactly one exception: an <code>ISO</code> may bind at <code>n.a.</code>, because ISO 13485 is a quality-management standard rather than an instrument issued under a regime. <code>EC</code> is deliberately excluded from that exception. Neither extra guard appears in any contract (&sect;5). Three outcomes: one canonical + MD items &rarr; <code>production</code> + mfr-scope links + two audit events + no task; one canonical + no MD items &rarr; <code>filed</code>; anything else &rarr; <code>staged</code> + exactly one task, whose payload now carries the flags so the reviewer sees <em>why</em> the machine declined.</p>
+<p class="meta"><b>Result keys:</b> <code>disposition</code>, <code>doc_id</code>, <code>score</code>, <code>links</code>, and <code>supersede_skipped</code> when a candidate qualified for auto-filing but its row was already production under another decision &ndash; reported rather than silent.</p>
+</div>
+
+<div class="card">
+<header><h3><code>gate.apply</code></h3><span class="pill live">live</span><span class="meta">human decisions, now including link-level ones · <code>app/handlers/gate.py:1234</code></span></header>
+<p class="meta"><b>Entry points:</b> two web routes. <code>POST /staging/{doc_id}/apply</code> (<code>web/app.py:3132</code>) for document decisions, dedupe <code>apply:{doc_id}:{decision}</code>; <b>new</b> <code>POST /links/{doc_id}/decide</code> (<code>web/app.py:3188</code>) for C17 link decisions, dedupe <code>apply:{doc_id}:{item_ref}:{decision}</code>.</p>
+<div class="tablewrap"><table>
+<tr><th>Decision</th><th>Precondition</th><th>Effect</th><th>Audit</th></tr>
+<tr><td><code>approve</code></td><td>&mdash;</td><td>applies edits as T3 evidence (verbatim = human input, confidence 1.0), promotes the document, promotes only trusted-basis pending links, and applies any sticky <code>supersedes</code> now that a person made it production</td><td><code>approve</code> + <code>production-write</code></td></tr>
+<tr><td><code>reject</code></td><td>&mdash;</td><td>document &rarr; <code>rejected</code>, cascades <b>every</b> link to <code>rejected</code>, one audit row each; may enqueue <code>discover.group</code> at interactive priority</td><td><code>reject</code> + <code>link-rejected</code> &times;N</td></tr>
+<tr><td><code>bind-manufacturer</code></td><td>&mdash;</td><td>promotes and derives mfr-scope links for the named canonical</td><td><code>bind-manufacturer</code> + <code>production-write</code></td></tr>
+<tr><td><code>confirm-link</code></td><td>doc <code>production</code>, link <code>staged</code></td><td><code>match_basis &rarr; 'manual'</code>, <code>status &rarr; 'production'</code>. The <b>sole</b> writer of basis <code>manual</code>; the audit row carries the pre-decision basis, since the column no longer holds it</td><td><code>link-confirmed</code></td></tr>
+<tr><td><code>reject-link</code></td><td>doc <code>production</code>, link <code>staged</code></td><td><code>status &rarr; 'rejected'</code>, basis untouched so the trail records how the link was proposed before it was refused</td><td><code>link-rejected</code></td></tr>
+<tr><td><code>reopen-link</code></td><td>doc <code>production</code>, link <code>rejected</code></td><td><code>status &rarr; 'staged'</code>, to be confirmed again on the merits</td><td><code>link-reopened</code></td></tr>
+<tr><td><code>edit</code></td><td>&mdash;</td><td><b>Not a decision.</b> PRD &sect;7 lists it; the handler raises <code>ValueError</code> on it and the web producer 422s it. Edits ride on <code>approve</code> through <code>payload["edits"]</code> (&sect;5)</td><td>&mdash;</td></tr>
+</table></div>
+<p class="meta">Every C17 precondition <b>raises</b> rather than skipping: a link decision is a registry write a person put their name to, so a decision that cannot be carried out dead-letters where somebody sees it. The asymmetry is deliberate and is the whole point &ndash; a machine may never move a link out of <code>rejected</code>; a named person always may. <code>retracted</code> is reachable by none of the three: it records that the current extraction stopped claiming the link, which is a statement about evidence, and the route back is a re-extraction. Live: <b>one</b> <code>manual</code> production link exists, so C17 has been exercised exactly once.</p>
+</div>
+
+<div class="card">
+<header><h3><code>email.request</code> / <code>email.reminder</code></h3><span class="pill live">live</span><span class="meta">S2.4 outbound, new since the last map · <code>app/handlers/email_request.py</code></span></header>
+<p class="meta"><b>This system never sends.</b> Client ruling 2026-08-20: it prepares a draft and a person sends it from <code>mdr@dentalia.si</code>. The chain ends at a row in <code>email_draft</code>, <code>ready</code> is terminal, and there is no send handler to reach.</p>
+<p class="meta"><b>Entry points:</b> <code>email.request</code> from SCHEDULER's expiry scan (<code>scheduler.py:133</code>, gated by <code>scheduler.expiry_email_enabled</code>, default <b>False</b>) and from DISCOVER's exhausted ladder (<code>discover.py:272</code>, gated by <code>discovery.email_rung_enabled</code>, default <b>False</b>). <code>email.reminder</code> is self-armed by the request handler (<code>email_request.py:365</code>) with <code>run_after = now() + renewal.reminder_after_days</code> (14), and re-armed by itself (<code>:441</code>).</p>
+<div class="tablewrap"><table>
+<tr><th>Payload field</th><th>Producer</th><th>Meaning</th></tr>
+<tr><td><code>doc_id</code>, <code>state</code></td><td>SCHEDULER</td><td><code>state</code> is <code>lapsed</code> or <code>upcoming</code> &ndash; counted apart, chased alike, so the copy cannot tell a manufacturer their 2020 certificate is "about to expire"</td></tr>
+<tr><td><code>group_id</code>, <code>manufacturer</code>, <code>contacts</code>, <code>reason</code></td><td>DISCOVER</td><td><code>reason="discovery-exhausted"</code></td></tr>
+<tr><td><code>request_id</code></td><td>self (reminder)</td><td>The <code>renewal_request</code> row to chase</td></tr>
+</table></div>
+<p class="meta"><b>One mail per manufacturer per cadence period.</b> The trigger only selects <em>who</em> to write to; the draft is then built from everything currently expiring for that manufacturer. On the live registry 52 documents share the expiry date 2026-05-04 and all 52 are IVOCLAR, so per-document keying would have drafted 52 mails for one morning. The cadence guard is migration 029's partial unique index, not an <code>if</code>: two racing workers cannot create two requests for one period. <b>Writes:</b> <code>renewal_request</code>, <code>renewal_request_document</code>, <code>email_draft</code> &ndash; the access matrix lists only the first (&sect;5). <b>No LLM anywhere:</b> the copy is deterministic templating. <b>Config:</b> <code>renewal.horizon_days</code> <code>(30,)</code>, <code>renewal.request_cadence_days</code> 7, <code>renewal.reminder_after_days</code> 14, <code>renewal.escalate_after_reminders</code> 3, <code>email.send_policy</code> <code>draft</code>.</p>
+<p class="meta"><span class="warn">Drift:</span> the PRD's dedupe table was changed on 2026-08-20 to <code>email.request:mfr:{canonical_manufacturer}:{period_key}</code> for exactly the reason above. <code>scheduler.py:143</code> still writes <code>email.request:doc:{doc['doc_id']}</code>. The handler's cadence guard absorbs the consequence &ndash; 52 jobs, one draft &ndash; but the key the contract names has no producer (&sect;5). Live: 4 <code>renewal_request</code> rows, 84 <code>renewal_request_document</code> rows, 8 drafts.</p>
+</div>
+
+<div class="card">
+<header><h3><code>report.weekly</code></h3><span class="pill live">live</span><span class="meta">S1.5 · <code>app/handlers/report.py</code></span></header>
+<p class="meta"><b>Entry points:</b> SCHEDULER weekly tick (<code>scheduler.py:163</code>) · the <code>/scheduler</code> panel's <b>Run now</b> (<code>web/scheduler_view.py:271</code>), under the identical key so a hand-run and the next tick cannot produce two reports for one week. <b>Dedupe:</b> <code>report:{period_key}</code>, the ISO year-week. <b>Payload:</b> <code>{period_key}</code>. <b>Reads:</b> <code>document</code> over the expiry horizon (through <code>expiring_documents</code>, which follows <code>cert_doc_id</code> and filters cited certificates to <code>production|superseded</code>), job counts, <code>discovery_log</code> + <code>item_group</code> for failure spikes. <b>Writes: nothing</b> &ndash; a read-only snapshot on the job result. Live: <b>11</b> <code>scheduler_run</code> rows.</p>
+</div>
+
+<div class="card noop">
+<header><h3>Not built: 2 enum tags on the raising placeholder</h3><span class="pill noop">Phase 2</span></header>
+<p class="meta"><code>eudamed.sync</code> · <code>playbook.reonboard</code>. Both are in the closed <code>job_type</code> enum and fall through to <code>app/handlers/noop.py</code>, which <b>raises</b> rather than returning: a placeholder that logged and returned made the job finish <code>done</code>, indistinguishable from work actually performed. <code>playbook.reonboard</code> has a live producer behind <code>scheduler.failure_reonboard_enabled</code> (default off), so nothing is silently swallowed; <code>eudamed.sync</code> has <b>no producer at all</b>, which is why <code>eudamed_mirror</code> holds 0 rows and both the EUDAMED discovery rung and RESOLVE's Basic-UDI-DI rung can never fire. <span class="warn">Stale:</span> the module docstring still says four tags are unbuilt and names <code>email.request</code> and <code>email.reminder</code> among them; both have had real handlers since 2026-08-20.</p>
+</div>
+<div class="card">
+<header><h3>One document, end to end &ndash; the real column values</h3><span class="pill live">live registry, read 2026-08-25</span></header>
+<p class="meta">Document 310, GC's Kiwa Cermet EC Quality Assurance System certificate MED 31385 under 93/42/EEC Annex V. It is the most instructive row in the registry because it went all the way through the machine, was wrong, and was corrected without anything being deleted.</p>
+<div class="tablewrap"><table>
+<tr><th>Stage</th><th>What it wrote</th></tr>
+<tr><td><code>backfill.scan</code></td><td><code>fetch_log</code>: <code>url_normalized='/imports/dentalia-sftp/GC/CE/gce_certification_med31385.pdf'</code>, <code>source='backfill'</code>, <code>content_hash='dd9249db17a6&hellip;'</code>. Emitted <code>extract.doc</code>, dedupe <code>extract:dd9249db17a6&hellip;</code></td></tr>
+<tr><td><code>extract.doc</code></td><td>Two <code>extraction_attempt</code> rows, both <code>tier='T0+T1'</code> (rev 1 and a later rev 2). T0 settled <code>regulation</code> and <code>coverage_scope</code> at 1.0 and <code>manufacturer</code> at 0.9; the text tier supplied <code>type</code>, <code>cert_number</code> and <code>validity_to</code> at 0.95 each</td></tr>
+<tr><td><code>validate.doc</code></td><td>Nothing, as always. <code>coverage_scope='manufacturer'</code> with no item identifiers took the C4 pre-rule and emitted one binding candidate, dedupe <code>gate:dd9249db17a6&hellip;:N:mfr-binding</code></td></tr>
+<tr><td><code>gate.candidate</code></td><td><code>document</code> 310: <code>type='EC'</code>, <code>regulation='MDD'</code>, <code>validity_from=NULL</code>, <code>validity_to=2024-05-26</code>, <code>cert_number='MED 31385'</code>, <code>coverage_scope='manufacturer'</code>, <code>stated_class=NULL</code>, <code>status='production'</code>. <b>6 evidence rows</b>: <code>type</code>/<code>cert_number</code>/<code>validity_to</code> at T1 page 1 confidence 0.95, <code>regulation</code> and <code>coverage_scope</code> at T0 confidence 1.0, <code>manufacturer</code> at T0 confidence 0.9 &ndash; the last three legitimately pageless. C16 machine binding then wrote <b>356 <code>item_document</code> rows</b>, every one <code>match_basis='mfr-scope'</code>, <code>status='production'</code>, plus <code>bind-manufacturer</code> and <code>production-write</code> audit entries, both <code>decided_by='gate'</code>. No human touched it.</td></tr>
+<tr><td><code>cli repair-archive-urls</code></td><td>One <code>archive-url-repair</code> audit row, <code>decided_by='ops:repair-archive-urls'</code>: <code>archive_url</code> moved from the unopenable <code>/imports/&hellip;</code> path to <code>/archive/GC_EUROPE_N.V./ec/dd9249db17a6__&hellip;</code>, with the matching <code>evidence.archive_url</code> rows moved alongside it</td></tr>
+<tr><td><code>cli repair-mfr-overbind 310 --apply</code></td><td>All <b>356</b> links flipped to <code>retracted</code> with <code>match_basis</code> intact, one <code>link-retracted</code> audit row each, <code>decided_by='ops:repair-mfr-overbind'</code>. The certificate's own annex names three device types with model codes and says it is "valid only for the above mentioned Medical Devices"; C16 had bound it to GC's whole line. The document row was left alone on purpose: the certificate is real, archived and evidenced, it just stopped asserting item coverage.</td></tr>
+</table></div>
+<p class="caption">What the row now looks like: <code>document</code> 310 is still <code>production</code> and carries <b>zero</b> live links. Nothing was deleted; the retraction is a status flip on an append-only row, and the audit trail names the tool and the operator ruling behind each write. The same session added VALIDATE's <code>device-enumeration</code> flag so the machine refuses that shape from now on, and left <code>gate.apply bind-manufacturer</code> available to a person who judges an enumeration to be a manufacturer's whole line. Note also what <code>stated_class=NULL</code> means here: the column, the extractor field and GATE's write are all in place, but no document has been re-gated since migration 032, so <b>450 extraction attempts carry a stated class and 0 documents do</b>.</p>
+</div>
+<h2><span class="sec">3</span>State machines</h2>
+
+<div class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  direction LR
+  [*] --> pending: enqueue (active-scope dedupe, caused_by stamped)
+  pending --> running: claim, attempts+1
+  running --> done: finish(result), writing job.result + finished_at
+  running --> pending: defer (batch poll, domain lease)
+  running --> failed: error (exp backoff)
+  failed --> running: retry after run_after
+  failed --> dead: attempts exhausted
+  dead --> mt: raises manual_task('dead-job-followup')
+  mt: manual queue
+  dead --> running: UI re-run, singly or by error group
+  done --> [*]
+</pre>
+</div>
+<p class="caption">Job lifecycle. The partial unique index covers <code>pending|running|failed</code> only, so <code>done</code> and <code>dead</code> both free the key, which is what makes a monthly re-check an ordinary enqueue. Two handlers self-defer rather than finish: EXTRACT while a Batch API job is unfinished, FETCH while another worker holds the domain lease. New in 037: every enqueue a handler makes is stamped <code>caused_by</code> with the claiming job's id, published for the duration of the dispatch only. Live: 16.277 job rows, 6 dead-job followups raised, 5 of them already closed by <code>queue.finish</code> when the work finally completed.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  direction LR
+  [*] --> staged: below HIGH or capped by a flag
+  [*] --> production: HIGH + ref_gate + nothing gating
+  [*] --> superseded: fast path (older, all four guards pass)
+  [*] --> filed: read + attributed, covers zero catalogue items
+  staged --> production: approve / bind / high-score redelivery
+  staged --> rejected: reject
+  production --> superseded: a newer doc supersedes it
+</pre>
+</div>
+<p class="caption"><code>document.status</code> &ndash; five values (<code>doc_status</code>, 005 + 025). The upsert's status CASE makes <code>production</code> and <code>superseded</code> sticky, so no re-delivery can downgrade or resurrect a row. <code>filed</code> is a settled disposition, not a waiting room, and it is now the <b>largest</b> class in the registry: 443 of 769, against 194 production, 126 staged, 4 superseded and 2 rejected. Nothing re-links a filed document if its item is later stocked (<code>filed-relink</code>, deferred deliberately).</p>
+
+<div class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  direction LR
+  [*] --> staged: any basis
+  [*] --> production: trusted basis + doc production + HIGH
+  staged --> production: approve (trusted bases) or confirm-link (a person)
+  staged --> staged: name-family / fetch-context / ref-catalogue, forever (CHECK)
+  staged --> retracted: current rev no longer claims it
+  staged --> rejected: reject cascade, or reject-link
+  production --> rejected: reject cascades every link
+  production --> retracted: ops repair, ruled + audited
+  rejected --> staged: reopen-link, a person only
+</pre>
+</div>
+<p class="caption"><code>item_document.status</code> &ndash; four values (<code>link_status</code>, 005 + 024). <code>retracted</code> means the machine's own evidence moved; <code>rejected</code> means a human said no. Both are now sticky against a re-proposing candidate (<code>STICKY_LINK_STATUSES</code>), which is what stops a machine resurrecting refused coverage &ndash; but only a person can move a link <em>out</em> of <code>rejected</code>, and that asymmetry is the point. Append-only either way: the row and its <code>match_basis</code> survive, each transition its own audit event. Live: 7.927 production, 357 retracted, 279 staged, and exactly one link on basis <code>manual</code>. All 279 staged links carry a <em>trusted</em> basis &ndash; <code>map-supplier</code> 260, <code>ref-list</code> 10, <code>ref-item</code> 9 &ndash; so every one of them is waiting on its <em>document</em>, not on a link decision, and <code>_promote_pending_links</code> publishes them the instant <code>approve</code> runs. The whole registry holds exactly one link on a capped basis and it is not waiting on anybody: a single <code>fetch-context</code> row, now <code>retracted</code>. <code>name-family</code> and <code>ref-catalogue</code> appear on no link at all.</p>
+<h2><span class="sec">4</span>Loose ends, honestly</h2>
+<div class="tablewrap"><table>
+<tr><th>Class</th><th>Item</th><th>Ref</th></tr>
+
+<tr><td class="st s-live">closed</td><td><strong>The anomaly vocabulary is whole.</strong> The previous map's largest hole was 4 of 10 <code>ANOMALY_KINDS</code> having no producer. <code>code_shape_unexpected</code> and <code>blocked_item</code> were <b>removed</b> rather than invented against (neither is named in any normative doc, and <code>blocked_item</code> traces only to an unanswered client question about the MDR retention policy for a blocked previously-sold item, which is Dentalia's call); <code>reclassified_non_md</code> gained a real <code>r.anomaly</code> beside its counter; <code>cert_reference_unresolved</code> is raised at <code>validate.py:1105</code>. All <b>9</b> now have producers, 7 of them with live rows.</td><td><code>results-anomaly-kinds</code></td></tr>
+
+<tr><td class="st s-live">closed</td><td><code>bind-manufacturer</code> on a name that resolves to zero BC codes now <b>raises</b> instead of returning. It ran inside the runner's transaction, so the promote and both audit rows go down with it: a job that fails is visible, a bind that links nothing is not.</td><td><code>gate-bind-zero-links</code></td></tr>
+
+<tr><td class="st s-live">closed</td><td>The renewal horizon the loader hands out is the one that was ruled on. The fallback reads <code>Renewal()</code>'s own default rather than repeating a literal beside it, and the test asserts through <code>load_config()</code> rather than the dataclass &ndash; which is the only form that would have caught it, since the dataclass had been right all along while the process scanned at 90 days.</td><td><code>renewal-horizon-default-ignored</code></td></tr>
+
+<tr><td class="st s-live">closed</td><td>GATE persists <code>supersedes</code> and <code>related_doc_id</code>: both are in the INSERT column list and both are <code>COALESCE</code>-sticky on conflict. Listed as an unwired seam on every map before this one.</td><td>verified in code this pass</td></tr>
+
+<tr><td class="st s-hole">hole</td><td><strong><code>app/robots.py</code> is a library nothing calls.</strong> 241 lines and 246 lines of tests parse <code>User-agent</code>, <code>Disallow</code>, <code>Allow</code> and <code>Crawl-delay</code>, cache per host with a TTL, and write the <code>domain_lease.min_politeness_ms</code> floor that <code>queue.try_domain_lease</code> already honours through <code>GREATEST(&hellip;)</code>. Its commit message reads "read the file, obey it, and carry its Crawl-delay to the lease", and its diff touched <code>app/config.py</code>, <code>app/robots.py</code>, <code>docs/code-map.md</code> and the test file &ndash; <b>no handler</b>. <code>fetch.py</code> does not import it, nothing under <code>app/</code> or <code>web/</code> does, and <code>robots_cache</code> holds 0 rows. The lease half is wired and the reader half is not, so the live fetcher does not obey robots.txt.</td><td>new this pass</td></tr>
+
+<tr><td class="st s-gated">blocker</td><td>Both T1 seams still raise <code>NotImplementedError</code>. DISCOVER's <code>_default_rank</code> is on a live path and degrades to a logged miss then manual, so a not-yet-wired ranker never dead-letters a group. RESOLVE's <code>_default_adjudicator</code> is <em>unreachable</em> while <code>name_suggest</code> equals <code>name_accept</code>: there is no SUGGEST band to adjudicate, and all 5.831 grouping suggestions ever raised are resolved. Lowering <code>name_suggest</code> re-arms it.</td><td><code>discover-t1-ranking</code>, <code>resolve-t1-ranking</code></td></tr>
+
+<tr><td class="st s-gated">blocker</td><td><code>gate.high</code> is 0.92 by Denis's ruling; <code>med</code> is still the 0.75 scaffold placeholder and calibration is still the identity transform &ndash; <code>gate.py</code> reads a <code>calibration</code> attribute that <code>Config</code> does not define, at two call sites. <code>high</code> gates four separate decisions, which is worth stating before anyone measures it.</td><td>G5 / G2 / <code>gate-thresholds</code></td></tr>
+
+<tr><td class="st s-gated">inert by design</td><td>The C4 resolve-time binding hook returns 0, always. Invariant 1 forbids RESOLVE writing <code>item_document</code> and <code>gate.candidate</code> cannot take a link-only candidate, so the write path does not exist.</td><td><code>resolve-c4</code></td></tr>
+
+<tr><td class="st s-gated">dormant</td><td><strong>Five data paths carry no data.</strong> <code>item_mirror.udi</code> is always null (the LJ CSV profile has no UDI column); <code>item_group.basic_udi_di</code> has no writer anywhere; <code>eudamed_mirror</code> is empty and has no producer; <code>robots_cache</code> is empty because of the seam above; and <code>document.stated_class</code> is <b>NULL on all 769 rows</b> although the extractor produces it (450 attempts carry a value) and GATE writes it &ndash; nothing has been re-gated since migration 032. Three of RESOLVE's and DISCOVER's rungs can therefore never fire, and the <code>item_class_check</code> view (033) currently compares nothing. The Phase-2 <code>manufacturer</code> table is also empty, which is why DISCOVER's email rung has no contacts to find.</td><td><code>udi-group-key</code></td></tr>
+
+<tr><td class="st s-gated">stub</td><td><code>GoogleDriveStore.put()</code> raises (G7 unanswered: auth mechanics and root folder are client input) · <code>BcApiAdapter.read()</code> raises without injected records, deliberately, so a missing feed cannot read as "0 items changed". <code>STORAGE_ADAPTER</code> resolves to <code>local</code>; note the <code>Adapters</code> dataclass default is <code>gdrive</code> and only the loader's own default makes it <code>local</code>.</td><td><code>fetch-gdrive</code>, G7</td></tr>
+
+<tr><td class="st s-hole">ruled exception</td><td><strong>Invariant 1 now has two exceptions, both ruled and both audited.</strong> <code>app/repair_archive_urls.py:116-119</code> updates <code>document.archive_url</code> and the matching <code>evidence.archive_url</code>; <code>app/repair_mfr_overbind.py:124</code> flips <code>item_document.status</code> to <code>retracted</code>. Denis ruled both on 2026-08-24, each is dry-run by default, each writes a self-contained <code>audit_log</code> row with <code>decided_by='ops:&lt;tool&gt;'</code>, and 746 such rows are on the live trail. The exception is recorded in the tools' own docstrings and nowhere else: CLAUDE.md invariant 1 and PRD &sect;10 still read as absolutes (&sect;5).</td><td>new this pass</td></tr>
+
+<tr><td class="st s-gated">waiting on a ruling</td><td><b>24</b> entries, up from 13 &ndash; the fastest-growing section of the register.</td><td><code>followups.md</code> &sect; Waiting on a ruling</td></tr>
+
+<tr><td class="st s-noop">hardening</td><td>A JS challenge served inside a 200 is undetected &middot; a re-emitted <code>extract.doc</code> re-pays T1/T2 on already-parsed content, since there is no <code>extraction_attempt</code> pre-check &middot; a registry <code>TRUNCATE &hellip; CASCADE</code> also empties <code>fetch_log</code>, the table backfill dedupe depends on &middot; <code>expiry-on-certless-doc</code> has not been about certificates since 2026-08-17 and the name misleads &middot; the <code>None</code> that a null <code>group_id</code> stringifies into two dedupe keys.</td><td>followups</td></tr>
+
+<tr><td class="st s-noop">stale prose</td><td><code>app/handlers/noop.py</code>'s module docstring still says twelve of sixteen tags are real and names <code>email.request</code> and <code>email.reminder</code> among the unbuilt four. Both have had handlers since 2026-08-20. The tuple below it is correct; only the prose is wrong.</td><td>new this pass</td></tr>
+
+</table></div>
+<p class="caption">Register shape, so the counts are readable: <code>## Open</code> holds 162 entries, 133 unticked and 29 already ticked but not yet moved; <code>## Waiting on a ruling</code> holds 24; <code>## Done</code> holds 125. Seven of the unticked ones were appended by this run: the &sect;5 <span class="bad">drift</span> row and six of the eight <span class="bad">undocumented</span> ones (the other two were already on the register). PHASES.md's gap register carries 8 open G-numbers, of which G4, G7, G8 and G12 are waiting on the client rather than on us.</p>
+<h2><span class="sec">5</span>Contract vs as-built</h2>
+<p class="sub">Every row is a place where <code>docs/dentalia-pipeline-contract-prd-v3.md</code>, <code>dentalia-schema-sketch.md</code> or <code>dentalia-job-type-handbook.md</code> and the code as it stood on 2026-08-25 disagree. The contracts are in unusually good shape this pass &ndash; the PRD carries edits dated 2026-08-24 and 2026-08-25, and the schema sketch's access matrix names the device-enumeration guard by date &ndash; so most of what follows is the code having moved a few days ahead of the prose, not a contradiction. <b>One <span class="bad">drift</span> row was found.</b> Twenty-one rows in total: 1 drift, 8 undocumented, 7 doc stale, 5 not built yet. <b>Five of the doc-stale rows were fixed after this page first listed them</b>, in the same session. Those edits are <b>uncommitted working-tree changes to <code>docs/dentalia-pipeline-contract-prd-v3.md</code> and <code>docs/dentalia-job-type-handbook.md</code></b>, not part of the pinned commit, which is what every other claim on this page is checked against: at the pinned commit all 21 rows are open. They are marked <b>closed</b> below rather than deleted, because a delta that was found and fixed is the useful half of the record. <b>16 remain open on either reading.</b></p>
+
+<div class="tablewrap"><table>
+<tr><th>Class</th><th>Contract clause</th><th>What it requires</th><th>What the code does</th></tr>
+
+<tr><td class="st s-hole">drift</td><td>PRD &sect;0 dedupe conventions, <code>email.request</code> / SCHEDULER row</td><td><code>email.request:mfr:{canonical_manufacturer}:{period_key}</code>. Changed 2026-08-20 under the client cadence rule, with the reason stated in the table itself: the former per-document key "would have sent 52 separate mails to IVOCLAR for 2026-05-04 alone &mdash; measured"</td><td><code>app/scheduler.py:143</code> still writes <code>email.request:doc:{doc['doc_id']}</code>, one job per expiring document. The handler's own docstring repeats the 52-mail measurement, and migration 029's partial unique index on <code>renewal_request</code> absorbs the consequence, so the outcome is 52 jobs and one draft rather than 52 drafts. The key the contract names has no producer anywhere. Latent while <code>expiry_email_enabled</code> is off</td></tr>
+
+<tr><td class="st s-hole">undocumented</td><td>PRD &sect;4 politeness · &sect;11 config surface · schema sketch &sect;3</td><td>"Job carries <code>domain</code>; worker claims max one job per domain per interval (domain lease table)." Nothing about robots.txt</td><td>Migration <code>036</code> adds <code>robots_cache</code> and <code>domain_lease.min_politeness_ms</code>; <code>app/robots.py</code> (241 lines, 246 of tests) parses and caches robots.txt and writes that floor; <code>queue.try_domain_lease</code> holds <code>GREATEST(politeness_ms, min_politeness_ms)</code>. <b>No caller exists</b> and <code>robots_cache</code> is empty, so this is simultaneously undocumented and not built. Needs a contract row and a call site, in that order</td></tr>
+
+<tr><td class="st s-hole">undocumented</td><td>PRD &sect;7, C16 machine binding</td><td>Three conditions: exactly one canonical through <code>manufacturer_alias</code>, that field's confidence &ge; <code>cfg.gate.med</code>, and no <code>device-enumeration</code> flag</td><td><code>gate.py:773-783</code> requires <b>five</b>. The two extra are <code>scope_stated</code> (<code>coverage_scope</code>'s own confidence must clear <code>cfg.gate.high</code>, the guard between an unparsed REF list and a catalogue-wide write) and <code>_is_md_document</code> (<code>regulation &isin; {MDR, MDD}</code>, with <code>ISO</code> at <code>n.a.</code> the single deliberate exception and <code>EC</code> deliberately excluded). Both are load-bearing and reasoned in comments; neither is in any contract</td></tr>
+
+<tr><td class="st s-hole">undocumented</td><td>CLAUDE.md invariant 1 · PRD &sect;10 drift guards</td><td>"Only <code>gate.candidate</code> / <code>gate.apply</code> handlers write <code>document</code>, <code>item_document</code>, <code>evidence</code>." No exception clause</td><td>Two operator CLIs write the registry: <code>app/repair_archive_urls.py:116,119</code> (<code>document.archive_url</code> + <code>evidence.archive_url</code>) and <code>app/repair_mfr_overbind.py:124</code> (<code>item_document.status='retracted'</code>). Both were <b>ruled by Denis on 2026-08-24</b>, both are dry-run by default and both write self-contained audit rows under <code>decided_by='ops:&lt;tool&gt;'</code>; 746 such rows are live. The ruling exists only in the tools' docstrings. Either the invariant grows an "audited ops exception" clause or the tools do not have one</td></tr>
+
+<tr><td class="st s-hole">undocumented</td><td>PRD &sect;0 dedupe conventions table</td><td>20 rows, "every shape a producer actually writes is listed; a key shape not in this table is drift"</td><td>The code writes 22 shapes. Two have no row: <code>apply:{doc_id}:{item_ref}:{decision}</code> (C17 link decisions, <code>web/app.py:3186</code>) and <code>email.reminder:req:{request_id}</code> (<code>email_request.py:365,441</code>) &ndash; <code>email.reminder</code> has no row of any kind. C17 and the reminder chain are both described in the PRD's prose; only the table was not updated</td></tr>
+
+<tr><td class="st s-hole">undocumented</td><td>PRD &sect;0 dedupe conventions, <code>validate.doc</code> row</td><td>Producers: EXTRACT, FETCH (C3), DISCOVER (recency C3)</td><td>Two more exist and use the same key shape: <code>app/repair_ref_list.py:104</code> and <code>app/komet_coverage.py:283</code>, operator CLIs that re-validate a stored extraction against a group. Carried unchanged from the previous map</td></tr>
+
+<tr><td class="st s-hole">undocumented</td><td>PRD &sect;5 <code>extract.doc</code> payload</td><td><code>{archive_url, content_hash, group_id, source_url | email_ref}</code></td><td>The handler reads <code>companion_archive_url</code>, an annex whose REF list is tagged with its own handle so the evidence points at the page the numbers are on. No contract lists it. Carried unchanged</td></tr>
+
+<tr><td class="st s-hole">undocumented</td><td>Schema sketch &sect;7, <code>email.request/reminder</code> row</td><td>writes: <code>renewal_request</code></td><td>The handler also writes <code>renewal_request_document</code> (84 live rows) and <code>email_draft</code> (8), which is where the whole outbound chain actually terminates &ndash; <code>ready</code> is terminal and there is no send handler by design</td></tr>
+
+<tr><td class="st s-hole">undocumented</td><td>Schema sketch &sect;7 access matrix</td><td>One row per queue tag plus the non-tag producers</td><td>No row covers <code>service_heartbeat</code> (migration 035), written by the worker loop and the scheduler loop rather than by any handler, and read by the web header strip and by each container's own <code>HEALTHCHECK</code> through <code>cli healthcheck</code>. Liveness only, never evidence, safe to truncate &ndash; but a table nothing in the matrix mentions</td></tr>
+
+<tr><td class="st s-live">closed</td><td>PRD &sect;9 <code>item_document</code> (line 311)</td><td><code>match_basis (ref-list|udi|basic-udi-di|name-family|fetch-context|ref-catalogue|mfr-scope|manual)</code>, <code>status (staged|production|rejected)</code></td><td><b>Fixed in the working tree 2026-08-25, not yet committed: both enumerations corrected in the PRD. Was: </b><b>Two stale enumerations on one line.</b> <code>status</code> has four values since migration 024 added <code>retracted</code>, and 357 rows carry it. <code>match_basis</code> has ten: the line is missing <code>ref-item</code> (migration 023, 803 live links) and <code>map-supplier</code> (303), both of which &sect;7's own basis table three sections earlier lists as production-capable. So the PRD contradicts itself rather than merely lagging the code</td></tr>
+
+<tr><td class="st s-live">closed</td><td><code>dentalia-job-type-handbook.md</code> &sect;7</td><td>The trusted-basis tuple in the <code>gate.candidate</code> pseudo-code, which is what a reader implements against</td><td><b>Fixed in the working tree 2026-08-25, not yet committed: added to the handbook beside the tuple a reader implements against. Was: </b>Handbook :678 reads <code>("ref-list","ref-item","udi","basic-udi-di","mfr-scope","manual")</code>; <code>gate.py:47</code> has a seventh, <code>map-supplier</code>. <code>grep -c map-supplier</code> over the handbook returns <b>0</b> against 4 in the PRD, 1 in the schema sketch and 1 in <code>vocabulary.md</code> &ndash; the one normative doc of the four the basis never reached</td></tr>
+
+<tr><td class="st s-live">closed</td><td>PRD &sect;6 flag classes</td><td>Blocking: <code>older-than-current</code>, <code>no-item-identifier</code>, <code>date-insane</code>, <code>manufacturer-unresolved</code>. Informational: <code>no-ref-overlap</code>, <code>multi-group-match</code>, <code>cert-unresolved</code>, <code>auto-superseded</code></td><td><b>Fixed in the working tree 2026-08-25, not yet committed: both flags added to the PRD, and the informational one to the handbook, which was short it too. Was: </b><code>gate.py:65</code> has a fifth blocking flag, <code>evidence-page-missing</code> (raised by GATE's own evidence check; the handbook documents it, the PRD does not), and <code>gate.py:105</code> a fifth informational one, <code>ref-list-possibly-truncated</code> (<code>tiers.REF_TRUNCATION_FLAG</code>, carried in <code>vocabulary.md</code> alone). The capping set matches the PRD exactly, <code>device-enumeration</code> included</td></tr>
+
+<tr><td class="st s-live">closed</td><td>PRD &sect;3 <code>discover.group</code> payload</td><td><code>{group_id, manufacturer_id, context, ignore_recency?}</code></td><td><b>Fixed in the working tree 2026-08-25, not yet committed: corrected in the PRD. Was: </b>All five producers enqueue <code>{group_id}</code>, optionally with <code>ignore_recency</code>, and the handler reads only those two. <code>manufacturer_id</code> and <code>context</code> have never existed. <code>ignore_recency</code> itself is correctly documented, additively, on the day it landed</td></tr>
+
+<tr><td class="st s-live">closed</td><td>PRD &sect;7 human decisions</td><td><code>{decision: approve | reject | edit | bind-manufacturer | confirm-link | reject-link | reopen-link}</code></td><td><b>Fixed in the working tree 2026-08-25, not yet committed: corrected in the PRD. Was: </b><code>edit</code> is not a decision. <code>handle_gate_apply</code> raises <code>ValueError</code> on it and <code>web/app.py:3078</code> 422s anything outside <code>("approve","reject","bind-manufacturer")</code> plus the three link verbs. Edits ride on <code>approve</code> through <code>payload["edits"]</code>, landing as T3 evidence with confidence 1.0, exactly as the same paragraph describes</td></tr>
+
+<tr><td class="st s-gated">doc stale</td><td><code>app/results.py</code> &harr; migration 019</td><td>"<code>kind</code> is a CLOSED vocabulary mirrored in <code>app/results.py</code>"; adding one is "a deliberate act in both places"</td><td>Migration 019 enumerates no kinds and defines <code>kind text NOT NULL</code> with no CHECK. The vocabulary is enforced in Python only, so the second place has nothing to keep in sync and the two-place discipline the comment describes cannot be violated or observed. Carried unchanged</td></tr>
+
+<tr><td class="st s-gated">doc stale</td><td>migration <code>002_ingest.sql:45</code> vs schema sketch &sect;2</td><td>Migration comment: <code>existing-link|udi|basic-udi-di|name-family|manual</code></td><td>The sketch (:214) additionally lists <code>singleton</code>, ratified in handbook &sect;2, and it is the most common value on the live table &ndash; all 8.211 founding rows. Only the migration's own comment is short a value</td></tr>
+
+<tr><td class="st s-noop">not built yet</td><td>PRD &sect;7b · handbook &sect;7b</td><td>"future items resolving to that manufacturer receive the link at RESOLVE time without re-review"</td><td><code>resolve._apply_manufacturer_bindings</code> returns 0 unconditionally. Invariant 1 forbids RESOLVE writing <code>item_document</code> and <code>gate.candidate</code> cannot take a link-only candidate, so the write path does not exist</td></tr>
+
+<tr><td class="st s-noop">not built yet</td><td>PRD &sect;11 · PHASES G5 / G2</td><td>Gate-time calibration <code>effective = raw &times; factor(model_id, field)</code> fed by a <code>[calibration]</code> config map, plus measured HIGH/MED</td><td><code>gate.py:755</code> and <code>:861</code> read <code>getattr(cfg, "calibration", {})</code>; <code>Config</code> defines no such field, so the map is always empty and calibration is the identity. <code>high</code> was ruled to 0.92 on 2026-08-19; <code>med</code> remains the 0.75 placeholder and no calibration artefact exists in the tree</td></tr>
+
+<tr><td class="st s-noop">not built yet</td><td>PRD &sect;1 · &sect;11 <code>source_adapter</code></td><td>Two interchangeable adapters producing byte-identical downstream payloads</td><td><code>BcApiAdapter.read()</code> raises without injected records, deliberately, so a missing feed cannot read as "0 items changed". v2 scope</td></tr>
+
+<tr><td class="st s-noop">not built yet</td><td>PRD &sect;9 storage layout</td><td>Drive v1, client-owned, behind <code>StorageAdapter</code></td><td><code>GoogleDriveStore.put()</code> raises pending G7 (auth mechanics and root folder are client input). <code>LocalFsStore</code> is what runs, and all 769 documents carry an <code>/archive/&hellip;</code> handle</td></tr>
+
+<tr><td class="st s-noop">not built yet</td><td>PRD &sect;3 · &sect;8 <code>eudamed.sync</code></td><td>Cron refreshes a local EUDAMED mirror; lookups against it are free and deterministic</td><td>No producer anywhere. <code>eudamed_mirror</code> holds 0 rows, so DISCOVER's EUDAMED rung is unreachable and RESOLVE's Basic-UDI-DI rung has nothing to join on. S2.3</td></tr>
+
+</table></div>
+
+<p class="caption"><b>What was checked and held.</b> Emits rows: every handler emits only tags its PRD row lists, DISCOVER's new <code>validate.doc</code> included, which was added to the &sect;3 Emits row on the day it shipped. Payload immutability: no handler writes <code>job.payload</code>; the only <code>UPDATE job</code> statements live in <code>app/queue.py</code>. Closed job-type enum: <code>noop.JOB_TYPES</code>, migration 001 + 013 + 014, and the 14 <code>register()</code> calls agree on the same 16 values. Link cap: migration 021's CHECK and <code>gate.py</code>'s <code>TRUSTED_BASES</code> agree, and <code>map-supplier</code> is now named in the PRD basis table, the schema sketch and <code>vocabulary.md</code>. Supersession: both routes to a chain pointer re-read <code>(type, regulation)</code> live from the registry and raise on a mismatch rather than trusting the payload snapshot. Evidence: <code>_require_complete_evidence</code> runs before any write, <code>page</code> required for T1/T2 only. <code>SPP</code>, which the previous map called a documented type no code produced, is now enumerated in both LLM prompts and <code>vocabulary.md</code> and carried by 4 live documents &ndash; that row is closed.</p>
+<p class="caption">By the rule this page is produced under, no divergence was fixed here and no contract doc was edited. Five doc-stale rows were fixed in the PRD and handbook after this page listed them and are marked closed above; those edits are uncommitted. The one <span class="bad">drift</span> row and the eight <span class="bad">undocumented</span> rows are what still needs a decision; each is a contract change or a doc edit, not a code change, except the robots row, which needs both.</p>
+
+<footer>
+Sources: first-hand reads of <code>app/</code>, <code>web/</code>, <code>migrations/</code>, <code>docker-compose.yml</code>, <code>tasks/followups.md</code>, <code>PHASES.md</code> and the four normative docs at master as it stood on 2026-08-25; every live figure is a <code>count(*)</code> against the dev registry, read 2026-08-25, not a planner estimate. Every status was re-derived for this edition; ten of the previous map's entries flipped and one of its &sect;5 rows is closed. Suite: 2088 passed &#47; 3 skipped.
+</footer>
+</main>
+<script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+mermaid.initialize({ startOnLoad: true, theme: dark ? "dark" : "neutral" });
+</script>
+</body>
+</html>

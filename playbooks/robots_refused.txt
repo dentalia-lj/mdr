@@ -1,0 +1,26 @@
+# Hosts the pipeline may never fetch. One host per line; `#` starts a comment.
+#
+# Denis's ruling, 2026-08-20 (docs/2026-08-20-robots-blocked-manufacturers.md):
+# these are reachable "by a human, or by an independent Playwright session run
+# deliberately outside the pipeline -- never by the automated fetcher."
+#
+# `playbooks.validate()` refuses any playbook that names one of these as a
+# fetch target, so the ruling stops depending on an author remembering to write
+# kind:"portal". A subdomain of a listed host is also refused.
+#
+# This list is NOT the same boundary as app/robots.py. That module reads a
+# host's live robots.txt and obeys it; this file records a decision that does
+# not depend on what the file says. COLTENE is exactly why both exist: its
+# robots.txt disallows `ClaudeBot` and `CloudflareBrowserRenderingCrawler` by
+# name and says nothing about DentaliaComplianceBot, so a runtime check reads
+# it as PERMITTED. The refusal there is the operator's, and only a list can
+# carry it.
+#
+# Removing a line means asking the manufacturer and getting a yes. Record that
+# in the playbook's note, with a date, before you touch this file.
+
+kavo.widen.net           # Disallow: / for every agent except Twitterbot (KAVO DENTAL, 331 items)
+media.amanngirrbach.com  # User-agent: * / Disallow: / -- the entire DAM (AMANN GIRRBACH, 196 items)
+pritidenta.com           # Disallow: /*.pdf, .xlsx, .doc, .docx -- every document (PRITIDENTA, 193 items)
+coltene.com              # ClaudeBot AND CloudflareBrowserRenderingCrawler refused: rendering barred too (COLTENE, 102 items)
+media.coltene.com        # same Cloudflare-managed refusal as the brand host

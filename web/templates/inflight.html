@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}Processing — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>Processing</h1>
+{% call ui.intro("Documents moving through the pipeline right now, counted by content hash rather than by job.") %}
+  The System status board answers "how many jobs", this answers "how many certificates are being
+  processed right now". One document can hold several jobs at once (e.g. an
+  <code>extract.doc</code> and a follow-up <code>validate.doc</code> for the same file), so the
+  per-stage column below does not sum to the total.
+{% endcall %}
+
+<div class="card">
+  <div class="stat-row">
+    <div class="stat-tile">
+      <div class="n" data-total-documents="{{ total }}">{{ total }}</div>
+      <div class="label">documents in flight</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  {% if stages %}
+  <table>
+    <thead>
+      <tr><th>Stage</th><th>Documents</th><th>Jobs</th></tr>
+    </thead>
+    <tbody>
+      {% for row in stages %}
+      <tr>
+        <td>{{ row.stage }}</td>
+        <td>{{ row.documents }}</td>
+        <td>{{ row.jobs }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="hint">Nothing in flight right now.</p>
+  {% endif %}
+</div>
+{% endblock %}

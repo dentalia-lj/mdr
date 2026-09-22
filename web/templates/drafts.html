@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}Renewal emails — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+{#- Renewal emails (office UI redesign spec § 9, P7c). "Drafts out" and
+    "Renewal drafts" were two names for what the menu already calls Renewal
+    emails; § 9 settles it on the menu's. The per-state words are
+    `DRAFT_STATUS_WORDS` in `web/app.py` -- the STORED values are untouched,
+    and `cancelled` reads as "Archived" because that is what the button that
+    sets it says. -#}
+<h1>Renewal emails</h1>
+{% call ui.intro("Emails the system has written for you to check and send yourself.") %}
+  One email per manufacturer per week, listing every document expiring for that
+  manufacturer, never one mail per document. The system never sends: it drafts,
+  you review, you send it from mdr@dentalia.si. Marking an email
+  <strong>ready to send</strong> records your approval; it does not send
+  anything and does not queue a send.
+{% endcall %}
+
+<div class="card">
+  {#- The menu entry "Renewal emails (n)" links here, so its number is on this
+      page (spec § 1, rule 7). `draft` + `ready`, the same `_drafts_waiting`
+      the menu counts with: an archived draft was deliberately dropped and is
+      not work to send, which is why this is not the grand total below. -#}
+  <p class="metric"><strong>{{ to_send | num }} renewal email{{ "" if to_send == 1 else "s" }} to send</strong></p>
+  <p class="hint">Written and not yet sent. Archived ones are not counted. This
+    is the number beside <strong>Renewal emails</strong> in the menu.</p>
+  <div class="stat-row">
+    {% for s in ['draft', 'ready', 'sent', 'cancelled'] %}
+    <div class="stat-tile">
+      <div class="n">{{ counts.get(s, 0) | num }}</div>
+      <div class="label"><a href="/drafts?status={{ s }}">{{ status_words[s] }}</a></div>
+    </div>
+    {% endfor %}
+  </div>
+  {% if status %}
+  <p class="hint">Showing {{ status_words.get(status, status) }} only ·
+    <a href="/drafts">show all {{ total | num }}</a></p>
+  {% endif %}
+</div>
+
+<div class="card">
+  {% if rows %}
+  <table>
+    <thead>
+      <tr><th>State</th><th>Manufacturer</th><th>Week</th><th>What it asks</th>
+          <th>Documents</th><th>To</th><th>Subject</th></tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td><span class="badge badge-{{ 'staged' if r.status == 'draft' else ('production' if r.status in ('ready','sent') else 'superseded') }}">{{ status_words.get(r.status, r.status) }}</span></td>
+        <td><strong>{{ r.manufacturer or '—' }}</strong></td>
+        <td>{{ r.period_label }}</td>
+        <td>{{ kind_words.get(r.kind, r.kind) }}</td>
+        <td>{{ r.documents | num }}</td>
+        <td class="hint">{{ (r.to_addrs or []) | join(", ") }}</td>
+        <td><a href="/drafts/{{ r.id }}">{{ r.subject }}</a>
+          {% if r.edited_by %}<span class="hint">edited by {{ r.edited_by }}</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="hint">Nothing to send. A renewal email is written by the daily expiry
+    scan once a developer has switched automatic requests on, or when you ask for
+    the missing declarations from a manufacturer's EUDAMED page. Nothing is sent
+    from here: a person sends what they approve.</p>
+  {% endif %}
+</div>
+{% endblock %}

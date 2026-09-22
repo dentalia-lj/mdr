@@ -1,0 +1,106 @@
+{#- The office menu (office UI redesign spec § 7), counts and all.
+
+    Rendered twice by design. base.html includes it with no `pulse`, so the
+    menu is server-rendered on every page and the counts read as not-loaded
+    (an en dash) rather than as a silent zero with JS off. `/_pulse` renders
+    the same template with the counts and swaps it in on load, then every 15s
+    -- the cadence, and the reason, the sticky header strip had before this
+    replaced it: no page ever waits on a queue count, and a long-lived tab
+    stays honest without a reload.
+
+    Only the four "Your work" entries carry a number. They are the queues a
+    person empties; a count on Items or Playbooks would be decoration. The
+    health line sits OUTSIDE <nav>, because it is not a destination. -#}
+{%- set p = pulse if pulse is defined else None -%}
+{%- set path = request.url.path -%}
+{%- set operator = is_operator(request) -%}
+{%- set operator_paths = ('/status', '/dead', '/pipeline', '/playbooks', '/data-quality',
+                          '/audit', '/scheduler', '/bc-push', '/api-reference',
+                          '/inflight', '/manual', '/onboarding') -%}
+
+{%- macro n(value) -%}
+<span class="nav-n">{% if value is none %}&ndash;{% else %}{{ value | num }}{% endif %}</span>
+{%- endmacro -%}
+
+<nav>
+  {#- Your work: the four queues plus the page that names them. Ordered the
+      way the day runs, which is also the order Today lists them. -#}
+  <p class="nav-label">Your work</p>
+  {#- Today lights for `/reports` too, and Items for `/coverage` and
+      `/discovery`: those three left the menu (spec § 7) and are reached from
+      the page that lights here, so without this a person standing on one of
+      them sees no active entry at all and the page has no visible parent. -#}
+  <a href="/" class="{{ 'active' if path == '/' or path.startswith('/reports') else '' }}">Today</a>
+  <a href="/staging" class="{{ 'active' if path == '/staging' else '' }}">Review {{ n(p.to_review if p else None) }}</a>
+  <a href="/missing" class="{{ 'active' if path.startswith('/missing') else '' }}">Missing documents {{ n(p.missing if p else None) }}</a>
+  <a href="/expiry" class="{{ 'active' if path == '/expiry' else '' }}">Expiring {{ n(p.expiring if p else None) }}</a>
+  <a href="/drafts" class="{{ 'active' if path.startswith('/drafts') else '' }}">Renewal emails {{ n(p.drafts if p else None) }}</a>
+
+  {#- Records: what is held, for looking things up rather than for acting.
+      Coverage gaps and Discovery left this group on 2026-09-14 and are reached
+      from the link row on Items; SRN queue and Sweep due from EUDAMED checks. -#}
+  <p class="nav-label">Records</p>
+  <a href="/items" class="{{ 'active' if path.startswith(('/items', '/coverage', '/discovery')) else '' }}">Items</a>
+  <a href="/documents" class="{{ 'active' if path.startswith('/documents') else '' }}">Documents</a>
+  <a href="/manufacturers" class="{{ 'active' if path.startswith('/manufacturers') and path != '/manufacturers/eudamed' else '' }}">Manufacturers</a>
+  <a href="/manufacturers/eudamed" class="{{ 'active' if path == '/manufacturers/eudamed' else '' }}">EUDAMED checks</a>
+  <a href="/emails" class="{{ 'active' if path.startswith('/emails') else '' }}">Emails received</a>
+
+  <p class="nav-label">Add</p>
+  <a href="/upload" class="{{ 'active' if path == '/upload' else '' }}">Upload a document</a>
+  <a href="/import" class="{{ 'active' if path == '/import' else '' }}">Import from Business Central</a>
+  {#- /ingest is deliberately NOT here. It is the developer path: it wants a
+      file that is already inside the container and a hand-typed server-side
+      path, and it offers a `bc_odata` source that always dead-letters.
+      /import does the same job from an upload, with a dry-run diff and an
+      explicit Apply, so offering both in the menu only ever routed people to
+      the wrong one. The route stays live and the guide still documents it --
+      this removes the invitation, not the page.
+      `[ingest-page-says-the-import-does-nothing]`, UI audit 2026-09-04. -#}
+
+  {#- One collapsed block, at the bottom, for operating the machine (spec § 7).
+      Everyone sees it until named logins exist, because `is_operator` is True
+      for every login while `web.operator_users` is empty. Collapsed rather
+      than removed: these pages are reachable by URL either way (D3), and the
+      office menu above is what someone without a technical background reads.
+
+      `hx-preserve`: this fragment is re-swapped every 15s, and without it a
+      group somebody opened would close itself under them on the next poll.
+      Nothing inside it carries a live count, so the preserved node is never
+      stale. -#}
+  {% if operator %}
+  <details class="nav-operator" id="nav-operator" hx-preserve="true"{% if path in operator_paths or path.startswith(('/playbooks', '/onboarding', '/jobs/')) %} open{% endif %}>
+    <summary>Operator</summary>
+    <a href="/status" class="{{ 'active' if path == '/status' else '' }}">System status</a>
+    <a href="/dead" class="{{ 'active' if path == '/dead' else '' }}">Failed tasks</a>
+    {#- `startswith` on the pages the hub folds, so the hub entry stays lit
+        while you are on one of them -- otherwise the sidebar shows nothing
+        active and the page you are on has no visible parent. -#}
+    <a href="/pipeline" class="{{ 'active' if path == '/pipeline' or path.startswith(('/inflight', '/manual')) else '' }}">Queues &amp; health</a>
+    <a href="/playbooks" class="{{ 'active' if path.startswith(('/playbooks', '/onboarding')) else '' }}">Playbooks</a>
+    <a href="/data-quality" class="{{ 'active' if path.startswith('/data-quality') else '' }}">Data quality</a>
+    <a href="/audit" class="{{ 'active' if path == '/audit' else '' }}">Decisions log</a>
+    <a href="/scheduler" class="{{ 'active' if path.startswith('/scheduler') else '' }}">Scheduler</a>
+    <a href="/bc-push" class="{{ 'active' if path.startswith('/bc-push') else '' }}">Business Central push</a>
+    <a href="/api-reference" class="{{ 'active' if path == '/api-reference' else '' }}">API</a>
+  </details>
+  {% endif %}
+</nav>
+
+{#- Machine health as one line (spec § 1, rule 8). Green dot and three words
+    when everything beats; the services that stopped, by name, when they do
+    not. Website timeouts ride along because they are the one failure an
+    office login can do something about (D6) -- and `details` is the only
+    link out of this line. -#}
+<p class="nav-health{{ '' if (health is not defined or health.ok) else ' nav-health-bad' }}">
+  {%- if health is not defined %}
+  <span class="nav-dot">&#9679;</span> Checking&hellip;
+  {%- else %}
+  <span class="nav-dot">&#9679;</span> {{ health.text }}
+  {%- if health.timeouts %}
+  <span class="nav-health-timeouts">{{ health.timeouts | num }}
+    website{{ "" if health.timeouts == 1 else "s" }} timed out ·
+    <a href="/dead">details</a></span>
+  {%- endif %}
+  {%- endif %}
+</p>

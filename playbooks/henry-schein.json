@@ -1,0 +1,15 @@
+{
+  "manufacturer": "HENRY SCHEIN",
+  "aliases": [],
+  "bc_codes": [{"catalogue": "LJ", "code": "004"}],
+  "domains": ["henryschein.de"],
+  "contacts": ["cbdeurope@henryschein.com"],
+  "doc_sources": [
+    {
+      "doc_type": "DoC",
+      "kind": "portal",
+      "url": "https://www.henryschein.de/",
+      "note": "Client, 2026-08-18: every article page on henryschein.de names its manufacturer and manufacturer code, which is the only stated way to tell Henry Schein's own-brand articles from the 1.111 they merely distribute. Denis's ruling the same day: BC is ground truth for attribution, so this is a DISCOVERY source, never an override of item_mirror.manufacturer_raw."
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "content_hash": "sha256:a3f6e443c8f447c35f8a39fd3c5c71d423ed8929ae10242b997421a0f5ca55e1",
+  "tier": "T2",
+  "model_id": "sonnet-4.6",
+  "fields": {
+    "regulation": {
+      "value": "MDR",
+      "conf": 0.96,
+      "verbatim": "EU Regulation 2017/745 (MDR)",
+      "page": 1
+    },
+    "validity_to": {
+      "value": "2030-05-26",
+      "conf": 0.95,
+      "verbatim": "This Declaration of Conformity is valid until: 2030-05-26",
+      "page": 1
+    },
+    "cert_number": {
+      "value": "G10 082649 0004",
+      "conf": 0.93,
+      "verbatim": "Certificate of Conformity No. G10 082649 0004",
+      "page": 1
+    },
+    "coverage_scope": {
+      "value": "group",
+      "conf": 0.9,
+      "verbatim": "consisting of the products listed in the annex",
+      "page": 1
+    }
+  }
+}

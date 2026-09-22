@@ -1,0 +1,22 @@
+{
+  "manufacturer": "NEODENT",
+  "aliases": [
+    "JJGC Indústria e Comércio de Materiais Dentários S/A",
+    "JJGC Industria e Comercio de Materiais Dentarios SA",
+    "JJGC"
+  ],
+  "bc_codes": [{"catalogue": "LJ", "code": "160"}],
+  "domains": [],
+  "doc_sources": [],
+  "match": {
+    "anchors": ["jjgc indústria", "jjgc industria"]
+  },
+  "ref_strategy": "text-column",
+  "ref_strategy_config": {
+    "header_anchors": ["item", "description"],
+    "field_pattern": "\\d{3}\\.\\d{3,4}(?:-[A-Z]{1,3})?"
+  },
+  "skip_backfill": {
+    "reason": "Client ruling 2026-08-19: the SFTP folder is a mess and is not to be scanned. Measured the same day: 28 of its 34 PDFs are Dentalia's own invoices, delivery notes and quotations carrying customer names and addresses, plus a misfiled Straumann leaflet, an expired EC certificate (2197651CE01, lapsed 2024-05-26, not the 2224396CE01 the declaration cites) and a second copy of the implants declaration. Lift this once a clean dump arrives; the four documents from the 2026-08-19 scan are already in the registry and their hashes are ledgered, so a clean re-dump of the same bytes costs nothing."
+  }
+}

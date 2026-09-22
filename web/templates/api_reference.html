@@ -1,0 +1,296 @@
+{% extends "base.html" %}
+{% block title %}API reference{% endblock %}
+{% block content %}
+{#
+  Real documentation, not a summary: which endpoint, who may call it, what
+  comes back, and a copyable example (Denis, 2026-08-25).
+
+  Every response body below is rendered from the registry at request time by
+  calling the same `item_documents()` the endpoints call. Nothing here is
+  hand-written, so nothing here can quietly stop being true.
+#}
+<h1>API reference</h1>
+
+<p class="lede">Three kinds of caller reach this application and only one has a
+browser. What a caller may reach depends on the credential it carries; the
+policy is one table, in <code>web/access.py</code>, and it is default-deny.</p>
+
+<h2>Credentials</h2>
+<table>
+  <thead><tr><th>Class</th><th>How it authenticates</th><th>Who</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>staff</code></td>
+      <td>HTTP Basic, at the Caddy proxy</td>
+      <td>Us. This UI and everything in it.</td>
+    </tr>
+    <tr>
+      <td><code>service</code></td>
+      <td><code>X-API-Key</code> header</td>
+      <td>The webshop backend. Fetches server-side and relays to its own
+        logged-in customers, which is why nothing here is public.</td>
+    </tr>
+    <tr>
+      <td><code>bc</code></td>
+      <td><code>?k=</code> in the query string</td>
+      <td>A Business Central item-card hyperlink. BC builds links by string
+        concatenation, so it cannot compute a signature &mdash; hence one
+        shared static key rather than a per-item one.</td>
+    </tr>
+  </tbody>
+</table>
+
+<pre><code># staff — through the proxy, as your browser already does
+curl -u "$DENTALIA_WEB_USER:$PASSWORD" https://HOST/items
+
+# service — the webshop backend
+curl -H "X-API-Key: $WEB_API_KEYS" https://HOST/api/items/{{ example_ref or 'ITEM' }}/documents
+
+# bc — the item-card link
+curl "https://HOST/item/{{ example_ref or 'ITEM' }}?k=$WEB_BC_LINK_KEY"</code></pre>
+
+<h2>Endpoints</h2>
+
+{# ---------------------------------------------------------------- #}
+<h3><code>GET /item/{item_ref}</code></h3>
+<p><strong>bc</strong> &middot; <strong>service</strong> &middot; <strong>staff</strong>
+&mdash; one item and its production documents. This is the URL BC puts on the
+item card and the one a support rep sends a client to.</p>
+
+<table>
+  <thead><tr><th>Parameter</th><th>In</th><th>Default</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>item_ref</code></td><td>path</td><td>&mdash;</td>
+      <td>Dentalia's own item number. May contain <code>/</code>; URL-encode it.</td></tr>
+    <tr><td><code>k</code></td><td>query</td><td>&mdash;</td>
+      <td>The shared BC link key. Required unless you are staff or service.</td></tr>
+    <tr><td><code>format</code></td><td>query</td><td><em>(unset)</em></td>
+      <td><code>json</code> forces JSON. Otherwise <code>Accept:
+        application/json</code> decides, and a browser gets HTML.</td></tr>
+    <tr><td><code>view</code></td><td>query</td><td><code>full</code></td>
+      <td><code>customer</code> narrows it to what a clinic may see.</td></tr>
+  </tbody>
+</table>
+
+<p><strong>One URL, two renderings.</strong> A rep clicking from BC gets a page
+with download buttons. The webshop asking with <code>Accept:
+application/json</code> gets the payload below. The <code>?format=json</code>
+override exists because BC's HTTP client is not guaranteed to send a useful
+<code>Accept</code>, and a rep must never land on a raw JSON blob.</p>
+
+{# ---------------------------------------------------------------- #}
+<h3><code>GET /api/items/{item_ref}/documents</code></h3>
+<p><strong>service</strong> &middot; <strong>staff</strong> &mdash; the same
+payload, JSON only. Takes <code>view</code> exactly as above.</p>
+
+{% if example_full %}
+  <p>Live response for <code>{{ example_ref }}</code>, a real item in this
+    registry right now &mdash; rendered by the same code the endpoint runs, so
+    it cannot drift:</p>
+  <pre><code>{{ example_full }}</code></pre>
+{% else %}
+  <p class="muted">No example: no production item&ndash;document links exist yet
+    (no items mirrored yet). The shape is documented in
+    <code>docs/specs/read-api.md</code>.</p>
+{% endif %}
+
+<h4>Field notes</h4>
+<ul>
+  <li><code>valid_to</code> is the <strong>effective</strong> expiry, not the
+    document's raw <code>validity_to</code>: a DoC that cites a certificate
+    reports the certificate's date here.</li>
+  <li><code>expiry_basis</code> says which rule produced it &mdash;
+    <code>stated</code>, <code>inherited</code>, <code>staleness</code>, or
+    null. <code>staleness</code> is a five-year <em>review horizon</em>
+    Dentalia chose, <strong>not a legal expiry</strong>, which is why
+    <code>view=customer</code> withholds it.</li>
+  <li><code>name</code> is derived, never stored, and degrades gracefully: no
+    manufacturer evidence means it starts at the type, no expiry means no
+    "valid to" clause. Never a literal <code>"None DoC"</code>.</li>
+  <li><code>url</code> is constructed, never read from the database.
+    <code>archive_url</code> is a storage handle, not a link.</li>
+  <li><code>mfr_ref</code> is nullable. Null is a known data state, not an
+    error.</li>
+</ul>
+
+{# ---------------------------------------------------------------- #}
+<h3><code>?view=customer</code></h3>
+<p>What the webshop may render to a clinic. Same endpoints, narrower payload.</p>
+{% if example_customer %}
+  <p>The same item again. <code>manufacturer_code</code>,
+    <code>match_basis</code> and <code>expiry_basis</code> are gone:</p>
+  <pre><code>{{ example_customer }}</code></pre>
+{% endif %}
+<p>This controls which fields we hand over; it cannot police the webshop's
+templates. A customer-facing rendering should lead with <strong>manufacturer
+identity</strong> (the name and ref printed on the box) rather than Dentalia's
+catalogue identity.</p>
+
+{# ---------------------------------------------------------------- #}
+<h3><code>?include_superseded=true</code></h3>
+<p>Adds the documents an item's current paperwork <strong>replaced</strong>
+  &mdash; the supersession chain. Off by default, so nothing you already call
+  changes. Works on
+  <code>/api/items/{item_ref}/documents</code> and on the batch endpoint,
+  where it applies to every entry.</p>
+<p>Flagged documents carry two extra fields, and only when the flag is on:
+  <code>status</code> (<code>production</code> or <code>superseded</code>) and
+  <code>superseded_by</code> (the <code>doc_id</code> that replaced this one,
+  null on a current document). Those <code>doc_id</code>s are fetchable:
+  <code>/api/documents/{doc_id}</code> serves superseded documents too.</p>
+<ul>
+  <li><strong>Not available with <code>view=customer</code></strong> &mdash;
+    the combination returns <code>400</code>. A superseded document is the
+    paperwork we replaced; a clinic must never be shown it as coverage.</li>
+  <li><strong>Not reachable from the BC card.</strong>
+    <code>/item/{item_ref}</code> ignores it.</li>
+  <li><strong>Staged, rejected and filed documents stay invisible</strong>, and
+    so does any document whose <em>link</em> to the item is not production. The
+    flag widens the document status filter and nothing else.</li>
+</ul>
+<p><strong>Expired is not superseded.</strong> An expired document was never
+  hidden &mdash; nothing here filters on expiry. Read <code>valid_to</code> and
+  decide for yourself; you do not need this flag for that.</p>
+
+{# ---------------------------------------------------------------- #}
+<h3><code>GET /item/{item_ref}/documents.zip</code></h3>
+<p><strong>bc</strong> &middot; <strong>service</strong> &middot; <strong>staff</strong>
+&mdash; every production document for the item, one archive. The "papers" a
+client asks for on the phone are plural. <code>404</code> when the item has no
+reachable production documents &mdash; an empty archive is a worse answer than
+saying there is nothing.</p>
+
+<h3><code>GET /documents/{doc_id}/file</code></h3>
+<p><strong>service</strong> &middot; <strong>staff</strong> &mdash; the archived
+PDF. This is the supported way to get bytes; the webshop relays them under its
+own origin.</p>
+
+<h3><code>GET /api/documents/{doc_id}</code></h3>
+<p><strong>service</strong> &middot; <strong>staff</strong> &mdash; one
+production document and its complete evidence.
+<strong class="warn">Internal.</strong> Carries <code>model_id</code>,
+<code>confidence</code> and <code>verbatim</code>. Never render this to a
+customer.{% if example_doc_id %} Try
+<a href="/api/documents/{{ example_doc_id }}">/api/documents/{{ example_doc_id }}</a>.{% endif %}</p>
+
+<h3><code>GET /api/kpi</code></h3>
+<p><strong>service</strong> &middot; <strong>staff</strong> &mdash; the KPI
+board, the same numbers the status page shows. Top-level keys:
+<code>coverage</code>, <code>match_basis</code>, <code>missing_mfr_ref</code>,
+<code>staging</code>, <code>manual_by_kind</code>, <code>dead_jobs</code>,
+<code>jobs_by_type_status</code>, <code>spend</code>. Not rendered inline here:
+it measures ~478ms and this page is not worth half a second.
+<a href="/api/kpi">Try it</a>.</p>
+
+<h3><code>GET /api/items/documents?ref=&hellip;&amp;ref=&hellip;</code></h3>
+<p><strong>service</strong> &middot; <strong>staff</strong> &mdash; several
+items in one call, for an order page. Repeat <code>ref</code> per item; takes
+<code>view</code> as above. Max {{ max_batch_refs }} refs, <code>400</code>
+beyond that or with none at all.</p>
+<p>Entries come back <strong>in the order you asked for</strong>, and a ref this
+system has never mirrored is kept as a null-identity entry rather than dropped
+&mdash; you are drawing a row per order line and need to know <em>which</em>
+line has nothing, which a shorter array cannot tell you.</p>
+
+<h3><code>GET /api/manufacturers</code></h3>
+<p><strong>service</strong> &middot; <strong>staff</strong> &mdash; every
+manufacturer with its BC codes and its production item and document counts.
+<code>?q=</code> filters on name or code.</p>
+
+<h3><code>GET /api/manufacturers/{canonical_name}</code></h3>
+<p><strong>service</strong> &middot; <strong>staff</strong> &mdash; one
+manufacturer's identity, its BC codes, and production counts.
+<code>404</code> if the canonical name is unknown.
+{% if example_manufacturer %}Try
+<a href="/api/manufacturers/{{ example_manufacturer }}">/api/manufacturers/{{ example_manufacturer }}</a>.{% endif %}</p>
+
+<h3><code>GET /api/manufacturers/{canonical_name}/documents</code></h3>
+<p><strong>service</strong> &middot; <strong>staff</strong> &mdash; every
+production document reachable from any item of this manufacturer,
+<strong>deduped</strong>. That dedupe is the point: one ISO 13485 certificate
+can cover a whole line, and listing per item would return it hundreds of times
+and bury the handful that differ. Takes <code>view</code>.</p>
+<p><code>?include_unlinked=true</code> additionally returns documents
+  <strong>bound to this manufacturer that reach it through no item at all</strong>
+  &mdash; in the full view they carry <code>match_basis</code> of
+  <code>mfr-bound</code> (<code>view=customer</code> drops that field, as it
+  does everywhere). That set is large and is <em>not coverage</em>: a filed
+  document is real, held and evidenced, and explicitly says we stock nothing it
+  covers. Measured 2026-09-16, <code>/api/manufacturers/VOCO/documents</code>
+  returns 32 of the 283 documents held under that name; the other 251 reach no
+  stocked item. Off by default because returning them unannounced would change
+  what your existing payload means.</p>
+<p>Two knobs, two questions: <code>view</code> is the <em>projection</em> (which
+  fields), <code>include_unlinked</code> is the <em>row set</em> (which
+  documents). Same split as <code>include_superseded</code> above.</p>
+
+<h3><code>GET /api/manufacturers/{canonical_name}/items</code></h3>
+<p><strong>service</strong> &middot; <strong>staff</strong> &mdash; that
+manufacturer's items, each with its production document count.
+<strong>Paginated, and not optionally</strong>: ~16k items are mirrored today
+and ~100k is the target.</p>
+<table>
+  <thead><tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>page</code></td><td><code>1</code></td>
+      <td>1-based. A page past the end returns an empty
+        <code>items</code> and the real <code>total</code>, not an error.</td></tr>
+    <tr><td><code>per_page</code></td><td><code>{{ default_per_page }}</code></td>
+      <td>Capped at <code>{{ max_per_page }}</code>. Asking for more silently
+        gets the cap &mdash; check <code>per_page</code> in the response.</td></tr>
+  </tbody>
+</table>
+<p>Response carries <code>page</code>, <code>per_page</code>,
+<code>total</code>, <code>pages</code> and <code>items</code>.</p>
+
+<h3><code>GET /archive/{path}</code></h3>
+<p><strong class="warn">staff only</strong> &mdash; serves the archive by path
+and is therefore walkable. A valid API key does not open it.</p>
+
+{# ---------------------------------------------------------------- #}
+<h2>Status codes</h2>
+<table>
+  <thead><tr><th>Code</th><th>When</th></tr></thead>
+  <tbody>
+    <tr><td><code>200</code></td><td>Including an item with no documents, and an
+      item this system has never mirrored &mdash; identity fields come back
+      null and <code>documents</code> is empty.</td></tr>
+    <tr><td><code>401</code></td><td>Missing or wrong <code>X-API-Key</code> on
+      <code>/api/*</code>. A service caller deserves a diagnosable error.</td></tr>
+    <tr><td><code>403</code></td><td>A caller reaching a path its class does not
+      cover.</td></tr>
+    <tr><td><code>404</code></td><td>Missing or wrong <code>?k=</code> on
+      <code>/item/*</code>. <strong>Deliberately not 403</strong>: a 403 would
+      confirm the item exists. Expect this, do not report it as a bug.</td></tr>
+  </tbody>
+</table>
+
+<h2>What you can rely on</h2>
+<p>Responses are <strong>additive-only</strong>. A field may be appended; an
+existing field is never removed, renumbered, or repurposed to mean something
+new. Tolerate unknown fields, never missing ones.</p>
+
+<h2>Integration recipes</h2>
+
+<h3>Business Central</h3>
+<p>A computed field on the item card. No round trip, nothing stored:</p>
+<pre><code>"https://HOST/item/" + "No." + "?k=" + LinkKey</code></pre>
+<p>URL-encode <code>No.</code> if your item numbers contain a slash.</p>
+
+<h3>Webshop</h3>
+<ol>
+  <li>Fetch server-side with <code>X-API-Key</code> and
+    <code>?view=customer</code>. (Which is why <code>view=customer</code> and
+    <code>include_superseded</code> cannot be combined.)</li>
+  <li>Render the document list in your own page, under your own login.</li>
+  <li>Proxy the bytes from <code>url</code> under your own origin &mdash; do
+    not hand our URL to the customer.</li>
+</ol>
+<p>For an order page use the batch endpoint below &mdash; one call, not one
+per line.</p>
+
+<h2>Generated reference</h2>
+<p>Parameters and schemas straight from the code:
+  <a href="/docs">/docs</a> &middot; <a href="/openapi.json">/openapi.json</a>.
+  Both are staff-only.</p>
+{% endblock %}

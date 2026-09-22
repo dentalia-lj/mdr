@@ -1,0 +1,28 @@
+{
+  "manufacturer": "SASU ACTEON DISTRIBUTION",
+  "aliases": [],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "10094"
+    }
+  ],
+  "domains": [
+    "myresources.acteongroup.com",
+    "dl.acteongroup.com"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "IFU",
+      "kind": "portal",
+      "url": "https://myresources.acteongroup.com/en/",
+      "note": "Fetched 2026-08-20, HTTP 200. THE documentation host, and it is not the corporate site: www.acteongroup.com renders EMPTY over plain HTTP (JS/consent wall) while this one is static, unauthenticated and needs no browser. 5 category pages (equipement, imagerie, medical, veterinaire, pharma) -> ~129 product pages each -> per-product document lists. robots.txt allows all but /admin/. Downloads flow through dl.acteongroup.com (robots.txt 404, nothing disallowed). TWO ROUTE CLASSES: /qr/{id} is ungated and 302s to a PRESIGNED OVH S3 URL (X-Amz-Expires=3600), /register/{id} is form-gated. Presigned signatures change per request, so URL-keyed fetch dedupe false-negatives -- only content-hash dedupe works. The product page examined listed 17 documents and NO declaration of conformity or CE certificate."
+    },
+    {
+      "doc_type": "DoC",
+      "kind": "portal",
+      "url": "https://www.acteonmedical.com/en/legal-notice",
+      "note": "THIS CODE IS A SUPPLIER, NOT A MANUFACTURER, AND NO ALIAS IS AUTHORED ON PURPOSE. Group structure read 2026-08-20 from recherche-entreprises.api.gouv.fr, the official open API behind Annuaire des Entreprises (INSEE Sirene + INPI RNE): FINAPOLLINE is president of ACTEON (siren 818303992, holding, NAF 64.20Z), which is president of SATELEC (782016240, NAF 32.50A, active, 5 sites), ACTEON DISTRIBUTION (830520029, NAF 46.18Z trade intermediary -- the name in our vendor master, and it appears on ZERO device documents), ACTEON MANUFACTURING (938275880, incorporated 2024-11-25, NAF 32.50A, Satelec's exact address) and PRODUITS DENTAIRES PIERRE ROLLAND (731720074, NAF 21.20Z). FINAPOLLINE is also an administrateur of SOPRO (310558770, NAF 32.50A, La Ciotat). PROVEN legal manufacturers, each read next to the factory symbol on its own printed document: SATELEC, 17 av. Gustave Eiffel, 33708 Merignac cedex (Newtron handpiece manual 02/2023 section 10.5 -- but that document still cites MDD 93/42/EEC and carries no Basic UDI-DI, so Satelec's MDR-era status is INFERRED, not proven); de Goetzen S.r.l., Fagnano Olona, Italy (X-Mind DC manual 07/2024 p.2); SOPRO S.A., La Ciotat (PSPIX2 IFU 2024-08). Notified body 0459 = LNE-GMED. NO manufacturer alias is authored here because canonical_manufacturer is the distributor: aliasing SATELEC or SOPRO onto it would attribute their documents to a trade intermediary. Documents naming them will flag manufacturer-unresolved, which is safe but uncovered. The real fix is per-line identity, which BC's one-code-per-supplier shape cannot express -- the same structural gap as [brand-parent-aliases]. WATCH: ACTEON MANUFACTURING is 9 months old at the group's manufacturing site with 4 establishments and the device-manufacturing NAF code. Whether any Satelec registration moved to it is NOT established. The first document naming it must not be read as an unknown manufacturer."
+    }
+  ]
+}

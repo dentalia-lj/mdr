@@ -1,0 +1,29 @@
+# Dev-only overlay: publishes Postgres on the host.
+#
+# Why this is a separate file rather than a profile: `profiles:` gates whole
+# SERVICES, not individual keys, and `ports:` cannot be gated that way. Compose
+# also merges `ports` lists additively across files and offers no subtraction,
+# so a base that published 5432 could not be un-published by an overlay. The
+# base therefore publishes nothing (safe for the test path and for concurrent
+# worktrees) and dev opts in here.
+#
+# Enable per checkout by adding this to .env:
+#
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.dev.yml
+#
+# or pass it per command:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# You do NOT need this to run the suite. scripts/test.sh execs pytest inside the
+# stack, where Postgres is `postgres:5432` on the compose network. This is only
+# for host-side tools: psql, a GUI client, a one-off script.
+#
+# Only ONE checkout can hold host port 5432 at a time. Give a second worktree a
+# different POSTGRES_PORT in its own .env if it needs host access too.
+services:
+  postgres:
+    ports:
+      # Loopback only, matching caddy and greenmail. The old base-file entry
+      # bound all interfaces, which on WSL2 also exposes the port to Windows.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"

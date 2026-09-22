@@ -1,0 +1,21 @@
+-- vendor.import: a BC manufacturer master (`Proizvajalci.xlsx`) handed to us
+-- through the browser rather than `python -m app.cli vendor-master`. The
+-- browser counterpart to that command's dry-run-then-apply shape.
+--
+-- Two jobs over ONE `import_inbox` row at `kind='vendors'` — the preview reads
+-- the row and leaves it, the apply reads the same bytes and consumes it. 040
+-- already CHECKs that kind, so this migration adds no table.
+--
+-- Not a reuse of `ingest.run`, which would have been the cheaper move. A vendor
+-- import writes a different table (`vendor_master`, never `item_mirror`), its
+-- diff has four categories rather than two (added / renamed / disappeared /
+-- unchanged), one of those is REFUSED by default because
+-- `item_group.canonical_manufacturer` is effectively write-once, and it emits
+-- no downstream job at all. Invariant 7: a new tag is a PRD change plus a
+-- migration, never a string.
+--
+-- ALTER TYPE ... ADD VALUE cannot run in the same transaction that USES the new
+-- value (PG16); this file only adds the value — nothing here inserts a
+-- 'vendor.import' job row. Precedent: 013_scheduler.sql, 014_upload.sql.
+
+ALTER TYPE job_type ADD VALUE 'vendor.import';

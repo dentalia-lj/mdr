@@ -1,0 +1,27 @@
+{
+  "manufacturer": "DUERR DENTAL",
+  "aliases": [
+    "DÜRR DENTAL SE",
+    "Duerr Dental SE"
+  ],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "023"
+    }
+  ],
+  "domains": [
+    "duerrdental.com"
+  ],
+  "contacts": [
+    "info@duerrdental.com"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "IFU",
+      "kind": "portal",
+      "url": "https://www.duerrdental.com/en/service/download-center/",
+      "note": "Fetched 2026-08-20, HTTP 200. Names instructions for use, brochures, software updates and safety data sheets; DoC and EC certificate are NOT named. The listing is client-rendered -- zero .pdf hrefs in the served HTML -- so discovery needs a browser tier. RETRIEVAL DOES NOT: PDFs live under /fileadmin/user_upload/ and fetch fine over plain HTTP (verified), and robots.txt disallows only /typo3/ while publishing 29 locale sitemaps. Discovery is the bottleneck here, not fetching."
+    }
+  ]
+}

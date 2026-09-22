@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% import "_link_decide.html" as link_decide %}
+{% block title %}Review — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>Review</h1>
+
+{# Shell only. Both queues below grow without bound (5.8k open grouping
+   suggestions when this was paginated), so each renders one page of collapsed
+   rows and swaps itself in place; row detail arrives on expand. #}
+<div class="card" id="staging-docs">
+  {% include "_staging_docs.html" %}
+</div>
+
+<div class="card" id="staging-suggestions">
+  {% include "_staging_suggestions.html" %}
+</div>
+
+{# `staged-links` is where the Review panel sends a reviewer for the links an
+   approval leaves staged (`_staging_doc_detail.html`). #}
+<div class="card" id="staged-links">
+  {#- The § 9 words, on the last office-visible headings that still carried the
+      stored ones. "C5" and "C17" were PRD clause numbers in an office heading;
+      they say nothing to the person reading it and are kept in the code. -#}
+  <h2>Links waiting for review on published documents
+    <span class="badge badge-pending">{{ staged_links_total | num }}</span></h2>
+  <p class="hint">A published document can still be linked to other items in a way we do not
+    trust on its own, such as a match on the manufacturer's name. Those links wait for review
+    separately from the document.
+    <strong>Approving the document does not publish them</strong> and never could: that kind of
+    match can never publish by itself (invariant 3). Each needs its own decision, which is what
+    the buttons below are, and they are the only thing in the system that records a person as
+    having made the match.</p>
+  {% if staged_links %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Item ref</th><th>Doc #</th><th>Type</th><th>Regulation</th><th>Cert number</th><th>{{ "match basis" | word }}</th><th>Does this document cover the item?</th></tr></thead>
+    <tbody>
+      {% for lnk in staged_links %}
+      <tr>
+        <td><a href="/items/{{ lnk.item_ref }}">{{ lnk.item_ref }}</a></td>
+        <td><a href="/documents/{{ lnk.doc_id }}">{{ lnk.doc_id }}</a></td>
+        <td>{{ lnk.type }}</td><td>{{ lnk.regulation }}</td><td>{{ lnk.cert_number or "—" }}</td>
+        <td>{{ lnk.match_basis }}</td>
+        {# Both statuses come off the row rather than being assumed from the
+           query's WHERE clause, so the macro enforces its own preconditions
+           instead of trusting this caller to have filtered correctly. #}
+        <td>{{ link_decide.buttons(lnk.doc_id, lnk.item_ref, lnk.status, 'production') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if staged_links_total > staged_links|length %}
+  <p class="hint">Showing the first {{ staged_links|length }} of {{ staged_links_total }} —
+    this table is capped at {{ staged_links_limit }} rows.</p>
+  {% endif %}
+  {% else %}
+  <p class="hint">None.</p>
+  {% endif %}
+</div>
+
+{# Deliberately read-only, and deliberately NOT merged into the table above.
+   These look identical to the review queue and are its exact opposite: nothing
+   is waiting on a person, because the document reached a terminal state
+   without ever being published. `gate.apply`'s link decisions refuse them
+   (C17 requires a production document) and no approval will ever run over
+   them. They are here because invisible dead state is indistinguishable from
+   state nobody thought about — this table is the whole remedy. #}
+{% if dead_links_total %}
+<div class="card">
+  <h2>Links waiting on documents that were never published
+    <span class="badge">{{ dead_links_total | num }}</span></h2>
+  <p class="hint">Nothing to decide here. These links are waiting because their document was
+    replaced, or filed without ever being published, so the link is invisible for the same
+    reason the document is. Publishing them would claim coverage under paperwork the registry
+    never published. Listed so you can see the state, not because it is work.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Item ref</th><th>Doc #</th><th>Document status</th><th>Type</th><th>Regulation</th><th>{{ "match basis" | word }}</th><th>Replaced by</th></tr></thead>
+    <tbody>
+      {% for lnk in dead_links %}
+      <tr>
+        <td><a href="/items/{{ lnk.item_ref }}">{{ lnk.item_ref }}</a></td>
+        <td><a href="/documents/{{ lnk.doc_id }}">{{ lnk.doc_id }}</a></td>
+        <td><span class="badge badge-{{ lnk.doc_status }}">{{ lnk.doc_status }}</span></td>
+        <td>{{ lnk.type }}</td><td>{{ lnk.regulation }}</td><td>{{ lnk.match_basis }}</td>
+        <td>{% if lnk.superseded_by %}<a href="/documents/{{ lnk.superseded_by }}">{{ lnk.superseded_by }}</a>{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if dead_links_total > dead_links|length %}
+  <p class="hint">Showing the first {{ dead_links|length }} of {{ dead_links_total }} —
+    this table is capped at {{ staged_links_limit }} rows.</p>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

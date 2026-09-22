@@ -1,0 +1,1417 @@
+/* Dentalia Compliance Registry — brand lifted from https://www.dentalia.si/
+ * (mint Material-3 palette, Sora + Work Sans). Hand-written, no component
+ * library, no build step (CLAUDE.md: no Node). Fonts/logos are vendored
+ * under /static — the UI renders with zero external network calls. */
+
+@font-face {
+  font-family: "Sora";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("/static/fonts/sora-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+    U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Sora";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("/static/fonts/sora-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0,
+    U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Work Sans";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("/static/fonts/worksans-normal-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+    U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Work Sans";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("/static/fonts/worksans-normal-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0,
+    U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Work Sans";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/static/fonts/worksans-italic-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+    U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Work Sans";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/static/fonts/worksans-italic-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0,
+    U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+:root {
+  /* dentalia.si mint palette (verified from assets/main-*.css) */
+  --dentalia-primary: #89c8ac;
+  --dentalia-primary-strong: #56b088;
+  --dentalia-surface: #f3f9f7;
+  --dentalia-surface-2: #e9f5f0;
+  --dentalia-surface-3: #f2f9f6;
+  --dentalia-ink: #33312b;
+  --dentalia-muted: #464646;
+  --dentalia-border: #d8ddda;
+  --dentalia-amber: #ffb354;
+  /* not sourced from dentalia.si — our own extension for the "dead" job status */
+  --dentalia-danger: #d64545;
+
+  /* Ink (office UI redesign spec § 9, P7a for the buttons, P7b for everything
+     else that was still lettered in the brand mint). The mint is a SURFACE
+     colour: white text on #89c8ac is 1.92:1 and on #56b088 2.64:1, and white
+     is not the only thing that was wearing it: #56b088 ON white is the same
+     2.64:1, which is what every link and the Review row's "Open" control were
+     until P7b. These three are the ink colours, darkened until they pass:
+       --dentalia-action        #2F7A58, either way against white 5.19:1
+       --dentalia-action-strong #255F45, either way against white 7.50:1
+       --dentalia-danger-ink    #B3261E, on white                 6.54:1
+     #2F7A58 clears AA on the two surfaces as well (4.87:1 on #f3f9f7,
+     4.64:1 on #e9f5f0), so a link inside a card is readable too.
+
+     The rule this palette now has, pinned by
+     `tests/test_web_vocab_registry.py`, which recomputes every ratio rather
+     than trusting this comment: the mint is never a foreground. It stays
+     exactly where it was (surfaces, borders, outlines, the nav, the
+     disclosure markers) and NOTHING letters text in it, whether that is
+     `color:` on the mint or white on a mint background. */
+  --dentalia-action: #2F7A58;
+  --dentalia-action-strong: #255F45;
+  --dentalia-danger-ink: #B3261E;
+  /* A disabled button still has to be READ: it says why it cannot be pressed.
+     White on #c9d2ce was 1.6:1; this pair is 4.87:1. */
+  --dentalia-disabled-bg: #e6eae8;
+  --dentalia-disabled-ink: #5a6763;
+
+  /* One scale, added 2026-09-15 (Denis). Before this the sheet carried ten
+     distinct font sizes, five radii and about twenty-four padding pairs, none
+     of them a scale -- just what each screen happened to need on the day it
+     was written. Every size below is a token now, and
+     `test_the_type_scale_is_the_only_source_of_size` fails on a raw px font
+     size anywhere outside this block, so it cannot drift back a third time.
+
+     Sizes are deliberately small. The office runs this at a 1.5 device pixel
+     ratio, so a 13px body renders near 20 physical px. */
+  --fs-title: 18px;     /* h1, one per page                                 */
+  --fs-figure: 18px;    /* a count that IS the content: Today, the KPI tiles */
+  --fs-section: 14px;   /* h2, card headings, the coverage sentence          */
+  --fs-body: 13px;      /* body, tables, controls, form fields, most copy    */
+  --fs-meta: 12px;      /* hints, sublines, chips, counts beside a label     */
+  --fs-micro: 11px;     /* table headings, badges, Technical details         */
+  --fs-label: 10px;     /* uppercase nav group labels, nothing else          */
+
+  /* 4px base. Every margin and padding snaps to one of these. */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+
+  /* Padding by what the thing IS, not by where it sits. */
+  --pad-card: 10px 12px;
+  --pad-control: 4px 10px;
+  --pad-chip: 2px 8px;
+  --pad-cell: 4px 8px;
+
+  /* `--radius-lg` is gone: a card and a panel are the same kind of surface
+     and looked like two. The pill (999px) stays, for chips and buttons. */
+  --radius-md: 6px;
+  --radius-sm: 4px;
+  --radius-pill: 999px;
+
+  --font-heading: "Sora", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-body: "Work Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #ffffff;
+  color: var(--dentalia-ink);
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  line-height: 1.45;
+}
+
+h1, h2, h3, .brand-word {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--dentalia-ink);
+}
+
+/* Vertical rhythm, 2026-09-15. The type scale alone barely condensed anything
+   because the bulk was never the letters: a `<p>` carried the browser default
+   1em top AND bottom, so a card of five short lines spent more height on
+   margins than on content (measured 188px, of which 102px was content).
+
+   One direction only. Everything pushes DOWN from what precedes it, nothing
+   pushes up, so two siblings can never disagree about the gap between them and
+   there is no margin collapsing to reason about. */
+h1 { font-size: var(--fs-title); margin: 0 0 var(--sp-3); }
+h2 { font-size: var(--fs-section); margin: 0 0 var(--sp-2); }
+h3 { font-size: var(--fs-body); margin: var(--sp-3) 0 var(--sp-1); }
+
+main p { margin: 0 0 var(--sp-2); }
+main p:last-child { margin-bottom: 0; }
+main ul, main ol { margin: 0 0 var(--sp-2); }
+
+a { color: var(--dentalia-action); }
+
+/* Sidebar navigation. Eleven destinations across two audiences do not fit a
+   horizontal bar without either overflowing or wrapping into ragged rows, and
+   an inline group label reads as one more menu item rather than as a heading.
+   A column gives each section a real heading and leaves room to grow. */
+.layout {
+  display: flex;
+  align-items: flex-start;
+  min-height: 100vh;
+}
+
+.sidebar {
+  flex: 0 0 196px;
+  width: 196px;
+  align-self: stretch;
+  position: sticky;
+  top: 0;
+  max-height: 100vh;
+  overflow-y: auto;
+  padding: 14px 10px 24px;
+  background: var(--dentalia-surface);
+  border-right: 1px solid var(--dentalia-border);
+}
+
+.sidebar .brand {
+  display: block;
+  padding: 0 6px 14px;
+  text-decoration: none;
+}
+
+/* Global search. Sits above the nav, not inside it: it is a way IN to the
+   registry rather than one more destination in the list. */
+.nav-search { padding: 0 6px 12px; }
+.nav-search input {
+  width: 100%;
+  padding: 6px 8px;
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  color: var(--dentalia-ink);
+  background: #ffffff;
+  border: 1px solid var(--dentalia-border);
+  border-radius: var(--radius-sm);
+}
+.nav-search input:focus {
+  outline: 2px solid var(--dentalia-primary);
+  outline-offset: -1px;
+}
+
+.sidebar .logo {
+  height: 24px;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.sidebar .brand-word {
+  font-size: var(--fs-body);
+  line-height: 1.25;
+  display: block;
+}
+
+.sidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar .nav-label {
+  margin: 14px 0 3px;
+  padding: 0 6px;
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dentalia-muted);
+}
+
+.sidebar .nav-label:first-child { margin-top: 0; }
+
+.sidebar nav a {
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--dentalia-ink);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: var(--fs-body);
+}
+
+.sidebar nav a:hover { background: var(--dentalia-surface-2); }
+.sidebar nav a.active {
+  background: var(--dentalia-primary);
+  /* The mint STAYS -- this is the nav, and the active item has to keep
+     looking like the active item. Only the letters change: white on #89c8ac
+     is 1.92:1, and the ink is 6.76:1 on the same ground. Nothing else about
+     this rule, or about the sidebar, moves. */
+  color: var(--dentalia-ink);
+}
+
+main {
+  flex: 1 1 auto;
+  min-width: 0;          /* lets .table-wrap actually clip, instead of the
+                            flex item growing to its widest child */
+  max-width: 1100px;
+  padding: var(--sp-4) var(--sp-4) 32px;
+}
+
+/* Menu counts and the health line (office UI redesign spec § 7). The sticky
+   header strip that used to live at the top of every page is gone: its four
+   counters were always about four menu entries, and repeating them above the
+   content was a second place to read the same number. `.nav-shell` is what
+   htmx swaps, so it wraps the whole menu and the line under it. */
+.nav-n {
+  float: right;
+  font-weight: 700;
+  font-size: var(--fs-meta);
+  line-height: 1.3;
+  color: var(--dentalia-muted);
+  font-variant-numeric: tabular-nums;
+}
+.sidebar nav a.active .nav-n { color: #ffffff; }
+
+/* The operator block: one collapsed <details> at the bottom of the menu. Its
+   summary is styled like a group label rather than like an entry -- it is a
+   heading you can open, not a destination. */
+.nav-operator { margin-top: 14px; }
+.nav-operator > summary {
+  padding: 0 6px;
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dentalia-muted);
+  cursor: pointer;
+}
+.nav-operator > summary::marker { color: var(--dentalia-border); }
+.nav-operator > a { display: block; margin-top: 2px; }
+
+/* One line, at the bottom of the sidebar, quieter than every entry above it:
+   it is read when something looks wrong, not on the way to a page. */
+.nav-health {
+  margin: 18px 6px 0;
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+  color: var(--dentalia-muted);
+}
+.nav-health .nav-dot { color: var(--dentalia-ok, #3f6455); }
+.nav-health-bad { color: var(--dentalia-danger); }
+.nav-health-bad .nav-dot { color: var(--dentalia-danger); }
+.nav-health-timeouts { display: block; margin-top: 3px; }
+
+/* Service chips: one per process, on the operator's System status board. They
+   were on the header strip until the strip went (spec § 7): the office reads
+   one health line in the sidebar, operators read the detail here. Quiet by
+   default -- a chip is only ever looked at when something looks wrong. */
+.svc-row { display: flex; gap: 6px; align-items: baseline; margin: 0 0 12px; }
+.svc {
+  font-size: var(--fs-micro);
+  line-height: 1;
+  padding: var(--pad-chip);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--dentalia-border);
+  color: var(--dentalia-muted);
+  cursor: default;
+}
+
+/* Up is the resting state, so it gets a dot and no colour — a row of green
+   pills is the same mistake as a permanently red strip. */
+.svc-up::before { content: "\25CF"; margin-right: 4px; color: var(--dentalia-ok, #3f6455); }
+
+/* Never started. Hollow, not red: a process can be legitimately absent on a
+   machine, and absence is not failure. */
+.svc-off { opacity: .5; }
+.svc-off::before { content: "\25CB"; margin-right: 4px; }
+
+/* The one state worth interrupting for. */
+.svc-down {
+  color: var(--dentalia-danger);
+  border-color: var(--dentalia-danger);
+}
+.svc-down::before { content: "\25CF"; margin-right: 4px; }
+
+/* A row of sibling views under a page heading: the pages that left the menu
+   and are reached from the page they belong to (Coverage gaps and Discovery
+   under Items, the EUDAMED queues under EUDAMED checks, onboarding under
+   Playbooks). */
+.link-row {
+  margin: -6px 0 14px;
+  font-size: var(--fs-meta);
+  color: var(--dentalia-muted);
+}
+.link-row a { margin: 0 2px; }
+.link-row a.link-on { font-weight: 700; }
+
+/* Today. One sentence under the heading, then a stack of cards each carrying
+   its count in its own title -- the number is part of the name of the list,
+   not a tile beside it. */
+.page-lede { margin: -8px 0 16px; color: var(--dentalia-muted); }
+
+/* Tighter than the generic `.card` (Denis, 2026-09-14): four of these stack
+   down the page, and at the shared 14px/16px padding the whole screen was one
+   list per scroll. The count, the sentence and the way in are one compact
+   block. */
+/* The four lists are four peers of the same shape, so they sit in a grid
+   rather than a column (Denis, 2026-09-15). `auto-fit` + `minmax` gives two
+   columns at the normal width and folds back to one when the window cannot
+   hold 260px twice, without a breakpoint of its own. `align-items: start`
+   keeps a short card short instead of stretching it to its neighbour. */
+.today-lists {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  align-items: start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+/* Today's card no longer overrides its padding: the whole app condensed onto
+   `--pad-card` on 2026-09-15, which IS the tight value this page wanted, so
+   the special case went with it. What is left is the bottom margin, which the
+   grid's `gap` replaces -- and it stays `.card.today-list` rather than
+   `.today-list` because `.card` is defined further down the file and would
+   otherwise win on source order at equal specificity. */
+.card.today-list { margin-bottom: 0; }
+.today-list h2 { margin-bottom: 4px; }
+.today-list > p { margin: 0 0 4px; }
+.today-list > p:last-child { margin-bottom: 0; }
+
+/* The way into the list is a link, not a button: it navigates, it does not
+   change anything. It takes the accessible green P7a introduced for controls
+   (#2F7A58, 5.19:1) rather than the page's default link colour, which is still
+   the pale #56b088 at 2.64:1. */
+.today-go { font-weight: 600; }
+.today-go a { color: var(--dentalia-action); text-decoration: none; }
+.today-go a::after { content: " \2192"; }
+.today-go a:hover, .today-go a:focus-visible { text-decoration: underline; }
+.today-n {
+  float: right;
+  font-family: var(--font-heading);
+  font-size: var(--fs-figure);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+#today-coverage .metric { margin: 0 0 4px; font-size: var(--fs-section); }
+#today-failed p { margin: 0 0 6px; }
+#today-failed form { margin-bottom: 12px; }
+
+/* Below the breakpoint the column costs more than it gives: it becomes a
+   horizontal bar again, with the section headings dropped rather than
+   stacked into a tall wall of text. */
+@media (max-width: 860px) {
+  .layout { display: block; }
+  .sidebar {
+    width: auto;
+    max-height: none;
+    position: static;
+    border-right: 0;
+    border-bottom: 1px solid var(--dentalia-border);
+    padding: 10px 14px;
+  }
+  .sidebar .brand { padding-bottom: 10px; }
+  .sidebar nav { flex-direction: row; flex-wrap: wrap; gap: 4px; }
+  .sidebar .nav-label { display: none; }
+  main { max-width: none; padding: 16px 14px 32px; }
+  /* The menu becomes a horizontal bar here, so the counts sit beside their
+     entry rather than floating to a right edge that no longer exists, and the
+     operator block wraps onto its own line. */
+  .nav-n { float: none; margin-left: 5px; }
+  .nav-operator { flex-basis: 100%; margin-top: 4px; }
+  .nav-health { margin: 8px 0 0; }
+}
+
+.card {
+  background: var(--dentalia-surface-3);
+  border: 1px solid var(--dentalia-border);
+  border-radius: var(--radius-md);
+  padding: var(--pad-card);
+  margin-bottom: var(--sp-2);
+}
+
+.card h2 {
+  margin-top: 0;
+  font-size: var(--fs-section);
+}
+
+.stat-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.stat-tile {
+  flex: 1 1 110px;
+  background: #ffffff;
+  border: 1px solid var(--dentalia-border);
+  border-radius: var(--radius-md);
+  padding: var(--pad-card);
+  text-align: center;
+}
+
+.stat-tile .n {
+  font-family: var(--font-heading);
+  font-size: var(--fs-figure);
+  font-weight: 700;
+}
+
+.stat-tile .label {
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--dentalia-muted);
+}
+
+/* A tile that is also the way to the page that resolves it (staged docs ->
+   /staging, dead jobs -> /dead). Same box as a plain tile — the link is the
+   whole tile, not a word inside it. */
+a.stat-tile { text-decoration: none; color: inherit; }
+a.stat-tile:hover { border-color: var(--dentalia-primary-strong); background: var(--dentalia-surface-3); }
+.stat-tile.tile-alert .n { color: var(--dentalia-danger); }
+
+/* Status board headline strip: the six-or-so numbers that answer "is anything
+   wrong right now". Everything else on that page is one tab down. */
+.headline .stat-row { gap: 6px; }
+.headline .stat-tile { flex: 1 1 96px; padding: 8px 6px; }
+.headline .stat-tile .label { text-transform: none; letter-spacing: 0; }
+
+/* CSS-only tabs: radios carry the state, `:checked ~` picks the panel. No JS
+   and no build step (CLAUDE.md: no Node). The radios must stay siblings of
+   both .tab-bar and every .tab-panel for the sibling combinator to reach them.
+   Server-side `checked` (from ?tab=) is what makes a form submit inside a
+   panel come back to the same tab. */
+.tab-radio { position: absolute; opacity: 0; pointer-events: none; }
+
+.tab-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  border-bottom: 1px solid var(--dentalia-border);
+  margin-bottom: 14px;
+}
+.tab-bar label {
+  padding: var(--pad-control);
+  cursor: pointer;
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: var(--fs-body);
+  color: var(--dentalia-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.tab-bar label:hover { color: var(--dentalia-ink); }
+
+.tab-panel { display: none; }
+
+#tab-coverage:checked ~ .tab-bar label[for="tab-coverage"],
+#tab-queue:checked ~ .tab-bar label[for="tab-queue"],
+#tab-spend:checked ~ .tab-bar label[for="tab-spend"],
+#tab-jobs:checked ~ .tab-bar label[for="tab-jobs"] {
+  color: var(--dentalia-ink);
+  border-bottom-color: var(--dentalia-primary-strong);
+}
+#tab-coverage:checked ~ #panel-coverage,
+#tab-queue:checked ~ #panel-queue,
+#tab-spend:checked ~ #panel-spend,
+#tab-jobs:checked ~ #panel-jobs { display: block; }
+
+/* Keyboard: the radios are visually hidden, so focus has to show on the label
+   the user is actually about to activate. */
+#tab-coverage:focus-visible ~ .tab-bar label[for="tab-coverage"],
+#tab-queue:focus-visible ~ .tab-bar label[for="tab-queue"],
+#tab-spend:focus-visible ~ .tab-bar label[for="tab-spend"],
+#tab-jobs:focus-visible ~ .tab-bar label[for="tab-jobs"] {
+  outline: 2px solid var(--dentalia-primary-strong);
+  outline-offset: -2px;
+}
+
+/* Panels hold several small tables that each wasted a full-width row when they
+   were separate cards. Two columns until the viewport can't hold them. */
+.panel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 4px 24px;
+  align-items: start;
+}
+.panel-grid > section { min-width: 0; }
+.panel-grid > section > h3 { margin-top: 10px; }
+.panel-grid > .span-2 { grid-column: 1 / -1; }
+/* .table-wrap's 720px floor is for the wide registry tables; inside a ~300px
+   grid column it would give every two-column summary a scrollbar. */
+.panel-grid > section:not(.span-2) .table-wrap > table { min-width: 0; }
+.cell-muted { color: var(--dentalia-muted); font-size: var(--fs-meta); }
+
+table { width: 100%; border-collapse: collapse; font-size: var(--fs-body); }
+
+/* A wide table scrolls inside its own box instead of pushing the page body
+   sideways. main is capped at 980px while tables are width:100%, so the
+   7- and 8-column registry tables had nowhere to go. Wrap the table, not the
+   page: the nav, headings and filters must stay put while the columns move. */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.table-wrap > table { min-width: 720px; }
+th, td { text-align: left; padding: var(--pad-cell); border-bottom: 1px solid var(--dentalia-border); }
+/* Timestamps and durations: wrapping a date mid-value makes a column of them
+   unscannable, which is the only thing that column is for. */
+td.nowrap, th.nowrap { white-space: nowrap; }
+
+/* A page's explanatory prose, folded behind its first sentence (_ui.html
+   `intro`). The summary has to read as a sentence rather than a control, so it
+   carries the hint colour and only the marker signals it opens. */
+.page-intro {
+  margin: 0 0 14px;
+  color: var(--dentalia-muted);
+  font-size: var(--fs-body);
+}
+.page-intro > summary {
+  cursor: pointer;
+  color: var(--dentalia-muted);
+}
+/* The marker is a glyph a person looks at, so it obeys the same rule as
+   the text beside it: never the mint. */
+.page-intro > summary::marker { color: var(--dentalia-action); }
+.page-intro-body {
+  margin-top: 6px;
+  padding-left: 14px;
+  border-left: 2px solid var(--dentalia-border);
+}
+
+/* A JSON blob inside a table cell. Closed it is one word wide, so it stops
+   dictating the table's layout; open it is a normal <pre>, scrolling on its
+   own rather than widening the row. */
+.cell-json > summary {
+  cursor: pointer;
+  color: var(--dentalia-muted);
+  font-size: var(--fs-meta);
+}
+.cell-json > pre {
+  margin: 6px 0 0;
+  max-width: 380px;
+  max-height: 240px;
+  overflow: auto;
+  font-size: var(--fs-meta);
+  background: var(--dentalia-surface);
+  border: 1px solid var(--dentalia-border);
+  border-radius: var(--radius-sm);
+  padding: var(--pad-cell);
+}
+/* The reviewer's reason on the Decisions page, above the collapsed JSON it
+   also lives in: the one part of a decision's detail a person wrote. */
+.audit-note { display: block; max-width: 380px; font-size: var(--fs-body); margin-bottom: 2px; }
+th { color: var(--dentalia-muted); font-weight: 600; font-size: var(--fs-micro); text-transform: uppercase; }
+
+.badge {
+  display: inline-block;
+  padding: var(--pad-chip);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  color: #ffffff;
+}
+.badge-pending { background: #9aa5a1; }
+.badge-running { background: #4a90d9; }
+.badge-done { background: var(--dentalia-action); }
+.badge-failed { background: var(--dentalia-amber); color: #33312b; }
+.badge-dead { background: var(--dentalia-danger); }
+
+/* document/link status (registry visibility, S1.8 Task 6) — distinct from the
+   job-status badges above; a document/link is never "running" or "dead". */
+.badge-staged { background: var(--dentalia-amber); color: #33312b; }
+.badge-production { background: var(--dentalia-action); }
+.badge-rejected { background: var(--dentalia-danger); }
+.badge-superseded { background: #9aa5a1; }
+/* `filed` (migration 025) had no rule at all, so it inherited the base badge's
+   white text on no background and rendered invisible on every white row —
+   155 of ~314 documents wearing a badge nobody could see. Outlined rather
+   than solid, deliberately: the solid badges each assert something about a
+   document (live / awaiting a decision / refused / replaced), while `filed`
+   is the absence of any claim — correct, complete, in nobody's queue. */
+.badge-filed {
+  background: transparent;
+  color: var(--dentalia-muted);
+  border: 1px solid var(--dentalia-border);
+  /* the border would otherwise make it a pixel taller than its neighbours */
+  padding: 0 7px;
+}
+
+/* Expiry board (Task 7): the date came from the cited certificate, not from
+   the document itself — a DoC carries no expiry of its own under MDR Annex
+   IV, so this marks a real date with a borrowed source. */
+.badge-inherited { font-style: italic; }
+
+/* /emails: the poll-time body summary. Lighter than the subject so it reads as
+   context ABOUT the message, never as the message itself -- the body is not
+   stored (invariant 12).
+
+   Three stacked lines rather than one run-on paragraph: subject, then the
+   intent badge leading the summary, then the model that produced it. The
+   attribution is deliberately the smallest thing in the cell -- it has to be
+   present (a summary must never be mistaken for the sender's words) and it
+   must not compete with the sentence it annotates. */
+.email-subject { font-weight: 500; }
+
+.email-summary {
+  margin-top: 0.35rem;
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+  color: var(--dentalia-muted);
+}
+
+.email-summary-line { margin: 0; }
+
+/* The badge sits on the text baseline instead of stretching the line box, so
+   a one-line summary and a three-line one have the same leading. */
+.email-summary-line .badge {
+  margin-right: 0.4rem;
+  vertical-align: baseline;
+}
+
+.email-summary-src {
+  margin: 0.2rem 0 0;
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--dentalia-muted);
+  opacity: 0.75;
+}
+
+/* A document row is only "live" (consumer-visible) when both the document
+   and its item link are production — tint everything else so "why is this
+   not published" is visible at a glance, not just in a badge column.
+   row-superseded is visually distinct from row-staged: a superseded
+   document was published once and has since been replaced (link status can
+   still read "production" — supersession only flips the document), which is
+   a different state from "never made it to production yet". */
+tr.row-staged { background: var(--dentalia-surface-2); }
+tr.row-superseded { background: #ececea; }
+/* Expiry board: inside 30 days is the horizon where an email has to go out
+   now rather than next month, and the board is sorted by urgency, so this
+   marks where the reader should stop scrolling. */
+tr.row-urgent { background: #fff4e2; }
+
+/* Import confirm screen: a counter that moved between the preview and the
+   write. Applying re-diffs against the catalogue as it stands at write time,
+   so the two columns are allowed to disagree — but a disagreement is the one
+   thing on that table worth finding without reading every row. */
+tr.differs { background: #fff4e2; }
+tr.differs th { font-weight: 600; }
+
+/* A dead-job group's heading is an error message, not a title: it needs to be
+   readable at length and to look like machine output, or the reader takes it
+   for a section name and stops distinguishing one card from the next. An h3
+   since it sits inside the Failed page's developer section; `margin-top: 0`
+   keeps the look it had as the card's own h2 (`.card h2`). */
+.dead-cause {
+  font-family: var(--font-body);
+  font-size: var(--fs-section);
+  font-weight: 600;
+  line-height: 1.35;
+  margin-top: 0;
+  margin-bottom: 2px;
+  overflow-wrap: anywhere;
+}
+
+form .field { margin-bottom: 12px; }
+form label {
+  display: block;
+  font-weight: 600;
+  font-size: var(--fs-meta);
+  margin-bottom: 4px;
+  color: var(--dentalia-muted);
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.filter-row .field { margin-bottom: 0; min-width: 160px; }
+.filter-row .field:has(input[type="text"]) { flex: 1 1 240px; }
+.filter-row .filter-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: auto;
+}
+.btn-clear {
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--dentalia-muted);
+  text-decoration: none;
+}
+.btn-clear:hover { color: var(--dentalia-ink); }
+
+/* A link drawn as a button (`.btn`) is still an <a>: without this it carries
+   the browser's underline. */
+a.btn { text-decoration: none; }
+
+/* Missing documents: one chip per manufacturer (office UI redesign spec § 5).
+   Links rather than a form, so a filter is an address. The selected chip is
+   marked by weight and border, not by white text on the mint, which does not
+   reach a readable contrast. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.chip {
+  display: inline-block;
+  padding: var(--pad-chip);
+  border: 1px solid var(--dentalia-border);
+  border-radius: var(--radius-pill);
+  background: #ffffff;
+  color: var(--dentalia-ink);
+  font-size: var(--fs-meta);
+  text-decoration: none;
+  cursor: pointer;
+}
+.chip:hover { background: var(--dentalia-surface-2); }
+.chip-on {
+  background: var(--dentalia-surface-2);
+  border-color: var(--dentalia-primary-strong);
+  font-weight: 600;
+}
+.chip-more > summary { list-style: none; }
+.chip-more > summary::-webkit-details-marker { display: none; }
+.chip-more[open] { flex-basis: 100%; }
+.chip-more-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+
+.payload {
+  background: #ffffff;
+  border: 1px solid var(--dentalia-border);
+  border-radius: var(--radius-md);
+  padding: var(--pad-card);
+  overflow-x: auto;
+  font-family: ui-monospace, monospace;
+  font-size: var(--fs-meta);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+input[type="text"], input[type="datetime-local"], select, textarea {
+  width: 100%;
+  padding: var(--pad-control);
+  border: 1px solid var(--dentalia-border);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  color: var(--dentalia-ink);
+}
+
+textarea { min-height: 96px; font-family: ui-monospace, monospace; }
+
+/* Type-to-filter box injected above any long <select> (base.html). It sits in
+   the flow immediately above the picker it filters, so the pair reads as one
+   control rather than as a second, unrelated search. */
+.select-filter { margin-bottom: 6px; }
+.select-filter input {
+  width: 100%;
+  padding: var(--pad-control);
+  border: 1px solid var(--dentalia-border);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  color: var(--dentalia-ink);
+}
+.select-filter input:focus {
+  outline: 2px solid var(--dentalia-primary);
+  outline-offset: -1px;
+}
+.select-filter .hint { margin-top: 2px; }
+
+.hint { font-size: var(--fs-micro); color: var(--dentalia-muted); margin-top: 3px; }
+/* same muted secondary text as .hint, but riding alongside its label instead
+   of under it — a raw BC code next to the canonical manufacturer name doubled
+   every Items row's height when it sat on its own line */
+.hint-inline { font-size: var(--fs-micro); color: var(--dentalia-muted); white-space: nowrap; }
+
+/* The primary button. One colour for every action that writes or queues
+   something, so "the green pill" means the same thing on every screen. */
+button, .btn {
+  display: inline-block;
+  background: var(--dentalia-action);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: var(--pad-control);
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: var(--fs-body);
+  cursor: pointer;
+}
+button:hover, .btn:hover { background: var(--dentalia-action-strong); }
+/* A keyboard user has to see where they are. The browser default outline is
+   drawn tight against a 999px pill and half-disappears into it. */
+button:focus-visible, .btn:focus-visible {
+  outline: 2px solid var(--dentalia-action-strong);
+  outline-offset: 2px;
+}
+/* Every disabled button, not just the ones that thought to say so. A disabled
+   control carries the reason it is disabled in its own label, so it is the one
+   state that must stay readable. */
+button[disabled], .btn[disabled] {
+  background: var(--dentalia-disabled-bg);
+  color: var(--dentalia-disabled-ink);
+  cursor: not-allowed;
+}
+button[disabled]:hover, .btn[disabled]:hover {
+  background: var(--dentalia-disabled-bg);
+}
+
+/* One row of buttons under a form. The status posts are separate <form>s
+   (a form cannot nest inside a form), so flex is what puts them on one line;
+   the edit form's own submit reaches it by id from outside. */
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: var(--sp-2);
+}
+.form-actions form { margin: 0; }
+
+.result { margin-top: 12px; }
+.result.ok {
+  background: var(--dentalia-surface-2);
+  border: 1px solid var(--dentalia-primary);
+  color: var(--dentalia-ink);
+  border-radius: var(--radius-md);
+  padding: var(--pad-card);
+}
+.result.error {
+  background: #fdecea;
+  border: 1px solid var(--dentalia-danger);
+  color: var(--dentalia-danger);
+  border-radius: var(--radius-md);
+  padding: var(--pad-card);
+}
+
+/* /staging review rows. The board is a queue over unbounded tables (5.8k open
+   grouping suggestions when this was written), so rows render collapsed and
+   fetch their detail on expand. Native <details> rather than JS: HTMX's
+   `toggle once` trigger loads the body on first open, and open/close after
+   that costs nothing. The summary is a grid so the columns line up down the
+   list the way a table would, without a table's all-or-nothing row content. */
+.stage-list {
+  border: 1px solid var(--dentalia-border);
+  border-radius: var(--radius-md);
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.stage-row + .stage-row { border-top: 1px solid var(--dentalia-border); }
+
+.stage-row summary {
+  display: grid;
+  grid-template-columns: 7.5rem 9rem 11rem 10rem 9rem 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: var(--pad-control);
+  cursor: pointer;
+  font-size: var(--fs-body);
+  list-style-position: inside;
+}
+.stage-row summary:hover { background: var(--dentalia-surface-2); }
+/* Two row shapes share this styling: a suggestion row IS the <details>, a
+   document row WRAPS one (so its decide buttons can sit outside the summary).
+   Both selectors are needed — matching only one silently drops the open-state
+   styling for the other. */
+.stage-row[open] > summary,
+.stage-row > details[open] > summary {
+  background: var(--dentalia-surface-2);
+  border-bottom: 1px solid var(--dentalia-border);
+}
+/* The row a deep link (`/staging?doc=N`) landed on. It is already expanded;
+   this is what tells the reviewer WHICH of 50 rows they were sent to, after
+   the browser has scrolled the anchor into view. */
+.stage-row-focus {
+  border-left: 3px solid var(--dentalia-primary-strong);
+  background: var(--dentalia-surface-2);
+}
+.stage-row summary .c-id { font-weight: 600; }
+.stage-row summary .c-links {
+  color: var(--dentalia-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* On a suggestion row this column carries both ends of a proposed move. The
+   item's own name is the thing being decided about, so it reads at full
+   contrast; the destination group stays muted behind the arrow. */
+.stage-row summary .c-links .c-name { color: var(--dentalia-ink); }
+.stage-row summary .c-links .c-dest { color: var(--dentalia-muted); }
+
+/* Below ~760px the six summary columns stop fitting; stack them rather than
+   letting the grid squeeze every cell to unreadable width. */
+@media (max-width: 760px) {
+  .stage-row summary { grid-template-columns: 1fr 1fr; }
+}
+
+/* Document rows (office UI redesign, spec § 6): grouped under a manufacturer
+   header, each row a name line ("GC · declaration of conformity (MDR)"), a
+   quieter line with the file and its dates, and the plain reason it waits.
+   They were a six-column grid under a header row until 2026-09-11; the name
+   now leads, so a row is read as a line rather than scanned by column. The
+   right padding is the gutter "Open" is positioned into.
+   The suggestion rows keep their own column grid above -- they ARE tabular. */
+.review-list { --review-gutter: 5.5rem; }
+.stage-row > .stage-detail > summary {
+  display: grid;
+  grid-template-columns: 0.9rem 1fr;
+  align-items: center;
+  gap: 2px 10px;
+  padding: 8px var(--review-gutter) 8px 10px;
+  font-size: var(--fs-body);
+}
+.stage-row .c-title { font-weight: 600; }
+.stage-row .c-sub {
+  grid-column: 2;
+  font-size: var(--fs-meta);
+  color: var(--dentalia-muted);
+  overflow-wrap: anywhere;
+}
+
+/* One manufacturer's documents: "GC 12 documents". A header row inside the
+   list's own frame, tinted like the open-row state so it reads as a divider
+   rather than as another row. */
+.review-group {
+  margin: 0;
+  padding: 8px 10px 6px;
+  font-size: var(--fs-body);
+  font-weight: 700;
+  background: var(--dentalia-surface-2);
+  border-bottom: 1px solid var(--dentalia-border);
+}
+.review-group:not(:first-child) { border-top: 1px solid var(--dentalia-border); }
+.review-group .review-group-n { font-weight: 400; color: var(--dentalia-muted); margin-left: 4px; }
+
+/* The reason chips: one question at a time, filtered on the server. */
+.reason-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.reason-chip {
+  padding: var(--pad-chip);
+  border: 1px solid var(--dentalia-border);
+  border-radius: var(--radius-pill);
+  background: #ffffff;
+  color: var(--dentalia-ink);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+}
+.reason-chip:hover { background: var(--dentalia-surface-2); color: var(--dentalia-ink); }
+.reason-chip.is-active {
+  background: var(--dentalia-action);
+  border-color: var(--dentalia-action);
+  color: #ffffff;
+}
+/* A <summary> stops being a list-item the moment it is given any other
+   display, which takes its disclosure triangle with it. This chevron is then
+   the only thing on the row saying it opens, so it is drawn back by hand. */
+.stage-row .c-toggle::before { content: "\25B8"; color: var(--dentalia-muted); }
+.stage-row > details[open] > summary .c-toggle::before { content: "\25BE"; }
+/* Why the row is here at all: a sentence, so it gets its own line spanning the
+   grid rather than a column that would clip it. */
+.stage-row .row-reason {
+  grid-column: 2 / -1;
+  margin-top: 2px;
+  font-size: var(--fs-meta);
+  color: var(--dentalia-ink);
+}
+
+/* "Open", the one thing a collapsed row offers. It is part of the <summary>,
+   so a click on it is a click on the disclosure; drawn as a small outlined
+   button in the right-hand gutter so the row says how it is used. Once the
+   row is open the chevron carries the state and the label steps aside. */
+.stage-row { position: relative; }
+.stage-row .c-open {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  padding: var(--pad-chip);
+  border: 1px solid var(--dentalia-action);
+  border-radius: var(--radius-pill);
+  color: var(--dentalia-action);
+  background: #ffffff;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+}
+.stage-row summary:hover .c-open { background: var(--dentalia-surface-2); }
+.stage-row > details[open] > summary .c-open { visibility: hidden; }
+
+/* Below ~1000px the gutter costs the name line too much width. Let "Open"
+   fall into the flow under the reason instead of overlapping it. */
+@media (max-width: 1000px) {
+  .stage-row > .stage-detail > summary { padding-right: 10px; }
+  .stage-row .c-open { position: static; grid-column: 2; justify-self: start; }
+}
+
+.decide-actions { display: flex; gap: 6px; align-items: center; }
+/* C17 link decisions live INSIDE a table cell, so they get no absolute
+   gutter and no positioning of their own — they flow in the
+   cell like any other content. Small buttons, because a staged-links table is
+   scanned far more often than it is acted on. */
+.link-actions { display: flex; gap: 6px; align-items: center; margin: 0; }
+.link-actions button { padding: var(--pad-control); font-size: var(--fs-meta); white-space: nowrap; }
+/* Approve IS the primary action, so it wears the primary colour rather than a
+   second green of its own -- the two were a shade apart and read as two
+   different kinds of button. */
+.btn-approve { background: var(--dentalia-action); }
+.btn-approve:hover { background: var(--dentalia-action-strong); }
+.btn-approve[disabled] {
+  background: var(--dentalia-disabled-bg);
+  color: var(--dentalia-disabled-ink);
+  cursor: not-allowed;
+}
+/* Danger, outlined: a reject is not the thing to draw the eye to, but its
+   label still has to be readable (#B3261E on white, 6.54:1). */
+.btn-reject {
+  background: #ffffff;
+  color: var(--dentalia-danger-ink);
+  border: 1px solid var(--dentalia-danger-ink);
+}
+.btn-reject:hover { background: #fdecea; color: var(--dentalia-danger-ink); }
+.btn-reject[disabled] {
+  background: var(--dentalia-disabled-bg);
+  color: var(--dentalia-disabled-ink);
+  border-color: var(--dentalia-border);
+  cursor: not-allowed;
+}
+
+/* Expanded panel: plain-language facts first, machinery last. The facts sit in
+   three labelled groups side by side (identity / validity / coverage) -- as one
+   11rem-label list they ran the full width of the card and made the reviewer
+   read seven rows to find the one they wanted. */
+.fact-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 12px 28px;
+  margin-bottom: 12px;
+}
+.fact-groups h4 {
+  margin: 0 0 4px;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dentalia-muted);
+}
+.fact-groups .facts { grid-template-columns: max-content 1fr; margin: 0; }
+.fact-groups .facts dd .hint { display: block; }
+.facts { display: grid; grid-template-columns: 11rem 1fr; gap: 4px 12px; margin: 0 0 12px; }
+.facts dt { color: var(--dentalia-muted); font-size: var(--fs-micro); text-transform: uppercase; font-weight: 600; }
+.facts dd { margin: 0; font-size: var(--fs-body); }
+.unknown { color: var(--dentalia-danger); }
+
+.why {
+  background: var(--dentalia-surface-2);
+  border-left: 3px solid var(--dentalia-primary-strong);
+  border-radius: var(--radius-sm);
+  padding: var(--pad-card);
+  font-size: var(--fs-body);
+}
+
+/* The panel's one action bar: read the file on the left, decide on the right.
+   `margin-left: auto` on the decide group is what splits them, so adding a
+   left-hand action later needs no change here. */
+.panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--dentalia-border);
+}
+.panel-actions .decide-actions { margin-left: auto; }
+/* Opening the PDF is what a reviewer does BEFORE deciding, not the decision:
+   outlined so the two green pills on the right stay the loudest thing here. */
+.btn-secondary {
+  background: #ffffff;
+  color: var(--dentalia-action);
+  border: 1px solid var(--dentalia-action);
+}
+.btn-secondary:hover { background: var(--dentalia-surface-2); }
+.btn-secondary[disabled] {
+  background: var(--dentalia-disabled-bg);
+  color: var(--dentalia-disabled-ink);
+  border-color: var(--dentalia-border);
+  cursor: not-allowed;
+}
+
+.corrections, .technical {
+  border-top: 1px solid var(--dentalia-border);
+  margin-top: 12px;
+  padding-top: 10px;
+}
+.corrections > summary, .technical > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: var(--fs-body);
+  color: var(--dentalia-muted);
+}
+.technical h4 { margin: 12px 0 4px; font-size: var(--fs-meta); text-transform: uppercase; color: var(--dentalia-muted); }
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0 12px;
+  margin-top: 8px;
+}
+
+/* Manufacturer-binding picker. Tinted and boxed like `.why` rather than folded
+   into the optional corrections block: this is not a correction to something
+   the machine read, it is the one input standing between the document and its
+   decision, and it is the only reason these rows sat in the queue. */
+.mfr-bind {
+  background: var(--dentalia-surface-2);
+  border-left: 3px solid var(--dentalia-amber);
+  border-radius: var(--radius-sm);
+  padding: var(--pad-card);
+  margin: 12px 0;
+}
+.mfr-bind > label {
+  display: block;
+  font-weight: 600;
+  font-size: var(--fs-body);
+  margin-bottom: 4px;
+}
+.mfr-bind > select { max-width: 460px; width: 100%; }
+.mfr-bind > .select-filter { max-width: 460px; }
+.mfr-bind > .hint { margin: 6px 0 0; }
+
+/* Reject asks why (spec § 3, P1a): revealed under the action bar by Reject…,
+   boxed in the danger colour so it reads as the start of a different decision
+   rather than more of the panel. `hidden` is honoured explicitly because any
+   display rule on the form would otherwise override it. */
+.reject-form {
+  background: #fdf6f5;
+  border-left: 3px solid var(--dentalia-danger);
+  border-radius: var(--radius-sm);
+  padding: var(--pad-card);
+  margin: 12px 0 0;
+}
+.reject-form[hidden] { display: none; }
+.reject-form fieldset { border: none; margin: 0 0 8px; padding: 0; }
+.reject-form legend { font-weight: 600; font-size: var(--fs-body); margin-bottom: 6px; padding: 0; }
+.reject-form fieldset label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 14px 4px 0;
+  font-size: var(--fs-body);
+  font-weight: normal;
+}
+.reject-form .field { max-width: 460px; }
+.reject-form .field input { width: 100%; }
+.reject-actions { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
+.bind-confirm:empty { display: none; }
+
+.stage-body { padding: 4px 10px 12px; }
+.stage-body h3:first-child, .stage-body .fact-groups { margin-top: 8px; }
+
+/* The open Review panel (spec § 6): page 1 of the PDF on the left, the facts,
+   the items and the decision on the right. The frame is tall enough to read a
+   declaration's first page without scrolling the page itself; "Open full
+   size" is for the rest. One column below ~1000px, where two would squeeze
+   the PDF to an unreadable width. */
+.review-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 16px 20px;
+  align-items: start;
+  margin-top: 8px;
+}
+.review-pdf-frame {
+  display: block;
+  width: 100%;
+  height: 72vh;
+  min-height: 420px;
+  border: 1px solid var(--dentalia-border);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+}
+.review-pdf-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin: 6px 0 0;
+  font-size: var(--fs-body);
+}
+.review-facts { grid-template-columns: max-content 1fr; }
+.review-facts dd .hint { display: block; }
+.approve-scope { margin: 12px 0 0; font-size: var(--fs-body); }
+.approve-scope p { margin: 0 0 6px; }
+.approve-line { font-weight: 600; }
+.approve-items { margin: 0 0 6px; padding-left: 18px; }
+.approve-items li { margin: 2px 0; }
+.more-items { margin: 0 0 6px; }
+.more-items > summary { cursor: pointer; color: var(--dentalia-action); font-weight: 600; }
+.review-side .corrections { margin-top: 10px; }
+@media (max-width: 1000px) {
+  .review-panel { grid-template-columns: 1fr; }
+  .review-pdf-frame { height: 60vh; }
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+}
+.pager .hint { margin-top: 0; }
+.pager-controls { display: flex; gap: 8px; }
+.pager-btn { padding: var(--pad-control); font-size: var(--fs-meta); }
+
+/* .btn-clear is written for an <a>; on the suggestions filter it is a button
+   (a link would need a page load to clear an HTMX-swapped section). */
+button.btn-clear {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--font-body);
+}
+button.btn-clear:hover { background: none; color: var(--dentalia-ink); }
+
+/* --------------------------------------------------------------------------
+   A long table scrolls inside its own box instead of pushing the page down.
+
+   Measured 2026-08-18: /manufacturers/IVOCLAR was 23.065px tall (14,5
+   viewports) because it printed 500 item rows before reaching the documents
+   the page exists to show, and /documents/310 was 11.798px for the same
+   reason at 356 rows. The rows are worth keeping -- an auditor does ask which
+   items a certificate covers -- they are just not worth ten screens ahead of
+   everything else.
+
+   `.tall` composes with `.table-wrap`, which already owns horizontal overflow,
+   so a wide AND long table scrolls both ways in one box. The header sticks,
+   because a scrolled table whose column names have gone is unreadable; it
+   needs an opaque background of its own or the rows show through it.
+   -------------------------------------------------------------------------- */
+.table-wrap.tall {
+  max-height: 24rem;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--dentalia-border);
+}
+.table-wrap.tall thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--dentalia-surface-3);
+}
+
+/* Tabs on the manufacturer page. The mechanism is the status board's (radios
+   carry the state, `:checked ~` picks the panel); only the id list is new,
+   since the selectors above are written per id rather than per attribute. */
+#tab-mfr-items:checked ~ .tab-bar label[for="tab-mfr-items"],
+#tab-mfr-production:checked ~ .tab-bar label[for="tab-mfr-production"],
+#tab-mfr-all:checked ~ .tab-bar label[for="tab-mfr-all"] {
+  color: var(--dentalia-ink);
+  border-bottom-color: var(--dentalia-primary-strong);
+}
+#tab-mfr-items:checked ~ #panel-mfr-items,
+#tab-mfr-production:checked ~ #panel-mfr-production,
+#tab-mfr-all:checked ~ #panel-mfr-all { display: block; }
+
+/* Scheduler panel verdicts. Deliberately not reusing the job-status badges: a
+   cron is never "running" or "dead", and the two vocabularies would read as
+   the same thing if they wore the same colours. `stale` is the loud one — it
+   means a cron that WAS running has stopped, which is worse than `never`,
+   where nothing was ever expected to have happened yet. `never` therefore
+   borrows `badge-filed`'s outline: the absence of a claim, not an alarm. */
+.badge-verdict-ok { background: var(--dentalia-action); }
+.badge-verdict-due { background: #9aa5a1; }
+.badge-verdict-stale { background: var(--dentalia-amber); color: #33312b; }
+.badge-verdict-never {
+  background: transparent;
+  color: var(--dentalia-muted);
+  border: 1px solid var(--dentalia-border);
+  padding: 0 7px;
+}
+
+/* Completeness card (web/templates/_ui.html).
+
+   Severity is the only thing that carries colour here, and it is deliberately
+   NOT the registry's `badge-*` scale: those name a row's status in the
+   pipeline (staged, production, filed), while these name whether a legal duty
+   is met. The two look alike and mean different things, so they get different
+   class names -- a reader grepping `badge-production` should never land on a
+   compliance verdict. Palette is the existing one, unchanged. */
+.sev {
+  display: inline-block;
+  padding: var(--pad-chip);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  color: #fff;
+  min-width: 18px;
+  text-align: center;
+}
+.sev-ok { background: var(--dentalia-action); }
+.sev-warn { background: var(--dentalia-amber); color: #33312b; }
+.sev-bad { background: var(--dentalia-danger); }
+/* Not a verdict: the row is either not scored or has nothing in it. Outlined
+   rather than filled, the same way `badge-filed` marks an absence. */
+.sev-none {
+  background: transparent;
+  color: var(--dentalia-muted);
+  border: 1px solid #cfd8d4;
+}
+
+/* A left edge on the whole card so the worst row is legible from across the
+   room, which is how this page gets used -- someone checks a supplier before
+   a delivery, not while reading. */
+.completeness { border-left: 3px solid transparent; }
+.completeness-ok { border-left-color: var(--dentalia-primary-strong); }
+.completeness-warn { border-left-color: var(--dentalia-amber); }
+.completeness-bad { border-left-color: var(--dentalia-danger); }
+
+.completeness-headline { margin: 0 0 4px; font-size: var(--fs-body); }
+
+/* Playbook drift: the repo JSON and the row it was imported into have parted
+   ways. Same left-edge idiom as `.completeness` above, for the same reason --
+   this is a status you should catch on the way past, not one you go looking
+   for. `ok` is drawn too, deliberately: a check that renders only on failure
+   is indistinguishable from a check that stopped running. */
+.drift { border-left: 3px solid transparent; }
+.drift-ok   { border-left-color: var(--dentalia-primary-strong); }
+.drift-warn { border-left-color: var(--dentalia-amber); }
+.drift-bad  { border-left-color: var(--dentalia-danger); }
+.drift ul { margin: 4px 0 0; padding-left: 18px; }
+.drift li { margin-bottom: 3px; }
+/* Evidence rows sit visually below the scored ones without being hidden: they
+   are useful and they are not duties. */
+tr.completeness-evidence td { color: var(--dentalia-muted); }
+
+/* A form that has to sit on the same line as the value it acts on — the
+   EUDAMED lookup beside a document's Basic UDI-DI. A bare <form> is
+   display:block and would drop the button onto its own row. */
+.inline-form { display: inline; margin-left: 0.6rem; }
+.inline-form button { font-size: var(--fs-micro); padding: var(--pad-chip); }

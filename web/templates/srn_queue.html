@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}EUDAMED ID (SRN) queue — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>{{ "srn" | word }} queue</h1>
+{% call ui.intro("EUDAMED identities the system is not sure about, waiting for a person to say yes or no.") %}
+  Every manufacturer in EUDAMED has an <strong>{{ "srn" | word }}</strong>, a single registration
+  number that says which company the EU register means. When the register's spelling matches ours
+  exactly, the system stores it and this list never sees it. Anything less certain waits here,
+  because the wrong number eventually becomes an email to the wrong supplier.
+  <strong>Confirm</strong> lets that company's certificates be checked against this manufacturer's
+  catalogue; <strong>Reject</strong> records that the two are not the same company and sticks:
+  the register is re-read every month, and a rejection that came back would be a queue nobody
+  could ever clear.
+{% endcall %}
+
+{% if rows %}
+<p class="hint">{{ total }} waiting for a decision.</p>
+<div class="card">
+{{ ui.srn_confirm(rows) }}
+</div>
+{% else %}
+<div class="card"><p class="hint">Nothing waiting: every uncertain EUDAMED identity has been
+  confirmed or rejected.</p></div>
+{% endif %}
+{% endblock %}

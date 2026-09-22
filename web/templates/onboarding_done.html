@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ canonical_name }} — done{% endblock %}
+{% block content %}
+<h1>{{ canonical_name }} is set up</h1>
+<p class="page-lede">Step 4 of 4: what happens next, and back to the queue.</p>
+<p class="hint"><a href="/onboarding">&laquo; Onboarding queue</a> ·
+  playbook <a href="/playbooks/{{ slug }}">{{ slug }}</a></p>
+
+{% set step = 4 %}{% include "_onboarding_steps.html" %}
+
+<div class="card">
+  <h2>What happens next</h2>
+  {# Stated in the order the pipeline does it, and only what is actually true
+     for THIS supplier: a playbook with no library page must not be told its library
+     will be crawled. #}
+  <ul>
+    <li>{{ canonical_name }}'s <strong>{{ items | num }}</strong> item{{ "" if items == 1 else "s" }}
+      go into the next search run{% if domains %}, restricted to
+      {% for d in domains %}<code>{{ d }}</code>{% if not loop.last %} and {% endif %}{% endfor %}{% endif %}.</li>
+    {% if crawl %}
+    <li>The documents on
+      {% for c in crawl %}<a href="{{ c.index_url }}" rel="noopener noreferrer" target="_blank">their library page</a>{% if not loop.last %} and {% endif %}{% endfor %}
+      are fetched politely — one request at a time, spaced out — and read.</li>
+    {% else %}
+    <li>No library page was set, so documents are found one item at a time by
+      searching. You can add a library page later from
+      <a href="/playbooks/{{ slug }}">the playbook page</a>.</li>
+    {% endif %}
+    <li>Anything the system is unsure about waits for you on
+      <a href="/staging">Review</a>. <strong>Nothing is published without a
+      person.</strong></li>
+    <li>All of this is editable and revertable on
+      <a href="/playbooks/{{ slug }}">the playbook page</a> · every save is a
+      numbered version with your name on it.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h2>Keep going</h2>
+  <p>
+    <a class="button" href="/onboarding">Take the next supplier</a>
+  </p>
+</div>
+
+{% include "_onboarding_rail.html" %}
+{% endblock %}

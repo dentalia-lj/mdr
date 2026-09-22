@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}Queues &amp; health — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>Queues &amp; health</h1>
+{% call ui.intro("The five pages about running the machine, and how much each one holds.") %}
+  These used to sit in the menu as five separate entries. Nothing here is a compliance decision:
+  it is what the pipeline is doing, what it could not interpret, and what it gave up on. A
+  <strong>Manual</strong> item is read here and decided on <a href="/staging">Review</a>, which is
+  what carries the document and its evidence. Every page is unchanged and still reachable by its
+  own address.
+{% endcall %}
+
+<div class="card">
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th>Page</th><th>How many</th><th>What it holds</th></tr>
+    </thead>
+    <tbody>
+      {% for p in pages %}
+      <tr>
+        <td><a href="{{ p.href }}">{{ p.label }}</a></td>
+        {# A zero renders as a dash for the same reason the EUDAMED digest does
+           it: five rows reading "0" trains the eye past the one that is not.
+           Every figure carries its unit: the column used to be headed
+           "Waiting", and Data quality's figure is standing notes, not work
+           waiting for anyone (spec § 8). #}
+        <td class="nowrap">{% if p.count %}<strong>{{ p.count | num }}</strong> <span class="cell-muted">{{ p.unit }}</span>{% else %}—{% endif %}</td>
+        <td class="cell-muted">{{ p.blurb }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,49 @@
+-- `filed`: read correctly, attributed correctly, and covering nothing we sell.
+--
+-- The IVOCLAR backfill (173 documents, 2026-08-14) left 207 documents `staged`.
+-- Of the 1.605 REF codes those documents name, Dentalia stocks SIX. Checking
+-- `Cention Forte, Cention Primer.pdf` by hand: its six codes (761930,
+-- 740829WW..740833WW) return zero rows in `item_mirror` by `item_ref`, by
+-- `mfr_ref`, with and without the WW market suffix, and `CENTION` matches
+-- nothing by name either. Dentalia does not sell Cention.
+--
+-- This is not a matching failure. A manufacturer publishes documents for their
+-- whole product line; a distributor buys a slice of it. The REF gate behaved
+-- exactly as invariant 3 requires and correctly found no overlap.
+--
+-- What was wrong is where such a document RESTS. `staged` means "probably
+-- belongs in the registry, a human should confirm", and no human can confirm
+-- coverage of a product the company does not sell -- so all 181 would be
+-- opened, rejected, and regenerated on the next sweep. A queue whose items can
+-- only ever be rejected is worse than no queue: it teaches the reviewer to
+-- skim, and hides the genuinely staged documents among the noise.
+--
+-- `filed` is therefore a DISPOSITION, not a judgement:
+--
+--   production -- the registry asserts this document covers specific items
+--   staged     -- a human should decide
+--   filed      -- correct, complete, and covering no item we hold
+--   rejected   -- a human said no
+--   superseded -- a newer document replaced it
+--
+-- Nothing is deleted and nothing is discarded (invariant 4, and Denis's ruling
+-- 2026-08-14 that such documents are kept). A filed document stays archived,
+-- evidenced and dated; it is simply in nobody's queue. If Dentalia starts
+-- stocking Cention it is already held.
+--
+-- Terminal but not permanent: re-entry when the catalogue gains a matching item
+-- is deliberately NOT built here (Denis, 2026-08-14: ship `filed` first). Until
+-- it is, a filed document stays filed even after its item is stocked -- tracked
+-- as [filed-relink] in tasks/followups.md.
+--
+-- Manufacturer-scope documents (ISO 13485 / QMS) are NOT filed by this. They
+-- name no item by design and already have C4's path: one-time human binding,
+-- then automatic derivation at `match_basis = 'mfr-scope'`. They are waiting on
+-- a real decision, which is a different thing from having none to make.
+--
+-- ALTER TYPE ... ADD VALUE runs inside a transaction on PostgreSQL 12+, and the
+-- runner applies each file in one (app/db.py). Verified on this server (16.14)
+-- before writing: both the ALTER and its ROLLBACK behave. The new value must
+-- not be USED in the same transaction, which is why this file only adds it.
+
+ALTER TYPE doc_status ADD VALUE IF NOT EXISTS 'filed' AFTER 'production';

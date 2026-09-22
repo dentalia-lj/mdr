@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}Import from Business Central — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+{#- Named as the menu names it (spec § 9, rule 2): "Import a BC export" and
+    "Import from Business Central" were the same page under two names. The
+    catalogue tag and the queue priority moved under Technical details -- one
+    Business Central, one numbering, and the office never picks either. -#}
+<h1>Import from Business Central</h1>
+{% call ui.intro("Two exports from Business Central: nothing is written until you have seen what would change and confirmed it.") %}
+  The item catalogue and the manufacturer master go to two different tables,
+  and one of them can refuse to write, so they are two uploads rather than one.
+  Each upload is read first and reported back as a diff. Accepted file types:
+  {{ suffixes }}, up to {{ max_mb }} MB.
+{% endcall %}
+
+{#
+  One `.card` per upload, matching `ingest.html` — the two files go to two
+  different tables and one of them can refuse to write, so they must not read
+  as one run-on form. `Recent runs` gets its own card for the same reason: as a
+  bare <h2> it looked like a third upload section.
+#}
+<div class="card">
+  <h2>Item catalogue <small>(<code>Artikli</code>)</small></h2>
+  <p>
+    The full catalogue, or trimmed to the rows that changed. Items absent from
+    the file are never retired, so a delta file is safe.
+  </p>
+  <form hx-post="/import" hx-encoding="multipart/form-data" hx-target="#result">
+    <div class="field">
+      <label>Export file</label>
+      <input type="file" name="file" required>
+    </div>
+    {#- The queue priority still travels with the job; a closed <details> still
+        submits the control inside it. It is not a question for the office:
+        every import from this page is something somebody is waiting on. -#}
+    <details class="technical">
+      <summary>Technical details</summary>
+      <p class="hint">Catalogue <code>{{ catalogue }}</code>, from the
+        configuration. There is one Business Central and one article
+        numbering, so it is written, never chosen.</p>
+      <div class="field">
+        <label>Queue priority</label>
+        <select name="priority">
+          {% for p in priorities %}
+          <option value="{{ p }}" {% if p == 'interactive' %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </details>
+    <button type="submit">Upload and preview</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Manufacturer master <small>(<code>Proizvajalci</code>)</small></h2>
+  <p>
+    The <code>Šifra</code> &rarr; <code>Ime</code> mapping. A code that
+    disappears from the file keeps its row — nothing here is ever deleted. A
+    code whose name <em>changed</em> needs a deliberate opt-in on the next
+    screen: re-pointing one after its items are grouped splits that manufacturer
+    in two, with no repair path.
+  </p>
+  <form hx-post="/import/vendors" hx-encoding="multipart/form-data" hx-target="#result">
+    <div class="field">
+      <label>Export file</label>
+      <input type="file" name="file" required>
+    </div>
+    <details class="technical">
+      <summary>Technical details</summary>
+      <div class="field">
+        <label>Queue priority</label>
+        <select name="priority">
+          {% for p in priorities %}
+          <option value="{{ p }}" {% if p == 'interactive' %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </details>
+    <button type="submit">Upload and preview</button>
+  </form>
+</div>
+
+{# Shared by both forms: whichever posts last swaps its confirmation in here. #}
+<div id="result"></div>
+
+<div class="card">
+  <h2>Recent runs</h2>
+  {% for r in runs %}
+    {#- What ran and when, in words. The queue tag and the raw result envelope
+        are one click down: they are ours, not the reader's (spec § 9). -#}
+    <details>
+      <summary>{{ (r.finished_at or r.created_at) | day }} · {{ r.what }} · {{ r.status | word }}</summary>
+      <details class="technical">
+        <summary>Technical details</summary>
+        <p class="hint">Job #{{ r.id }} · <code>{{ r.type }}</code></p>
+        <pre>{{ r.result_pretty }}</pre>
+      </details>
+    </details>
+  {% else %}
+    <p class="hint">No import has finished on this database yet.</p>
+  {% endfor %}
+</div>
+{% endblock %}

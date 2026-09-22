@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% import "_pager.html" as pg %}
+{% block title %}Missing documents — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+{# Missing documents (office UI redesign spec § 5): the items the system
+   searched for and found nothing. One kind of manual task only,
+   `discovery-dead-end`; review items and failed-task follow-ups live on the
+   pages that resolve them, and /manual keeps all three for operators. Every
+   count is live; the queries and the plain words are web/missing.py. #}
+<h1>Missing documents</h1>
+{% call ui.intro("Items the system searched for without finding a document: upload one you find, or have it search again.") %}
+  Each card is one document the system could not find, for one item or a set of
+  items with the same name. Uploading what you found takes the card off this
+  list, and so does a search that finds something to try, before anyone knows
+  whether it is the right document. What arrives then goes through the usual
+  checks, so it may wait for you on <a href="/staging">Review</a> before it
+  counts. A card names only the places the system can show it searched.
+  Searching again looks in the same places as before, which helps when the
+  manufacturer has published something since.
+{% endcall %}
+
+{% if n_all %}
+<p class="hint">{{ n_all | num }} missing document{{ "" if n_all == 1 else "s" }}
+  from {{ n_manufacturers | num }} manufacturer{{ "" if n_manufacturers == 1 else "s" }}, oldest first.</p>
+
+{# Links, not a form: a filter is an address a person can bookmark or pass on.
+   The six with the most first, then the rest behind "+ K more", alphabetical. #}
+<nav class="chips" aria-label="Filter by manufacturer">
+  <a class="chip{% if not manufacturer %} chip-on{% endif %}" href="/missing">All ({{ n_all | num }})</a>
+  {% for name, n in chips %}
+  <a class="chip{% if name == manufacturer %} chip-on{% endif %}" href="/missing?manufacturer={{ name|urlencode }}">{{ name }} ({{ n | num }})</a>
+  {% endfor %}
+  {% if more_chips %}
+  <details class="chip-more"{% if more_open %} open{% endif %}>
+    <summary class="chip">+ {{ more_chips|length }} more</summary>
+    <div class="chip-more-list">
+      {% for name, n in more_chips %}
+      <a class="chip{% if name == manufacturer %} chip-on{% endif %}" href="/missing?manufacturer={{ name|urlencode }}">{{ name }} ({{ n | num }})</a>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+</nav>
+{% endif %}
+
+{% if not n_all %}
+<div class="card"><p>No items are waiting for a document.</p></div>
+{% elif not tasks %}
+<div class="card"><p>No missing documents for {{ manufacturer }}. <a href="/missing">Show all</a></p></div>
+{% endif %}
+
+{% for task in tasks %}
+<article class="card missing-card" id="task-{{ task.id }}" data-task-id="{{ task.id }}">
+  <p class="hint">waiting since {{ task.waiting_since }} · #{{ task.id }}</p>
+  <h2>{{ task.product }}</h2>
+  {% if task.manufacturer or task.item_numbers %}
+  <p>{{ task.manufacturer or "" }}{% if task.manufacturer and task.item_numbers %} · {% endif %}{{ task.item_numbers }}</p>
+  {% endif %}
+  <p>{{ task.searched }}</p>
+  <div class="form-actions">
+    <a class="btn" href="/upload?{{ task.upload_query }}">Upload what I found</a>
+    {% if task.downloads %}
+    <a class="btn btn-secondary" href="{{ task.downloads }}" target="_blank" rel="noopener noreferrer">{{ task.manufacturer or "Manufacturer" }} downloads ↗</a>
+    {% endif %}
+    {% if task.web_search %}
+    <a class="btn btn-secondary" href="{{ task.web_search }}" target="_blank" rel="noopener noreferrer">Search the web ↗</a>
+    {% endif %}
+    {# The existing resolve route: one `discover.group` for this item group
+       at interactive priority, deduped per task. It reaches outside systems
+       (web search, the manufacturer's pages), so it asks once (spec § 1,
+       rule 4). A task with no item group has nothing to search for. #}
+    {% if task.group_id is not none %}
+    <form hx-post="/manual/{{ task.id }}/resolve" hx-target="#missing-result-{{ task.id }}" hx-swap="innerHTML"
+          hx-confirm="Search again for {{ task.product }}? The system looks through the same places once more.">
+      <button type="submit" class="btn-secondary">Search again</button>
+    </form>
+    {% endif %}
+  </div>
+  <div id="missing-result-{{ task.id }}" class="result"></div>
+</article>
+{% endfor %}
+
+{% if tasks %}{{ pg.pager_links(pager, "/missing", pager_params) }}{% endif %}
+{% endblock %}

@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dentalia Pipeline: Flow &amp; State Map</title>
+<style>
+  /* Brand: shop.dentalia.si, tokens verified live 2026-07-24.
+     Cyan #2CA0C7 (buttons/menu/eyebrows), body #46565C, headings #333,
+     surfaces #E9F5F9 / #D6ECF4, tile greens #7FCBAE / #B6DDB6, yellow #F1D600.
+     Fonts: the shop's Centrale Sans Rounded where the reader has it,
+     otherwise the fallback stack below. */
+  :root {
+    --paper: #ffffff;
+    --surface: #f0f8fb;
+    --surface-2: #d6ecf4;
+    --ink: #333333;
+    --muted: #46565c;
+    --border: #c9e2ec;
+    --accent: #2ca0c7;
+    --accent-ink: #1d7d9e;
+    --live: #2f8f6b;
+    --live-bg: #e2f3ec;
+    --gated: #8f7500;
+    --gated-bg: #faf5d2;
+    --hole: #c24438;
+    --hole-bg: #f9e8e5;
+    --noop: #6e7e85;
+    --noop-bg: #edf2f4;
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+    --heading: "Centrale Sans Rounded", "Trebuchet MS", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --body: "Centrale Sans Rounded", "Trebuchet MS", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0e1a20; --surface: #14242c; --surface-2: #1a2f3a;
+      --ink: #dce9ee; --muted: #8fa6b0; --border: #29414d;
+      --accent: #4fb8da; --accent-ink: #7ccbe6;
+      --live: #57bd93; --live-bg: #133228;
+      --gated: #d9c235; --gated-bg: #322c0c;
+      --hole: #e06256; --hole-bg: #3a1f1b;
+      --noop: #8a99a0; --noop-bg: #1e2c33;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0e1a20; --surface: #14242c; --surface-2: #1a2f3a;
+    --ink: #dce9ee; --muted: #8fa6b0; --border: #29414d;
+    --accent: #4fb8da; --accent-ink: #7ccbe6;
+    --live: #57bd93; --live-bg: #133228;
+    --gated: #d9c235; --gated-bg: #322c0c;
+    --hole: #e06256; --hole-bg: #3a1f1b;
+    --noop: #8a99a0; --noop-bg: #1e2c33;
+  }
+  :root[data-theme="light"] {
+    --paper: #ffffff; --surface: #f0f8fb; --surface-2: #d6ecf4;
+    --ink: #333333; --muted: #46565c; --border: #c9e2ec;
+    --accent: #2ca0c7; --accent-ink: #1d7d9e;
+    --live: #2f8f6b; --live-bg: #e2f3ec;
+    --gated: #8f7500; --gated-bg: #faf5d2;
+    --hole: #c24438; --hole-bg: #f9e8e5;
+    --noop: #6e7e85; --noop-bg: #edf2f4;
+  }
+  body {
+    background: var(--paper); color: var(--muted);
+    font-family: var(--body); font-weight: 300; font-size: 15.5px; line-height: 1.55;
+    margin: 0; padding: 2.5rem 1.25rem 5rem;
+  }
+  b, strong, th, .k { font-weight: 600; }
+  main { max-width: 1080px; margin: 0 auto; }
+  h1, h2, h3 { font-family: var(--heading); font-weight: 600; color: var(--ink); text-wrap: balance; }
+  h1 { font-size: 1.8rem; margin: 0 0 .3rem; }
+  h2 { font-size: 1.25rem; margin: 0 0 .9rem; padding-top: 2.6rem; border-top: 1px solid var(--border); }
+  h2 .sec { color: var(--muted); font-weight: 500; margin-right: .5rem; }
+  h3 { font-size: 1.02rem; margin: 0; }
+  a { color: var(--accent-ink); }
+  code, .k { font-family: var(--mono); font-size: .84em; background: var(--surface-2); border-radius: 4px; padding: .08em .35em; white-space: nowrap; }
+  .sub { color: var(--muted); margin: 0 0 1.4rem; max-width: 62ch; }
+  .chips { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1.1rem 0 0; }
+  .chip { font-family: var(--heading); font-size: .78rem; font-weight: 600; padding: .3rem .7rem; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); }
+  .chip b { font-variant-numeric: tabular-nums; }
+  .chip.live { color: var(--live); border-color: var(--live); background: var(--live-bg); }
+  .chip.gated { color: var(--gated); border-color: var(--gated); background: var(--gated-bg); }
+  .chip.hole { color: var(--hole); border-color: var(--hole); background: var(--hole-bg); }
+  .chip.noop { color: var(--noop); border-color: var(--noop); background: var(--noop-bg); }
+  .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .6rem; margin: 0 0 .5rem; }
+  .legend div { display: flex; gap: .55rem; align-items: baseline; font-size: .86rem; }
+  .dot { width: .72rem; height: .72rem; border-radius: 3px; flex: none; position: relative; top: .07rem; }
+  .dot.live { background: var(--live); } .dot.gated { background: var(--gated); }
+  .dot.hole { background: var(--hole); } .dot.noop { background: var(--noop); }
+  .diagram { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: .75rem; overflow-x: auto; }
+  .card { border: 1px solid var(--border); border-left: 5px solid var(--live); border-radius: 10px; background: var(--surface); padding: 1rem 1.15rem 1.1rem; margin: 0 0 1.15rem; }
+  .card.gated { border-left-color: var(--gated); }
+  .card.hole { border-left-color: var(--hole); }
+  .card.noop { border-left-color: var(--noop); }
+  .card header { display: flex; flex-wrap: wrap; align-items: baseline; gap: .6rem .9rem; margin-bottom: .55rem; }
+  .pill { font-family: var(--heading); font-size: .68rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; padding: .18rem .55rem; border-radius: 999px; }
+  .pill.live { color: #fff; background: var(--live); }
+  .pill.gated { color: #3a3200; background: #f1d600; }
+  .pill.hole { color: #fff; background: var(--hole); }
+  .pill.noop { color: #fff; background: var(--noop); }
+  .meta { font-size: .82rem; color: var(--muted); }
+  .meta code { background: var(--surface-2); }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .875rem; margin: .5rem 0 .2rem; }
+  th { font-family: var(--heading); font-size: .69rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); text-align: left; padding: .38rem .65rem; border-bottom: 2px solid var(--border); }
+  td { padding: .42rem .65rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td.st { white-space: nowrap; font-family: var(--heading); font-size: .72rem; font-weight: 600; }
+  .s-live { color: var(--live); } .s-gated { color: var(--gated); }
+  .s-hole { color: var(--hole); } .s-noop { color: var(--noop); }
+  .notes { margin: .55rem 0 0; padding-left: 1.15rem; font-size: .85rem; color: var(--muted); }
+  .notes li { margin: .18rem 0; }
+  .notes .warn { color: var(--gated); font-weight: 600; }
+  .notes .bad { color: var(--hole); font-weight: 600; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 1rem; }
+  .caption { font-size: .82rem; color: var(--muted); margin: .45rem 0 0; }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); font-size: .82rem; color: var(--muted); }
+  @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+  pre.mermaid { font-family: var(--mono); font-size: .78rem; line-height: 1.4; margin: 0; }
+</style>
+</head>
+<body>
+<main>
+<h1>Dentalia pipeline: flow &amp; state map <span style="font-weight:300">: brief</span></h1>
+<p class="sub">The one-sitting edition, 2026-08-25, master as it stood that day. Same verification pass as <a href="flow-map-2026-08-25.html">the full map</a> and not a single claim beyond it: this page carries the shape and the decisions, the full one carries the per-stage detail, the column-level writes and the working. Suite: 2088 passed &#47; 3 skipped.</p>
+
+<div class="chips">
+  <span class="chip live"><b>14</b> live handler tags</span>
+  <span class="chip noop"><b>2</b> enum tags on no-op</span>
+  <span class="chip gated"><b>6</b> seams not wired</span>
+  <span class="chip gated"><b>5</b> dormant data paths</span>
+  <span class="chip hole"><b>9</b> deltas needing a decision</span>
+</div>
+
+<p class="caption"><b>Superseded since the pin.</b> This page describes master as it stood on 2026-08-25. Master has moved: <code>eudamed.sync</code> now has a real handler and a producer (the EUDAMED lookup button on the document page), and <code>eudamed_mirror</code> holds 591 rows rather than 0 &ndash; so the counts here read 15 live tags, 1 on the placeholder, 4 dormant paths. The row for it in &sect;2 and the dormant line in &sect;4 are stale on that one point and are left as they were. Nothing else was re-checked against the newer commits.</p>
+<h2><span class="sec">1</span>The spine</h2>
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  BC[("BC export")]:::ext --> ING["ingest.run"]:::live
+  CORPUS[("SFTP corpus")]:::ext --> BF["backfill.scan"]:::live
+  MBOX[("mailbox")]:::ext -.->|creds absent| EP["email.poll"]:::live
+  WEB["Review UI"]:::ext -->|/upload| UP["upload.ingest"]:::live
+  ING -->|per changed item| RES["resolve.group"]:::live
+  RES -.->|DISCOVER_HOLD on| HOLD["held, counted"]:::gated
+  RES -->|hold off| DIS["discover.group"]:::live
+  DIS -->|top-k| FET["fetch.url"]:::live
+  DIS -.->|dead end| MT["manual_task"]:::live
+  DIS -.->|all fresh + extracted| VAL
+  FET -->|new hash| EXT["extract.doc"]:::live
+  BF --> EXT
+  UP --> EXT
+  EP --> EXT
+  FET --> ARCH[("hash archive")]:::live
+  EXT --> VAL["validate.doc"]:::live
+  VAL --> GC["gate.candidate"]:::live
+  GC --> REG[("registry")]:::live
+  GC -.->|manual| MT
+  WEB -->|approve · reject · bind<br/>confirm/reject/reopen one link| GA["gate.apply"]:::live
+  GA --> REG
+  classDef live fill:#2f8f6b,color:#ffffff,stroke:#226b50
+  classDef gated fill:#f1d600,color:#3a3200,stroke:#8f7500
+  classDef ext fill:transparent,color:#6e7e85,stroke:#6e7e85,stroke-dasharray:4 3
+</pre>
+</div>
+<p class="caption">The topology <b>is</b> the enqueue graph: 33 <code>queue.enqueue</code> call sites, 22 distinct dedupe-key shapes, all through <code>app/queue.py</code>. Dedupe is scoped to active jobs only, so a terminal job never blocks a re-enqueue. The shipped stack holds discovery (<code>DISCOVER_HOLD</code> defaults true in compose, false in code): the corpus is mined first, discovery runs later against a registry that knows what it already has.</p>
+
+<h2><span class="sec">2</span>Every job type, one row each</h2>
+<div class="tablewrap"><table>
+<tr><th>Tag</th><th>Started by</th><th>Writes</th><th>Emits</th><th>Status</th></tr>
+<tr><td><code>ingest.run</code></td><td>web form · scheduler (watch-dir unset) · CLI</td><td><code>item_mirror</code></td><td><code>resolve.group</code> per changed MD item</td><td class="st s-live">live</td></tr>
+<tr><td><code>resolve.group</code></td><td>INGEST · suggestion UI · <code>cli regroup</code></td><td><code>item_group</code>(<code>_member</code>), <code>manufacturer_alias</code>, <code>grouping_suggestion</code></td><td><code>discover.group</code> unless held or already covered</td><td class="st s-gated">live, 2 rungs dormant</td></tr>
+<tr><td><code>discover.group</code></td><td>RESOLVE · GATE reject · manual tab · item page · <code>cli discover-item</code></td><td><code>discovery_log</code>, <code>manual_task</code></td><td><code>fetch.url</code> · <code>validate.doc</code> · <code>email.request</code></td><td class="st s-gated">live, held off</td></tr>
+<tr><td><code>fetch.url</code></td><td>DISCOVER only</td><td><code>fetch_log</code>, <code>domain_lease</code>, archive file</td><td><code>extract.doc</code> (new hash) · <code>validate.doc</code> (C3)</td><td class="st s-live">live</td></tr>
+<tr><td><code>backfill.scan</code></td><td><code>cli enqueue</code> only</td><td><code>fetch_log</code>, archive files</td><td><code>extract.doc</code> per unseen hash</td><td class="st s-live">live &ndash; 862 of 880 ledger rows</td></tr>
+<tr><td><code>upload.ingest</code></td><td>web <code>/upload</code></td><td><code>fetch_log</code>, archive file, deletes the spool row</td><td><code>extract.doc</code> · <code>validate.doc</code></td><td class="st s-live">live, never used</td></tr>
+<tr><td><code>email.poll</code></td><td>scheduler tick (flag off) · Run now</td><td><code>email_poll_log</code>, <code>fetch_log</code>, archive files</td><td><code>extract.doc</code> per useful attachment</td><td class="st s-gated">live, no mailbox (G8)</td></tr>
+<tr><td><code>extract.doc</code></td><td>FETCH · UPLOAD · EMAIL · BACKFILL</td><td><code>extraction_attempt</code>, <code>document_text</code>, <code>extraction_cost</code>, <code>batch_ref</code></td><td><code>validate.doc</code></td><td class="st s-live">live &ndash; 11-field target schema</td></tr>
+<tr><td><code>validate.doc</code></td><td>EXTRACT · FETCH · UPLOAD · EMAIL · DISCOVER · 2 repair CLIs</td><td><b>nothing</b> &ndash; stateless</td><td><code>gate.candidate</code>, normal or mfr-binding route</td><td class="st s-live">live</td></tr>
+<tr><td><code>gate.candidate</code></td><td>VALIDATE only</td><td><b><code>document</code>, <code>item_document</code>, <code>evidence</code></b>, <code>audit_log</code>, <code>manual_task</code></td><td>nothing &ndash; terminal</td><td class="st s-live">live &ndash; the only in-pipeline registry writer</td></tr>
+<tr><td><code>gate.apply</code></td><td>web: 2 routes, 6 decisions</td><td>same, plus link-level rulings</td><td><code>discover.group</code> on reject</td><td class="st s-live">live</td></tr>
+<tr><td><code>email.request</code></td><td>scheduler expiry scan · DISCOVER exhausted (both flags off)</td><td><code>renewal_request</code>, <code>renewal_request_document</code>, <code>email_draft</code></td><td><code>email.reminder</code>, armed 14 days out</td><td class="st s-gated">live, gated off</td></tr>
+<tr><td><code>email.reminder</code></td><td>self, from the request</td><td><code>email_draft</code></td><td><code>email.reminder</code>, re-armed</td><td class="st s-gated">live, gated off</td></tr>
+<tr><td><code>report.weekly</code></td><td>scheduler · Run now</td><td>nothing &ndash; a snapshot on the job result</td><td>nothing</td><td class="st s-live">live</td></tr>
+<tr><td><code>eudamed.sync</code></td><td><b>no producer at all</b></td><td>&mdash;</td><td>&mdash;</td><td class="st s-noop">not built (S2.3)</td></tr>
+<tr><td><code>playbook.reonboard</code></td><td>scheduler failure monitor (flag off)</td><td>&mdash;</td><td>&mdash;</td><td class="st s-noop">not built</td></tr>
+</table></div>
+<p class="caption">The two unbuilt tags fall through to a placeholder that <b>raises</b>, not one that returns: a stage nobody built must not report success. Both flag-gated producers above them stay off until their consumer exists, so nothing is ever swallowed silently. Full payload tables, dedupe keys, reads, column-level writes, outcome branches and anomaly kinds are in <a href="flow-map-2026-08-25.html#">the full map's &sect;2</a>.</p>
+
+<h2><span class="sec">3</span>The two states that decide what a consumer sees</h2>
+<div class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  direction LR
+  [*] --> staged: below HIGH or capped by a flag
+  [*] --> production: HIGH + ref_gate + nothing gating
+  [*] --> superseded: older, all four guards pass
+  [*] --> filed: read + attributed, covers nothing we sell
+  staged --> production: approve / bind
+  staged --> rejected: reject
+  production --> superseded: a newer doc supersedes it
+</pre>
+</div>
+<div class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  direction LR
+  [*] --> staged: any basis
+  [*] --> production: trusted basis + doc production + HIGH
+  staged --> production: approve, or confirm-link
+  staged --> staged: name-family / fetch-context / ref-catalogue, forever
+  staged --> retracted: current rev no longer claims it
+  staged --> rejected: reject cascade, or reject-link
+  production --> rejected: reject cascades every link
+  rejected --> staged: reopen-link, a person only
+</pre>
+</div>
+<p class="caption">A document is visible <em>for an item</em> only when <b>both</b> the document and that item's link are production. The two are decided separately and a different number of times: once per document, once per (document, item) pair. <code>production</code> and <code>rejected</code> are sticky against a re-proposing machine candidate, so nothing resurrects coverage a human refused; only a person moves a link out of <code>rejected</code>. Live: 769 documents (443 filed, 194 production, 126 staged, 4 superseded, 2 rejected) carrying 8.563 links (7.927 production, 357 retracted, 279 staged, all 279 on a trusted basis and waiting on their document rather than on a link decision).</p>
+
+<h2><span class="sec">4</span>What is not live</h2>
+<div class="tablewrap"><table>
+<tr><th>Kind</th><th>What</th><th>Consequence</th></tr>
+<tr><td class="st s-gated">seam</td><td>Both T1 rankers raise: <code>discover._default_rank</code>, <code>resolve._default_adjudicator</code></td><td>Search degrades to manual rather than dead-lettering. RESOLVE's is unreachable anyway while <code>name_suggest</code> equals <code>name_accept</code></td></tr>
+<tr><td class="st s-hole">seam</td><td><code>app/robots.py</code> has <b>no caller</b> &ndash; 241 lines, 246 of tests, migration <code>036</code>, and nothing imports it</td><td>The live fetcher does not obey robots.txt. The lease half is wired, the reader half is not</td></tr>
+<tr><td class="st s-gated">seam</td><td><code>GoogleDriveStore.put()</code> raises (G7) · <code>BcApiAdapter.read()</code> raises without injected records</td><td>Local disk is the archive; CSV is the only live source. Both deliberate</td></tr>
+<tr><td class="st s-gated">seam</td><td>C4 resolve-time binding returns 0, always</td><td>A new item under a bound manufacturer waits for the next gate pass</td></tr>
+<tr><td class="st s-gated">dormant</td><td><code>item_mirror.udi</code> null · <code>item_group.basic_udi_di</code> has no writer · <code>eudamed_mirror</code> empty · <code>robots_cache</code> empty · <code>document.stated_class</code> NULL on all 769</td><td>Three grouping and discovery rungs can never fire. 450 extraction attempts carry a stated class and 0 documents do, because nothing has been re-gated since migration 032</td></tr>
+<tr><td class="st s-gated">threshold</td><td><code>gate.high</code> is 0.92 by ruling; <code>med</code> is still the 0.75 placeholder and calibration is the identity transform</td><td><code>gate.py</code> reads a <code>calibration</code> attribute <code>Config</code> does not define. <code>high</code> gates four separate decisions</td></tr>
+<tr><td class="st s-hole">exception</td><td>Invariant 1 now has two ruled, audited exceptions: <code>repair-archive-urls</code> and <code>repair-mfr-overbind</code> write the registry outside GATE</td><td>746 <code>ops:</code> audit rows. The ruling lives only in the tools' docstrings</td></tr>
+</table></div>
+
+<h2><span class="sec">5</span>What needs a decision</h2>
+<p class="sub">The nine rows from the full map's &sect;5 that are a judgement rather than a doc typo, and all nine are still open. The other twelve are listed in full there: five phase-scoped gaps, and seven stale enumerations of which <b>five were fixed in the PRD and handbook later the same day</b> (uncommitted at the time of writing). None of the nine below was touched by that pass.</p>
+<div class="tablewrap"><table>
+<tr><th>Class</th><th>What</th></tr>
+<tr><td class="st s-hole">drift</td><td><b>The renewal-mail dedupe key.</b> PRD &sect;0 was changed on 2026-08-20 to <code>email.request:mfr:{canonical}:{period}</code> because the per-document key "would have sent 52 separate mails to IVOCLAR for 2026-05-04 alone &mdash; measured". <code>app/scheduler.py:143</code> still writes <code>email.request:doc:{doc_id}</code>. Migration 029's unique index absorbs it, so the result is 52 jobs and one draft; latent while the flag is off. <b>Fix the producer, not the contract.</b></td></tr>
+<tr><td class="st s-hole">undocumented</td><td><b>robots.txt.</b> A whole module, a migration and a lease floor, in no contract and with no call site. Needs both, in that order</td></tr>
+<tr><td class="st s-hole">undocumented</td><td><b>C16 has five guards, the PRD names three.</b> The extras are <code>coverage_scope</code> confidence &ge; <code>high</code> and an MD-regulation check with one deliberate ISO exception. Both stand between an unparsed REF list and a catalogue-wide write</td></tr>
+<tr><td class="st s-hole">undocumented</td><td><b>Invariant 1's two ops exceptions.</b> Either the invariant grows an "audited ops exception" clause naming its bounds, or the tools do not have one</td></tr>
+<tr><td class="st s-hole">undocumented</td><td><b>Two dedupe shapes absent from a table that says a shape absent from it is drift</b> &ndash; C17's link decisions and the reminder chain</td></tr>
+<tr><td class="st s-hole">undocumented</td><td>Two operator CLIs produce <code>validate.doc</code>; the PRD names three producers and not those</td></tr>
+<tr><td class="st s-hole">undocumented</td><td><code>extract.doc</code> reads <code>companion_archive_url</code>, which no contract lists</td></tr>
+<tr><td class="st s-hole">undocumented</td><td>The email handlers write <code>renewal_request_document</code> and <code>email_draft</code>; the access matrix lists only <code>renewal_request</code></td></tr>
+<tr><td class="st s-hole">undocumented</td><td><code>service_heartbeat</code> has no row in the access matrix at all</td></tr>
+</table></div>
+<p class="caption">All nine are on <code>tasks/followups.md</code>. None is a code change except the drift row and the robots call site.</p>
+
+<footer>
+Condensed from <a href="flow-map-2026-08-25.html">flow-map-2026-08-25.html</a>, which carries the per-stage cards, the payload and write tables, the worked document, and all 21 contract deltas with their evidence. Every figure here is a <code>count(*)</code> against the dev registry read 2026-08-25, or a first-hand read of the code as it stood on 2026-08-25. Suite: 2088 passed &#47; 3 skipped.
+</footer>
+</main>
+<script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+mermaid.initialize({ startOnLoad: true, theme: dark ? "dark" : "neutral" });
+</script>
+</body>
+</html>

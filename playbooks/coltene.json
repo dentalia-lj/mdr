@@ -1,0 +1,21 @@
+{
+  "manufacturer": "COLTENE",
+  "aliases": [],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "105"
+    }
+  ],
+  "domains": [
+    "coltene.com"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "DoC",
+      "kind": "portal",
+      "url": "https://media.coltene.com/EN/GB/index",
+      "note": "ROBOTS-BLOCKED FOR OUR FETCHER. Denis's ruling 2026-08-20: reachable by a human, or by an independent Playwright session run deliberately outside the pipeline -- never by the automated fetcher. Authored as kind:\"portal\" precisely because DISCOVER only ever prefills a manual task from a portal source and never enqueues fetch.url for it. Both www.coltene.com and media.coltene.com serve a Cloudflare managed robots.txt naming `User-agent: ClaudeBot / Disallow: /` AND `User-agent: CloudflareBrowserRenderingCrawler / Disallow: /` -- the operator has explicitly refused headless-browser rendering as well as plain crawling, so an earlier HTTP 403 was that policy being enforced rather than a bug. NOT FETCHED, NOT RENDERED. Their content signal does say `use=reference`, which suggests an email asking permission may well succeed where scraping is barred. The media library reportedly takes a per-article parameter (index?q={article_number}) which would be a high-value per-item lookup, but that shape is UNTESTED and must come from asking Coltene, not from assuming. Legal entity per their own product PDFs is Coltene/Whaledent AG, Altstaetten, Switzerland -- a Swiss entity, so the EU-side MDR actor is likely a different legal person and is NOT authored here."
+    }
+  ]
+}

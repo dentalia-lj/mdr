@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% import "_link_decide.html" as link_decide %}
+{% import "_ui.html" as ui %}
+{% block title %}{{ item.item_ref }} — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>Item {{ item.item_ref }}</h1>
+{% call ui.intro("One item: what it is, what paperwork it should have, and every document linked to it.") %}
+  The two buttons below are both requests, not actions. <strong>Re-discover documents</strong>
+  puts this item's group back in the queue to be searched for; <strong>Update Business
+  Central</strong> queues what BC should be told about this item. Neither writes anything here
+  and neither reaches out from this page: a worker picks the work up within a minute or two.
+  Everything further down is a reading of what the registry holds right now.
+{% endcall %}
+
+{# Admin refetch ([admin-refetch-item]): the outcome of a POST to
+   /items/{item_ref}/rediscover travels back as this query param (post-
+   redirect-get -- no flash-message store exists in this app), rendered with
+   the same .result ok/error styling _result.html uses for every other
+   producer action. #}
+{% if rediscover == "queued" %}
+<div class="result ok">Re-discovery queued at <code>interactive</code> priority.</div>
+{% elif rediscover == "deduped" %}
+<div class="result ok">Already queued today.</div>
+{% elif rediscover == "no-group" %}
+<div class="result error">This item has no group yet — nothing was queued.</div>
+{% endif %}
+
+{# Same post-redirect-get shape, for the Business Central push.
+
+   Branches on `bc_write_enabled`, the same key `app/handlers/bc_push.py` reads
+   before it writes anything: while sending is off the handler withholds every
+   value, so "the worker sends it" is not optimistic, it is false. The bulk
+   /bc-push receipt has said so since fix round 1 and this one had not. #}
+{% if bc_push == "queued" %}
+<div class="result ok">Queued for Business Central.
+  {% if bc_write_enabled %}Nothing is sent from this page: the worker sends it
+  within a few minutes.{% else %}Sending is switched off, so nothing will reach
+  Business Central. The job only records what would be sent.{% endif %}</div>
+{% elif bc_push == "deduped" %}
+<div class="result ok">Already queued today.</div>
+{% endif %}
+
+<div class="card">
+  <table>
+    <tbody>
+      <tr><th>Name</th><td>{{ item.name }}</td></tr>
+      <tr><th>Manufacturer</th><td>
+        {% if item.manufacturer_name %}
+        <a href="/manufacturers/{{ item.manufacturer_name | urlencode }}">{{ item.manufacturer_name }}</a>
+        <span class="hint">({{ item.manufacturer_raw }})</span>
+        {% else %}{{ item.manufacturer_raw }}{% endif %}
+      </td></tr>
+      <tr><th>{{ "mfr_ref" | word }}</th><td>{{ item.mfr_ref or "—" }}</td></tr>
+      <tr><th>Medical device</th><td>
+        {% if item.md_flag is none %}not stated{% elif item.md_flag %}yes{% else %}no{% endif %}
+        {% if item.product_class %} (class {{ item.product_class }}){% endif %}
+      </td></tr>
+    </tbody>
+  </table>
+  {# The catalogue tag is single-valued and has been since 2026-08-26 (one
+     Business Central, one numbering), so a row reading "LJ" on every item in
+     the registry tells an office reader nothing. It is still a stored column
+     an engineer checks, which is what this disclosure is for. #}
+  <details class="technical">
+    <summary>Technical details</summary>
+    <p class="hint">Catalogue <code>{{ item.catalogue }}</code>
+      · Business Central manufacturer code <code>{{ item.manufacturer_raw }}</code></p>
+  </details>
+  {# No urlencode on item_ref in the action, same reasoning as the API JSON
+     link below: the :path converter accepts a literal `/` server-side and
+     percent-encoding it cannot help ([item-link-slash-404]). #}
+  {# `hx-boost`, not a plain form: boosting is what makes `hx-confirm` fire at
+     all -- htmx only checks it for a request it is issuing itself, and a bare
+     `method="post"` form never becomes one (verified against the bundled
+     htmx build, 2026-09-11). Boosted, the submit still ends on this same page
+     via the ordinary redirect above; only a real confirm dialog is added. #}
+  <form method="post" action="/items/{{ item.item_ref }}/rediscover"
+        hx-boost="true"
+        hx-confirm="Search again for {{ item.name }} ({{ item.item_ref }})'s documents now, even if it was searched recently?">
+    <button type="submit">Re-discover documents</button>
+  </form>
+  {# Producer-only, like every button here: it enqueues `bc.push` and never
+     opens a connection to BC. What it will send depends on what this item
+     holds right now, so it is computed when the job runs, not here. Worded
+     as "queue an update", never "send" -- while writes are switched off
+     (`write_enabled`) nothing is ever sent, and a dialog promising a send
+     it cannot make would be a lie for as long as that setting stays off. #}
+  <form method="post" action="/items/{{ item.item_ref }}/bc-push"
+        hx-boost="true"
+        hx-confirm="Queue a Business Central update for {{ item.name }} ({{ item.item_ref }}) now?">
+    <button type="submit">Update Business Central</button>
+  </form>
+</div>
+
+{# Same card as the manufacturer page, scoped to one article. Above
+   "Linked documents" on purpose: that table lists what we hold, and holding
+   something is not the same as holding what is required. #}
+{% if completeness %}{{ ui.completeness_item(completeness) }}{% endif %}
+
+<div class="card">
+  <h2>Linked documents</h2>
+  {# Same shape a consumer receives (docs/specs/read-api.md) -- a human clicks
+     this to eyeball the JSON contract. `.muted` is not a class this codebase
+     defines (checked web/static/css/style.css); `<p class="hint">` wrapping a
+     plain link is the established muted-link idiom (data_quality.html's
+     "Clear filter"), so this uses that instead.
+     No urlencode: every existing template that links /items/{item_ref}
+     renders the ref raw (items.html, search.html, manufacturer_detail.html,
+     document_detail.html, _staging_doc_detail.html) -- the :path converter
+     accepts a literal `/` in item_ref server-side, and percent-encoding it
+     cannot help (uvicorn decodes %2F back to a literal slash before routing,
+     [item-link-slash-404]), so this copies that idiom rather than introducing
+     a urlencode filter that would be the odd one out here. #}
+  <p class="hint"><a href="/api/items/{{ item.item_ref }}/documents">API JSON</a></p>
+  {% call ui.intro("A consumer sees a document here only when BOTH the document and this item's link to it are published, which the highlighted rows below are not.") %}
+    Either the document is still waiting for review, or this item's link to it is, or the
+    document has been replaced. Some links can never be published by approving the DOCUMENT:
+    where the match rests on the manufacturer's name or on where the file was found, rather than
+    on an article number, the link is capped at waiting for review structurally (invariant 3) and
+    only a person ruling on the link itself can publish it, through the Decide column (C17). Which
+    of those a link is reads under Technical details below the table. A replaced document's link
+    can still say published, because being replaced only ever changes the document's own status,
+    never the link's, so those rows are shaded differently below rather than lumped in with the
+    ones waiting for review. The consumers are Business Central and <code>/api/*</code>.
+  {% endcall %}
+  {% if docs %}
+  <table>
+    <thead>
+      <tr>
+        <th>Type</th><th>Regulation</th><th>Valid from</th><th>Valid to</th>
+        <th>Document</th><th>Covers this item</th><th>Decide</th><th>Open</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for doc in docs %}
+      <tr class="{{ 'row-superseded' if doc.doc_status == 'superseded' else ('row-staged' if not (doc.doc_status == 'production' and doc.link_status == 'production') else '') }}">
+        <td>{{ doc.type | doc_type }}</td>
+        <td>{{ doc.regulation }}</td>
+        <td>{{ doc.validity_from or "—" }}</td>
+        {# `expires`/`expiry_basis` come from document_effective_expiry, the one
+           definition of when a document lapses. The basis is rendered, never
+           implied: a five-year review horizon is Dentalia's own rule, not a
+           date the document claims, and a page that prints it bare would be
+           asserting an expiry MDR does not give a declaration. A rejected
+           certificate contributes nothing here — the view drops it — but the
+           citation link still shows, because what was cited is a fact even
+           when its date is not usable. #}
+        <td>
+          {{ doc.expires or "—" }}
+          {% if doc.expiry_basis == 'inherited' %}
+          <span class="hint">(inherited — MDR Annex IV requires only an issue date on a DoC;
+          this is the expiry of the certificate it cites{% if doc.cert_doc_id %},
+          <a href="/documents/{{ doc.cert_doc_id }}">Document #{{ doc.cert_doc_id }}</a>{% endif %})</span>
+          {% elif doc.expiry_basis == 'staleness' %}
+          <span class="hint">(review horizon — five years after issue, Dentalia's rule, not an
+          expiry: a DoC has none by regulation{% if doc.cert_doc_id %}, and the certificate it cites
+          (<a href="/documents/{{ doc.cert_doc_id }}">Document #{{ doc.cert_doc_id }}</a>)
+          is not one we can inherit from{% endif %})</span>
+          {% elif not doc.expires and doc.type == 'DoC' %}
+          <span class="hint">(no expiry and no issue date to review from{% if doc.cert_doc_id %};
+          the cited <a href="/documents/{{ doc.cert_doc_id }}">Document #{{ doc.cert_doc_id }}</a>
+          lends none either{% endif %})</span>
+          {% endif %}
+        </td>
+        <td><span class="badge badge-{{ doc.doc_status }}">{{ doc.doc_status | word }}</span></td>
+        <td><span class="badge badge-{{ doc.link_status }}">{{ doc.link_status | word }}</span></td>
+        {# C17. The macro renders nothing unless the DOCUMENT is production and
+           the link is in a status a decision can act on, so a published row,
+           a staged document's row and a superseded one all correctly show an
+           empty cell — there is nothing a person may rule on in any of them.
+           This is the surface where the gap was actually hit: a reviewer looking
+           at one article, seeing a green document over an orange link, with no
+           way to act. #}
+        <td>{{ link_decide.buttons(doc.doc_id, item.item_ref, doc.link_status, doc.doc_status) }}</td>
+        <td>
+          <a href="/documents/{{ doc.doc_id }}">detail</a>
+          {# constructed, never the stored archive_url — that is a storage
+             handle (host path / file:// URI), not a browsable link #}
+          &middot; <a href="/documents/{{ doc.doc_id }}/file" target="_blank" rel="noopener">file</a>
+          &middot; <a href="/documents/{{ doc.content_hash }}/text">text</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {# § 9: how a link was made is Technical details. It decides what the link
+     may ever become -- `name-family` and `fetch-context` are capped at staged
+     structurally, invariant 3 -- so it is never dropped; it is simply not one
+     of the eight things an office reader scans a row for. #}
+  <details class="technical">
+    <summary>Technical details</summary>
+    <table>
+      <thead><tr><th>Document</th><th>{{ "match basis" | word }}</th></tr></thead>
+      <tbody>
+        {% for doc in docs %}
+        <tr><td>#{{ doc.doc_id }}</td><td><code>{{ doc.match_basis }}</code></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% else %}
+  <p class="hint">No documents linked to this item yet.</p>
+  {% endif %}
+
+  {# Whether we ever went looking is a different question from whether we found
+     anything, and until 2026-09-04 this page answered neither. `never` is not a
+     failure of discovery -- most of the registry arrived by backfill -- but it
+     is the one state a reviewer must not read as "there is nothing to find". #}
+  {% if discovery %}
+  <div class="discovery-state state-{{ discovery.state }}">
+    <h3>Have we searched for this?</h3>
+    <p>
+      <strong>{{ discovery.label_text }}.</strong>
+      {% if discovery.state == 'never' %}
+        Nothing has ever been looked up for this item&rsquo;s group, so an empty
+        list above says nothing about whether documents exist.
+      {% elif discovery.state == 'empty' %}
+        {{ discovery.attempts }} attempt{{ '' if discovery.attempts == 1 else 's' }}
+        {% if discovery.last_at %}, most recently {{ discovery.last_at | day }}{% endif %},
+        and every place we looked came back with nothing.
+      {% elif discovery.state == 'handoff' %}
+        {#- The state that used to read "found something" (F3). Every rung
+            missed and the system opened a task, so the next step is a person's
+            and it is already on a screen -- naming that screen is the whole
+            point of separating this from a plain miss. -#}
+        {{ discovery.attempts }} attempt{{ '' if discovery.attempts == 1 else 's' }}
+        {% if discovery.last_at %}, most recently {{ discovery.last_at | day }}{% endif %},
+        and every place we looked came back with nothing, so it was handed to a
+        person. It is waiting on <a href="/missing">Missing documents</a>.
+      {% else %}
+        {{ discovery.hits }} of {{ discovery.attempts }} attempt{{ '' if discovery.attempts == 1 else 's' }}
+        found something{% if discovery.last_at %}, most recently
+        {{ discovery.last_at | day }}{% endif %}.
+      {% endif %}
+    </p>
+    {% if discovery.rungs %}
+    <table class="rungs">
+      <thead><tr><th>Where we looked</th><th>Result</th><th>When</th></tr></thead>
+      <tbody>
+        {% for r in discovery.rungs %}
+        <tr>
+          <td>{{ r.source | rung }}</td>
+          <td class="outcome-{{ r.outcome }}">{{ r.outcome | rung_outcome }}</td>
+          <td>{{ r.at | day }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    <p class="hint">
+      Group <a href="/discovery?state={{ discovery.state }}">{{ discovery.group_id }}</a>
+      {%- if discovery.label %} &mdash; {{ discovery.label }}{% endif %}.
+    </p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

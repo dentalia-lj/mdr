@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% import "_pager.html" as pg %}
+{% import "_ui.html" as ui %}
+{% block title %}Items — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>Items</h1>
+{% call ui.intro("Every item in the catalogue, with how many of its documents are published, waiting for review or replaced.") %}
+  The three counts partition every document linked to the item, and they answer different
+  questions. <strong>{{ "production" | word }}</strong> is the only one a consumer ever sees
+  (Business Central and <code>/api/*</code>): "no certificate yet" and "a certificate we found
+  but do not trust enough to publish" are different problems and must not share a number.
+  <strong>{{ "staged" | word }}</strong> is the second of those. <strong>{{ "superseded" | word }}</strong>
+  was published once and a newer document has taken its place: still on file, still evidenced,
+  and not the same thing as no coverage at all.
+{% endcall %}
+
+{#- Coverage gaps and Discovery left the menu on 2026-09-14 (office UI redesign
+    spec § 7) and are reached from here, because both are the catalogue asked a
+    narrower question: which items hold no declaration, and which were never
+    searched for. Turning them into true Items filters is a later slice; until
+    then this row is the door, and it says what each one shows rather than
+    naming the screen. -#}
+<nav class="link-row" aria-label="Other views of the catalogue">
+  Show: <a href="/items" class="{{ 'link-on' if not request.query_params.get('q') else '' }}">All items</a> ·
+  <a href="/coverage">Without a declaration</a> ·
+  <a href="/discovery">Never searched</a>
+</nav>
+
+<div class="card">
+  <form method="get" action="/items" class="filter-row">
+    <div class="field">
+      <label>Search (item ref, name or manufacturer)</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="item ref, name or manufacturer">
+    </div>
+    <div class="field filter-actions">
+      <button type="submit">Filter</button>
+      <a class="btn-clear" href="/items">Clear</a>
+    </div>
+  </form>
+
+  {% if rows %}
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Item no.</th><th>Name</th><th>Manufacturer</th><th>Medical device</th>
+        <th>{{ "production" | word }}</th><th>{{ "staged" | word }}</th>
+        <th>{{ "superseded" | word }}</th><th>Next expiry</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td><a href="/items/{{ row.item_ref }}">{{ row.item_ref }}</a></td>
+        <td>{{ row.name }}</td>
+        {# the canonical name has a page behind it; the raw BC code does not,
+           so the fallback stays plain text rather than linking to a 404 #}
+        <td>
+          {% if row.manufacturer_name %}
+          <a href="/manufacturers/{{ row.manufacturer_name | urlencode }}">{{ row.manufacturer_name }}</a>
+          <span class="hint-inline">{{ row.manufacturer_raw }}</span>
+          {% else %}{{ row.manufacturer_raw }}{% endif %}
+        </td>
+        <td>{% if row.md_flag is none %}not stated{% elif row.md_flag %}yes{% else %}no{% endif %}</td>
+        <td>{{ row.production_docs }}</td>
+        <td>{{ row.staged_docs }}</td>
+        <td>{{ row.superseded_docs }}</td>
+        <td>{{ row.next_expiry or "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="hint">No items match this filter.</p>
+  {% endif %}
+
+  {# was a hand-rolled prev/next that inferred "there is more" from a full
+     page, so it could offer a Next onto an empty one and never said how many
+     items the search actually matched #}
+  {{ pg.pager_links(pager, "/items", ("q=" ~ q|urlencode) if q else "") }}
+</div>
+{% endblock %}

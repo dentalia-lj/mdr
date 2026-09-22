@@ -1,0 +1,113 @@
+{# The decision controls. They render in the open detail panel ONLY (spec § 3,
+   decision D5, 2026-09-11): a collapsed Review row offers Open and nothing
+   else, so no document is decided without its panel, and its PDF link, in
+   front of the reviewer. The collapsed row carried its own Approve/Reject
+   until then; `row_form` is gone with it.
+
+   Three different answers, on purpose:
+   * Approve submits the panel's form, which replaces the whole row with the
+     receipt, so the queue visibly shrinks as it is worked.
+   * A whole-range approval (`bind-manufacturer`) posts on its own and answers
+     into the panel's `.bind-confirm` slot: the server's first answer is a
+     question naming the count, and only its "Yes" enqueues. The slot, not the
+     row, so Cancel clears the question and leaves the panel standing.
+   * Reject… only reveals the reasons (`reject_form` below). Nothing here
+     rejects on one click. #}
+
+{# `approve_count` is how many items an ordinary approval makes the document
+   count for (`row.approve_links`, spec § 6), and the button says it: "Approve
+   for these N items", "Approve for this item", or plain "Approve" when the
+   approval reaches no item, so the button never promises a link that stays
+   staged. #}
+{% macro buttons(doc_id, is_mfr_binding, manufacturer_name, bind_items=None,
+                 has_picker=False, preselect=None, preselect_items=None,
+                 approve_count=0) %}
+<div class="decide-actions">
+  {% if is_mfr_binding %}
+    {% if manufacturer_name %}
+    {# The name reaches the route through the hidden input beside this button,
+       carried with the form's other fields: htmx sends the enclosing form's
+       values with a button's own non-GET request. C16 (2026-08-17) put the
+       extracted name into every mfr-binding task payload, which is why the
+       name is resolved to a catalogue label before this renders. #}
+    {#- "items", not "products": § 9's word list has one word for a thing in
+        the catalogue, and the button, the confirm and the guide all use it. -#}
+    {%- set unit = "item" if bind_items == 1 else "items" -%}
+    <button type="submit" name="decision" value="bind-manufacturer" class="btn-approve"
+            hx-post="/staging/{{ doc_id }}/apply"
+            hx-target="next .bind-confirm" hx-swap="innerHTML">
+      Approve for all {{ manufacturer_name }} items
+      {%- if bind_items is not none %} ({{ bind_items | num }} {{ unit }}){% endif %}
+    </button>
+    {% elif has_picker %}
+    {# The panel above carries a manufacturer picker, so the binding IS
+       available here, it just needs a name first. Disabled until one is chosen
+       (the picker preselects an unambiguous match, in which case this starts
+       enabled), and the label names the consequence rather than the action.
+       `base.html` keeps the two in step; with JS off the button stays as
+       rendered and the server still refuses an empty manufacturer. #}
+    <button type="submit" name="decision" value="bind-manufacturer" class="btn-approve"
+            hx-post="/staging/{{ doc_id }}/apply"
+            hx-target="next .bind-confirm" hx-swap="innerHTML"
+            data-mfr-approve
+            data-idle-label="Approve — choose the manufacturer above"
+            {{ "" if preselect else "disabled" }}>
+      {%- if preselect %}
+        {%- set unit = "item" if preselect_items == 1 else "items" -%}
+        Approve for all {{ preselect }} items
+        {%- if preselect_items is not none %} ({{ preselect_items | num }} {{ unit }}){% endif %}
+      {%- else %}Approve — choose the manufacturer above{% endif %}
+    </button>
+    {% else %}
+    {# A binding candidate with no catalogue entity to offer at all: the
+       picker is built from `item_mirror`, so this is an empty catalogue. #}
+    <button type="button" class="btn-approve" disabled
+            title="There is no manufacturer in the catalogue to choose from">
+      Approve
+    </button>
+    {% endif %}
+  {% else %}
+  <button type="submit" name="decision" value="approve" class="btn-approve">
+    {%- if approve_count == 1 %}Approve for this item
+    {%- elif approve_count %}Approve for these {{ approve_count | num }} items
+    {%- else %}Approve{% endif -%}
+  </button>
+  {% endif %}
+  {# Reveals the reasons, which live in their own form after this one (a form
+     cannot nest in a form, and their `required` radios must not block an
+     Approve). Found relative to this form, so no id is interpolated into JS. #}
+  <button type="button" class="btn-reject"
+          onclick="var f = this.form.parentNode.querySelector('.reject-form'); f.hidden = false; f.querySelector('input[name=reason]').focus();">Reject…</button>
+</div>
+{% endmacro %}
+
+{# Reject asks why (spec § 3, P1a). Hidden until Reject… opens it. The six
+   reasons are `REJECT_REASONS` in web/app.py, the route refuses any other
+   value, and the choice travels on `gate.apply` as `note`. `required` stops a
+   reason-less submit in the browser; the route's 422 is the backstop. #}
+{% macro reject_form(doc_id, reasons, note_max, group_id=None) %}
+<form class="reject-form" hidden
+      hx-post="/staging/{{ doc_id }}/apply"
+      hx-target="closest .stage-row" hx-swap="outerHTML">
+  {# The retry hint: a rejected document's group is searched again. #}
+  {% if group_id %}<input type="hidden" name="group_id" value="{{ group_id }}">{% endif %}
+  <fieldset>
+    <legend>Why are you rejecting it?</legend>
+    {% for reason in reasons %}
+    <label><input type="radio" name="reason" value="{{ reason }}" required> {{ reason }}</label>
+    {% endfor %}
+  </fieldset>
+  <div class="field">
+    <label for="reject-note-{{ doc_id }}">Note (optional)</label>
+    {# `maxlength` is the route's REJECT_NOTE_MAX; the route refuses a longer
+       note with a 422 either way. #}
+    <input type="text" id="reject-note-{{ doc_id }}" name="reason_note" maxlength="{{ note_max }}">
+  </div>
+  <p class="hint">A rejected document stays on file and can be reopened. Your name and the reason are recorded.</p>
+  <div class="reject-actions">
+    <button type="submit" name="decision" value="reject" class="btn-reject">Reject</button>
+    <button type="button" class="btn-clear"
+            onclick="this.form.reset(); this.form.hidden = true;">Cancel</button>
+  </div>
+</form>
+{% endmacro %}

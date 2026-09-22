@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% import "_pager.html" as pg %}
+{% block title %}Discovery — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>Discovery</h1>
+<p class="hint">
+  Coverage says whether we hold paper for an item. This says whether anyone ever went looking,
+  which is a different question and the one an auditor asks second. Four states: never searched;
+  searched and found nothing; searched, found nothing and sent to Missing documents; searched and
+  found something. The two middle ones are the honest answer to "is this uncovered because nobody
+  looked?", and the third says where the work went afterwards.
+</p>
+
+<div class="card">
+  <p class="metric">{{ summary.md_never }} of {{ summary.md_total }} medical-device items have never been searched.</p>
+  <p class="hint">
+    {{ summary.groups }} groups · {{ summary.never }} never searched ·
+    {{ summary.empty }} searched and found nothing ·
+    {{ summary.handoff }} sent to Missing documents ·
+    {{ summary.found }} searched and found something.
+  </p>
+</div>
+
+<div class="card">
+  <form method="get" action="/discovery" class="filter-row">
+    <div class="field">
+      <label>State</label>
+      <select name="state">
+        {% for key, label in states %}
+        <option value="{{ key }}" {% if key == state %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field filter-actions">
+      <button type="submit">Show</button>
+    </div>
+  </form>
+
+  {% if rows %}
+  {# Ordered by device items descending: the head of this list is where a
+     search buys the most coverage, and it is the same order the manufacturer's
+     own Search button walks. #}
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th>Manufacturer</th><th>Group</th><th>Device items</th><th>Items</th><th>Attempts</th><th>Last searched</th></tr>
+    </thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>{% if r.canonical_manufacturer %}<a href="/manufacturers/{{ r.canonical_manufacturer | urlencode }}">{{ r.canonical_manufacturer }}</a>{% else %}<span class="cell-muted">unresolved</span>{% endif %}</td>
+        <td>{{ r.label or "—" }}</td>
+        <td>{{ r.md_items or "—" }}</td>
+        {# `r['items']`, never `r.items`: a psycopg row is a dict and Jinja
+           resolves the dict's own .items() method first, rendering
+           "<built-in method items>" into the page. manufacturers.html
+           already carries this same subscript for the same reason. #}
+        <td>{{ r['items'] }}</td>
+        <td>{{ r.attempts or "—" }}</td>
+        <td>{% if r.last_at %}{{ r.last_at.strftime('%Y-%m-%d') }}{% else %}<span class="cell-muted">never</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {{ pg.pager_links(pager, "/discovery", "state=" ~ state) }}
+  {% else %}
+  <p class="hint">Nothing in this state. For "searched, found nothing" that is good news: every
+    group we have searched returned at least one document.</p>
+  {% endif %}
+</div>
+{% endblock %}

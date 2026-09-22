@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Playbooks — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>Playbooks</h1>
+<p class="hint">
+  Authored per-manufacturer config: BC codes, aliases, official domains and document
+  sources. Open a slug to edit it here; every save is revisioned and can be
+  restored. The repo JSON is now an import path, not the store:
+  <code>python -m app.cli playbooks validate</code> then <code>playbooks sync</code>
+  loads files into the database this page reads.
+</p>
+
+{#- Onboarding left the menu on 2026-09-14 (office UI redesign spec § 7). It
+    is the page for a supplier with NO playbook, so it sits above the list of
+    the ones that exist rather than inside it. -#}
+<nav class="link-row" aria-label="Playbook actions">
+  <a href="/onboarding">Onboard a supplier</a>
+</nav>
+
+{% if playbook_error %}
+<p class="hint">Playbooks could not be read: {{ playbook_error }}</p>
+{% endif %}
+
+{# Absent entirely when there are no files to compare against -- the deployed
+   image has none, and a banner there would be an alarm about nothing. See
+   `registry.playbook_drift`. #}
+{% if drift %}
+<div class="card drift drift-{{ drift.severity }}">
+  {% if drift.error %}
+  <p class="hint">The repo files could not be compared with the database: {{ drift.error }}</p>
+  {% elif drift.clean %}
+  <p class="hint">Repo files and the database agree, all {{ drift.total }} playbooks.</p>
+  {% else %}
+  <strong>The repo files and the database have drifted apart.</strong>
+  <ul>
+    {% for d in drift.stale %}
+    <li>
+      <strong>{{ d.slug }}</strong> &mdash; stale file. The database is at
+      revision {{ d.rev }}; <code>playbooks/{{ d.slug }}.json</code> still
+      matches revision {{ d.matches_rev }} ({{ d.delta }}).
+    </li>
+    {% endfor %}
+    {% for d in drift.diverged %}
+    <li>
+      <strong>{{ d.slug }}</strong> &mdash; <strong>diverged</strong>. The
+      database is at revision {{ d.rev }} and the file matches no revision, so
+      both sides were edited ({{ d.delta }}). Regenerating would destroy
+      whatever is only in the file, so nothing will do it for you:
+      <a href="/playbooks/{{ d.slug }}">resolve it here</a>.
+    </li>
+    {% endfor %}
+    {% for slug in drift.not_imported %}
+    <li>
+      <strong>{{ slug }}</strong> &mdash; a file with no row yet.
+      <code>python -m app.cli manufacturers seed</code> imports it.
+    </li>
+    {% endfor %}
+    {% for slug in drift.db_only %}
+    <li>
+      <strong>{{ slug }}</strong> &mdash; a row with no readable file: either it
+      was deleted, or its JSON no longer parses.
+    </li>
+    {% endfor %}
+  </ul>
+  <p class="hint">
+    The database is the store; the files are the authoring record, and a save
+    here does not write them.
+    {% if drift.stale %}
+    <code>python -m app.cli playbooks drift --apply</code> regenerates the stale
+    file(s) and refuses to touch a diverged one.
+    {% else %}
+    <code>python -m app.cli playbooks drift</code> is the same report in a
+    terminal.
+    {% endif %}
+    {{ drift.in_sync }} of {{ drift.total }} in sync.
+  </p>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  {% if rows %}
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th>Slug</th><th>Manufacturer</th><th>Aliases</th><th>BC codes</th><th>Domains</th><th>Doc sources</th></tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td><a href="/playbooks/{{ row.slug }}">{{ row.slug }}</a></td>
+        <td>{{ row.manufacturer }}</td>
+        <td>{{ row.aliases | join(", ") or "—" }}</td>
+        <td>{{ row.codes | join(", ") or "—" }}</td>
+        <td>{{ row.domains | join(", ") or "—" }}</td>
+        <td>{{ row.source_count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="hint">No playbooks found.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}Manufacturers — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>Manufacturers</h1>
+{% call ui.intro("One row per manufacturer, the ones with no playbook first because they are where the work is.") %}
+  A manufacturer here is the company, not the Business Central code: IVOCLAR's 001, 005 and 275
+  are one row, and a {{ "playbook" | word | lower }} that claims any one of those codes covers
+  all three. Within each half of the list the largest catalogue footprint comes first, so the
+  gap that costs the most is the one at the top. The name shown is the one the registry settled
+  on; which spelling came from where reads under <strong>Technical details</strong> on the
+  manufacturer's own page.
+{% endcall %}
+
+{% if playbook_error %}
+<p class="hint">Playbooks could not be read: {{ playbook_error }}</p>
+{% endif %}
+
+<div class="card">
+  <form method="get" action="/manufacturers" class="filter-row">
+    <div class="field">
+      <label>Search (entity name or BC code)</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="IVOCLAR, 001, ...">
+    </div>
+    <div class="field">
+      <label><input type="checkbox" name="no_playbook" value="1"
+        {% if no_playbook %}checked{% endif %}> Only without a playbook</label>
+    </div>
+    <div class="field filter-actions">
+      <button type="submit">Filter</button>
+      <a class="btn-clear" href="/manufacturers">Clear</a>
+    </div>
+  </form>
+
+  {# The filter and /onboarding answer the same question -- "which suppliers
+     have no recipe" -- and the filter is the weaker of the two: a flat page of
+     names, no ordering by what the gap costs, and no memory of the ones already
+     ruled out. Rather than compete with the queue, point at it, but only once
+     somebody has actually asked the question. `[no-playbook-filter-competes-
+     with-the-queue]`, UI audit 2026-09-04. #}
+  {% if no_playbook %}
+  <p class="hint">
+    To work through these rather than just list them, use
+    <a href="/onboarding">Onboard a supplier</a> — it orders the same entities by
+    how many items each one leaves uncovered, and remembers the ones already
+    triaged out (a distributor, no website, no document library) so they stop
+    coming back.
+  </p>
+  {% endif %}
+
+  {% if rows %}
+  <p class="hint">{{ total }} entit{{ "y" if total == 1 else "ies" }}.</p>
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>{{ "canonical entity" | word }}</th><th>Business Central codes</th>
+        <th>Items</th><th>{{ "production" | word }} documents</th>
+        <th>{{ "playbook" | word }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td><a href="/manufacturers/{{ row.canonical_name | urlencode }}">{{ row.canonical_name }}</a></td>
+        <td>{{ row.codes | join(", ") }}</td>
+        <td>{{ row['items'] }}</td>
+        <td>{{ row.docs }}</td>
+        <td>
+          {% if row.playbook_slug %}
+          <a href="/playbooks/{{ row.playbook_slug }}">{{ row.playbook_slug }}</a>
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="hint">No manufacturers match this filter.</p>
+  {% endif %}
+</div>
+{% endblock %}

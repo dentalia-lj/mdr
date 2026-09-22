@@ -1,0 +1,625 @@
+{# Shared page furniture.
+
+   `intro` folds a screen's explanatory prose behind its first sentence. Every
+   page here opened with three to five lines of it — right on a first read,
+   noise on the hundredth, and on `/items/{ref}` it was four lines of
+   link-status caveat above a one-row table. Nothing is deleted: the caveats
+   are compliance-relevant and stay one click away, which is why this is a
+   disclosure rather than a rewrite.
+
+   Deliberately no memory of having been opened. That needs localStorage or a
+   cookie, and this UI has no client-side state at all today (htmx plus one
+   delegated listener); a stateless default that is always the same beats a
+   remembered one that differs per browser when two people are looking at the
+   same screen. #}
+{% macro intro(summary) %}
+<details class="page-intro">
+  <summary>{{ summary }}</summary>
+  <div class="page-intro-body">{{ caller() }}</div>
+</details>
+{% endmacro %}
+
+{# D4, the one sentence quoted to the client, in ONE place.
+
+   It is rendered on Today and on the System status board, and it was written
+   out twice until 2026-09-14 -- which is exactly how the two drifted, one
+   printing "1.460 of 4.265" with separators and the other "1460 of 4265".
+   A figure the client is read out of a report cannot depend on which screen
+   somebody happened to open, so the wording, the thousands separator and the
+   link live here and both pages call this.
+
+   The separator is `| num`, the shared filter (`web/words.py`, registered in
+   `web/app.py`): this macro carried a local `thousands` until slice P7a, which
+   is the "later slice" that note was waiting for. `coverage` is
+   `coverage_headline(conn)`. #}
+
+{% macro coverage_sentence(coverage) %}
+{%- if coverage.total %}
+{#- One line on purpose: the sentence is quoted verbatim and asserted verbatim,
+    so it must not be broken by a source newline. -#}
+<p class="metric"><strong>Declarations on file for {{ coverage.covered | num }} of {{ coverage.total | num }} medical-device items ({{ coverage.pct }}%)</strong></p>
+<p class="hint">Counts the items Business Central marks as medical devices.
+  {% if coverage.unclassified %}Another {{ coverage.unclassified | num }} item{{ " has" if coverage.unclassified == 1 else "s have" }} no device class in BC and {{ "is" if coverage.unclassified == 1 else "are" }} not counted.{% endif %}
+  A declaration counts when it is published and linked to the item by its item number, the
+  supplier's article number, UDI or the supplier's coverage list.
+  <a href="/coverage?gap=doc">Show the {{ (coverage.total - coverage.covered) | num }} without a declaration</a></p>
+{%- else %}
+<p class="hint">No medical-device items yet. Coverage appears once a Business Central export
+  is imported and marks items as medical devices.</p>
+{%- endif %}
+{% endmacro %}
+
+{# ------------------------------------------------------------------------- #
+   The completeness card: what replaced the folder.
+
+   Dentalia's compliance documents used to live in a folder tree that only one
+   person could read. A folder can show what is in it; it cannot say what
+   should be. These two macros render that missing half -- `app/compliance.py`
+   decides what each device class must carry and what colour each holding
+   earns, `web/registry.py` finds the best holding per row, and everything
+   below is presentation.
+
+   Written for a reader who is not technical and is not looking at the queue:
+   no job tags, no `match_basis`, no status enum names. The one concept that
+   cannot be hidden is the difference between "this supplier is certified" and
+   "this article is evidenced", because collapsing those two is exactly what
+   made 99,7% coverage look like a finished job.
+
+   Severity carries the colour and nothing else does. Reusing the registry's
+   own `badge-production` / `badge-staged` / `badge-rejected` here would have
+   saved four CSS rules at the price of a grep that lands on the wrong screen,
+   so these get their own names. #}
+{% set _state_labels = {
+  "held": "Held",
+  "expiring": "Expires soon",
+  "expired": "Expired",
+  "review-due": "Due a review (5-year rule)",
+  "review": "Awaiting review",
+  "mfr-scope-only": "Supplier-wide only",
+  "superseded": "Replaced by a newer one",
+  "missing": "Missing",
+  "missing-exception-possible": "Missing — exemption may apply",
+  "not-required": "Not required",
+  "class-unknown": "Device class unknown",
+} %}
+
+{% macro completeness_gap(card) -%}
+{%- if card.no_declaration_items and card.stale_declaration_items -%}
+<strong>{{ card.no_declaration_items }} of {{ card.md_items }}</strong> items carry no declaration of conformity of their own, and a further <strong>{{ card.stale_declaration_items }}</strong> hold one that is out of date, superseded, or still waiting to be approved
+{%- elif card.no_declaration_items -%}
+<strong>{{ card.no_declaration_items }} of {{ card.md_items }}</strong> items carry no declaration of conformity of their own
+{%- elif card.stale_declaration_items -%}
+<strong>{{ card.stale_declaration_items }} of {{ card.md_items }}</strong> items hold a declaration that is out of date, superseded, or still waiting to be approved
+{%- else -%}
+every item carries a current declaration of conformity
+{%- endif -%}.
+{%- endmacro %}
+
+{% macro completeness_item(card) %}
+<div class="card completeness completeness-{{ card.severity }}">
+  <h2>Compliance completeness</h2>
+  <p class="hint">
+    What this item must carry as a distributor (MDR Art. 14(2)), and what we
+    hold for it{% if card.product_class %} — device class {{ card.product_class }}{% endif %}.
+    The last two rows are supporting evidence: good to hold, never counted against us.
+  </p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Document</th><th>Status</th><th>Held document</th><th>Valid to</th></tr></thead>
+    <tbody>
+      {% for r in card.rows %}
+      <tr class="{{ 'completeness-evidence' if not r.scored else '' }}">
+        <td>{{ r.label }}</td>
+        <td><span class="sev sev-{{ r.severity }}">{{ _state_labels[r.state] }}</span></td>
+        <td>
+          {% if r.doc_id %}<a href="/documents/{{ r.doc_id }}">Document #{{ r.doc_id }}</a>
+          {% else %}—{% endif %}
+        </td>
+        <td>{{ r.expires or "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if card.product_class is none %}
+  <p class="hint">Business Central has not recorded a device class for this item, so the
+    rows that depend on it cannot be answered either way.</p>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% macro completeness_manufacturer(card) %}
+<div class="card completeness completeness-{{ card.severity }}">
+  <h2>Compliance completeness</h2>
+  {# The sentence the client asked for, and the one a folder could never
+     produce: the supplier-level claim and the item-level gap side by side.
+     On 2026-08-21 a single ISO 13485 certificate took device coverage from
+     39,5% to 99,7% overnight while evidencing no item at all. #}
+  {% if card.supplier_docs %}
+  <p class="completeness-headline">
+    Supplier holds
+    {% for d in card.supplier_docs %}
+      an <a href="/documents/{{ d.doc_id }}">{{ "ISO 13485 certificate" if d.type == "ISO" else "EC certificate" }}</a>{% if d.validity_to %} (valid to {{ d.validity_to }}){% endif %}{{ "" if loop.last else "," }}
+    {% endfor %}
+    — {{ completeness_gap(card) }}
+  </p>
+  <p class="hint">Those are two different facts. A certificate about the manufacturer's quality
+    system is not evidence about any single item, which is why an item can be counted as
+    covered and still show as missing here.</p>
+  {% elif card.md_items %}
+  <p class="completeness-headline">{{ completeness_gap(card) | capitalize }}</p>
+  {% endif %}
+
+  {% if card.md_items %}
+  {# Four columns, not three. Three tallied by severity, and expired,
+     superseded and missing are all severity "bad" -- so a column headed
+     "Missing" read 1.050 for IVOCLAR where 16 items actually had none,
+     one line under a headline that said 16. Expired and missing are
+     different problems with different answers and now count separately. #}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Document</th><th class="n">Held</th><th class="n">Needs attention</th>
+      <th class="n">Expired or replaced</th><th class="n">None at all</th></tr></thead>
+    <tbody>
+      {% for r in card.rows %}
+      <tr class="{{ 'completeness-evidence' if not r.scored else '' }}">
+        <td>{{ r.label }}{% if not r.scored %} <span class="hint-inline">evidence only</span>{% endif %}</td>
+        <td class="n"><span class="sev sev-{{ 'ok' if r.held else 'none' }}">{{ r.held }}</span></td>
+        <td class="n"><span class="sev sev-{{ 'warn' if r.attention else 'none' }}">{{ r.attention }}</span></td>
+        <td class="n"><span class="sev sev-{{ ('bad' if r.scored else 'warn') if r.lapsed else 'none' }}">{{ r.lapsed }}</span></td>
+        <td class="n"><span class="sev sev-{{ ('bad' if r.scored else 'none') if r.none else 'none' }}">{{ r.none }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="hint">Counted over the {{ card.md_items }} items Business Central marks as medical
+    devices. "Needs attention" covers documents that are expiring, awaiting review, or held only
+    at supplier level. A certificate issued to the supplier as a whole — ISO 13485, or an EC
+    certificate — counts as held on the last two rows: supplier scope is the only form those
+    come in.</p>
+  {% else %}
+  <p class="hint">No item from this supplier is marked as a medical device in Business Central,
+    so there is nothing to complete.</p>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{# ------------------------------------------------------------------------- #
+   EUDAMED SRN confirm queue.
+
+   A macro rather than inlined in `srn_queue.html`: attribution decisions like
+   these read the same wherever they surface, and a wrong one becomes a wrong
+   e-mail to a supplier, so the row and its two buttons get one definition
+   rather than one per page that shows them.
+
+   Plain `<form method="post">`, not `hx-post` -- the decide route is
+   post-redirect-get (a decision here changes what the next register pull
+   sweeps, which is worth a full page reload, not a row that quietly
+   disappears). #}
+{% macro srn_confirm(rows) %}
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr>
+      <th>Manufacturer</th><th>Name in EUDAMED</th><th>{{ "srn" | word }}</th>
+      <th class="n">How close the names are</th><th class="n">Certificates</th>
+      <th>First seen</th><th>Decide</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td><a href="/manufacturers/{{ r.canonical_name | urlencode }}">{{ r.canonical_name }}</a></td>
+      <td>{{ r.actor_name or "—" }}</td>
+      <td>{{ r.srn }}</td>
+      <td class="n">{{ "%.1f"|format(r.match_score) if r.match_score is not none else "—" }}</td>
+      <td class="n">{{ r.certificates }}</td>
+      <td class="nowrap">{{ r.first_seen | day if r.first_seen else "—" }}</td>
+      <td>
+        {# Two forms, not two buttons in one: `hx-confirm` is read off the
+           FORM (htmx resolves it from the element issuing the request, which
+           for a boosted submit is the `<form>`, never the button that was
+           clicked -- verified against the bundled htmx build, 2026-09-11).
+           One shared form could not carry two different sentences, so each
+           decision gets its own tiny form and a hidden field in place of the
+           button's own `value`; the route reads `decision` the same either
+           way. `hx-boost`, not a plain form, is what makes `hx-confirm` fire
+           at all -- see the same note on the sweep-release form below.
+           Boosted, this still lands back on the SRN queue exactly as the
+           plain post did; only a real confirm dialog is added ahead of it. #}
+        <div class="link-actions">
+          <form method="post"
+                action="/manufacturers/srn-queue/{{ r.canonical_name | urlencode }}/{{ r.srn | urlencode }}"
+                hx-boost="true"
+                hx-confirm="Confirm this is {{ r.canonical_name }} in EUDAMED?">
+            <input type="hidden" name="decision" value="confirm">
+            <button type="submit" class="btn-approve"
+                    title="Confirm this is {{ r.canonical_name }} in EUDAMED — its certificates become sweepable">
+              Confirm
+            </button>
+          </form>
+          <form method="post"
+                action="/manufacturers/srn-queue/{{ r.canonical_name | urlencode }}/{{ r.srn | urlencode }}"
+                hx-boost="true"
+                hx-confirm="Record that this SRN is not {{ r.canonical_name }}?">
+            <input type="hidden" name="decision" value="reject">
+            <button type="submit" class="btn-reject"
+                    title="Record that this SRN is NOT {{ r.canonical_name }}">
+              Reject
+            </button>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{# How the candidate was found. A discovery key is machine-side (§ 9): it does
+   not change what the decision is, only where it came from. #}
+<details class="technical">
+  <summary>Technical details</summary>
+  <table>
+    <thead><tr><th>{{ "srn" | word }}</th><th>Discovered via</th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr><td>{{ r.srn }}</td><td><code>{{ r.discovered_via }}</code></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</details>
+</div>
+{% endmacro %}
+
+{# ------------------------------------------------------------------------- #
+   EUDAMED sweep due list and the operator release.
+
+   Ruling, Denis 2026-08-20, restated 2026-08-26: "No sweep ever runs
+   unattended -- an operator releases every run." The scheduler (migration
+   044) only ever writes `due_at`; the button below is the one path to
+   `released_at`. `method="post"` and `hx-boost`, not a plain `hx-post`, for
+   the same reason as `srn_confirm` above -- releasing a sweep starts a real
+   fetch against EUDAMED and is worth a full page reload, not a row that
+   quietly disappears; `hx-boost` is what makes `hx-confirm` fire at all
+   without giving that up (P1b, 2026-09-11).
+
+   The button is disabled when `srns` is 0 -- the server refuses that release
+   with a 400 regardless (nothing here is trusted client-side), but a row a
+   person can see has nothing to sweep should not invite the click at all. #}
+{% macro sweep_due(rows) %}
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr>
+      <th>Manufacturer</th><th>Last checked</th><th>Due since</th>
+      <th class="n">{{ "srn" | word }}s on file</th><th>{{ "sweep" | word }}</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td><a href="/manufacturers/{{ r.canonical_name | urlencode }}">{{ r.canonical_name }}</a></td>
+      <td class="nowrap">{{ r.last_swept_at | day if r.last_swept_at else "never" }}</td>
+      <td class="nowrap">{{ r.due_at | day if r.due_at else "—" }}</td>
+      <td class="n">{{ r.srns }}</td>
+      <td>
+        <form method="post" action="/manufacturers/{{ r.canonical_name | urlencode }}/sweep"
+              class="link-actions" hx-boost="true"
+              hx-confirm="Start the EUDAMED check for {{ r.canonical_name }} now?">
+          <button type="submit" class="btn-approve"
+                  {% if not r.srns %}disabled{% endif %}
+                  title="{% if r.srns %}Start the EUDAMED check for {{ r.canonical_name }}{% else %}No confirmed EUDAMED ID on file, so there is nothing to check{% endif %}">
+            {{ "release" | word }}
+          </button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endmacro %}
+
+{# ------------------------------------------------------------------------- #
+   Certificate findings (Task 6's six views, on screen).
+
+   `web/registry.py:certificate_findings` reads four of them plus a coverage
+   denominator; this renders all four in the order the client ruled on:
+   status alerts first (a withdrawn/suspended certificate is the sharpest
+   signal here and is NEVER a document request), then revision drift, then
+   the certificates we hold no copy of. Near-miss candidates from
+   `certificate_drift_candidate` render separately and collapsed under the
+   drift table -- shown for a human to confirm, never asserted, never mixed
+   into the drift table the way a real join would be (standing ruling,
+   2026-08-26).
+
+   Used identically on `/expiry` (whole registry, `canonical_name=None`) and
+   on the manufacturer page (scoped) -- the coverage line's `unattributable`
+   figure is the one exception, a global count on both call sites, because
+   the documents it counts have no manufacturer to scope by (see the
+   docstring on `certificate_findings`). #}
+{% macro cert_findings(findings, manufacturer=None, cert="") %}
+<div class="card">
+  <h2>EUDAMED certificate findings</h2>
+
+  <h3>Certificate status alerts ({{ findings.alerts | length }})</h3>
+  {% if findings.alerts %}
+  <p class="hint">EUDAMED itself reports these as withdrawn, cancelled, suspended or restricted
+    -- not missing paperwork, a live change in standing that needs a person to read it.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Manufacturer</th><th>Certificate</th><th>Revision</th><th>Status</th>
+      <th>Type</th><th>Expiry</th><th>Notified body</th><th>First seen</th></tr></thead>
+    <tbody>
+      {% for r in findings.alerts %}
+      <tr class="row-urgent">
+        <td><a href="/manufacturers/{{ r.canonical_name | urlencode }}">{{ r.canonical_name }}</a></td>
+        <td>{{ r.certificate_number }}</td>
+        <td>{{ r.revision_number or "—" }}</td>
+        <td><span class="sev sev-bad">{{ r.certificate_status }}</span></td>
+        <td>{{ r.certificate_type or "—" }}</td>
+        <td>{{ r.expiry_date or "—" }}</td>
+        <td>{{ r.notified_body_srn or "—" }}</td>
+        <td class="nowrap">{{ r.first_seen.strftime("%Y-%m-%d") if r.first_seen else "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="hint">No adverse certificate status reported by EUDAMED.</p>
+  {% endif %}
+
+  <h3>Revision drift ({{ findings.drift | length }})</h3>
+  {% if findings.drift %}
+  <p class="hint">EUDAMED lists a different revision than the one on the document we hold.
+    Neither is resolved here — Rev. 00 and Rev. 02 may be a supersession rather than a spelling,
+    and this board reports both sides rather than asserting one over the other.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Manufacturer</th><th>Certificate</th><th>Our revision</th>
+      <th>EUDAMED revision</th><th>EUDAMED status</th><th>Document</th></tr></thead>
+    <tbody>
+      {% for r in findings.drift %}
+      <tr>
+        <td><a href="/manufacturers/{{ r.canonical_name | urlencode }}">{{ r.canonical_name }}</a></td>
+        <td>{{ r.certificate_number }}</td>
+        <td>{{ r.our_revision or "—" }}</td>
+        <td>{{ r.eudamed_revision or "—" }}</td>
+        <td>{{ r.certificate_status or "—" }}</td>
+        <td><a href="/documents/{{ r.doc_id }}">#{{ r.doc_id }}</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="hint">No held certificate's revision disagrees with EUDAMED.</p>
+  {% endif %}
+
+  {% if findings.candidates %}
+  <details class="technical">
+    <summary>{{ findings.candidates | length }} possible match{{ "" if findings.candidates | length == 1 else "es" }},
+      not asserted</summary>
+    <p class="hint">A looser spelling rule would join these to a EUDAMED certificate. Shown for a
+      person to confirm — never asserted automatically, and never counted as drift.</p>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Manufacturer</th><th>Our number</th><th>Possible EUDAMED match</th>
+        <th>Rule</th><th>EUDAMED revision</th><th>EUDAMED status</th></tr></thead>
+      <tbody>
+        {% for r in findings.candidates %}
+        <tr>
+          <td><a href="/manufacturers/{{ r.canonical_name | urlencode }}">{{ r.canonical_name }}</a></td>
+          <td>{{ r.raw_cert_number }}</td>
+          <td>{{ r.possible_match }}</td>
+          <td>{{ r.possible_rule }}</td>
+          <td>{{ r.eudamed_revision or "—" }}</td>
+          <td>{{ r.certificate_status or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </details>
+  {% endif %}
+
+  <h3>Certificates we hold no copy of ({{ findings.gaps | length }})</h3>
+  {% if findings.gaps %}
+  <p class="hint">EUDAMED lists these against a trusted manufacturer SRN and no document in our
+    registry cites the base certificate number — the cheapest ask of the four findings: a named
+    number and issuing notified body, one line in an email.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Manufacturer</th><th>Certificate</th><th>Revision</th><th>Type</th>
+      <th>Status</th><th>Issued</th><th>Expiry</th><th>Notified body</th></tr></thead>
+    <tbody>
+      {% for r in findings.gaps %}
+      <tr>
+        <td><a href="/manufacturers/{{ r.canonical_name | urlencode }}">{{ r.canonical_name }}</a></td>
+        <td>{{ r.certificate_number }}</td>
+        <td>{{ r.revision_number or "—" }}</td>
+        <td>{{ r.certificate_type or "—" }}</td>
+        <td>{{ r.certificate_status or "—" }}</td>
+        <td>{{ r.issue_date or "—" }}</td>
+        <td>{{ r.expiry_date or "—" }}</td>
+        <td>{{ r.notified_body_srn or "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {%- if manufacturer %}
+  {# The button renders only on a manufacturer's own page. On /expiry this macro
+     shows every manufacturer's gaps at once, and one press there would mean 25
+     letters to 25 suppliers -- a bulk action nobody asked for, from a screen
+     that exists to be read. Same outcome shape as the declaration-gap button:
+     `asked:<id>:<status>` says the handler's one-ask-per-manufacturer rule
+     BEFORE the job runs, so a second press is never silent. #}
+  {% if cert and cert.startswith("asked:") %}
+  <div class="result ok">Already asked — draft
+    <a href="/drafts/{{ cert.split(":")[1] }}">#{{ cert.split(":")[1] }}</a>
+    is {{ cert.split(":")[2] }}. No second letter goes to this supplier.</div>
+  {% elif cert == "queued" %}
+  <div class="result ok">Drafting a request for the certificates we hold no copy of.</div>
+  {% endif %}
+  <form method="post" action="/manufacturers/{{ manufacturer | urlencode }}/cert-request"
+        style="margin:8px 0 12px">
+    <button type="submit">Ask for these {{ findings.gaps | length }} certificate(s)</button>
+    <span class="hint">Writes one draft naming each certificate by number,
+      revision and issuing notified body, taken from this manufacturer's own
+      EUDAMED entry. Nothing is sent: review it on
+      <a href="/drafts">{{ "drafts out" | word }}</a>.</span>
+  </form>
+  {%- endif %}
+  {% else %}
+  <p class="hint">EUDAMED lists no certificate we do not already hold a copy of.</p>
+  {% endif %}
+
+  {# The denominator. Without it a finding list reads as "we checked our
+     certificates" when reach is a fraction of the corpus -- and an unsynced
+     mirror must read "never synced", not as an absence of findings. #}
+  <p class="hint">
+    Matched {{ findings.coverage.matched }} of {{ findings.coverage.held }}
+    certificate{{ "" if findings.coverage.held == 1 else "s" }} we hold a copy of against
+    EUDAMED's own listing{% if findings.coverage.unmatched %} — {{ findings.coverage.unmatched }}
+    unmatched (our extraction quality, not EUDAMED's contents){% endif %}{% if
+    findings.coverage.unattributable %} — across the whole registry,
+    {{ findings.coverage.unattributable }} EC/ISO
+    document{{ "" if findings.coverage.unattributable == 1 else "s" }} we hold cannot be
+    attributed to any manufacturer at all (this figure is never scoped to one manufacturer,
+    unlike the matched/unmatched counts above) and are counted in none of the findings
+    above{% endif %}
+    · EUDAMED synced {{ findings.synced_at.strftime("%Y-%m-%d %H:%M") if findings.synced_at else "never" }}.
+  </p>
+</div>
+{% endmacro %}
+
+{# ------------------------------------------------------------------------- #
+   EUDAMED declaration gap (Task 13's three views, on screen).
+
+   The question this whole feature exists for: EUDAMED says a manufacturer
+   registered these devices -- which of them have we got a declaration of
+   conformity for? EUDAMED holds zero declarations itself, so this is a
+   REQUEST list, and its unit is the Basic UDI-DI group, not the item --
+   the registry's largest measured gap is 2.569 Carl Martin instruments, which
+   is 70 documents to request, not 2.569.
+
+   `not_in_eudamed` is its own bucket, never folded into `covered` or
+   `missing` (§5.6: 178 of 2.567 Carl Martin items did not resolve, cause
+   unknown -- folding it in would overstate coverage). The stored `staged`
+   bucket is likewise never folded into `missing`: a declaration waiting for
+   review is a document already in hand, not an absent one. It reads as
+   "Waiting for review" here, the § 9 word, like every other screen.
+
+   The check timestamp is stated explicitly and reads "never checked" when
+   `swept_at` is `None` -- RULING 24 (migration 046): a manufacturer nobody has
+   checked has an EMPTY delta, and without this line that empty delta would read
+   as "nothing changed" when the true fact is "nothing has ever been
+   compared". #}
+{% macro eudamed_gap(summary, gap="") %}
+<div class="card">
+  <h2>EUDAMED declaration gap</h2>
+  <p class="hint">
+    What EUDAMED says this manufacturer registered, matched against our own declarations of
+    conformity by exact article number. EUDAMED holds no declarations itself -- this is a
+    request list, one document per Basic UDI-DI group below, not per item.
+  </p>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th class="n">Covered</th><th class="n">Missing</th>
+      <th class="n">{{ "staged" | word }}</th><th class="n">Not in EUDAMED</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="n"><span class="sev sev-ok">{{ summary.totals.covered }}</span></td>
+        <td class="n"><span class="sev sev-bad">{{ summary.totals.missing }}</span></td>
+        <td class="n"><span class="sev sev-warn">{{ summary.totals.staged }}</span></td>
+        <td class="n"><span class="sev sev-warn">{{ summary.totals.not_in_eudamed }}</span></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="hint">"{{ "staged" | word }}" already has a candidate in hand, never counted as missing.
+    "Not in EUDAMED" is an item this manufacturer's trusted SRN did not resolve against
+    EUDAMED's own listing, cause unknown — never counted as covered or as missing.</p>
+
+  <h3>Groups to request ({{ summary.gaps | length }})</h3>
+  {% if summary.gaps %}
+  {# One draft for the whole manufacturer, not one per group: 70 groups is one
+     email a person sends, not 70 items on the drafts board. The button is a
+     producer -- it enqueues `email.request` and the handler writes the draft
+     (invariant 1) -- and nothing sends: the draft waits on /drafts for a
+     person to address and release it. #}
+  {# The button's own outcome, post-redirect-get, the same shape the discover
+     button uses. `asked:<id>:<status>` surfaces the handler's rule before the
+     job runs: one ask per manufacturer, and an archived one is not re-offered
+     (Denis, 2026-09-03). Without this the press looked broken -- it enqueued,
+     the handler declined, and the page came back identical. #}
+  {% if gap and gap.startswith("asked:") %}
+  <div class="result ok">Already asked — draft
+    <a href="/drafts/{{ gap.split(":")[1] }}">#{{ gap.split(":")[1] }}</a>
+    is {{ gap.split(":")[2] }}. No second letter goes to this supplier.</div>
+  {% elif gap == "queued" %}
+  <div class="result ok">Drafting a request for the declarations we have never had.</div>
+  {% endif %}
+  <form method="post" action="/manufacturers/{{ summary.canonical_name }}/gap-request"
+        style="margin:8px 0 12px">
+    <button type="submit">Draft request for these {{ summary.gaps | length }} group(s)</button>
+    {#- `| word` on the link text, not the literal "Drafts": that screen was
+        renamed to Renewal emails in P7c and this macro renders on Manufacturer
+        detail, an office page, so it was the last place still using the old
+        name. -#}
+    <span class="hint">Writes one draft listing every group below, with an
+      example article number for each. Nothing is sent: review it on
+      <a href="/drafts">{{ "drafts out" | word }}</a>.</span>
+  </form>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Basic UDI-DI</th><th>Trade name</th><th class="n">Items</th>
+      <th class="n">{{ "staged" | word }}</th><th>Manufacturer-scope cover</th></tr></thead>
+    <tbody>
+      {% for g in summary.gaps %}
+      <tr>
+        <td>{{ g.basic_udi_di }}</td>
+        <td>{{ g.trade_name or "—" }}</td>
+        <td class="n">{{ g.articles }}</td>
+        <td class="n">{{ g.staged }}</td>
+        <td>{{ "yes — informational, not a substitute for the declaration" if g.mfr_scope_covered else "no" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="hint">No outstanding declaration gap against EUDAMED's own listing.</p>
+  {% endif %}
+
+  <h3>Since the last check somebody read ({{ summary.delta | length }})</h3>
+  {% if summary.delta %}
+  <p class="hint">New Basic UDI-DI groups and devices reporting a status other than
+    "on-the-market" since this manufacturer's last check was started. Individual new devices
+    inside a group already tracked are a count here, not a list.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Basic UDI-DI</th><th class="n">New devices</th><th class="n">Status changes</th></tr></thead>
+    <tbody>
+      {% for d in summary.delta %}
+      <tr>
+        <td>{{ d.basic_udi_di }}</td>
+        <td class="n">{{ d.new_devices }}</td>
+        <td class="n">{{ d.status_changes }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="hint">No change since the last check somebody read.</p>
+  {% endif %}
+
+  <p class="hint">
+    EUDAMED {{ "checked " + (summary.swept_at | day) if summary.swept_at else "never checked" }}.
+  </p>
+</div>
+{% endmacro %}

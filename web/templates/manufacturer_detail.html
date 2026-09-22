@@ -1,0 +1,306 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}{{ canonical_name }} — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>{{ canonical_name }}</h1>
+{% call ui.intro("Everything under one manufacturer: what it is called, what is missing, and every document attributed to it.") %}
+  The three tabs at the foot of the page are inventory, what we hold. The cards above them are
+  the other question: what this manufacturer <em>should</em> have and does not. A
+  {{ "playbook" | word | lower }} is what tells the system where this manufacturer publishes
+  its paperwork, and a manufacturer without one is searched for blind.
+{% endcall %}
+<p class="hint">
+  <a href="/manufacturers">&laquo; All manufacturers</a>
+  {% if playbook_slug %} · {{ "playbook" | word }}: <a href="/playbooks/{{ playbook_slug }}">{{ playbook_slug }}</a>
+  {% elif playbook_error %} · {{ "playbook" | word }} coverage unknown: could not be determined.
+  {% else %} · No {{ "playbook" | word | lower }} authored for this manufacturer.{% endif %}
+</p>
+
+{% if playbook_error %}
+<p class="hint">Playbooks could not be read: {{ playbook_error }}</p>
+{% endif %}
+
+{# Identity stays outside the tabs: it is three rows, it is what the page IS,
+   and it is the thing you check while reading either of the other two. #}
+<div class="card">
+  <h2>Names in Business Central</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Code</th><th>{{ "vendor-master" | word }}</th></tr></thead>
+    <tbody>
+      {% for c in codes %}
+      <tr><td>{{ c.code }}</td><td>{{ c.vendor_name or "—" }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {# Which writer put each spelling on file. A source key is machine-side
+     (§ 9) and lives here, not in a column beside the names. #}
+  <details class="technical">
+    <summary>Technical details</summary>
+    <table>
+      <thead><tr><th>Code</th><th>Alias source</th></tr></thead>
+      <tbody>
+        {% for c in codes %}
+        <tr><td>{{ c.code }}</td><td><code>{{ c.source }}</code></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+</div>
+
+{# The other half of `/manufacturers?no_playbook=1`. That list has always said
+   who needs a playbook and, until this, clicking through offered nothing to
+   author: `manufacturer.slug` was written by `manufacturers seed` and nowhere
+   else, so starting one meant hand-writing a JSON file in the repo. The
+   playbook starts EMPTY -- every Tier A/B control on the playbook page then
+   applies, each with its own guard, rather than a second authoring surface
+   here that would drift from them. #}
+{% if not playbook_slug and manufacturer_id is not none %}
+<div class="card">
+  <h2>Start a playbook</h2>
+  <p class="hint">
+    Nothing is authored for {{ canonical_name }} yet, so DISCOVER falls through
+    to an unrestricted search for every one of its groups. A playbook with
+    nothing but <em>domains</em> already narrows that.
+  </p>
+  {#- Operator-only, matching the guard on the route: a button that always
+      answers 403 is worse than no button (spec § 4). -#}
+  {% if is_operator(request) %}
+  <form hx-post="/manufacturers/{{ canonical_name }}/playbook"
+        hx-target="#playbook-result" hx-swap="innerHTML">
+    <label for="slug">{{ "slug" | word }}</label>
+    <input type="text" id="slug" name="slug" value="{{ suggested_slug }}"
+           pattern="[a-z0-9]+(-[a-z0-9]+)*">
+    <p class="hint">
+      Lower-case letters, digits and single hyphens — it becomes the page
+      address. Shorter than the full legal name is normal
+      (<code>ivoclar</code>, not <code>ivoclar-vivadent-ag</code>).
+    </p>
+    <button type="submit">Start it</button>
+  </form>
+  <div id="playbook-result"></div>
+  {% else %}
+  <p class="hint">Starting a playbook is an operator action.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+{# A rename is an ACTION, not a field, and it sits under identity because that
+   is what it changes. `item_group.canonical_manufacturer` is effectively
+   write-once -- RESOLVE's ladder short-circuits on `_existing_link` -- so
+   groups built under the old name keep it and this cannot reach them. The
+   first submit prices that; only the second writes. #}
+<div class="card">
+  <h2>Rename</h2>
+  {% if manufacturer_id is none %}
+    <p class="hint">
+      No <code>manufacturer</code> row for this entity yet, so there is nothing
+      to rename. Run <code>dentalia manufacturers seed</code>.
+    </p>
+  {% else %}
+    <form hx-post="/manufacturers/{{ canonical_name }}/rename"
+          hx-target="#rename-result" hx-swap="innerHTML">
+      <label for="new_name">New canonical name</label>
+      <input type="text" id="new_name" name="new_name" style="width:100%"
+             value="{{ canonical_name }}">
+      <label for="rename_note">Why</label>
+      <input type="text" id="rename_note" name="note" style="width:100%"
+             placeholder="e.g. BC spells it differently from the certificates">
+      <p class="hint">
+        Nothing is written until you confirm. <strong>{{ canonical_name }}</strong>
+        is kept as an alias, so documents printing it still resolve. Two things
+        this cannot do: re-point <code>manufacturer_alias</code> (that is
+        <code>dentalia playbooks sync</code>) and re-resolve the groups that
+        keep the old name (<code>dentalia regroup</code>) — this process may
+        only read those tables.
+      </p>
+      <button type="submit">Check what a rename would change</button>
+    </form>
+    <div id="rename-result"></div>
+  {% endif %}
+</div>
+
+{# Contacts, not aliases: these are who `email.request` drafts to when a
+   document is due for renewal. They live in the database rather than the
+   playbooks (ruling 2026-08-20) precisely so the person doing the chasing can
+   fix one without an engineer -- this form is the half of that ruling that was
+   missing until migration 049. #}
+<div class="card">
+  <h2>Renewal contacts</h2>
+  {% if manufacturer_id is none %}
+    <p class="hint">
+      No <code>manufacturer</code> row for this entity yet, so there is nowhere
+      to save contacts. Run <code>dentalia manufacturers seed</code>.
+    </p>
+  {% else %}
+    <form hx-post="/manufacturers/{{ canonical_name }}/contacts"
+          hx-target="#contacts-result" hx-swap="innerHTML">
+      <label for="contact_emails">Addresses (comma or semicolon separated)</label>
+      <input type="text" id="contact_emails" name="contact_emails" style="width:100%"
+             value="{{ contact_emails | join(', ') }}"
+             placeholder="regulatory@example.com, qa@example.com">
+      <p class="hint">
+        Empty is allowed: a draft with no recipient is addressed by hand, and
+        the drafts page refuses to release one until it has an address.
+      </p>
+      <button type="submit">Save contacts</button>
+    </form>
+    <div id="contacts-result"></div>
+  {% endif %}
+</div>
+
+{# The answer the folder tree could never give. It goes above the tabs
+   because "is anything missing from this supplier?" is the question the
+   person replacing the folders arrives with, and the tabs below are all
+   inventory -- what we have, never what we should. #}
+{{ ui.completeness_manufacturer(completeness) }}
+
+{{ ui.cert_findings(cert_findings, manufacturer=canonical_name, cert=cert) }}
+
+{{ ui.eudamed_gap(gap_summary, gap) }}
+
+{# Discovery for the whole supplier. The per-item button has existed since
+   [admin-refetch-item]; this is the same action at the granularity a person
+   actually thinks in. Capped because the distribution is skewed -- measured
+   2026-09-02, the median manufacturer has 3 uncovered groups and HENRY SCHEIN
+   has 809, and one uncapped press on the latter queues thousands of fetches
+   against one domain. Outcome travels back as a query param, post-redirect-get,
+   the same way item_detail renders `?rediscover=`. #}
+<div class="card">
+  <h2>Find missing documents</h2>
+  {% if discover.startswith("queued:") %}
+  <div class="result ok">Queued discovery for {{ discover.split(":")[1] }} group(s).</div>
+  {% elif discover == "deduped" %}
+  <div class="result ok">Already queued today — nothing added.</div>
+  {% elif discover == "nothing-to-do" %}
+  <div class="result ok">Every group here already has a document.</div>
+  {% endif %}
+  {% if uncovered_group_count %}
+  <p>
+    <strong>{{ uncovered_group_count }}</strong> item group(s) hold no
+    {{ "production" | word | lower }} document.
+    {% if uncovered_group_count > discover_cap %}
+    One press searches the {{ discover_cap }} least recently looked at; press
+    again to continue through the rest.
+    {% else %}
+    One press searches all of them.
+    {% endif %}
+  </p>
+  <form method="post" action="/manufacturers/{{ canonical_name }}/discover">
+    <button type="submit">Search for documents</button>
+  </form>
+  {% else %}
+  <p class="muted">Every item group here already has a {{ "production" | word | lower }} document.</p>
+  {% endif %}
+</div>
+
+{# Three stacked sections became three tabs. The item list is the longest by an
+   order of magnitude and the least of what this page is for, and printing it
+   first put the compliance documents ten screens down. Same CSS-only mechanism
+   as the status board (radios carry the state, `:checked ~` picks the panel);
+   `?tab=` makes each one linkable. #}
+<div class="card">
+<div class="tabs">
+  <input type="radio" name="mfr-tab" id="tab-mfr-all" class="tab-radio"{% if tab == 'all' %} checked{% endif %}>
+  <input type="radio" name="mfr-tab" id="tab-mfr-production" class="tab-radio"{% if tab == 'production' %} checked{% endif %}>
+  <input type="radio" name="mfr-tab" id="tab-mfr-items" class="tab-radio"{% if tab == 'items' %} checked{% endif %}>
+
+  <div class="tab-bar">
+    <label for="tab-mfr-all">All documents{% if attributed_by_status %} ({{ attributed_by_status | sum(attribute="n") }}){% endif %}</label>
+    <label for="tab-mfr-production">{{ "production" | word }} documents ({{ docs_total }})</label>
+    <label for="tab-mfr-items">Items ({{ items_total }})</label>
+  </div>
+
+  {# The section below can only be reached by what a document says about
+     itself. A manufacturer's `filed` documents link no item by definition --
+     correct, attributed, covering items the catalogue does not carry -- so
+     before this existed they were invisible on their own manufacturer's page
+     and reachable only by knowing to type ?status=filed into /documents. 74 of
+     GC's 131 were in that state. #}
+  <div class="tab-panel" id="panel-mfr-all">
+    <p class="hint">Attributed by what each document says about itself, not by an item link —
+      which is the only way an <span class="badge badge-filed">{{ "filed" | word }}</span>
+      document can be reached, since it covers no item in the catalogue.</p>
+    {% if attributed_by_status %}
+    <p class="hint">
+      {% for s in attributed_by_status %}
+      <a href="/documents?status={{ s.status }}"><span class="badge badge-{{ s.status }}">{{ s.status | word }}</span></a>
+      {{ s.n }}{{ "" if loop.last else " · " }}
+      {% endfor %}
+    </p>
+    {% endif %}
+    {% if attributed %}
+    <div class="table-wrap tall">
+    <table>
+      <thead><tr><th>Doc</th><th>Type</th><th>Regulation</th><th>Cert number</th>
+        <th>Valid to</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for d in attributed %}
+        <tr>
+          <td><a href="/documents/{{ d.doc_id }}">{{ d.doc_id }}</a></td>
+          <td>{{ d.type | doc_type }}</td>
+          <td>{{ d.regulation }}</td>
+          <td>{{ d.cert_number or "—" }}</td>
+          <td>{{ d.validity_to or "—" }}</td>
+          <td><span class="badge badge-{{ d.status }}">{{ d.status | word }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% if attributed_by_status | sum(attribute="n") > attributed | length %}
+    <p class="hint">Showing the first {{ attributed | length }} of
+      {{ attributed_by_status | sum(attribute="n") }} — this list is capped.</p>
+    {% endif %}
+    {% else %}
+    <p class="hint">No document in the registry names this manufacturer in its own evidence.
+      That is expected for an entity whose documents have not been fetched yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="tab-panel" id="panel-mfr-production">
+    {% if docs_total > docs | length %}
+    <p class="hint">This manufacturer has more {{ "production" | word | lower }} documents
+      than this page shows at once.
+      Showing the first {{ docs | length | num }} of {{ docs_total | num }} documents.</p>
+    {% endif %}
+    {% if docs %}
+    <div class="table-wrap tall">
+    <table>
+      <thead><tr><th>Doc</th><th>Type</th><th>Regulation</th><th>Valid to</th></tr></thead>
+      <tbody>
+        {% for d in docs %}
+        <tr><td><a href="/documents/{{ d.doc_id }}">{{ d.doc_id }}</a></td><td>{{ d.type | doc_type }}</td><td>{{ d.regulation }}</td><td>{{ d.validity_to or "—" }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="hint">No {{ "production" | word | lower }} documents linked to this manufacturer's items.</p>
+    {% endif %}
+  </div>
+
+  <div class="tab-panel" id="panel-mfr-items">
+    {% if items_total > items | length %}
+    <p class="hint">This entity has more items than this page displays at once.
+      Showing the first {{ items | length | num }} of {{ items_total | num }} items.</p>
+    {% endif %}
+    {% if items %}
+    <div class="table-wrap tall">
+    <table>
+      <thead><tr><th>Item no.</th><th>Name</th></tr></thead>
+      <tbody>
+        {% for i in items %}
+        <tr><td><a href="/items/{{ i.item_ref }}">{{ i.item_ref }}</a></td><td>{{ i.name }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="hint">No catalogue items resolve to this manufacturer yet.</p>
+    {% endif %}
+  </div>
+</div>
+</div>
+{% endblock %}

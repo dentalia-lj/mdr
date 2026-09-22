@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Ingest — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>Ingest from a path on the server</h1>
+{# The old standfirst said "Parsing itself is a later stage -- the no-op worker
+   currently just drains this job to `done`". That stopped being true when
+   `app/handlers/ingest.py` landed, and it stayed on screen: anyone who read it
+   would not trust a run that had worked. Replaced with what the form actually
+   is -- the developer path -- and pointed at the page a person should use.
+   Retiring this page altogether is `[ingest-page-says-the-import-does-nothing]`. #}
+<p class="hint">
+  <strong>This is the developer form.</strong> It enqueues an
+  <code>ingest.run</code> job against a file that is <em>already inside the
+  container</em>, which means somebody had to put it there.
+  <strong>To import an export from your own machine, use
+  <a href="/import">Import</a></strong> — it takes an upload, shows you the
+  diff, and writes nothing until you confirm it.
+</p>
+<p class="hint">
+  The run itself is real: INGEST parses the file, mirrors the catalogue and
+  reports its counts below. Only <code>csv</code> works —
+  <code>bc_odata</code> is not wired to a live endpoint and every job using it
+  dead-letters.
+</p>
+
+<div class="card">
+  <form hx-post="/ingest" hx-target="#result" hx-swap="innerHTML">
+    <div class="field">
+      <label>Source</label>
+      <select name="source" id="source-select" onchange="dentaliaToggleSource()">
+        {% for s in sources %}
+        <option value="{{ s }}">{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Priority</label>
+      <select name="priority">
+        {% for p in priorities %}
+        <option value="{{ p }}" {% if p == 'interactive' %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+      <div class="hint">A human is waiting on this — "interactive" outranks scheduled sweeps.</div>
+    </div>
+
+    <div id="csv-fields">
+      <div class="field">
+        <label>Pick a file under {{ imports_dir }}</label>
+        <select name="csv_path_select">
+          <option value="">(none — type a path below)</option>
+          {% for f in import_files %}
+          <option value="{{ f }}">{{ f }}</option>
+          {% endfor %}
+        </select>
+        {% if not import_files %}
+        <div class="hint">No files found under {{ imports_dir }} — enter a path manually.</div>
+        {% endif %}
+      </div>
+      <div class="field">
+        <label>Or type a path manually</label>
+        <input type="text" name="csv_path_manual" placeholder="/imports/2026-07/bc_export_LJ.xlsx">
+      </div>
+    </div>
+
+    <div id="odata-fields" hidden>
+      <div class="field">
+        <label>Company</label>
+        <input type="text" name="company" placeholder="Dentalia_SI">
+      </div>
+      <div class="field">
+        <label>Delta since</label>
+        <input type="datetime-local" name="delta_since">
+      </div>
+    </div>
+
+    <button type="submit">Enqueue ingest.run</button>
+  </form>
+  <div id="result" class="result"></div>
+</div>
+
+{# What previous runs actually did. Every handler returns a result envelope and
+   `queue.finish` stores it (job.result, migration 019); until now it was
+   written and never read, so this page could start work but not report on it.
+   Not filtered to ingest.run deliberately: no import has run on this database
+   yet, and an empty table would say nothing while the work that IS running
+   stayed invisible. #}
+<div class="card">
+  <h2>Recent runs</h2>
+  {% if runs %}
+  <p class="hint">The last {{ runs|length }} jobs that finished with a result, newest first.
+    The result is what the handler itself reported — rows read, links written, disposition —
+    not an interpretation of it.</p>
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th>#</th><th>Type</th><th>Status</th><th class="nowrap">Finished</th>
+        <th class="nowrap">Took</th><th>Result</th></tr>
+    </thead>
+    <tbody>
+      {% for run in runs %}
+      <tr>
+        <td><a href="/jobs/{{ run.id }}">{{ run.id }}</a></td>
+        <td>{{ run.type }}</td>
+        <td><span class="badge badge-{{ run.status }}">{{ run.status }}</span></td>
+        <td class="nowrap">{{ run.finished_at.strftime("%Y-%m-%d %H:%M") if run.finished_at else "—" }}</td>
+        <td class="nowrap">{{ run.duration_s | duration }}</td>
+        <td><details class="cell-json"><summary>show</summary><pre>{{ run.result_pretty }}</pre></details></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="hint">No job has finished with a result yet.</p>
+  {% endif %}
+</div>
+
+<script>
+  function dentaliaToggleSource() {
+    var v = document.getElementById("source-select").value;
+    document.getElementById("csv-fields").hidden = (v !== "csv");
+    document.getElementById("odata-fields").hidden = (v !== "bc_odata");
+  }
+  dentaliaToggleSource();
+</script>
+{% endblock %}

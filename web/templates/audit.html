@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% import "_pager.html" as pg %}
+{% import "_ui.html" as ui %}
+{% block title %}Decisions — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>Decisions</h1>
+{% call ui.intro("Every decision the registry has recorded, who made it and when.") %}
+  A decision made by a person carries their login; one made by the system carries the name of
+  the part that made it. Each row keeps its own copy of the work that produced it, so it still
+  reads correctly long after that work is gone. Nothing here can be edited or removed, which is
+  the whole point of it.
+{% endcall %}
+
+<div class="card">
+  <form method="get" action="/audit" class="filter-row">
+    <div class="field">
+      <label>Event</label>
+      <select name="event">
+        <option value="">any</option>
+        {% for e in events %}
+        <option value="{{ e.event }}" {% if e.event == event %}selected{% endif %}>{{ e.event | audit_event }} ({{ e.n }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label>Search</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="who, item ref, or doc id">
+    </div>
+    <div class="field filter-actions">
+      <button type="submit">Filter</button>
+      <a class="btn-clear" href="/audit">Clear</a>
+    </div>
+  </form>
+
+  {% if rows %}
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th>When</th><th>What happened</th><th>Document</th><th>Item no.</th>
+        <th>Decided by</th><th>Why</th><th></th></tr>
+    </thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>{{ r.at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td>{{ r.event | audit_event }}</td>
+        <td>{% if r.doc_id %}<a href="/documents/{{ r.doc_id }}">{{ r.doc_id }}</a>{% else %}—{% endif %}</td>
+        <td>{% if r.item_ref %}<a href="/items/{{ r.item_ref | urlencode }}">{{ r.item_ref }}</a>{% else %}—{% endif %}</td>
+        <td>{{ r.decided_by or "—" }}</td>
+        {# The reviewer's reason (`gate.apply`'s optional `note`, e.g. "Out of
+           date: newer 2025 version exists") reads in the open: it is the one
+           part of the detail written by a person. #}
+        <td>{% if r.detail and r.detail.note %}<span class="audit-note">{{ r.detail.note }}</span>
+          {%- else %}—{% endif %}</td>
+        {# The stored event key, the job and the raw detail. `via_job` is a soft
+           reference: the job may be gone and the row still means what it meant,
+           so this links somewhere that may 404 rather than withholding which
+           job it was. All three are machine-side (§ 9) and live here. #}
+        <td><details class="technical"><summary>Technical details</summary>
+          <p class="hint">Event <code>{{ r.event }}</code>
+            {%- if r.via_job %} · job <a href="/jobs/{{ r.via_job }}">#{{ r.via_job }}</a>{% endif %}</p>
+          {%- if r.detail %}<pre>{{ r.detail | tojson(indent=2) }}</pre>{% endif %}
+        </details></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {{ pg.pager_links(pager, "/audit", "event=" ~ event ~ "&q=" ~ q) }}
+  {% else %}
+  <p class="hint">No decision matches this filter.</p>
+  {% endif %}
+</div>
+{% endblock %}

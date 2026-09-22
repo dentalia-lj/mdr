@@ -1,0 +1,50 @@
+{# Shared prev/next + "51–100 of 5,831" strip for the /staging sections. Both
+   sections swap themselves in place, so the controls are HTMX buttons against
+   the section container rather than links that reload the whole board.
+
+   Every figure through `| num`. This strip is the one shared by /items,
+   /documents, /missing, /coverage, /discovery, /audit, /data-quality and
+   /staging, so a raw total here read "1–50 of 16091" on all eight beside
+   counts that read "16,091" on the same page (rule 7). #}
+{# The same strip for a page that reloads whole rather than swapping a section
+   in place (/data-quality): plain hrefs, no HTMX target. `params` is an
+   already-built query string carried through paging — a filter that did not
+   survive Next would silently widen the question the reader asked. #}
+{% macro pager_links(p, url, params="") %}
+<div class="pager">
+  <span class="hint">
+    {% if p.total %}{{ p.first | num }}–{{ p.last | num }} of {{ p.total | num }}{% else %}none{% endif %}
+  </span>
+  <span class="pager-controls">
+    {% if p.has_prev %}
+    <a class="pager-btn" href="{{ url }}?{% if params %}{{ params }}&amp;{% endif %}page={{ p.page - 1 }}">&laquo; Previous</a>
+    {% endif %}
+    {% if p.has_next %}
+    <a class="pager-btn" href="{{ url }}?{% if params %}{{ params }}&amp;{% endif %}page={{ p.page + 1 }}">Next &raquo;</a>
+    {% endif %}
+  </span>
+</div>
+{% endmacro %}
+
+{# `params`, as in `pager_links`, is an already-built query string carried
+   through paging (the Review list's reason chip); `q` stays the search. #}
+{% macro pager(p, url, target, q=None, params="") %}
+{%- set query = (("&q=" ~ q|urlencode) if q else "") ~ (("&" ~ params) if params else "") -%}
+<div class="pager">
+  <span class="hint">
+    {% if p.total %}{{ p.first | num }}–{{ p.last | num }} of {{ p.total | num }}{% else %}none{% endif %}
+  </span>
+  <span class="pager-controls">
+    {% if p.has_prev %}
+    <button type="button" class="pager-btn"
+            hx-get="{{ url }}?page={{ p.page - 1 }}{{ query }}"
+            hx-target="{{ target }}" hx-swap="innerHTML">&laquo; Previous</button>
+    {% endif %}
+    {% if p.has_next %}
+    <button type="button" class="pager-btn"
+            hx-get="{{ url }}?page={{ p.page + 1 }}{{ query }}"
+            hx-target="{{ target }}" hx-swap="innerHTML">Next &raquo;</button>
+    {% endif %}
+  </span>
+</div>
+{% endmacro %}

@@ -1,0 +1,44 @@
+{
+  "manufacturer": "VOCO",
+  "aliases": [
+    "VOCO GmbH"
+  ],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "041"
+    }
+  ],
+  "domains": [
+    "voco.dental"
+  ],
+  "contacts": [
+    "info@voco.de",
+    "dealersupport@voco.de"
+  ],
+  "date_labels": {
+    "from": [
+      "Date:"
+    ]
+  },
+  "doc_sources": [
+    {
+      "doc_type": "IFU",
+      "kind": "portal",
+      "url": "https://www.voco.dental/en/service/download/instructions-for-use.aspx",
+      "note": "English IFU download page, printed in VOCO's own corpus documents (imports/dentalia-sftp/VOCO). Verified 200 on 2026-08-11."
+    },
+    {
+      "doc_type": "IFU",
+      "kind": "portal",
+      "url": "https://www.voco.dental/de/service/download/gebrauchsinformationen.aspx",
+      "note": "German counterpart of the same download page, same corpus source. Kept alongside the English one because VOCO publishes per-language IFU sets."
+    }
+  ],
+  "match": {
+    "anchors": [
+      "voco gmbh"
+    ]
+  },
+  "ref_strategy": "table"
+}

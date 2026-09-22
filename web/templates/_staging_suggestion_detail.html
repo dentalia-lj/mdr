@@ -1,0 +1,40 @@
+{# Expanded body of one grouping-suggestion row: the full candidate list, the
+   T1 rationale (or its error), and the assign form. Fetched on first expand. #}
+{# What is being moved. Without it the page showed only candidate names, so a
+   row read as its destination product rather than its own -- and the assign
+   form below pre-fills that destination. #}
+<h3>Item under review</h3>
+<p class="hint"><code>{{ s.item_ref }}</code> &middot;
+  <strong>{{ s.item_name or "name unknown (not in item_mirror)" }}</strong></p>
+
+<h3>Candidate groups</h3>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Group ID</th><th>Score</th><th>Sample name</th></tr></thead>
+  <tbody>
+    {% for c in s.candidates %}
+    <tr><td>{{ c.group_id }}</td><td>{{ c.score }}</td><td>{{ c.sample_name }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<h3>T1 rationale</h3>
+<pre class="payload">{{ s.suggestion_pretty }}</pre>
+
+<h3>Decision</h3>
+<form hx-post="/staging/suggestion/{{ s.id }}/assign" hx-target="#result-suggestion-{{ s.id }}" hx-swap="innerHTML">
+  <div class="field">
+    <label>Action</label>
+    <select name="action">
+      <option value="assign">assign to group</option>
+      <option value="new">start new group</option>
+    </select>
+  </div>
+  <div class="field">
+    <label>Group ID (required for "assign to group")</label>
+    <input type="text" name="group_id" placeholder="{{ s.candidates[0].group_id if s.candidates else '' }}">
+  </div>
+  <button type="submit">Enqueue resolve.group</button>
+</form>
+<div id="result-suggestion-{{ s.id }}" class="result"></div>

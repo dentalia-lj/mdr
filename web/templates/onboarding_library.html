@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{ canonical_name }} — library{% endblock %}
+{% block content %}
+<h1>{{ canonical_name }}</h1>
+<p class="page-lede">Step 3 of 4: the page that lists their documents, which
+  turns one address into every document on it.</p>
+<p class="hint"><a href="/onboarding">&laquo; Onboarding queue</a> ·
+  playbook <a href="/playbooks/{{ slug }}">{{ slug }}</a></p>
+
+{% set step = 3 %}{% include "_onboarding_steps.html" %}
+
+<div class="card">
+  <h2>Their document library</h2>
+  {# The SAME form and the SAME probe routes as the playbook page. One
+     implementation, so this flow and the expert page can never show an
+     operator different answers for the same playbook -- only the surroundings
+     differ, and here it is a screen of its own instead of the twelfth card. #}
+  <p class="hint">
+    Many manufacturers publish one page that <em>lists</em> their declarations
+    and instructions. Point us at it and we turn that page into every document
+    on it, instead of searching for them one item at a time.
+  </p>
+  <p class="hint">
+    <strong>A probe looks and reports.</strong> It reads one page, downloads no
+    documents, archives nothing and writes no playbook. It obeys the site's own
+    rules: if their <code>robots.txt</code> says we may not read that page, it
+    says so and stops.
+  </p>
+  <form id="crawl-probe-form"
+        hx-post="/playbooks/{{ slug }}/probe" hx-target="#probe-result"
+        hx-swap="innerHTML">
+    <table>
+      <tbody>
+        <tr>
+          <th><label for="probe-index-url">The page that lists their documents</label></th>
+          <td><input id="probe-index-url" type="url" name="index_url" size="58"
+                     placeholder="https://example.com/downloads" required>
+            <p class="hint">The list, not one document.
+              {% if domains %}Try
+              {% for d in domains %}<code>{{ d }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+              — look for “Downloads”, “Documents”, “IFU” or “Declarations”.{% endif %}</p></td>
+        </tr>
+        <tr>
+          <th><label for="probe-link-pattern">Which links count</label></th>
+          <td><input id="probe-link-pattern" type="text" name="link_pattern"
+                     size="24" value="\.pdf$" required>
+            <p class="hint">Leave this alone unless you know better.</p></td>
+        </tr>
+        <tr>
+          <th><label for="probe-max-links">Most links to take</label></th>
+          <td><input id="probe-max-links" type="number" name="max_links" min="1"
+                     max="2000" value="200"></td>
+        </tr>
+        <tr>
+          <th><label for="probe-doc-types">Naming rules</label></th>
+          <td><textarea id="probe-doc-types" name="doc_type_from" rows="3" cols="36"
+                        placeholder="ifu=IFU&#10;konformit=DoC&#10;sds_="></textarea>
+            <p class="hint">
+              Optional. A word from the address, then what it means — one of
+              DoC, EC, IFU, ISO. Leave the right side empty to count a family
+              but keep it out of the register, which is how safety data sheets
+              stay out.
+            </p></td>
+        </tr>
+      </tbody>
+    </table>
+    <button type="submit">Probe</button>
+  </form>
+  <div id="probe-result"></div>
+</div>
+
+<div class="card">
+  <h2>Move on</h2>
+  <p class="hint">
+    A library page is optional. Plenty of manufacturers have none, and the
+    system still finds their documents by searching the websites from step 2,
+    just one item at a time.
+  </p>
+  <p>
+    <a class="button" href="/onboarding/{{ slug }}/done">
+      {% if crawl %}Continue · {{ crawl | length }} library page(s) saved{% else %}They have no library page, continue{% endif %}</a>
+  </p>
+</div>
+
+{% include "_onboarding_rail.html" %}
+{% endblock %}

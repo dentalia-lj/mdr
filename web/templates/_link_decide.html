@@ -1,0 +1,49 @@
+{# C17 link-level decision buttons, shared by /staging and the item page so the
+   two surfaces can never drift apart.
+
+   These rule on ONE (doc_id, item_ref) link and never on the document. That
+   distinction is the whole reason the macro exists: approving a DOCUMENT on
+   /staging says "we read this paper correctly", while confirming a LINK says
+   "this paper covers this article". A reviewer who approved the document and
+   watched the link stay staged is exactly how this gap was found (item
+   2222100, 2026-08-24), so the labels name the article, never the paper.
+
+   Every form posts the same endpoint and replaces its own row, so a worked
+   queue visibly shrinks. #}
+
+{% macro buttons(doc_id, item_ref, link_status, doc_status) %}
+{% if doc_status == 'production' %}
+{# Target the CELL, innerHTML — not the row. `_result.html` renders a <div>,
+   and swapping a <div> in for a <tr> is invalid table markup that browsers
+   hoist out of the table entirely. The document-level forms can use
+   `outerHTML` on `closest .stage-row` because those rows are divs; these are
+   real table rows, so the receipt replaces the buttons in place. #}
+<form class="link-actions" hx-post="/links/{{ doc_id }}/decide"
+      hx-target="closest td" hx-swap="innerHTML">
+  <input type="hidden" name="item_ref" value="{{ item_ref }}">
+  {% if link_status == 'staged' %}
+  {# The basis that got here is untrusted by construction: the document names
+     this article nowhere. So the label asks the question the reviewer must
+     actually answer, rather than saying "approve" a second time. #}
+  <button type="submit" name="decision" value="confirm-link" class="btn-approve"
+          title="Publish this link: record that a person confirmed this document covers {{ item_ref }}">
+    Covers this item
+  </button>
+  <button type="submit" name="decision" value="reject-link" class="btn-reject"
+          title="Record that this document does NOT cover {{ item_ref }}">
+    Does not
+  </button>
+  {% elif link_status == 'rejected' %}
+  {# The only way out of `rejected` — machines are locked out of it (the
+     STICKY_LINK_STATUSES rule), so if a coverage map later proves the refusal
+     wrong, this button is the sole remedy that leaves an audit trail. It
+     returns the link to `staged`, never straight to production: it has to be
+     confirmed again on the merits. #}
+  <button type="submit" name="decision" value="reopen-link" class="btn-secondary"
+          title="Put this link back in the queue — it returns to staged, not to production">
+    Re-open
+  </button>
+  {% endif %}
+</form>
+{% endif %}
+{% endmacro %}

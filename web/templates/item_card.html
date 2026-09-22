@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ item_name or item_ref }} — compliance documents</title>
+  <link rel="stylesheet" href="{{ static_url('css/style.css') }}">
+</head>
+<body class="item-card">
+  <main>
+    <h1>{{ item_name or item_ref }}</h1>
+    {# A one-line intro, not the shared `page-intro` disclosure: this page is
+       not inside the office UI (no menu, no stylesheet furniture beyond the
+       card) and the person reading it is on the phone to a clinic. It carries
+       the same class so it reads the same and is found by the same test. #}
+    <p class="page-intro">The compliance documents on file for this item.</p>
+    <p class="identity">
+      {# Manufacturer identity leads: it is what is printed on the box, so it
+         is what lets someone confirm this is the article they are holding.
+         Dentalia's own item_ref is shown after it, smaller. #}
+      {% if manufacturer %}<strong>{{ manufacturer }}</strong>{% endif %}
+      {% if mfr_ref %} &middot; article no. {{ mfr_ref }}{% endif %}
+      <span class="muted">&middot; item no. {{ item_ref }}</span>
+    </p>
+
+    {% if documents %}
+      <p><a class="button" href="{{ item_ref }}/documents.zip?{{ request.url.query }}">Download all ({{ documents|length }})</a></p>
+      <table>
+        <thead>
+          <tr><th>Document</th><th>Type</th><th>Valid from</th><th>Valid to</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for d in documents %}
+          <tr>
+            <td>{{ d.name }}</td>
+            <td>{{ d.type | doc_type }}{% if d.regulation and d.regulation != 'n.a.' %} ({{ d.regulation }}){% endif %}</td>
+            <td>{{ d.valid_from or '—' }}</td>
+            <td>{{ d.valid_to or '—' }}</td>
+            <td><a href="{{ d.url }}">Open</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="empty">No documents on file yet — contact
+        <a href="mailto:mdr@dentalia.si">mdr@dentalia.si</a>.</p>
+    {% endif %}
+  </main>
+</body>
+</html>

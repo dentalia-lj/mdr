@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}Business Central push — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>Business Central push</h1>
+{% call ui.intro("What we would tell Business Central about these articles, before we tell it.") %}
+  Three fields on each article's BC card: whether we hold a <strong>valid declaration of
+  conformity</strong> covering it, whether we hold a <strong>valid CE certificate</strong>
+  covering it, and a <strong>link</strong> back to this registry's page for the article.
+  <p>Covering means the article itself or a group it belongs to. A document that covers the
+  manufacturer and nothing more does not count — a statement about a supplier is not evidence
+  about an article.</p>
+  <p>Articles the pipeline has never processed are not listed and are never written: a
+  checkbox has no "not looked at yet", and leaving BC's own default alone at least does not
+  claim we checked. Nothing here is sent until you press Send.</p>
+{% endcall %}
+
+{% if write_enabled %}
+  <p class="hint">Sending to Business Central is switched on. Applying sends these changes.</p>
+{% else %}
+  <p class="hint">Sending to Business Central is switched off. This page shows what would
+  change; nothing is sent.</p>
+{% endif %}
+
+{% if row_cap_note %}
+  <p class="hint">{{ row_cap_note }}</p>
+{% endif %}
+
+<div class="card">
+  <h2>{{ counts.changing }} to send · {{ counts.unchanged }} already match</h2>
+  {% if rows %}
+    <form hx-post="/bc-push/apply" hx-target="#bc-push-result" hx-swap="innerHTML">
+      {# `rows | length`, not `counts.changing`: `rows` is already capped to
+         the display/apply limit (`plan()`), and Apply enqueues exactly this
+         list -- so the button must name what it will actually send, not the
+         (possibly larger) true total the heading states. #}
+      <button type="submit">Send {{ rows | length }} to Business Central</button>
+    </form>
+    <div id="bc-push-result"></div>
+    <table>
+      <thead><tr><th>Article</th><th>Field</th><th>New value</th><th></th></tr></thead>
+      <tbody>
+      {% for row in rows %}
+        {% for field, value in row.changed.items() %}
+          <tr>
+            {% if loop.first %}
+              <td rowspan="{{ row.changed | length }}">
+                <a href="/items/{{ row.item_ref }}">{{ row.item_ref }}</a>
+              </td>
+            {% endif %}
+            <td><code>{{ field }}</code></td>
+            <td>{{ value }}</td>
+            {% if loop.first %}
+              <td rowspan="{{ row.changed | length }}">
+                {{ "first send" if row.first_send else "changed" }}
+              </td>
+            {% endif %}
+          </tr>
+        {% endfor %}
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if row_cap_note %}
+    <p class="muted">The daily job works through the rest oldest-first, so nothing is left
+    out — it just arrives later.</p>
+    {% endif %}
+  {% else %}
+    <p class="muted">Nothing to send: every article we have processed already carries the
+    values Business Central holds.</p>
+  {% endif %}
+</div>
+{% endblock %}

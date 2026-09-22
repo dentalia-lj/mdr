@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Dentalia Compliance Registry{% endblock %}</title>
+  {# An explicit icon link is also what stops the /favicon.ico request: with no
+     link tag a browser asks for it on every page load and logs the 404, which
+     was the only console error in the app. #}
+  <link rel="icon" href="{{ static_url('img/favicon.svg') }}" type="image/svg+xml">
+  {# ?v=<mtime> — see `static_url` in web/app.py. Without it a browser keeps a
+     stale stylesheet across a deploy and a shipped fix reads as a broken one. #}
+  <link rel="stylesheet" href="{{ static_url('css/style.css') }}">
+  <script src="{{ static_url('htmx.min.js') }}"></script>
+  <script>
+    // 400/422 responses carry a real error fragment we want swapped in, not
+    // just an htmx:responseError event — verified against htmx 2.x docs
+    // (htmx.config.responseHandling; default only swaps 2xx).
+    document.addEventListener("DOMContentLoaded", function () {
+      htmx.config.responseHandling = [
+        {code: "204", swap: false},
+        {code: "[23]..", swap: true},
+        {code: "4..", swap: true},
+        {code: "5..", swap: false, error: true},
+      ];
+    });
+
+    // A 5xx is deliberately not swapped (above), and a dropped connection
+    // swaps nothing either — so a lazily-loaded panel would sit on its
+    // "Loading..." placeholder forever, looking like "the UI does not expand"
+    // rather than "the request failed". Say so in the target instead: a
+    // visible failure is debuggable, a silent one is not.
+    //
+    // A BOOSTED request (the six one-click "browser confirm" forms, P1b
+    // fix round 1) is a second case this same pattern has to cover, and
+    // differently: `getTarget` resolves an unboosted, untargeted element to
+    // itself, but a boosted one with no explicit `hx-target` resolves to
+    // `document.body` — so `target.classList.contains("stage-body")` below
+    // is never true for it, and without the block after it a boosted
+    // request that fails would fail silently (the regression this note is
+    // fixing). Two failure shapes, two fixes:
+    //   * `htmx:beforeSwap` on a non-2xx/3xx status cancels the swap before
+    //     it happens — otherwise `4..: swap: true` above would replace the
+    //     ENTIRE page body with the bare `_result.html` error fragment (no
+    //     nav, no sidebar): technically readable, since `<head>`'s own
+    //     stylesheet still applies to it, but not a page anyone could act
+    //     from. Cancelling keeps the real page — nav included — and reads
+    //     the fragment's own error text out of the response.
+    //   * `htmx:sendError` (a dropped connection: no response ever arrives,
+    //     so there is no swap to cancel) falls through to the same banner
+    //     with a generic message, same as the existing `stage-body` case.
+    document.addEventListener("DOMContentLoaded", function () {
+      function explain(evt, message) {
+        var target = (evt.detail && evt.detail.target) || evt.target;
+        if (target && target.classList && target.classList.contains("stage-body")) {
+          target.innerHTML = '<p class="result error"></p>';
+          target.firstChild.textContent = message;
+          return;
+        }
+        if (evt.detail && evt.detail.boosted) {
+          boostedBanner(message);
+        }
+      }
+      // One error banner at the top of the content area, reused rather than
+      // stacked -- a second failed press updates the same line instead of
+      // piling up a new paragraph above the last one.
+      function boostedBanner(message) {
+        var main = document.querySelector("main");
+        if (!main) return;
+        var banner = main.querySelector("p.result.error[data-boosted-error]");
+        if (!banner) {
+          banner = document.createElement("p");
+          banner.className = "result error";
+          banner.setAttribute("data-boosted-error", "");
+          main.insertBefore(banner, main.firstChild);
+        }
+        banner.textContent = message;
+      }
+      document.body.addEventListener("htmx:responseError", function (evt) {
+        var status = evt.detail.xhr ? evt.detail.xhr.status : "?";
+        explain(evt, "Could not load this (server error " + status + "). Reload the page and try again.");
+      });
+      document.body.addEventListener("htmx:sendError", function (evt) {
+        explain(evt, "Could not reach the server. Check your connection and reload the page.");
+      });
+      // Checked directly against the response status, not against the
+      // `isError` flag `responseHandling` (above) computes: that config
+      // marks ONLY the 5xx band as an error (4xx is `swap: true` with no
+      // `error` key, on purpose, for the stage-body panels this predates —
+      // see the comment on `responseHandling`), so `isError` alone would
+      // miss every 4xx here. Boosted-only: every other target on this site
+      // keeps exactly the swap behaviour `responseHandling` already gives
+      // it, unchanged.
+      document.body.addEventListener("htmx:beforeSwap", function (evt) {
+        if (!evt.detail.boosted) return;
+        var status = evt.detail.xhr ? evt.detail.xhr.status : 0;
+        if (status >= 200 && status < 400) return;
+        evt.detail.shouldSwap = false;
+        var message = "This did not go through (server said " + status + ").";
+        var probe = document.createElement("div");
+        probe.innerHTML = evt.detail.serverResponse || "";
+        var fragment = probe.querySelector(".result.error");
+        if (fragment && fragment.textContent.trim()) {
+          message = fragment.textContent.trim();
+        }
+        boostedBanner(message);
+      });
+    });
+
+    // The one number formatter on the client, matching Python's `{:,}` so a
+    // label this script rewrites reads the same as the one the server rendered
+    // (`web/words.py::num`, the `| num` filter). `data-items` stays a raw
+    // integer -- it is data, and the comparison below reads it -- and the
+    // grouping is applied where the label is built.
+    function dentaliaThousands(value) {
+      return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    }
+
+    // Manufacturer-binding picker (_staging_doc_detail.html): keep the approve
+    // button in step with the chosen manufacturer, so the button always names
+    // the binding it is about to write ("Approve for all IVOCLAR items (331
+    // items)") rather than a generic verb over a decision that touches every
+    // MD item of a manufacturer. The word is "items" on both halves, from § 9's
+    // word list, and must stay in step with `_staging_decide.html`, which
+    // renders the same label server-side.
+    //
+    // Delegated on document, and deliberately not a <script> inside the
+    // fragment: review rows are swapped in by htmx one at a time, and a
+    // per-fragment handler would be re-registered on every expand. Progressive
+    // enhancement only — with JS off the button keeps whatever the server
+    // rendered, and `staging_apply` still refuses a bind with no manufacturer.
+    document.addEventListener("change", function (evt) {
+      var picker = evt.target.closest("select[data-mfr-picker]");
+      if (!picker) return;
+      var form = picker.closest("form");
+      // A whole-range confirm already on screen was priced for the manufacturer
+      // chosen when it was asked, and its hidden fields still carry that name:
+      // its Yes would bind the old choice. Changing the choice withdraws it.
+      // The slot sits beside this form in the panel (_staging_doc_detail.html).
+      var slot = form && form.parentNode.querySelector(".bind-confirm");
+      if (slot) slot.innerHTML = "";
+      var button = form && form.querySelector("[data-mfr-approve]");
+      if (!button) return;
+      var chosen = picker.selectedOptions[0];
+      var items = chosen.dataset.items;
+      button.disabled = !picker.value;
+      button.textContent = picker.value
+        ? "Approve for all " + picker.value + " items (" +
+          dentaliaThousands(items) + (items === "1" ? " item)" : " items)")
+        : button.dataset.idleLabel;
+    });
+
+    // Long <select> pickers get a type-to-filter box. Added here rather than in
+    // each template because the problem belongs to the LIST, not the page: the
+    // BC-code picker on a playbook offers every vendor Business Central knows
+    // (389 today) and the manufacturer picker on Review every manufacturer we
+    // hold. Scrolling is the only way through either one without this. Lists
+    // shorter than SELECT_FILTER_MIN are left alone -- the native dropdown is
+    // already the faster control there.
+    //
+    // Option nodes are MOVED, never rebuilt: `data-items` above is read off the
+    // manufacturer picker's own options, and recreating them would drop it.
+    //
+    // Three kinds of option survive every filter, so typing can never silently
+    // drop a decision already made: an empty-value placeholder, an option the
+    // SERVER marked selected (the manufacturer picker's suggestion), and one
+    // the person has picked since the page loaded. A browser's own default
+    // selection -- the first option, chosen by nobody -- is deliberately not
+    // among them: pinning it put a non-matching row at the top of every
+    // filtered list and counted it as a match.
+    //
+    // Progressive enhancement, like everything else in this file: with JS off
+    // the full list is still there and every form still works.
+    var SELECT_FILTER_MIN = 20;
+
+    function dentaliaFilterSelect(select, options, query) {
+      var picked = select.dentaliaPicked || null;
+      var q = query.trim().toLowerCase();
+      var kept = options.filter(function (o) {
+        if (!q || o === picked || o.value === "" || o.defaultSelected) return true;
+        // `data-search` where a label carries text nobody would search BY: a
+        // BC-code option reads "312 - SANOLABOR (94 items)", so matching the
+        // whole label made "94" return SANOLABOR, whose code is 312. Where the
+        // attribute is absent the whole label is still searched, so any other
+        // long picker gets the filter without being told about it.
+        var hay = o.dataset.search || (o.value + " " + o.textContent);
+        return hay.toLowerCase().indexOf(q) >= 0;
+      });
+      select.textContent = "";
+      kept.forEach(function (o) { select.appendChild(o); });
+      if (picked && kept.indexOf(picked) >= 0) picked.selected = true;
+      return kept.filter(function (o) { return o.value !== ""; }).length;
+    }
+
+    function dentaliaEnhanceSelect(select) {
+      if (select.dataset.selectFilter || select.disabled) return;
+      var options = Array.prototype.slice.call(select.options);
+      if (options.length < SELECT_FILTER_MIN) return;
+      var total = options.filter(function (o) { return o.value !== ""; }).length;
+      select.dataset.selectFilter = "on";
+
+      var box = document.createElement("div");
+      box.className = "select-filter";
+      var input = document.createElement("input");
+      input.type = "search";
+      // No name attribute: this box is a lens on the list, never part of the
+      // submission.
+      input.placeholder = "Type to filter " + total + " entries\u2026";
+      input.setAttribute("aria-label", "Filter the list below");
+      var count = document.createElement("p");
+      count.className = "hint";
+      count.setAttribute("aria-live", "polite");
+      box.appendChild(input);
+      box.appendChild(count);
+      select.parentNode.insertBefore(box, select);
+
+      // What the person picks is remembered on the element, not read back off
+      // `selectedOptions` at filter time -- that reads the browser's own
+      // default selection as a choice.
+      select.addEventListener("change", function () {
+        select.dentaliaPicked = select.selectedOptions[0] || null;
+      });
+
+      input.addEventListener("input", function () {
+        var shown = dentaliaFilterSelect(select, options, input.value);
+        if (!input.value.trim()) { count.textContent = ""; return; }
+        count.textContent = shown === 0
+          ? "Nothing matches. Clear the box to see the list again."
+          : shown + " of " + total + " shown.";
+      });
+      // Enter inside a filter box must not submit the form it happens to sit
+      // in -- on a playbook that would claim whichever code is highlighted.
+      input.addEventListener("keydown", function (evt) {
+        if (evt.key === "Enter") { evt.preventDefault(); select.focus(); }
+      });
+    }
+
+    function dentaliaScanSelects(root) {
+      var scope = root && root.querySelectorAll ? root : document;
+      Array.prototype.forEach.call(
+        scope.querySelectorAll("select"), dentaliaEnhanceSelect);
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+      dentaliaScanSelects(document);
+      // Review rows arrive by htmx swap, so their pickers do not exist yet at
+      // DOMContentLoaded. Delegated on document for the same reason the
+      // approve-button handler is: a per-fragment <script> would re-register
+      // on every expand.
+      document.body.addEventListener("htmx:afterSwap", function (evt) {
+        dentaliaScanSelects(evt.target);
+      });
+    });
+  </script>
+</head>
+<body>
+  <div class="layout">
+    {#- The sidebar IS the menu (office UI redesign spec § 7). Three office
+        groups -- your work, the records you look things up in, and the two ways
+        to add a document -- then one collapsed block for operating the machine.
+
+        It is rendered from `_pulse.html`, which `/_pulse` also serves with the
+        counts filled in: one template, so a server-rendered menu and a swapped
+        one can never differ by a link. The counts for Review, Missing
+        documents, Expiring and Renewal emails arrive that way, which is where
+        the sticky header strip's numbers went when the strip was removed on
+        2026-09-14 -- they were always about those four queues, and a strip
+        repeating them on every page was a second place to read the same
+        thing. #}
+    <aside class="sidebar">
+      <a class="brand" href="/">
+        <img class="logo" src="{{ static_url('img/dentalia-logo.png') }}" alt="Dentalia">
+        <span class="brand-word">Compliance Registry</span>
+      </a>
+      {# One box above the nav rather than a link into it: people arrive holding
+         an identifier and should not have to know which screen owns it. GET, so
+         a search is a URL you can send someone. #}
+      <form class="nav-search" method="get" action="/search" role="search">
+        <input type="search" name="q" value="{{ request.query_params.get('q', '') if request.url.path == '/search' else '' }}"
+               placeholder="Search ref, cert, name…" aria-label="Search the registry">
+      </form>
+      {# Lazily loaded and then polled, the cadence the header strip had: no
+         page waits on a queue count, and a tab left open all morning stays
+         honest without a reload. The include below is the same menu without
+         the counts, so with JS off it is still a working menu. #}
+      <div class="nav-shell" hx-get="/_pulse" hx-trigger="load, every 15s"
+           hx-swap="innerHTML">
+        {% include "_pulse.html" %}
+      </div>
+    </aside>
+    <main>
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</body>
+</html>

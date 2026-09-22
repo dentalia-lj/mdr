@@ -1,0 +1,21 @@
+{
+  "manufacturer": "IVOCLAR",
+  "aliases": [
+    "Ivoclar Vivadent AG",
+    "Ivoclar Vivadent Manufacturing GmbH",
+    "Ivoclar Vivadent, Inc.",
+    "Ivoclar Vivadent, Inc",
+    "Ivoclar Vivadent Manufacturing Inc.",
+    "Ivoclar Vivadent GmbH"
+  ],
+  "bc_codes": [
+    {"catalogue": "LJ", "code": "001"},
+    {"catalogue": "LJ", "code": "005"},
+    {"catalogue": "LJ", "code": "275"}
+  ],
+  "domains": ["ivoclar.com", "ivoclarvivadent.com"],
+  "doc_sources": [],
+  "match": {"anchors": ["tefo-en-", "otcs", "document information (otcs)"]},
+  "ref_strategy": "stitched-table",
+  "ref_normalize": {"strategy": "strip-trailing-letters", "max_letters": 3}
+}

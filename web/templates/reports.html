@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}Weekly reports — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+{#- Each report named as the WEEK it covers (spec § 9, P7b/c), out of
+    `report_week_label` -- the same label Today puts on the same report. The
+    file name stays where a file name belongs: in the link. -#}
+<h1>Weekly reports</h1>
+{% call ui.intro("What the system reported each week: what had lapsed, what was about to, and how the queue was doing.") %}
+  Written once a week and kept, so last month's report is as readable as this
+  week's. Nothing here is sent anywhere: it is a record you can open, print or
+  forward yourself.
+{% endcall %}
+
+<div class="card">
+  {% if not configured %}
+  <p class="hint">No report location is configured on this machine, so nothing is being written.
+    Ask a developer.</p>
+  {% elif weeks %}
+  <ul>
+    {% for w in weeks %}
+    {#- Newest first: `report-2026-W36.html` sorts that way as a plain string
+        and needs no database read to list. -#}
+    <li><a href="/reports/{{ w.name }}">{{ w.label }}</a></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="hint">No report has been written yet. The first one appears after the weekly
+    report runs — see <a href="/scheduler">Scheduler</a>.</p>
+  {% endif %}
+</div>
+{% endblock %}

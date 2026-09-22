@@ -1,0 +1,32 @@
+-- `retracted`: a link the CURRENT extraction no longer supports.
+--
+-- GATE upserts `item_document` and, until now, never removed a link a later
+-- extraction stopped justifying, so coverage could only ever grow and a
+-- correction could not take a wrong link back. On a compliance registry that is
+-- the wrong direction of error: it claims coverage the evidence does not
+-- support.
+--
+-- Proven on document 235 (2026-08-13). Rev 1's REF list was truncated to 40
+-- codes, resolved to one manufacturer and wrote 19 links. Rev 2, repaired to the
+-- document's real 1.121 codes, spans GC EUROPE N.V. and HENRY SCHEIN, correctly
+-- flags `multi-manufacturer-ref` and carries ZERO links -- and rev 2's gate job
+-- ran AFTER rev 1's with the 19 links still standing. Across the registry: 134
+-- rows, 113 supported by the current rev, 21 stale.
+--
+-- Distinct from `rejected`, which means a HUMAN said no. `retracted` means the
+-- machine's own evidence moved. Keeping them apart matters because the two are
+-- reviewed differently and because a rejected document's cascade must stay
+-- readable as a human decision in the audit trail.
+--
+-- Append-only per invariant 4: the row stays, its status changes, and an
+-- audit event records it. Nothing is deleted; a human can still see that the
+-- link once existed and why it stopped.
+--
+-- Only STAGED links are ever auto-retracted. A production link means a human
+-- approved the document (`gate.apply approve` -> `_promote_pending_links`), or
+-- bound a manufacturer (`mfr-scope`, written production), so retracting one
+-- would silently undo a human decision and would also contradict the PRD's
+-- "link provenance is immutable at production". Those are flagged for review
+-- instead. `staged` is precisely the set no human has ruled on.
+
+ALTER TYPE link_status ADD VALUE IF NOT EXISTS 'retracted';

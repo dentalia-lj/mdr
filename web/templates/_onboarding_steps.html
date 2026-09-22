@@ -1,0 +1,29 @@
+{# Four stops, each naming what it BUYS rather than what it is. An operator who
+   cannot see why step 2 matters skips it, and an unrestricted search is the
+   thing step 2 exists to prevent. #}
+<div class="card">
+  <table>
+    <tbody>
+      <tr>
+        <th>{% if step > 1 %}&#10003;{% else %}1{% endif %} Who</th>
+        <td>{% if step == 1 %}<strong>Is this a manufacturer, and what do we call its playbook?</strong>
+            {% else %}<span class="hint">the supplier and its short name</span>{% endif %}</td>
+      </tr>
+      <tr>
+        <th>{% if step > 2 %}&#10003;{% else %}2{% endif %} Their websites</th>
+        <td>{% if step == 2 %}<strong>Narrows every search we run for them.</strong>
+            {% else %}<span class="hint">narrows every search we run for them</span>{% endif %}</td>
+      </tr>
+      <tr>
+        <th>{% if step > 3 %}&#10003;{% else %}3{% endif %} Their library</th>
+        <td>{% if step == 3 %}<strong>Turns one page into every document on it.</strong>
+            {% else %}<span class="hint">turns one page into every document on it</span>{% endif %}</td>
+      </tr>
+      <tr>
+        <th>{% if step > 4 %}&#10003;{% else %}4{% endif %} Done</th>
+        <td>{% if step == 4 %}<strong>What happens next, and back to the queue.</strong>
+            {% else %}<span class="hint">what happens next</span>{% endif %}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>

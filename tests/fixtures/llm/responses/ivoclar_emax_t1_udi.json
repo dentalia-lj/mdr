@@ -1,0 +1,13 @@
+{
+  "content_hash": "sha256:462c4122e23a58f97c8b8cacf5ab72bacbe9088239ef6239618d5f657b1de063",
+  "tier": "T1",
+  "model_id": "haiku-4.5",
+  "fields": {
+    "basic_udi_di": {
+      "value": "76152082ACERA008F6",
+      "conf": 0.96,
+      "verbatim": "Basic-UDI-DI 76152082ACERA008F6",
+      "page": 2
+    }
+  }
+}

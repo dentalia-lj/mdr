@@ -1,0 +1,116 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dentalia"
+version = "0.0.1"
+description = "Dentalia compliance document registry pipeline (MDR/MDD evidence warehouse)."
+requires-python = ">=3.12"
+
+# Deps are added as each stage lands, NOT preemptively (CLAUDE.md: don't gold-plate).
+# Core = shared by every process (worker AND the standalone web container).
+dependencies = [
+    "psycopg[binary]>=3.2",   # S0.1 queue + registry
+]
+
+# Still to be added when their stage lands:
+#   S0.3 GATE       : (rules + handlers only, no new deps)
+#   Phase 1 VALIDATE : (rules only, no new deps)
+#   S1.2 RESOLVE     : rapidfuzz  (landed — `resolve` extras group below)
+#   S1.3 DISCOVER    : httpx  (landed — `discover` extras group below)
+#   S1.4 FETCH       : httpx + playwright  (landed — `fetch` extras group below)
+#   httpx is needed by BOTH DISCOVER's SearchAdapter and FETCH's transport; each
+#   group declares it (pip dedupes at install) so either installs standalone.
+#
+# `ingest` (below) landed with S1.1: pandas+openpyxl read the BC export files.
+# Worker-only, like `extract` — the file parse happens in the ingest.run handler,
+# never in the web container (which only ENQUEUES ingest.run as a producer).
+#
+# `fetch` (below) landed with S1.4: httpx is the conditional-GET transport,
+# playwright the bot-wall render fallback (the Dockerfile base already ships
+# Chromium). httpx is SHARED with S1.3's SearchAdapter — whichever session
+# merges second reconciles to this one group rather than duplicating (followup
+# `fetch-httpx-shared`). Worker-only, like `extract`.
+#
+# `web` (below) landed ahead of the S0.3/S1.6 schedule as a standalone producer
+# UI container, physically separated from the worker. `pymupdf`/`pdfplumber`
+# moved out of core `dependencies` into `extract` (worker-only, S0.2) so the
+# web image's `pip install .[web]` never pulls in PDF-parsing native deps —
+# only `web/app.py`'s stack (fastapi/jinja2/uvicorn). The worker Dockerfile
+# installs `.[extract,resolve,ingest,discover,fetch]`; local dev running the full
+# suite needs `pip install -e ".[dev,extract,resolve,ingest,discover,fetch]"`.
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",   # FastAPI TestClient (tests/test_web.py) — dev/test-only, not a runtime dep
+    # Parallel test execution. Driven by scripts/test.sh, which picks `-n` and
+    # `--dist` per invocation; don't hand-type them. `--dist loadfile` is a
+    # WALL-CLOCK choice, not a correctness one -- measured 2026-08-26, all 2301
+    # green: loadfile 154s, load 191s, worksteal 191s, ~490s single-process.
+    # tests/test_web.py is NOT order-dependent (verified under reverse order, two
+    # shuffled seeds, --dist load and --dist worksteal); loadfile simply wins by
+    # keeping a file's tests on one worker so its warm fixtures get reused.
+    # conftest folds PYTEST_XDIST_WORKER into the per-run database name, so
+    # workers get their own databases rather than fighting over one.
+    "pytest-xdist>=3.6",
+]
+extract = [
+    "pymupdf>=1.24",          # S0.2 EXTRACT: text+coords, rasterize (T1/T2 input)
+    "pdfplumber>=0.11",       # S0.2 EXTRACT: REF-list table parsing (T0)
+    "anthropic>=0.116",       # S0.2 EXTRACT: T1/T2 tiers (live calls gated on a key)
+]
+resolve = [
+    "rapidfuzz>=3.0",         # S1.2 RESOLVE: name-family scoring (pg_trgm generates candidates in-DB)
+]
+discover = [
+    "httpx>=0.27",            # S1.3 DISCOVER: Brave/Serper SearchAdapter HTTP (lazy-imported)
+]
+ingest = [
+    "pandas>=2.2",            # S1.1 INGEST: uniform CSV + Excel reader, NA handling
+    "openpyxl>=3.1",          # S1.1 INGEST: pandas .xlsx engine (BC exports)
+]
+fetch = [
+    "httpx>=0.27",            # S1.4 FETCH: conditional-GET transport (shared with S1.3 SearchAdapter)
+    # Pinned exact (not >=) to match the Dockerfile base image
+    # mcr.microsoft.com/playwright/python:v1.61.0-noble, which ships browser
+    # binaries for 1.61.0 only (chromium-1228 / chromium_headless_shell-1228).
+    # An unpinned resolve picks up whatever is newest on PyPI (1.62.0 seen
+    # 2026-09-02), whose client looks for a binary revision (1234) the image
+    # doesn't have -> BrowserType.launch fails (followup
+    # [playwright-browser-version-mismatch]). Bump this in lockstep with the
+    # Dockerfile base image tag, never independently.
+    "playwright==1.61.0",     # S1.4 FETCH: bot-wall render fallback (base image ships Chromium)
+]
+email = [
+    # S2.4 email.poll: imaplib + the `email` package are STDLIB, so there is no
+    # runtime dep to pin. The handler's doc-class classifier reuses `extract`'s
+    # pymupdf (the worker already installs `.[extract]`). This group is declared
+    # so the per-stage dependency surface stays named; it stays empty until an
+    # IMAP parsing lib is ever needed.
+]
+web = [
+    "fastapi>=0.115",
+    "jinja2>=3.1",
+    "uvicorn[standard]>=0.32",
+    "python-multipart>=0.0.12",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app", "web"]
+
+[tool.pytest.ini_options]
+# Correctness settings only. Parallelism (`-n`, `--dist`) deliberately does NOT
+# live here: it depends on how loaded the machine is and on whether the run is a
+# whole suite or one test id, so it belongs to `scripts/test.sh`, which decides
+# per invocation. Putting `-n 4` in addopts would also silently re-add it to
+# every `-n 0` single-test run.
+testpaths = ["tests"]
+# Unregistered marks are typos far more often than intent. Without this a
+# mistyped `@pytest.mark.parametrise` is silently a no-op decorator and the test
+# runs once with no arguments instead of failing.
+addopts = "--strict-markers"
+# An `xfail` that starts passing is a signal, not a pass: either the bug is
+# fixed (drop the marker) or the test stopped testing what it claimed.
+xfail_strict = true

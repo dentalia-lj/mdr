@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}{{ "sweep due" | word }} — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+<h1>{{ "sweep due" | word }}</h1>
+{% call ui.intro("Manufacturers whose EUDAMED check is due, waiting for a person to start it.") %}
+  The system decides when a manufacturer's registered devices are due to be looked at again, and
+  that is all it does. A check is a real fetch against EUDAMED's own rate limit, so it never
+  starts on its own: <strong>{{ "release" | word }}</strong> is what starts it, and only a
+  manufacturer with a confirmed {{ "srn" | word }}, from the
+  <a href="/manufacturers/srn-queue">{{ "srn" | word }} queue</a> or matched exactly, can be
+  started at all. A row leaves this list the moment somebody starts it, not when the check
+  finishes.
+{% endcall %}
+
+{% if rows %}
+<p class="hint">{{ total }} manufacturer{{ "" if total == 1 else "s" }} due for a check.</p>
+<div class="card">
+{{ ui.sweep_due(rows) }}
+</div>
+{% else %}
+<div class="card"><p class="hint">Nothing due right now: every manufacturer's next check is
+  either not yet due or already started.</p></div>
+{% endif %}
+{% endblock %}

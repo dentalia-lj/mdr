@@ -1,0 +1,492 @@
+{% extends "base.html" %}
+{% block title %}{{ slug }} — Playbook{% endblock %}
+{% block content %}
+<h1>{{ slug }}</h1>
+<p class="hint">
+  <a href="/playbooks">&laquo; All playbooks</a> · Revision {{ rev }}{% if updated_by %},
+  last changed by {{ updated_by }}{% if updated_at %} on {{ updated_at.strftime("%Y-%m-%d") }}{% endif %}{% endif %}.
+</p>
+<p class="hint">
+  Read from the database, not from <code>playbooks/{{ slug }}.json</code>. The
+  file is the authoring record and is imported by
+  <code>python -m app.cli manufacturers seed --apply</code>; editing it alone
+  changes nothing until that import runs.
+</p>
+
+{% if playbook_error %}
+<p class="hint">{{ playbook_error }}</p>
+{% endif %}
+
+<div class="card">
+  <h2>Identity</h2>
+  {# Shredded into constrained tables by migration 049, so the database itself
+     refuses a duplicate code or a name two manufacturers claim. The name is a
+     confirmed ACTION on the manufacturer page (task 13), not a field here;
+     codes are a picker below (task 14); aliases have no editor and the one
+     supported way to add one is a rename, which demotes the old name. #}
+  <table>
+    <tbody>
+      <tr><th>Manufacturer</th><td>{{ manufacturer }}</td></tr>
+      <tr><th>Aliases</th><td>{{ aliases | join(", ") or "—" }}</td></tr>
+      <tr><th>BC codes</th><td>{{ codes | join(", ") or "—" }}</td></tr>
+    </tbody>
+  </table>
+  <p class="hint">
+    Renaming <strong>{{ manufacturer }}</strong> is a confirmed action on
+    <a href="/manufacturers/{{ manufacturer }}">its manufacturer page</a>: it
+    shows what a rename strands before writing anything. Aliases are not
+    editable — one wrong alias can scope another manufacturer's certificates
+    to this one's items, which is the failure this subsystem has actually had.
+  </p>
+</div>
+
+{% if editable %}
+{# Tier B. A code is NEVER free text: `bc_codes` is foreign-keyed to
+   `vendor_master`, and the picker makes that obvious rather than merely
+   refused. Add-only, because 049 grants no DELETE on `manufacturer_bc_code` --
+   which matches what this is for. It is the escape a brand-collision refusal
+   names ("either add 012 to bc_codes ... or drop the name"), and it is how a
+   manufacturer BC issues several codes for stops being split in two.
+   Its own form, outside the body form: a different route, and HTML has no
+   nested forms. #}
+<div class="card">
+  <h2>Claim another BC code</h2>
+  <form hx-post="/playbooks/{{ slug }}/codes" hx-target="#code-result" hx-swap="innerHTML">
+    <select name="code" required>
+      <option value="" selected disabled>Choose a code…</option>
+      {% for c in claimable %}
+      {# c['items'], never c.items: a row is a dict, and Jinja resolves the
+         attribute first -- which is dict.items, the built-in method. #}
+      {# data-search: what the filter box matches on. The item COUNT is in the
+         label and deliberately not in here -- searching "94" must find code
+         10194, not the supplier that happens to have 94 items. The current
+         owner is worth searching by only when it differs from the vendor's own
+         name, which for most codes it does not. #}
+      <option value="{{ c.code }}"
+              data-search="{{ c.code }} {{ c.name }}{% if c.owner and c.owner != c.name %} {{ c.owner }}{% endif %}">
+        {{ c.code }} — {{ c.name }} ({{ c['items'] }} item{{ "" if c['items'] == 1 else "s" }}){% if c.owner %} · currently {{ c.owner }}{% endif %}
+      </option>
+      {% endfor %}
+    </select>
+    <button type="submit">Claim it</button>
+  </form>
+  <p class="hint">
+    Codes another playbook already claims are not offered — one code, one
+    playbook. Claiming re-points the code's alias on the next
+    <code>dentalia playbooks sync</code>, which this process cannot run and
+    which reports an <code>orphaned_groups</code> count when groups were
+    already resolved under the old name. Removing a claim is CLI work.
+  </p>
+  <div id="code-result"></div>
+</div>
+{% endif %}
+
+{% if not editable %}
+<p class="hint">
+  This playbook is not in the database yet, so it cannot be edited. Run
+  <code>python -m app.cli manufacturers seed --apply</code> to import it.
+</p>
+{% endif %}
+
+<form method="post" action="/playbooks/{{ slug }}"
+      hx-post="/playbooks/{{ slug }}" hx-target="#result">
+<input type="hidden" name="rev" value="{{ rev }}">
+
+<div class="card">
+  <h2>Official domains</h2>
+  <p class="hint">
+    One per line. These restrict the DISCOVER search rung to the manufacturer's
+    own sites, which sharply raises precision. A miss retries unrestricted, so
+    a wrong entry costs candidates, never coverage.
+  </p>
+  <textarea name="domains" rows="4" cols="60"
+            {% if not editable %}disabled{% endif %}>{{ domains | join("\n") }}</textarea>
+  <p class="hint">Search becomes: <code>… declaration of conformity pdf {{ site_query }}</code></p>
+</div>
+
+<div class="card">
+  <h2>Contacts for renewal requests</h2>
+  <p class="hint">
+    One address per line. These are who a renewal request is addressed to when
+    a document is about to expire — the first line is used first, so put the
+    most reliable mailbox at the top.
+  </p>
+  <p class="hint">
+    <b>Role mailboxes only.</b> An address naming a person is refused: people
+    leave, and a name in a playbook is personal data kept in the repository.
+    Use <code>info@</code>, <code>regulatory@</code> or a departmental address.
+    Do not enter the address of a notified body (TÜV, BSI, DNV) — they appear
+    in the documents but do not issue the manufacturer's declarations.
+  </p>
+  <textarea name="contacts" rows="3" cols="60"
+            {% if not editable %}disabled{% endif %}>{{ contacts | join("\n") }}</textarea>
+</div>
+
+<div class="card">
+  <h2>Document sources — portals ({{ portal_sources | length }})</h2>
+  <p class="hint">
+    A portal is a page a <em>human</em> opens: it only ever prefills a manual
+    task. Clear a URL to remove that row.
+  </p>
+  <input type="hidden" name="doc_source_count" value="{{ portal_sources | length + 1 }}">
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Type</th><th>URL</th><th>Note</th></tr></thead>
+    <tbody>
+      {% for s in portal_sources %}
+      <tr>
+        <td>
+          <select name="doc_source.{{ loop.index0 }}.doc_type" {% if not editable %}disabled{% endif %}>
+            {% for t in doc_types %}
+            <option value="{{ t }}" {% if t == s.doc_type %}selected{% endif %}>{{ t }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td><input type="url" size="52" name="doc_source.{{ loop.index0 }}.url"
+                   value="{{ s.url }}" {% if not editable %}disabled{% endif %}></td>
+        <td><input type="text" size="30" name="doc_source.{{ loop.index0 }}.note"
+                   value="{{ s.note or '' }}" {% if not editable %}disabled{% endif %}></td>
+      </tr>
+      {% endfor %}
+      <tr>
+        <td>
+          <select name="doc_source.{{ portal_sources | length }}.doc_type" {% if not editable %}disabled{% endif %}>
+            {% for t in doc_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+          </select>
+        </td>
+        <td><input type="url" size="52" name="doc_source.{{ portal_sources | length }}.url"
+                   placeholder="add another portal URL" {% if not editable %}disabled{% endif %}></td>
+        <td><input type="text" size="30" name="doc_source.{{ portal_sources | length }}.note"
+                   placeholder="note" {% if not editable %}disabled{% endif %}></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Document sources — direct ({{ direct_sources | length }})</h2>
+  {# Tier B (task 14). A direct source is a FETCH TARGET -- the playbook rung
+     enqueues fetch.url for every one -- so this is the control whose mistakes
+     leave our machine. The consequence is stated next to it, and the refusals
+     behind it are real: `validate` raises RobotsRefused for a host on the
+     ruled list, and the save turns that into a 422 quoting it. #}
+  <p class="hint">
+    <strong>Fetch targets.</strong> Every URL here is requested by the
+    pipeline, not opened by a person. Two ways to get this wrong: a host on
+    the refused list (the save is refused, quoting the ruling), and a
+    <em>listing page</em> authored as direct — that is archived as an
+    unreadable PDF and dead-ends at extraction silently, so a page that lists
+    documents belongs above as a portal. Clear a URL to remove that row.
+  </p>
+  <input type="hidden" name="direct_count" value="{{ direct_sources | length + 1 }}">
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Type</th><th>URL</th><th>Note</th></tr></thead>
+    <tbody>
+      {% for s in direct_sources %}
+      <tr>
+        <td>
+          <select name="direct.{{ loop.index0 }}.doc_type" {% if not editable %}disabled{% endif %}>
+            {% for t in doc_types %}
+            <option value="{{ t }}" {% if t == s.doc_type %}selected{% endif %}>{{ t }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td><input type="url" size="52" name="direct.{{ loop.index0 }}.url"
+                   value="{{ s.url }}" {% if not editable %}disabled{% endif %}></td>
+        <td><input type="text" size="30" name="direct.{{ loop.index0 }}.note"
+                   value="{{ s.note or '' }}" {% if not editable %}disabled{% endif %}></td>
+      </tr>
+      {% endfor %}
+      <tr>
+        <td>
+          <select name="direct.{{ direct_sources | length }}.doc_type" {% if not editable %}disabled{% endif %}>
+            {% for t in doc_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+          </select>
+        </td>
+        <td><input type="url" size="52" name="direct.{{ direct_sources | length }}.url"
+                   placeholder="add a document URL we may fetch" {% if not editable %}disabled{% endif %}></td>
+        <td><input type="text" size="30" name="direct.{{ direct_sources | length }}.note"
+                   placeholder="robots verdict, date checked" {% if not editable %}disabled{% endif %}></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Corpus backfill</h2>
+  {# Tier B: this one refuses a whole folder. Neodent is the case it exists
+     for -- 28 of Dentalia's own invoices mixed in with the documents, and the
+     client answered "skip it" (2026-08-19). The reason is mandatory at parse
+     time, because a refusal nobody can account for later reads as a
+     manufacturer that simply never files anything. #}
+  <label>
+    <input type="checkbox" name="skip_backfill" value="1"
+           {% if skip_backfill %}checked{% endif %} {% if not editable %}disabled{% endif %}>
+    Skip this manufacturer's corpus folder
+  </label>
+  <input type="text" name="skip_backfill_reason" style="width:100%"
+         value="{{ (skip_backfill or {}).get('reason', '') }}"
+         placeholder="why — who agreed, and when" {% if not editable %}disabled{% endif %}>
+  <p class="hint">
+    Ticking this makes <code>backfill.scan</code> refuse the folder outright.
+    A reason is required and the save is refused without one: months later,
+    "this manufacturer files nothing" and "we agreed not to scan it" look
+    identical from the outside.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Extraction hints</h2>
+  {# Tier B, and the only playbook value an LLM ever sees: it arrives as a
+     SECOND system block under a 263-character preamble telling the model to
+     ignore it wherever the document disagrees. Keys are fixed to the fields
+     the extractor is actually asked for, and lengths are capped in `_parse`,
+     so the CLI and the seed refuse exactly what this form refuses. #}
+  <p class="hint">
+    Free text the extraction model reads, per field. It is
+    <strong>context, not fact</strong> — the model is told to ignore these
+    wherever the document disagrees. Capped at {{ hint_max_chars }} characters
+    each and {{ hint_max_total }} in total; leave one blank to remove it.
+  </p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Field</th><th>Hint</th></tr></thead>
+    <tbody>
+      {% for key in hint_keys %}
+      <tr>
+        <td><code>{{ key }}</code></td>
+        <td><input type="text" style="width:100%" name="hint.{{ key }}"
+                   maxlength="{{ hint_max_chars }}"
+                   value="{{ extract_hints.get(key, '') }}"
+                   {% if not editable %}disabled{% endif %}></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Date labels</h2>
+  <p class="hint">
+    Phrases this manufacturer prints before a date, added to the global list —
+    never replacing it. Komet's <code>Rev. Stand</code> took T0 from 1 document
+    to 106. One per line.
+  </p>
+  <table>
+    <tbody>
+      {% for k in ["from", "to"] %}
+      <tr>
+        <th>{{ k }}</th>
+        <td><textarea name="date_labels.{{ k }}" rows="3" cols="40"
+              {% if not editable %}disabled{% endif %}>{{ (date_labels.get(k) or []) | join("\n") }}</textarea></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Document-type markers</h2>
+  <p class="hint">
+    Phrases that identify a document's type, added after the global markers so a
+    global phrase still wins a tie. One per line.
+  </p>
+  <table>
+    <tbody>
+      {% for t in doc_types %}
+      <tr>
+        <th>{{ t }}</th>
+        <td><textarea name="type_markers.{{ t }}" rows="2" cols="40"
+              {% if not editable %}disabled{% endif %}>{{ (type_markers.get(t) or []) | join("\n") }}</textarea></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Discovery ladder</h2>
+  <p class="hint">
+    Which rungs DISCOVER tries, most-preferred first. Leave all unticked to use
+    the default ladder. An unknown rung name fails the job, which is why this is
+    a fixed list rather than free text.
+  </p>
+  {% for r in rungs %}
+  <label style="margin-right:1em">
+    <input type="checkbox" name="source_priority" value="{{ r }}"
+           {% if r in source_priority %}checked{% endif %}
+           {% if not editable %}disabled{% endif %}> {{ r }}
+  </label>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h2>Save</h2>
+  <p class="hint">
+    A note is required: the history below is only useful if its entries say
+    why. This writes revision {{ rev + 1 }}.
+  </p>
+  <input type="text" name="note" size="70" required
+         placeholder="what changed, and why" {% if not editable %}disabled{% endif %}>
+  <button type="submit" {% if not editable %}disabled{% endif %}>Save</button>
+</div>
+</form>
+
+{# Crawl recipes. Its OWN form, outside the body form -- a different route, and
+   HTML has no nested forms. The probe is the point: authoring a recipe used to
+   mean writing `index_url` and `link_pattern`, saving, and finding out whether
+   they were right when a discovery run either produced documents or quietly
+   produced none. This looks first and saves second. #}
+<div class="card">
+  <h2>Crawl recipes ({{ crawl | length }})</h2>
+  {% if crawl %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Library page</th><th>Link pattern</th><th>Other hosts</th><th>Cap</th><th>Types</th></tr></thead>
+    <tbody>
+      {% for r in crawl %}
+      <tr>
+        <td><a href="{{ r.index_url }}" rel="noopener noreferrer" target="_blank">{{ r.index_url }}</a></td>
+        <td><code>{{ r.link_pattern }}</code></td>
+        <td>
+          {% for h in (r.allow_hosts or []) %}
+          <code>{{ h }}</code>{% if not loop.last %}, {% endif %}
+          {% else %}—{% endfor %}
+        </td>
+        <td>{{ r.max_links or crawl_max_links_default }}</td>
+        <td>
+          {% for needle, t in (r.doc_type_from or {}).items() %}
+          <code>{{ needle }}</code> → {{ t or "excluded" }}{% if not loop.last %}, {% endif %}
+          {% else %}—{% endfor %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="hint">
+    None. DISCOVER reaches this manufacturer by search and by the direct
+    sources above; a recipe is what turns a library <em>page</em> into every
+    document on it.
+  </p>
+  {% endif %}
+
+  <h3>Probe a library page</h3>
+  <p class="hint">
+    <strong>A probe looks and reports. It fetches one page, archives nothing,
+    extracts nothing and writes no recipe.</strong> It is bound by every fetch
+    rule the pipeline is: robots.txt is checked first and a refusal is
+    reported rather than worked around, and it waits its turn behind the
+    politeness interval like any other request to that host.
+  </p>
+  <form id="crawl-probe-form"
+        hx-post="/playbooks/{{ slug }}/probe" hx-target="#probe-result"
+        hx-swap="innerHTML">
+    <table>
+      <tbody>
+        <tr>
+          <th><label for="probe-index-url">Library page</label></th>
+          <td><input id="probe-index-url" type="url" name="index_url" size="60"
+                     placeholder="https://example.com/downloads" required>
+            <p class="hint">The page that <em>lists</em> the documents, not a
+              document. A registration-gated library cannot be probed.</p></td>
+        </tr>
+        <tr>
+          <th><label for="probe-link-pattern">Link pattern</label></th>
+          <td><input id="probe-link-pattern" type="text" name="link_pattern"
+                     size="40" value="\.pdf$" required>
+            <p class="hint">A regular expression matched against each link's
+              <strong>resolved absolute URL</strong>, not the raw href.</p></td>
+        </tr>
+        <tr>
+          <th><label for="probe-allow-hosts">Other hosts</label></th>
+          <td><textarea id="probe-allow-hosts" name="allow_hosts" rows="2" cols="40"
+                        placeholder="assets.ctfassets.net"></textarea>
+            <p class="hint">
+              Blank unless the documents sit somewhere other than the library
+              page's own site. One host per line, no path — many manufacturers
+              list on their own domain and serve the PDFs from a CDN, and
+              without the CDN named here every one of those links is counted
+              off-host and skipped.
+            </p></td>
+        </tr>
+        <tr>
+          <th><label for="probe-max-links">Max links</label></th>
+          <td><input id="probe-max-links" type="number" name="max_links" min="1"
+                     max="{{ crawl_max_links_ceiling }}"
+                     value="{{ crawl_max_links_default }}">
+            <p class="hint">A hard ceiling of {{ crawl_max_links_ceiling }}.
+              Every link over the cap is counted and reported, never dropped
+              silently.</p></td>
+        </tr>
+        <tr>
+          <th><label for="probe-doc-types">Type rules</label></th>
+          <td><textarea id="probe-doc-types" name="doc_type_from" rows="4" cols="40"
+                        placeholder="ifu=IFU&#10;konformit=DoC&#10;sds_="></textarea>
+            <p class="hint">
+              One <code>needle=TYPE</code> per line: a casefolded substring of
+              the URL, and one of {{ doc_types | join(", ") }}. An empty value
+              <strong>excludes</strong> — <code>sds_=</code> keeps a safety-data-sheet
+              family out of the registry while still counting it, which a
+              negative pattern would not.
+            </p></td>
+        </tr>
+      </tbody>
+    </table>
+    <button type="submit">Probe</button>
+  </form>
+  <div id="probe-result"></div>
+</div>
+
+<div class="card">
+  <details>
+    <summary>Raw JSON</summary>
+    <pre>{{ raw }}</pre>
+  </details>
+</div>
+
+<div class="card">
+  <h2>History ({{ revisions | length }})</h2>
+  {% if revisions %}
+  {# Append-only: a revert writes the old body FORWARD as a new revision, so a
+     mistake and its undo are both still listed here. Nothing on this page can
+     delete or rewrite a row -- the web role is granted neither. #}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Rev</th><th>When</th><th>Who</th><th>Note</th><th></th></tr></thead>
+    <tbody>
+      {% for r in revisions %}
+      <tr>
+        <td>{{ r.rev }}{% if r.rev == rev %} <span class="hint">current</span>{% endif %}</td>
+        <td>{{ r.authored_at.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>{{ r.authored_by or "—" }}</td>
+        <td>{{ r.note or "—" }}</td>
+        <td>
+          {% if r.rev != rev %}
+          <form method="post" action="/playbooks/{{ slug }}/revert"
+                hx-post="/playbooks/{{ slug }}/revert" hx-target="#result">
+            <input type="hidden" name="to_rev" value="{{ r.rev }}">
+            <input type="hidden" name="rev" value="{{ rev }}">
+            <button type="submit">Restore</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="hint">
+    No revisions recorded. This playbook has not been imported by
+    <code>manufacturers seed</code> yet.
+  </p>
+  {% endif %}
+  <div id="result"></div>
+</div>
+{% endblock %}

@@ -1,0 +1,21 @@
+{
+  "manufacturer": "AMANN GIRRBACH AG",
+  "aliases": [],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "159"
+    }
+  ],
+  "domains": [
+    "amanngirrbach.com"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "DoC",
+      "kind": "portal",
+      "url": "https://media.amanngirrbach.com/d/5BdpVmgDgJYR",
+      "note": "ROBOTS-BLOCKED FOR OUR FETCHER. Denis's ruling 2026-08-20: reachable by a human, or by an independent Playwright session run deliberately outside the pipeline -- never by the automated fetcher. Authored as kind:\"portal\" precisely because DISCOVER only ever prefills a manual task from a portal source and never enqueues fetch.url for it. media.amanngirrbach.com/robots.txt is `User-agent: * / Disallow: /` -- the entire DAM, every path. NOT FETCHED. Found 2026-08-20 in the live footer of both amanngirrbach.com/ and /de-de/; a previous pass failed because the site was rebuilt on WordPress with /{lang}-{country}/ paths, every old Downloads URL died and archive.amanngirrbach.com was retired, so search results still rank URLs the origin no longer serves. Their own printed IFUs direct users to Services > Downloads > Ergaenzende Unterlagen for the Konformitaetserklaerung, so declarations are published behind this disallow. The main brand domain is freely crawlable (only /wp-admin/ disallowed) but its sitemap.xml lists 38 blog/training URLs and omits every product page -- unfinished migration, useless for discovery."
+    }
+  ]
+}

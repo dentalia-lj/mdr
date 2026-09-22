@@ -1,0 +1,19 @@
+{
+  "manufacturer": "EURONDA",
+  "bc_codes": [
+    {
+      "code": "052"
+    }
+  ],
+  "domains": [
+    "euronda.com"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "DoC",
+      "kind": "portal",
+      "url": "https://download.euronda.com/",
+      "note": "Client hand-off URL. Fetched 2026-08-27, HTTP 200, robots ALLOW, and ZERO PDF hrefs: every document link is /members/login or /members/register/, so the library is REGISTRATION-GATED and no crawl recipe reaches it without credentials. Nine country siblings exist (.de, .it, .cz, .es, .fr, .pl, .ro, russia) behind the same gate. The site also exposes a public SharePoint share (EUIT-TECHLIBRARY) that answered 200 anonymously on the same date -- not authored, because an anonymous SharePoint link is not a stable published source and nobody has asked Euronda whether it is meant to be reachable. Credentials or an email.request are the realistic routes here."
+    }
+  ]
+}

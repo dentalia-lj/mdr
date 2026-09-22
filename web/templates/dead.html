@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}Failed — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+{# Three sections sorted by what a person can do about each failure (office UI
+   redesign spec § 4). The split, the counts and what "still counted" means
+   live in web/failures.py; this template only draws them. Every count here is
+   live, so none is frozen into prose. #}
+
+{# The first four domains, then how many more (spec § 4). #}
+{% macro domain_line(domains) -%}
+{{ domains[:4]|join(" · ") }}{% if domains|length > 4 %} · +{{ domains|length - 4 }} more{% endif %}
+{%- endmacro %}
+
+{# What a section counted, one row per failed task, for whoever needs to look
+   closer. The job page carries the payload and the full error. #}
+{% macro job_details(jobs) %}
+<details class="technical">
+  <summary>Show technical details</summary>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>#</th><th>Website</th><th>Error</th><th class="nowrap">Failed</th></tr></thead>
+    <tbody>
+      {% for job in jobs[:list_limit] %}
+      <tr>
+        <td><a href="/jobs/{{ job.id }}">{{ job.id }}</a></td>
+        <td>{{ job.domain or "" }}</td>
+        <td><code>{{ job.type }}</code> &middot; {{ job.headline }}</td>
+        <td class="nowrap">{{ job.finished_at.strftime("%Y-%m-%d %H:%M") if job.finished_at else "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if jobs|length > list_limit %}
+  <p class="hint">The first {{ list_limit }} of {{ jobs|length }}.</p>
+  {% endif %}
+</details>
+{% endmacro %}
+
+{# "trying again" / "searching again": dead jobs whose work is queued again.
+   They no longer count, and they are said rather than silently dropped. #}
+{% macro in_progress(section) -%}
+{%- set parts = [] -%}
+{%- if section.trying_again %}{% set _ = parts.append(section.trying_again ~ " trying again") %}{% endif -%}
+{%- if section.searching_again %}{% set _ = parts.append(section.searching_again ~ " searching again") %}{% endif -%}
+{%- if parts %}<p class="hint">{{ parts|join(" · ") }}.</p>{% endif -%}
+{%- endmacro %}
+
+<h1>Failed</h1>
+{% call ui.intro("Work the system tried several times and could not finish, sorted by what you can do about it.") %}
+  Each section counts only the failed tasks that still need someone. Once the work
+  behind one is queued again it drops out of the count and shows as trying again or
+  searching again; its record stays here unchanged, because a failed task is never
+  edited or deleted. Technically: a dead job stops counting when a job with the same
+  dedupe key and a higher id exists (for <code>fetch.url</code>, one for the same item
+  group, since its key is the address alone), or, for an address that no longer works,
+  when a <code>discover.group</code> for its item group was created after it died. Trying again
+  re-enqueues the same type and payload at <code>interactive</code> priority (a dead job's
+  dedupe key never blocks the re-insert, invariant 8); searching again enqueues one
+  <code>discover.group</code> per item group.
+{% endcall %}
+
+{% set t = split["timeout"] %}
+<section class="card" id="failed-timeout">
+  <h2>Websites that took too long ({{ t.n }})</h2>
+  <p>Usually temporary. Trying again often works.</p>
+  {% if t.n %}
+  <p class="hint">{{ domain_line(t.domains) }}</p>
+  <form hx-post="/dead/retry-timeouts" hx-target="#retry-timeouts-result" hx-swap="innerHTML"
+        hx-confirm="Try the {{ t.n }} again now?">
+    <button type="submit">Try the {{ t.n }} again</button>
+  </form>
+  <div id="retry-timeouts-result" class="result"></div>
+  {% else %}
+  <p class="hint">None right now.</p>
+  {% endif %}
+  {{ in_progress(t) }}
+  {% if t.jobs %}{{ job_details(t.jobs) }}{% endif %}
+</section>
+
+{% set a = split["dead-address"] %}
+<section class="card" id="failed-dead-address">
+  <h2>Addresses that no longer work ({{ a.n }})</h2>
+  <p>Trying the same address again would fail the same way. Searching again looks for
+    each document's new address.</p>
+  {% for k in a.kinds %}
+  <h3>{{ k.label }} ({{ k.n }})</h3>
+  <p class="hint">{{ domain_line(k.domains) }}</p>
+  {% endfor %}
+  {# No item group, nothing to search for: without one the button could only
+     offer to start 0 searches. #}
+  {% if a.n and a.group_ids %}
+  {% set searches = a.group_ids|length %}
+  <form hx-post="/dead/search-again" hx-target="#search-again-result" hx-swap="innerHTML"
+        hx-confirm="Search again for these {{ a.n }}? This starts {{ searches }} new search{{ '' if searches == 1 else 'es' }}.">
+    <button type="submit">Search again for these {{ a.n }}</button>
+  </form>
+  <div id="search-again-result" class="result"></div>
+  {% elif not a.n %}
+  <p class="hint">None right now.</p>
+  {% endif %}
+  {% if a.no_group %}
+  <p class="hint">{{ a.no_group }} of these {{ "is" if a.no_group == 1 else "are" }} not linked to an item, so there is nothing to search for.</p>
+  {% endif %}
+  {{ in_progress(a) }}
+  {% if a.jobs %}{{ job_details(a.jobs) }}{% endif %}
+</section>
+
+{% set d = split["developer"] %}
+<section class="card" id="failed-developer">
+  <h2>For the developer ({{ d.n }})</h2>
+  <p>Retrying will not help until the cause is fixed.
+    {%- if not operator %} Nothing to do here.{% elif groups %} Once it is fixed, re-run the
+    cause from its technical details.{% endif %}</p>
+  {% if not d.n %}<p class="hint">None right now.</p>{% endif %}
+  {{ in_progress(d) }}
+
+  {% if groups %}
+  <details class="technical">
+    <summary>Show technical details</summary>
+    <p class="hint">{{ d.n }} failed task{{ "" if d.n == 1 else "s" }} in
+      {{ groups|length }} cause{{ "" if groups|length == 1 else "s" }}.</p>
+
+    {% for g in groups %}
+    {# The group is the unit of work here: its count is over the whole
+       developer section, while the expanded list is capped at what the board
+       fetched, so the number in the heading is authoritative and the list below
+       it may be shorter. #}
+    <div class="card">
+      {# The heading is the CAUSE, not the job type. Four cards reading
+         "gate.candidate / gate.candidate / extract.doc / extract.doc" look like an
+         ungrouped list of types, which is how the first version of this page read
+         to its first reader. The type is a label beside it, since two groups of
+         one type here died of entirely different things. #}
+      <h3 class="dead-cause">{{ g.headline }}</h3>
+      <p class="hint">
+        <code>{{ g.type }}</code> &middot;
+        <strong>{{ g.n }}</strong> job{{ "" if g.n == 1 else "s" }} died this way
+        {%- if g.last_died %}, most recently {{ g.last_died.strftime("%Y-%m-%d %H:%M") }}{% endif %}.
+      </p>
+      <details class="technical">
+        <summary>Full error, with the row that tripped it</summary>
+        <div class="result error">{{ g.sample_error or "(none recorded)" }}</div>
+      </details>
+
+      {# Operators only (D6): office logins get "took too long" and nothing
+         here. Only the digest travels: the membership is re-derived
+         server-side, so a mangled or stale value can never re-run part of a
+         cause silently. #}
+      {% if operator %}
+      <form hx-post="/dead/rerun-group" hx-target="#group-result-{{ loop.index }}"
+            hx-swap="innerHTML" hx-confirm="Re-run all {{ g.n }} {{ g.type }} jobs in this group?"
+            style="margin-top: 16px;">
+        <input type="hidden" name="digest" value="{{ g.digest }}">
+        <button type="submit">Re-run all {{ g.n }} (interactive priority)</button>
+      </form>
+      <div id="group-result-{{ loop.index }}" class="result"></div>
+      {% endif %}
+
+      {# `g.n` counts the whole group; `g.jobs` is what this page fetched, and
+         the two differ once the board's row cap bites. Saying "the 28 jobs
+         behind this" under a heading that says 29 reads as an off-by-one, so the
+         gap is named rather than left for the reader to spot (CLAUDE.md: skipped
+         rows are counted and reported, never silent). #}
+      <details class="technical">
+        <summary>
+          {%- if g.jobs|length < g.n %}
+          {{ g.jobs|length }} of the {{ g.n }} jobs behind this (the rest are past this page's row cap)
+          {%- else %}
+          The {{ g.n }} job{{ "" if g.n == 1 else "s" }} behind this
+          {%- endif %}
+        </summary>
+        <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Dedupe key</th><th>Attempts</th>
+            <th class="nowrap">Queued</th><th class="nowrap">Died</th>
+            {% if operator %}<th>Re-run</th>{% endif %}</tr></thead>
+          <tbody>
+            {% for job in g.jobs %}
+            <tr>
+              <td><a href="/jobs/{{ job.id }}">{{ job.id }}</a></td>
+              <td>{{ job.dedupe_key }}</td>
+              <td>{{ job.attempts }}/{{ job.max_attempts }}</td>
+              <td class="nowrap">{{ job.created_at.strftime("%Y-%m-%d %H:%M") if job.created_at else "—" }}</td>
+              <td class="nowrap">{{ job.finished_at.strftime("%Y-%m-%d %H:%M") if job.finished_at else "—" }}</td>
+              {% if operator %}
+              <td>
+                <form hx-post="/dead/{{ job.id }}/rerun" hx-target="#result-{{ job.id }}"
+                      hx-swap="innerHTML">
+                  <button type="submit" class="btn-clear">Re-run</button>
+                </form>
+                <div id="result-{{ job.id }}" class="result"></div>
+              </td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        </div>
+      </details>
+    </div>
+    {% endfor %}
+  </details>
+  {% endif %}
+</section>
+{% endblock %}

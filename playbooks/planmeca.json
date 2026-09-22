@@ -1,0 +1,7 @@
+{
+  "manufacturer": "PLANMECA",
+  "aliases": ["Planmeca Oy"],
+  "bc_codes": [{"catalogue": "LJ", "code": "028"}],
+  "domains": ["planmeca.com"],
+  "doc_sources": []
+}

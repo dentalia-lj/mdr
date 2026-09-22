@@ -1,0 +1,62 @@
+{% if error %}
+<div class="result error">{{ error }}</div>
+{% elif confirm_needed is defined %}
+{# Step one of a two-step action: nothing has been written. The lines are the
+   blast radius, and the button is the only thing that writes -- the same
+   values go back with `confirm` set, so the operator confirms exactly what
+   was priced. Generic contract (spec § 3, task 0): `confirm_fields` is a
+   dict rendered as one hidden input per key, and `confirm_label` is the
+   button text, so every two-step action reuses this branch instead of
+   hard-wiring its own fields the way this used to be Rename-only. Cancel
+   clears the target client-side -- it must never issue a request, or a
+   "no" would still write nothing but would round-trip for it. #}
+<div class="result error">
+  {% for line in confirm_needed %}<p>{{ line }}</p>{% endfor %}
+  <form hx-post="{{ confirm_url }}" hx-target="#{{ confirm_target }}" hx-swap="innerHTML">
+    {% for key, value in confirm_fields.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">
+    {% endfor %}<input type="hidden" name="confirm" value="1">
+    <button type="submit">{{ confirm_label }}</button>
+    <button type="button" onclick="document.getElementById('{{ confirm_target }}').innerHTML=''">Cancel</button>
+  </form>
+</div>
+{% elif receipt is defined %}
+{# Receipts in words (spec § 9, P7a). `receipt` is ONE sentence saying what the
+   system will do -- the work is queued, not done, so it never claims it is
+   done. The job number is not lost with the old "Enqueued job #123" line: it
+   moves under "Technical details" below, which is where a number belongs on
+   an office screen (rule 5). Callers build the sentence with
+   `words.receipt(sentence, job_id)`, so a deduped enqueue reads "Already in
+   progress." without every route branching for it. #}
+<div class="result ok">{{ receipt }}</div>
+{% elif saved is defined %}
+<div class="result ok">{{ saved }}</div>
+{% elif job_id is defined and job_id is none %}
+<div class="result ok">Already in progress.</div>
+{% elif job_id is defined %}
+{# A caller that enqueued without naming its own sentence. Truthful and
+   contentless on purpose: a receipt that promised more than "queued" would be
+   promising it on behalf of a route that did not say so. #}
+<div class="result ok">Queued.</div>
+{% endif %}
+
+{% if not error and (job_id is defined or dedupe_key is defined) %}
+{# Rule 5 moves the job number off the receipt; it does not delete it. Anyone
+   asked "which job was that?" opens this. Never under an error: a refusal
+   queued nothing, so there is no job to name. #}
+<details class="technical">
+  <summary>Technical details</summary>
+  <p class="hint">{% if job_id %}Job #{{ job_id }}{% else %}No new job. One was already active{% endif %}
+    {%- if dedupe_key %} · dedupe key <code>{{ dedupe_key }}</code>{% endif %}</p>
+</details>
+{% endif %}
+
+{% if link_href %}
+{# A plain navigation, deliberately not `preview_url`'s hx-get: that swaps a
+   fragment into #result, and this one goes to a whole page. #}
+<a class="result-link" href="{{ link_href }}">{{ link_text | default("Open") }}</a>
+{% endif %}
+
+{% if preview_url %}
+<a class="result-link" href="{{ preview_url }}"
+   hx-get="{{ preview_url }}" hx-target="#result">{{ preview_link_text | default("See what this would change") }}</a>
+{% endif %}

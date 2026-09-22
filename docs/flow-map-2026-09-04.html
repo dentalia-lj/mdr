@@ -1,0 +1,950 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dentalia Pipeline: Flow &amp; State Map</title>
+<style>
+  /* Brand: shop.dentalia.si, tokens verified live 2026-07-24.
+     Cyan #2CA0C7 (buttons/menu/eyebrows), body #46565C, headings #333,
+     surfaces #E9F5F9 / #D6ECF4, tile greens #7FCBAE / #B6DDB6, yellow #F1D600.
+     Fonts: the shop's Centrale Sans Rounded where the reader has it,
+     otherwise the fallback stack below. */
+  :root {
+    --paper: #ffffff;
+    --surface: #f0f8fb;
+    --surface-2: #d6ecf4;
+    --ink: #333333;
+    --muted: #46565c;
+    --border: #c9e2ec;
+    --accent: #2ca0c7;
+    --accent-ink: #1d7d9e;
+    --live: #2f8f6b;
+    --live-bg: #e2f3ec;
+    --gated: #8f7500;
+    --gated-bg: #faf5d2;
+    --hole: #c24438;
+    --hole-bg: #f9e8e5;
+    --noop: #6e7e85;
+    --noop-bg: #edf2f4;
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+    --heading: "Centrale Sans Rounded", "Trebuchet MS", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --body: "Centrale Sans Rounded", "Trebuchet MS", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0e1a20; --surface: #14242c; --surface-2: #1a2f3a;
+      --ink: #dce9ee; --muted: #8fa6b0; --border: #29414d;
+      --accent: #4fb8da; --accent-ink: #7ccbe6;
+      --live: #57bd93; --live-bg: #133228;
+      --gated: #d9c235; --gated-bg: #322c0c;
+      --hole: #e06256; --hole-bg: #3a1f1b;
+      --noop: #8a99a0; --noop-bg: #1e2c33;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0e1a20; --surface: #14242c; --surface-2: #1a2f3a;
+    --ink: #dce9ee; --muted: #8fa6b0; --border: #29414d;
+    --accent: #4fb8da; --accent-ink: #7ccbe6;
+    --live: #57bd93; --live-bg: #133228;
+    --gated: #d9c235; --gated-bg: #322c0c;
+    --hole: #e06256; --hole-bg: #3a1f1b;
+    --noop: #8a99a0; --noop-bg: #1e2c33;
+  }
+  :root[data-theme="light"] {
+    --paper: #ffffff; --surface: #f0f8fb; --surface-2: #d6ecf4;
+    --ink: #333333; --muted: #46565c; --border: #c9e2ec;
+    --accent: #2ca0c7; --accent-ink: #1d7d9e;
+    --live: #2f8f6b; --live-bg: #e2f3ec;
+    --gated: #8f7500; --gated-bg: #faf5d2;
+    --hole: #c24438; --hole-bg: #f9e8e5;
+    --noop: #6e7e85; --noop-bg: #edf2f4;
+  }
+  body {
+    background: var(--paper); color: var(--muted);
+    font-family: var(--body); font-weight: 300; font-size: 15.5px; line-height: 1.55;
+    margin: 0; padding: 2.5rem 1.25rem 5rem;
+  }
+  b, strong, th, .k { font-weight: 600; }
+  main { max-width: 1080px; margin: 0 auto; }
+  h1, h2, h3 { font-family: var(--heading); font-weight: 600; color: var(--ink); text-wrap: balance; }
+  h1 { font-size: 1.8rem; margin: 0 0 .3rem; }
+  h2 { font-size: 1.25rem; margin: 0 0 .9rem; padding-top: 2.6rem; border-top: 1px solid var(--border); }
+  h2 .sec { color: var(--muted); font-weight: 500; margin-right: .5rem; }
+  h3 { font-size: 1.02rem; margin: 0; }
+  a { color: var(--accent-ink); }
+  code, .k { font-family: var(--mono); font-size: .84em; background: var(--surface-2); border-radius: 4px; padding: .08em .35em; white-space: nowrap; }
+  .sub { color: var(--muted); margin: 0 0 1.4rem; max-width: 62ch; }
+  .chips { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1.1rem 0 0; }
+  .chip { font-family: var(--heading); font-size: .78rem; font-weight: 600; padding: .3rem .7rem; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); }
+  .chip b { font-variant-numeric: tabular-nums; }
+  .chip.live { color: var(--live); border-color: var(--live); background: var(--live-bg); }
+  .chip.gated { color: var(--gated); border-color: var(--gated); background: var(--gated-bg); }
+  .chip.hole { color: var(--hole); border-color: var(--hole); background: var(--hole-bg); }
+  .chip.noop { color: var(--noop); border-color: var(--noop); background: var(--noop-bg); }
+  .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .6rem; margin: 0 0 .5rem; }
+  .legend div { display: flex; gap: .55rem; align-items: baseline; font-size: .86rem; }
+  .dot { width: .72rem; height: .72rem; border-radius: 3px; flex: none; position: relative; top: .07rem; }
+  .dot.live { background: var(--live); } .dot.gated { background: var(--gated); }
+  .dot.hole { background: var(--hole); } .dot.noop { background: var(--noop); }
+  .diagram { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: .75rem; overflow-x: auto; }
+  .card { border: 1px solid var(--border); border-left: 5px solid var(--live); border-radius: 10px; background: var(--surface); padding: 1rem 1.15rem 1.1rem; margin: 0 0 1.15rem; }
+  .card.gated { border-left-color: var(--gated); }
+  .card.hole { border-left-color: var(--hole); }
+  .card.noop { border-left-color: var(--noop); }
+  .card header { display: flex; flex-wrap: wrap; align-items: baseline; gap: .6rem .9rem; margin-bottom: .55rem; }
+  .pill { font-family: var(--heading); font-size: .68rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; padding: .18rem .55rem; border-radius: 999px; }
+  .pill.live { color: #fff; background: var(--live); }
+  .pill.gated { color: #3a3200; background: #f1d600; }
+  .pill.hole { color: #fff; background: var(--hole); }
+  .pill.noop { color: #fff; background: var(--noop); }
+  .meta { font-size: .82rem; color: var(--muted); }
+  .meta code { background: var(--surface-2); }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .875rem; margin: .5rem 0 .2rem; }
+  th { font-family: var(--heading); font-size: .69rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); text-align: left; padding: .38rem .65rem; border-bottom: 2px solid var(--border); }
+  td { padding: .42rem .65rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td.st { white-space: nowrap; font-family: var(--heading); font-size: .72rem; font-weight: 600; }
+  .s-live { color: var(--live); } .s-gated { color: var(--gated); }
+  .s-hole { color: var(--hole); } .s-noop { color: var(--noop); }
+  .notes { margin: .55rem 0 0; padding-left: 1.15rem; font-size: .85rem; color: var(--muted); }
+  .notes li { margin: .18rem 0; }
+  .notes .warn { color: var(--gated); font-weight: 600; }
+  .notes .bad { color: var(--hole); font-weight: 600; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 1rem; }
+  .caption { font-size: .82rem; color: var(--muted); margin: .45rem 0 0; }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); font-size: .82rem; color: var(--muted); }
+  @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+  pre.mermaid { font-family: var(--mono); font-size: .78rem; line-height: 1.4; margin: 0; }
+</style>
+</head>
+<body>
+<main>
+<h1>Dentalia pipeline: flow &amp; state map</h1>
+<p class="sub">As-built truth, 2026-09-04. Verified against master as it stood that day, well past the last map's pin: every status re-derived from the code for this edition, none carried forward from the 08-27 edition. Master moved <b>ten commits during the write-up</b>, in two bursts, and the page was <b>re-pinned twice</b> rather than carrying an erratum &ndash; first onto the crawl link-judge slice, four commits, then onto the PHASES v4 rebuild. The suite was re-run at each new commit; the first burst touched <code>app/handlers/discover.py</code>, <code>app/config.py</code> and <code>app/extract/ranking.py</code> and every <code>file:line</code> citation in them was recomputed, while the second touched <b>nothing</b> under <code>app/</code>, <code>web/</code> or <code>migrations/</code>, so no citation moved with it. <b>The headline is a first: the raising placeholder is empty.</b> <code>app/handlers/noop.py</code> registers 19 tags and every one of them &ndash; plus <code>scheduler.tick</code>, which never had a placeholder &ndash; resolves to a real handler, so <b>20 of 20</b> live. The last one to move was <code>playbook.reonboard</code>, whose probe branch landed 2026-09-03; its failure-monitor branch still raises, but from inside the real handler. Two seams closed too: DISCOVER's T1 candidate ranker is <b>wired</b> (2026-09-02) and <code>app/robots.py</code> has <b>callers</b> for the first time. Registry: <b>875</b> documents (203 production, 228 staged, 439 filed, 4 superseded, 1 rejected) and <b>8.720</b> links. Two states this page has called unreachable on every previous edition are now written: <code>item_document.match_basis = 'manual'</code> (one link, one <code>link-confirmed</code> audit row) and <code>manual_kind = 'dead-job-followup'</code> (26 open). Test suite figures and the pin are in the footer.</p>
+
+<div class="chips">
+  <span class="chip live"><b>20</b> job types, <b>20</b> live handlers</span>
+  <span class="chip live"><b>0</b> tags on the no-op</span>
+  <span class="chip gated"><b>7</b> seams/hooks not wired</span>
+  <span class="chip gated"><b>7</b> dormant data paths</span>
+  <span class="chip hole"><b>26</b> open contract deltas (&sect;5)</span>
+</div>
+
+<div class="card hole">
+<header><h3>The database this page counts is BEHIND the code it describes, and the checkout is moving</h3><span class="pill hole">read this first</span></header>
+<p class="meta">Two honesty caveats, both the opposite of the 08-27 edition's. Every <code>count(*)</code> below is a real read of the dev Postgres on 2026-09-04, and that database is <b>one migration short of master</b> rather than five ahead of it.</p>
+<div class="tablewrap"><table>
+<tr><th></th><th>master</th><th>the shared dev database</th></tr>
+<tr><td>migration files applied</td><td><b>61</b> files (<code>001</code>&ndash;<code>061</code>, with <code>014</code> and <code>041</code> each claimed twice and <code>047</code>/<code>048</code> never used)</td><td><b>60</b> &ndash; <code>061_crawl_link_rank.sql</code> is <b>not applied</b>. Nothing else differs</td></tr>
+<tr><td><code>crawl_link_rank</code></td><td>defined by <code>061</code>; read and written by <code>discover._judge_links</code> (<code>app/handlers/discover.py:498,522</code>)</td><td><b>absent.</b> The judge's cache lookup therefore raises, is caught by <code>_rank_links</code>'s <code>except</code>, and every crawl silently degrades to page order with <code>fallback: "page-order"</code> in the log &ndash; the designed degrade path, running for an undesigned reason</td></tr>
+<tr><td><code>job_type</code> enum values</td><td><b>20</b> (001's 14, + <code>report.weekly</code> 013, <code>upload.ingest</code> 014, <code>eudamed.certregister</code>+<code>eudamed.sweep</code> 041, <code>vendor.import</code> 041, <code>scheduler.tick</code> 054)</td><td><b>20</b> &ndash; identical. The 08-27 fork at <code>041</code> is merged and gone</td></tr>
+<tr><td>tables / views</td><td>every one is defined by a file in <code>migrations/</code></td><td><b>4</b> that master never defines, all hand-made scratch: <code>_snap_before</code>, <code>tmp_ds</code>, <code>tmp_neo_refs</code>, <code>tmp_voco</code>. Nothing master defines is missing except <code>crawl_link_rank</code></td></tr>
+</table></div>
+<p class="meta"><b>The second caveat is that the checkout moved twice while this was written.</b> Uncommitted edits were outstanding on <code>CLAUDE.md</code>, <code>PHASES.md</code>, <code>docs/README.md</code>, <code>docs/specs/kpi.md</code> and <code>tasks/followups.md</code> for most of that day and were then committed the same day &ndash; the PHASES v4 rebuild, which splits the rulings into a new <code>docs/decisions.md</code> (70 rows) and the measurements into dated <code>docs/state/&lt;date&gt;.md</code> files. <b>That burst changed nothing under <code>app/</code>, <code>web/</code> or <code>migrations/</code></b> (verified by a <code>git diff --stat</code> over <code>app/ web/ migrations/</code> across that burst, which is empty), so every citation on this page survives it unchanged; what it does change is where a reader goes for a ruling. The register and gap-register counts in &sect;4 are re-read after the rebuild, and say by what method.</p>
+</div>
+<h2><span class="sec">0</span>Legend</h2>
+<div class="legend">
+  <div><span class="dot live"></span><span><b>Live</b>: implemented, table-driven tests, on the proven path</span></div>
+  <div><span class="dot gated"></span><span><b>Gated / dormant</b>: code exists but a config flag, missing data, or an unwired seam keeps it from acting</span></div>
+  <div><span class="dot hole"></span><span><b>Hole</b>: known defect or contract risk, tracked in <code>tasks/followups.md</code></span></div>
+  <div><span class="dot noop"></span><span><b>Not built</b>: enum tag exists, handler is the raising placeholder. <b>Empty for the first time</b></span></div>
+</div>
+<h2><span class="sec">1</span>The spine, end to end</h2>
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  BC[("BC item export")]:::ext --> ING
+  OPS["Operator CLI, 19 subcommands<br/>vendor-master · playbooks · manufacturers · regroup · discover-item<br/>repair-ref-list · repair-archive-urls · repair-label-dates<br/>repair-stated-class · repair-mfr-overbind · repair-document-manufacturer<br/>repair-mfr-task-reason · komet-coverage · schema-drift"]:::live -.->|alias seed, regroup| RES
+  WEB["Review UI + read API<br/>(Caddy + Basic auth, 95 routes,<br/>3 caller classes, default-deny)"]:::ext -->|POST /ingest| ING
+  WEB -->|POST /upload| UP["upload.ingest"]:::live
+  WEB -->|POST /import, preview then apply| ING
+  WEB -->|POST /import/vendors| VI["vendor.import"]:::live
+  WEB -->|POST /documents/N/eudamed| EU["eudamed.sync"]:::live
+  WEB -->|POST /playbooks/slug/probe| PP["playbook.reonboard<br/>(probe branch)"]:::live
+  WEB -->|POST /manufacturers/N/sweep| ES["eudamed.sweep"]:::live
+  VI --> VM[("vendor_master<br/>390 BC codes")]:::live
+  EU --> EM[("eudamed_mirror<br/>16.827 rows")]:::live
+  ES --> EM
+  PP --> PB[("playbook_probe<br/>counts + 20-link sample")]:::live
+  CORPUS[("SFTP corpus<br/>imports/dentalia-sftp")]:::ext --> BF["backfill.scan"]:::live
+  MBOX[("mailbox<br/>mdr@dentalia.si")]:::ext -.->|creds absent, G8| EP["email.poll"]:::live
+  TICK["scheduler.tick ×8<br/>perpetual, self-deferring"]:::live -.->|watch-dir unset| ING
+  TICK --> RW["report.weekly"]:::live
+  TICK -.->|flag off| ER["email.request"]:::live
+  TICK -.->|flag off| ECR["eudamed.certregister"]:::live
+  TICK -.->|flag off| DIS
+  TICK -->|marks due_at only| SD[("eudamed_sweep_state")]:::gated
+  ECR --> EC[("eudamed_certificate<br/>4.788 rows")]:::live
+  ING["ingest.run"]:::live -->|per changed MD item| RES["resolve.group"]:::live
+  RES -.->|DISCOVER_HOLD on| HOLD["discover_held<br/>(counted, not emitted)"]:::gated
+  RES -->|hold off| DIS
+  RES -.->|ambiguous band unreachable| GS["grouping_suggestion"]:::gated
+  DIS["discover.group"]:::live -->|top-k URLs| FET["fetch.url"]:::live
+  DIS -.->|all known fresh + extracted| VAL
+  DIS -.->|dead end| MT["manual_task"]:::live
+  DIS -.->|flag off| ER
+  DIS -->|crawl rung: harvest + T1 judge| FET
+  ER --> DR[("email_draft<br/>a person sends it")]:::live
+  ER --> RM["email.reminder"]:::live
+  FET -->|new hash| EXT["extract.doc"]:::live
+  FET --> ARCH[("hash archive volume,<br/>served /archive")]:::live
+  UP --> ARCH
+  UP --> EXT
+  BF --> EXT
+  EP --> EXT
+  OPS -.->|re-validate stored rev| VAL
+  EXT --> DT[("document_text")]:::live
+  EXT --> VAL["validate.doc"]:::live
+  VAL -->|normal route| GC["gate.candidate"]:::live
+  VAL -.->|coverage_scope=manufacturer| GC
+  GC --> REG[("document · item_document<br/>evidence · audit_log")]:::live
+  GC -.->|manual| MT
+  GA["gate.apply"]:::live --> REG
+  WEB -->|approve/reject/reopen/bind| GA
+  WEB -->|confirm-link/reject-link/reopen-link| GA
+  GA -.->|reject| DIS
+  ANYJOB["any handler dead-lettering"]:::live -.->|queue.fail| MT
+  classDef live fill:#e2f3ec,stroke:#2f8f6b,color:#123;
+  classDef gated fill:#faf5d2,stroke:#8f7500,color:#123;
+  classDef noop fill:#edf2f4,stroke:#6e7e85,color:#123;
+  classDef ext fill:#d6ecf4,stroke:#2ca0c7,color:#123;
+</pre>
+</div>
+<p class="caption">Solid = the path work actually takes today. Dashed = a real branch that is currently gated off, starved of data, or terminal. Three edges are new since 08-27: the <code>playbook.reonboard</code> probe (a fetch that leaves no ledger row and no archive file), the crawl rung inside DISCOVER's <code>playbook</code> source, and <code>queue.fail</code> raising a <code>dead-job-followup</code> manual task for <b>any</b> tag &ndash; the first thing in the system that writes <code>manual_task</code> without being a stage.</p>
+<h2><span class="sec">2</span>Every stage: inputs, outputs, writes, outcomes</h2>
+<p class="sub">One card per job type, in spine order. The shared envelope is stated once, here; each card lists only its stage-specific payload fields, and flags any field the code reads that no contract lists and any contract field the code ignores.</p>
+
+<div class="card">
+<header><h3>The shared job envelope</h3><span class="pill live">all 20 tags</span><span class="meta">PRD &sect;0 · <code>migrations/001_queue.sql</code> + 019 + 026 + 037</span></header>
+<div class="tablewrap"><table>
+<tr><th>Column</th><th>Type</th><th>Meaning</th><th>Source</th></tr>
+<tr><td><code>id</code></td><td>bigint PK</td><td>job identity; the <code>via_job</code> soft ref in <code>audit_log</code> and the <code>payload-&gt;&gt;'job_id'</code> in a <code>dead-job-followup</code> task point at it</td><td>001</td></tr>
+<tr><td><code>type</code></td><td><code>job_type</code> enum, NOT NULL</td><td>the closed tag set, <b>20 values</b>. A cast failure is how a typo fails loudly (<code>app/cli.py:41</code> catches <code>InvalidTextRepresentation</code> and prints "unknown job type")</td><td>001, 013, 014, 041×2, 054</td></tr>
+<tr><td><code>payload</code></td><td>jsonb NOT NULL</td><td>the stage-specific fields below. <b>Immutable after enqueue</b> (invariant 9): no <code>UPDATE job</code> anywhere touches it</td><td>001</td></tr>
+<tr><td><code>dedupe_key</code></td><td>text NOT NULL</td><td>unique <b>only among active jobs</b> &ndash; <code>UNIQUE (dedupe_key) WHERE status IN ('pending','running','failed')</code> (C2, invariant 8). Terminal jobs never block re-enqueue</td><td>001</td></tr>
+<tr><td><code>status</code></td><td><code>job_status</code>: <code>pending|running|done|failed|dead</code></td><td><code>failed</code> retries on backoff; <code>dead</code> is terminal and raises a manual task</td><td>001</td></tr>
+<tr><td><code>priority</code></td><td><code>job_priority</code>: <code>interactive|delta|sweep</code></td><td>claim order is <code>ORDER BY priority, run_after</code> (<code>app/queue.py:128</code>). Default on <code>enqueue</code> is <code>sweep</code></td><td>001</td></tr>
+<tr><td><code>run_after</code></td><td>timestamptz NOT NULL</td><td>backoff target, batch poll, or a <code>scheduler.tick</code> poll interval</td><td>001</td></tr>
+<tr><td><code>attempts</code> / <code>max_attempts</code></td><td>int NOT NULL</td><td>incremented on every claim (the poison-message guard); default <code>max_attempts</code> 5. <code>queue.defer</code> refunds the increment</td><td>001</td></tr>
+<tr><td><code>last_error</code>, <code>claimed_by</code>, <code>claimed_at</code>, <code>created_at</code></td><td>text / text / timestamptz / timestamptz</td><td><code>claimed_at</code> older than the visibility timeout makes a <code>running</code> row reclaimable</td><td>001</td></tr>
+<tr><td><code>result</code></td><td>jsonb</td><td>the handler's return value, serialised by <code>queue.finish</code> through <code>_json_default</code> (dates &rarr; ISO, Decimal &rarr; float, anything else <b>raises</b> rather than becoming a plausible repr)</td><td><b>019</b></td></tr>
+<tr><td><code>finished_at</code></td><td>timestamptz</td><td>stamped on the two terminal transitions only, <code>done</code> and <code>dead</code> &ndash; never on <code>failed</code>, which runs again</td><td><b>026</b></td></tr>
+<tr><td><code>caused_by</code></td><td>bigint</td><td>lineage. <code>queue.current_job_id</code> is a module-level slot set by <code>runner.run_once</code> around <em>exactly</em> the handler call, so any <code>enqueue</code> a handler makes is stamped as its child. <code>NULL</code> = a root (CLI, tick, web producer)</td><td><b>037</b></td></tr>
+</table></div>
+<ul class="notes">
+<li><span class="bad">Delta:</span> PRD &sect;0's envelope lists thirteen columns and stops at <code>created_at</code>. <code>result</code>, <code>finished_at</code> and <code>caused_by</code> are three migrations old and in none of them. &sect;5.</li>
+<li><b>Claim is one statement.</b> <code>UPDATE job SET status='running'</code> &hellip; <code>WHERE id = (SELECT &hellip;</code> <code>FOR UPDATE SKIP LOCKED LIMIT 1)</code> <code>RETURNING *</code> &ndash; competing workers never see the same row (<code>app/queue.py:114-137</code>).</li>
+<li><b>The claim commits alone</b>, then the handler's writes and the <code>finish</code> commit together (<code>runner.py:66-100</code>), so <code>attempts</code> is durable across a hard crash while result + audit stay atomic (invariant 10).</li>
+<li><b>Self-defer</b> is a return signal, never an exception: <code>{"_deferred": True}</code> makes the runner commit the handler's writes and skip <code>finish</code>. Three handlers use it &ndash; <code>extract.doc</code> (batch poll), <code>fetch.url</code> / <code>discover.group</code> (domain lease), <code>scheduler.tick</code> (its whole life).</li>
+<li><b>Live queue, 2026-09-04:</b> 17.500 <code>done</code>, 81 <code>dead</code>, 9 <code>pending</code>, 0 <code>running</code>, 0 <code>failed</code>. The 9 pending are the 8 perpetual ticks plus one.</li>
+</ul>
+</div>
+
+<div class="card">
+<header><h3><code>ingest.run</code></h3><span class="pill live">live</span><span class="meta">PRD &sect;1 · handbook &sect;1 · <code>app/handlers/ingest.py</code> (276 lines)</span></header>
+<p class="meta"><b>Entry points.</b> Four producers, three key shapes. (1) SCHEDULER's monthly tick &ndash; <code>app/scheduler.py:103</code>, key <code>ingest.run:sched:{catalogue}:{period_key}</code>, <b>inert</b>: <code>scheduler.ingest_watch_dir</code> is <code>''</code> in <code>app/config.py:554</code> and <code>SCHEDULER_INGEST_WATCH_DIR</code> is empty in <code>docker-compose.yml:131,273</code>, so the tick finds no file. (2) The <code>/ingest</code> form &ndash; <code>web/app.py:3439</code>. (3) The <code>/import</code> upload, <b>twice</b>: preview at <code>web/app.py:3593</code>, then apply at <code>web/app.py:3791</code> after the operator confirms &ndash; two jobs, two immutable payloads, never a mutation (invariant 9). (4) <code>python -m app.cli enqueue</code>, operator-supplied key.</p>
+<div class="tablewrap"><table>
+<tr><th>Field</th><th>Type</th><th>Req</th><th>Meaning</th><th>Example</th></tr>
+<tr><td><code>source</code></td><td>str</td><td>yes</td><td><code>csv</code> | <code>bc_odata</code> | <code>upload</code>. Selects the adapter in <code>app/adapters/source.py:312</code></td><td><code>"upload"</code></td></tr>
+<tr><td><code>ref</code></td><td>str | obj</td><td>yes</td><td>file path, delta window, or <code>{upload_id}</code> for the spooled-bytes path</td><td><code>{"upload_id": 12}</code></td></tr>
+<tr><td><code>catalogue</code></td><td>str</td><td>yes</td><td>single-valued since the 2026-08-26 collapse; every live row is <code>LJ</code></td><td><code>"LJ"</code></td></tr>
+<tr><td><code>dry_run</code></td><td>bool</td><td>no</td><td>diff and report, upsert nothing, emit nothing, consume no spool row</td><td><code>true</code></td></tr>
+<tr><td><code>filename</code></td><td>str</td><td>no</td><td>rides along for the confirm screen; <b>INGEST ignores it</b> &ndash; the adapter already has the bytes by <code>upload_id</code></td><td><code>"LJ-2026-09.xlsx"</code></td></tr>
+<tr><td><code>preview_job_id</code></td><td>int</td><td>no</td><td>set by the apply route; <b>ignored by INGEST</b>, read only by the confirm screen to print previewed-against-applied</td><td><code>4711</code></td></tr>
+</table></div>
+<p class="meta"><b>Dedupe keys.</b> <code>ingest.run:sched:{catalogue}:{period_key}</code> · <code>ingest.run:web:{catalogue}:{source}:{ref}</code> · <code>ingest.run:upload:{upload_id}:preview</code> · <code>ingest.run:upload:{upload_id}:apply</code>. All four are in PRD &sect;0's table. Active-scope only, so a terminal preview never blocks its own apply while a double-clicked Apply dedupes.</p>
+<p class="meta"><b>Reads.</b> The export (path, injected records, or <code>import_inbox.content</code> via <code>app/import_spool.py</code>) · <code>item_mirror</code>, columns <code>name, manufacturer_raw, mfr_ref, md_flag, product_class, udi, catalogue</code> &ndash; the exact <code>_DIFF_COLS</code> tuple, with <code>mirror_rev</code> and <code>updated_at</code> deliberately outside it. Config that changes the read: <code>ingest.process_md_unknown</code> (default <b>true</b>, live true), <code>web.imports_dir</code> (<code>/imports</code>), <code>ingest.mfr_ref_source_by_code</code> (empty and staying empty &ndash; C1 closed 2026-08-14).</p>
+<p class="meta"><b>Writes.</b> <code>item_mirror</code> only, one <code>ON CONFLICT (item_ref) DO UPDATE</code> (<code>ingest.py:73-90</code>, migration 002). <code>mirror_rev</code> is omitted from the INSERT column list so the sequence is consumed exactly once per write &ndash; the DEFAULT supplies it on insert, the explicit <code>SET</code> on update (migration 011). Plus <code>import_inbox</code> consume + opportunistic GC on a non-dry-run apply.</p>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Emits</th><th>Counted as</th></tr>
+<tr><td>no <code>item_ref</code> or no <code>name</code></td><td>skipped &ndash; both are NOT NULL</td><td>&mdash;</td><td><code>skipped</code> + a sample row</td></tr>
+<tr><td><code>md_flag IS FALSE</code>, not already mirrored</td><td>dropped, never mirrored</td><td>&mdash;</td><td><code>non_md</code></td></tr>
+<tr><td><code>md_flag IS FALSE</code>, already mirrored, changed</td><td>mirror corrected to <code>md_flag=false</code></td><td><b>nothing</b></td><td><code>reclassified_non_md</code> + anomaly</td></tr>
+<tr><td><code>md_flag IS NULL</code></td><td>flows on iff <code>process_md_unknown</code></td><td>as below</td><td><code>md_unknown</code> + <code>md_class_blank</code> anomaly</td></tr>
+<tr><td>no <code>mfr_ref</code></td><td>processed anyway (C1)</td><td>as below</td><td><code>missing_mfr_ref</code> + anomaly</td></tr>
+<tr><td><code>mfr_ref</code> contains <code>"!"</code></td><td><b>scrubbed to NULL</b> before the write &ndash; never <code>''</code>, which VALIDATE would compare as a code</td><td>as below</td><td><code>mfr_ref_prose</code> + anomaly carrying the original value</td></tr>
+<tr><td>row identical to the mirror</td><td>no write</td><td>&mdash;</td><td><code>unchanged</code></td></tr>
+<tr><td>new or changed, <code>dry_run</code> false</td><td>upsert, <code>mirror_rev</code> advances</td><td><code>resolve.group {item_ref}</code></td><td><code>changed</code></td></tr>
+<tr><td>new or changed, <code>dry_run</code> true</td><td>nothing written</td><td><b>nothing</b></td><td><code>changed</code>; anomalies moved to <code>anomalies_preview</code> so the apply does not double-count the ledger</td></tr>
+<tr><td>unparseable file / auth failure</td><td>raises</td><td>&mdash;</td><td>backoff &rarr; <code>dead</code> &rarr; <code>dead-job-followup</code></td></tr>
+</table></div>
+<p class="meta"><b>Result + anomalies.</b> Nine pre-seeded counters (<code>seen</code>, <code>changed</code>, <code>unchanged</code>, <code>non_md</code>, <code>reclassified_non_md</code>, <code>md_unknown</code>, <code>missing_mfr_ref</code>, <code>mfr_ref_prose</code>, <code>skipped</code>) so the report shape is stable even on a run that hits no branch, plus <code>skipped_sample</code>, <code>dry_run</code> and <code>spool_gc</code>. Anomaly kinds emitted: <code>md_class_blank</code>, <code>mfr_ref_missing</code>, <code>mfr_ref_prose</code>, <code>manufacturer_code_blank</code>, <code>reclassified_non_md</code> &ndash; five of the nine in <code>ANOMALY_KINDS</code>, and INGEST is the only producer of all five. Live ledger: 11.693 <code>md_class_blank</code>, 7.082 <code>mfr_ref_missing</code>, 364 <code>mfr_ref_prose</code>, 2 <code>manufacturer_code_blank</code>, <b>0</b> <code>reclassified_non_md</code> (a producer with nothing yet to report).</p>
+<p class="meta"><b>Emits.</b> <code>resolve.group</code> only, per new-or-changed MD item, at the parent job's own priority &ndash; matches PRD &sect;1's Emits row exactly.</p>
+</div>
+
+<div class="card">
+<header><h3><code>vendor.import</code></h3><span class="pill live">live</span><span class="meta">PRD &sect;1b · handbook &sect;1b · <code>app/handlers/vendor_import.py</code> (95 lines)</span></header>
+<p class="meta"><b>Entry points.</b> Two, both browser: preview at <code>web/app.py:3652</code> (<code>vendor.import:upload:{uid}:preview</code>) and apply at <code>web/app.py:3790</code> (<code>{job['type']}:upload:{uid}:apply</code>, the shape shared with the item import). Never the scheduler &ndash; a person uploads a file.</p>
+<div class="tablewrap"><table>
+<tr><th>Field</th><th>Type</th><th>Req</th><th>Meaning</th><th>Example</th></tr>
+<tr><td><code>upload_id</code></td><td>int</td><td>yes</td><td><code>import_inbox</code> row id at <code>kind='vendors'</code></td><td><code>31</code></td></tr>
+<tr><td><code>filename</code></td><td>str</td><td>yes</td><td>becomes <code>vendor_master.import_batch</code> on apply &ndash; read, not decorative</td><td><code>"dobavitelji.xlsx"</code></td></tr>
+<tr><td><code>dry_run</code></td><td>bool</td><td>yes</td><td>report the diff, write nothing, <b>leave the spool row</b></td><td><code>true</code></td></tr>
+<tr><td><code>allow_renames</code></td><td>bool</td><td>yes</td><td>the operator's opt-in to re-pointing an existing BC code</td><td><code>false</code></td></tr>
+<tr><td><code>preview_job_id</code></td><td>int</td><td>no</td><td>apply only; ignored by the handler, read by the confirm screen</td><td><code>4712</code></td></tr>
+</table></div>
+<p class="meta"><b>Reads / writes.</b> Reads <code>import_inbox</code> (asserting <code>kind='vendors'</code>) and <code>vendor_master</code> as the diff's current side. Writes <code>vendor_master</code> only &ndash; never the registry (invariant 1), and structurally so: <code>dentalia_api</code> holds SELECT and no write grant, so the browser cannot do this, the worker does. A code absent from the export keeps its row with a stale <code>import_batch</code>; nothing is ever deleted.</p>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Emits</th><th>Status</th></tr>
+<tr><td>spool row missing or wrong <code>kind</code></td><td>raises &ndash; a wrong-kind file would import zero manufacturers and read as success</td><td>&mdash;</td><td>backoff &rarr; <code>dead</code></td></tr>
+<tr><td><code>dry_run</code></td><td>diff reported with <code>renamed</code> and <code>disappeared</code> carrying their members, not just counts; spool left</td><td>&mdash;</td><td><code>done</code>, <code>written: false</code></td></tr>
+<tr><td>apply, diff contains renames, <code>allow_renames</code> false</td><td><code>RenameRefused</code> caught: <code>outcome: "rename-refused"</code>, all-or-nothing, spool <b>left</b> so the apply can be repeated with the opt-in</td><td>&mdash;</td><td><code>done</code>, <code>written: false</code></td></tr>
+<tr><td>apply, clean</td><td><code>vendor_master.apply</code>, spool consumed, abandoned previews aged out</td><td><b>nothing</b></td><td><code>done</code>, <code>written: true</code>, <code>spool_gc: N</code></td></tr>
+</table></div>
+<p class="meta"><b>Emits nothing, deliberately.</b> An import that adds codes leaves <code>manufacturer_alias</code> stale, and calling <code>playbooks sync</code> here would hide a second write behind one confirmation &ndash; <code>sync</code> reports <code>orphaned_groups</code> it does not retro-fix, and raises <code>PlaybookConflict</code> on an authoring error, which would dead-letter a vendor import for an unrelated reason. The confirm screen names what is stale and the command. Matches PRD &sect;1b's "Emits: Nothing". <b>Result:</b> a plain dict, not a <code>Result</code> envelope &ndash; no anomaly kinds. <b>Live:</b> 390 rows.</p>
+</div>
+
+<div class="card">
+<header><h3><code>resolve.group</code></h3><span class="pill live">live</span><span class="meta">PRD &sect;2 · handbook &sect;2 · 2 inert hooks · <code>app/handlers/resolve.py</code> (373 lines)</span></header>
+<p class="meta"><b>Entry points.</b> (1) INGEST, <code>app/handlers/ingest.py:229</code>, key <code>resolve:{item_ref}:{mirror_rev}</code> &ndash; the rev is what stops a re-changed item colliding with a terminal job. (2) The grouping-suggestion assign / start-new-group actions, <code>web/app.py:3960</code>, key <code>resolve:manual:{item_ref}:{group_id|new}</code>, interactive priority. (3) <code>app/regroup.py:341</code>, the operator CLI, which deliberately reuses INGEST's own shape so a regroup colliding with an in-flight emission is the correct outcome.</p>
+<div class="tablewrap"><table>
+<tr><th>Field</th><th>Type</th><th>Req</th><th>Meaning</th><th>Example</th></tr>
+<tr><td><code>item_ref</code></td><td>str</td><td>yes</td><td>BC item number; absent from <code>item_mirror</code> raises <code>LookupError</code> (INGEST commits before emitting, so absence is a real fault)</td><td><code>"2222100"</code></td></tr>
+<tr><td><code>group_id</code></td><td>int</td><td>no</td><td>forced assign from the review UI. Basis <code>manual</code>, open suggestion resolved. <b>Not in PRD &sect;2's payload</b>, which lists <code>{item_ref}</code> alone</td><td><code>1641</code></td></tr>
+<tr><td><code>force_new_group</code></td><td>bool</td><td>no</td><td>the other half of the same loop: start a singleton at basis <code>manual</code>. <b>Also absent from PRD &sect;2</b></td><td><code>true</code></td></tr>
+</table></div>
+<p class="meta"><b>Reads.</b> <code>item_mirror</code> (<code>item_ref, name, manufacturer_raw, mfr_ref, md_flag, udi</code>) · <code>manufacturer_alias</code> · <code>item_group</code> + <code>item_group_member</code> (the four ladder rungs) · <code>document</code> + <code>item_document</code> (the re-discovery guard). Config: <code>resolve.name_accept</code> 0.90, <code>resolve.name_suggest</code> <b>0.90</b>, <code>resolve.name_candidate_k</code> 20, <code>discovery.hold</code> (<b>live true</b>).</p>
+<p class="meta"><b>Writes.</b> <code>item_group</code> (<code>canonical_manufacturer</code>, <code>label</code>) · <code>item_group_member</code> (<code>group_id, item_ref, mfr_ref, match_basis</code>; <code>ON CONFLICT (group_id,item_ref) DO UPDATE SET mfr_ref</code> only &ndash; the <b>original</b> basis is preserved, so a re-resolve that now hits <code>existing-link</code> cannot rewrite how the item first joined) · <code>manufacturer_alias</code> (self-seeding on a miss: raw name becomes its own canonical) · <code>grouping_suggestion</code> (<code>ON CONFLICT (item_ref) WHERE status='open' DO NOTHING</code>, so re-delivery no-ops instead of stacking). Never the registry (invariant 1). All four are in the sketch &sect;7 row.</p>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Emits</th><th>Basis written</th></tr>
+<tr><td><code>group_id</code> forced, group exists</td><td>member added, open suggestion resolved</td><td><code>discover.group</code> unless suppressed</td><td><code>manual</code></td></tr>
+<tr><td><code>group_id</code> forced, group missing</td><td>raises <code>LookupError</code></td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td><code>force_new_group</code></td><td>singleton created</td><td>as above</td><td><code>manual</code></td></tr>
+<tr><td>ladder hit at score &ge; 0.90</td><td>member added</td><td>as above</td><td><code>existing-link</code> | <code>udi</code> | <code>basic-udi-di</code> | <code>name-family</code></td></tr>
+<tr><td><code>name-family</code> in [0.90, 0.90)</td><td><b>an empty band.</b> <code>name_suggest == name_accept</code>, so nothing can land here</td><td>&mdash;</td><td>&mdash; (the T1 seam is unreachable)</td></tr>
+<tr><td>no hit</td><td>singleton created</td><td>as above</td><td><code>singleton</code></td></tr>
+<tr><td>group already has a production or staged doc/link</td><td>discovery suppressed &ndash; a settled decision (C3)</td><td><b>nothing</b></td><td><code>emitted_discover: false</code>, <code>discover_held: 0</code></td></tr>
+<tr><td><code>discovery.hold</code> on (<b>live</b>)</td><td>discovery <b>deferred</b>, not decided</td><td><b>nothing</b></td><td><code>discover_held: 1</code> &ndash; the counter that tells the two apart</td></tr>
+</table></div>
+<ul class="notes">
+<li><span class="warn">Inert hook:</span> <code>_apply_manufacturer_bindings</code> (<code>resolve.py:250</code>) <code>return 0</code>, unconditionally. Invariant 1 forbids RESOLVE writing <code>item_document</code> and <code>gate.candidate</code> cannot take a link-only candidate, so the write path does not exist. <code>[resolve-c4]</code>.</li>
+<li><span class="warn">Inert seam:</span> <code>_default_adjudicator</code> (<code>resolve.py:263</code>) raises <code>NotImplementedError</code> &ndash; and is <b>unreachable</b>, because the SUGGEST band is empty. All <b>5.831</b> grouping suggestions ever raised are resolved. Lowering <code>name_suggest</code> re-arms it. <code>[resolve-t1-ranking]</code>.</li>
+<li><b>Result envelope:</b> a plain dict of nine keys, not a <code>Result</code>. No anomaly kinds. <b>Live:</b> 8.208 groups over 15.958 items; 9.946 <code>resolve.group</code> jobs run.</li>
+</ul>
+</div>
+
+<div class="card">
+<header><h3><code>discover.group</code></h3><span class="pill live">live</span><span class="meta">PRD &sect;3 · handbook &sect;3 · the crawl rung is live for exactly one manufacturer · <code>app/handlers/discover.py</code> (1.150 lines)</span></header>
+<p class="meta"><b>Entry points.</b> Six producers, five key shapes. (1) RESOLVE, <code>resolve.py:243</code>, <code>discover:{group_id}:0</code> &ndash; the cycle token is the constant <code>_RESOLVE_CYCLE</code>, kept for shape stability because C2 active-scope dedupe supersedes it. (2) GATE's reject path, <code>gate.py:1474</code>, <code>discover:gate-reject:{doc_id}:{group_id}</code>, interactive. (3) The <code>/manual</code> tab re-run, <code>web/app.py:4148</code>, <code>discover:manual:{task_id}</code>. (4) The <code>/items</code> re-discover button, <code>web/app.py:2180</code>, and (5) the manufacturer page's bulk button, <code>web/registry.py:1899</code>, and (6) the CLI <code>discover-item</code>, <code>app/cli.py:79</code> &ndash; all three <code>discover:refetch:{group_id}:{date}</code> with Postgres <code>current_date</code>, so a same-day repeat collapses. <b>Two scheduler producers write that same shape</b> and are in no contract table: <code>scheduler.py:225</code> (expiry re-discover) and <code>scheduler.py:284</code> (coverage scan), both flag-gated off.</p>
+<div class="tablewrap"><table>
+<tr><th>Field</th><th>Type</th><th>Req</th><th>Meaning</th><th>Example</th></tr>
+<tr><td><code>group_id</code></td><td>int</td><td>yes</td><td>the <code>item_group</code> to find documents for; missing raises <code>LookupError</code></td><td><code>1641</code></td></tr>
+<tr><td><code>ignore_recency</code></td><td>bool</td><td>no</td><td>admin refetch. Forces every known row stale at one override point (<code>discover.py:921</code>), bypasses the recency rung entirely, and is <b>propagated onto every <code>fetch.url</code> this run emits</b> &ndash; added to the child payload only when true, so a default run's payload is byte-identical to before the flag existed</td><td><code>true</code></td></tr>
+</table></div>
+<p class="meta">PRD &sect;3 lists exactly these two and records that <code>manufacturer_id</code> and <code>context</code> "never existed" (removed 2026-08-25). The code reads no third field. <b>Contract and code agree.</b></p>
+<p class="meta"><b>Reads.</b> <code>item_group</code> + <code>item_group_member</code> (the group's facts and its <code>member_mfr_refs</code>) · <code>fetch_log</code> joined through the registry for known URLs, each tagged fresh/stale <b>in-DB against <code>now()</code></b> to avoid worker-clock skew · <code>eudamed_mirror.cert_refs</code> · <code>manufacturer.contact_emails</code> · the playbook store (<code>manufacturer.body</code> since migration 050, via <code>playbooks.for_manufacturer</code>) · <code>robots_cache</code> · <code>crawl_link_rank</code> · <code>manual_task</code>. Config: <code>discovery.default_source_priority</code> (<code>recency, known_url, playbook, eudamed, search, email, manual</code>), <code>topk</code> 3, <code>rank_threshold</code> 0.60, <code>recency_days</code> 30, <code>max_search_candidates</code> 10, <code>crawl_rank_floor</code> 5, <code>crawl_rank_max</code> 600, <code>email_rung_enabled</code> <b>false</b>, <code>fetch.politeness_ms</code> 2000, <code>manufacturer_button_cap</code> 25.</p>
+<p class="meta"><b>Writes.</b> <code>discovery_log</code> (<code>group_id, source, outcome &isin; {hit,miss,skipped}, detail jsonb</code>, migration 003) &ndash; one row per rung tried · <code>manual_task</code> (<code>kind='discovery-dead-end'</code>, and the stale-task resolve) · <b><code>domain_lease</code></b> via <code>queue.try_domain_lease</code>, once per host before any crawl recipe fetches · <b><code>robots_cache</code></b> via <code>robots_mod.check</code> (<code>discover.py:616</code>) · <b><code>crawl_link_rank</code></b> (<code>discover.py:522</code>, migration 061): <code>(index_url, harvest_hash) PK</code>, <code>model_id</code>, <code>judgements jsonb</code>. <span class="bad">The last three are outside this tag's row in schema sketch &sect;7</span>, which lists writes as <code>discovery_log, manual_task</code>. &sect;5.</p>
+<div class="tablewrap"><table>
+<tr><th>Rung</th><th>Situation</th><th>Outcome</th><th>Emits</th><th>Terminal?</th></tr>
+<tr><td><code>recency</code></td><td>every known URL fresh AND its content already extracted</td><td>C3 re-entry <b>without the network</b>; playbook <code>direct</code> URLs join the candidate set</td><td><code>validate.doc</code> ×N via <code>archiving.emit_validate</code>, which attaches <code>archive_url</code> from the registry when one is held</td><td>yes, <code>outcome: validate</code></td></tr>
+<tr><td><code>recency</code></td><td>all fresh but nothing extracted</td><td>logged <code>skipped</code></td><td>&mdash;</td><td>no, falls through</td></tr>
+<tr><td><code>recency</code></td><td><code>ignore_recency</code></td><td>branch bypassed entirely &ndash; a forced refetch must reach the network</td><td>&mdash;</td><td>no</td></tr>
+<tr><td><code>known_url</code></td><td>at least one stale known URL</td><td>re-fetch them</td><td><code>fetch.url</code> ×N</td><td>yes</td></tr>
+<tr><td><code>playbook</code></td><td>authored <code>kind:"direct"</code> doc_sources</td><td>emitted <b>first</b>; a hand-verified URL outranks a harvest (Denis 2026-09-03)</td><td><code>fetch.url</code> ×N</td><td>sets <code>hit</code>, does not stop the crawl</td></tr>
+<tr><td><code>playbook</code></td><td>a <code>crawl</code> block is authored</td><td>one lease per host taken <b>before any recipe fetches</b>; a held lease defers the whole job with nothing fetched</td><td>&mdash; (<code>_deferred</code>)</td><td>no</td></tr>
+<tr><td><code>playbook</code> / crawl</td><td>robots disallows</td><td>refused and logged, never fetched</td><td>&mdash;</td><td>miss</td></tr>
+<tr><td><code>playbook</code> / crawl</td><td>index page 200</td><td>harvest to the <b>ceiling</b> <code>max(max_links, crawl_rank_max)</code>, not the budget &ndash; a ranker can only order what it was shown</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td><code>playbook</code> / crawl</td><td>zero <b>anchors</b> on a page</td><td>escalate to <code>renderer.render</code>; <code>tier</code> flips to <code>rendered</code> even when the browser also finds nothing. Zero <em>matches</em> with anchors present never escalates &ndash; that is a wrong <code>link_pattern</code></td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td><code>playbook</code> / crawl</td><td>a <code>doc_type_from</code> needle maps to <code>null</code></td><td>the link is harvested, counted, and <b>dropped before <code>_emit_fetch</code></b> &ndash; per-needle counts in <code>detail.excluded_by</code>, so a rule that matched nothing is visible by its absence</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td><code>playbook</code> / crawl</td><td>harvest hit the ceiling</td><td><code>rank: {skipped: "pattern-too-broad"}</code> &ndash; page order, and the log tells the author to narrow it</td><td><code>fetch.url</code> × budget</td><td>hit</td></tr>
+<tr><td><code>playbook</code> / crawl</td><td>survivors &ge; <code>crawl_rank_floor</code> (5)</td><td><b>T1 link judge.</b> Per link: predicted type + the article numbers it names. Judged once per library version and cached on <code>sha256(links+texts)</code>. Order is code, never the prompt: our-article-match &rarr; DoC&gt;EC&gt;ISO&gt;IFU&gt;other &rarr; confidence &rarr; page order</td><td><code>fetch.url</code> × budget, in that order</td><td>hit</td></tr>
+<tr><td><code>playbook</code> / crawl</td><td>judge raises (no API key, HTTP error, <b>or the 061 table missing</b>)</td><td>degrades to the first <code>budget</code> links in page order, <code>detail.rank.fallback = "page-order"</code></td><td><code>fetch.url</code> × budget</td><td>hit</td></tr>
+<tr><td><code>playbook</code> / crawl</td><td>every link excluded</td><td><b>hit, not miss</b> &ndash; the recipe worked and we chose not to fetch. A miss would send the ladder on to search for what we just declined</td><td>&mdash;</td><td>hit</td></tr>
+<tr><td><code>eudamed</code></td><td><code>cert_refs</code> on the mirror row</td><td><b>always a miss.</b> <code>cert_refs</code> is NULL on all 16.827 rows and the 2026-08-20 research measured that EUDAMED serves no document URLs at all</td><td>&mdash;</td><td>no</td></tr>
+<tr><td><code>search</code></td><td>adapter not configured</td><td><code>SearchNotConfigured</code> caught &rarr; logged <code>skipped</code>, never a dead-letter</td><td>&mdash;</td><td>no</td></tr>
+<tr><td><code>search</code></td><td>site:-restricted query finds nothing and the playbook names domains</td><td>one wide retry &ndash; compliance PDFs sit on CDNs</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td><code>search</code></td><td>ranker fails</td><td>caught, <code>detail.rank_error</code> logged, falls through to manual &ndash; wiring the ranker can cost a group its search rung, never the group</td><td>&mdash;</td><td>no</td></tr>
+<tr><td><code>search</code></td><td>candidates score &ge; 0.60</td><td>best <code>topk</code> 3</td><td><code>fetch.url</code> ×k</td><td>yes</td></tr>
+<tr><td><code>email</code></td><td><code>email_rung_enabled</code> false (<b>live</b>)</td><td>logged <code>skipped: email-producer-disabled</code></td><td>&mdash;</td><td>no</td></tr>
+<tr><td><code>email</code></td><td>enabled and a contact is known</td><td>&mdash;</td><td><code>email.request {group_id, manufacturer, contacts, reason:"discovery-exhausted"}</code></td><td>yes</td></tr>
+<tr><td><code>vendor</code></td><td>named in a config ladder</td><td>logged <code>skipped: deferred</code> &ndash; folded into search per G6</td><td>&mdash;</td><td>no</td></tr>
+<tr><td><code>manual</code></td><td>always</td><td><code>manual_task</code> with prefilled search links and the playbook's <code>portal</code> sources</td><td>&mdash;</td><td>yes</td></tr>
+<tr><td>&mdash;</td><td>ladder exhausted with no terminal rung (misconfigured list)</td><td>manual task with <code>fallback: true</code> &ndash; a group never vanishes silently</td><td>&mdash;</td><td>yes</td></tr>
+<tr><td>&mdash;</td><td>unknown rung name</td><td>raises <code>ValueError</code></td><td>&mdash;</td><td>dead</td></tr>
+</table></div>
+<ul class="notes">
+<li><span class="s-live"><b>Seam closed:</b></span> <code>_default_rank</code> (<code>discover.py:184</code>) is <b>live</b> since 2026-09-02 &ndash; it builds an <code>AnthropicRanker</code> per call, deliberately, so no API key is bound at import time. On every previous edition of this map it raised.</li>
+<li><span class="s-live"><b>Seam closed:</b></span> <code>app/robots.py</code> has callers for the first time &ndash; <code>discover.py:616</code> and <code>playbook_probe.py:136</code>. <code>robots_cache</code> holds <b>2</b> rows where it held 0. <span class="warn">Half of it is still unwired:</span> <code>app/handlers/fetch.py</code> does <b>not</b> import it, so the ordinary fetch path still does not read robots.txt, and <code>domain_lease.min_politeness_ms</code> is <code>0</code> on all <b>99</b> rows &ndash; the column DEFAULT, never a Crawl-delay the reader carried.</li>
+<li><span class="warn">The crawl's index fetch is not ledgered.</span> <code>_crawl_playbook</code> calls <code>fetcher.get(url)</code> and writes no <code>fetch_log</code> row, so the library page is re-fetched once per requesting group. EDENTA has <b>103</b> groups. The link <em>judgement</em> is cached (migration 061) but the HTTP request is not, and invariant 6's guarantee does not reach it. No contract says either way. &sect;5.</li>
+<li><b>Result envelope:</b> a plain dict &ndash; <code>group_id</code>, <code>terminal_source</code>, <code>outcome</code>, <code>emitted_fetch</code>, <code>emitted_email</code>, <code>manual_task</code>, <code>sources_tried</code>, <code>candidates_seen</code>, <code>emitted_validate</code>. No <code>Result</code>, no anomaly kinds. <b>Live discovery_log, 1.941 rows:</b> playbook 75 hit / 354 miss · search 170 hit / 184 miss · known_url 427 miss · eudamed 354 miss · email 184 skipped · manual 184 hit · recency 9 hit. <b>351 of 8.208 groups have ever been searched.</b></li>
+<li><b>Emits</b> are <code>fetch.url</code>, <code>validate.doc</code>, <code>email.request</code> and a manual entry &ndash; exactly PRD &sect;3's row, the crawl rung included: it is a DISCOVER rung, not FETCH&rarr;FETCH, so it adds no tag.</li>
+</ul>
+</div>
+
+<div class="card">
+<header><h3><code>fetch.url</code></h3><span class="pill live">live</span><span class="meta">PRD &sect;4 · handbook &sect;4 · <code>app/handlers/fetch.py</code> (223) + <code>app/handlers/archiving.py</code> (194)</span></header>
+<p class="meta"><b>Entry points.</b> One producer, one key shape: DISCOVER's <code>_emit_fetch</code> (<code>discover.py:378</code>), <code>fetch:{normalize_url(url)}</code>. Every rung that yields URLs &ndash; <code>known_url</code>, <code>playbook</code> direct, the crawl harvest, <code>eudamed</code>, <code>search</code> &ndash; goes through that one function, so two groups wanting the same URL collapse to a single fetch (invariant 8). <code>app/urls.py</code> owns the normalisation for both sides so the key cannot drift.</p>
+<div class="tablewrap"><table>
+<tr><th>Field</th><th>Type</th><th>Req</th><th>Meaning</th><th>Example</th></tr>
+<tr><td><code>url</code></td><td>str</td><td>yes</td><td>the candidate; missing raises <code>KeyError</code> (loud, by design)</td><td><code>"https://www.renfert.com/&hellip;/CONF_6100x000.pdf"</code></td></tr>
+<tr><td><code>domain</code></td><td>str</td><td>yes</td><td>the politeness lease key, computed at emit time</td><td><code>"renfert.com"</code></td></tr>
+<tr><td><code>group_id</code></td><td>int | null</td><td>yes</td><td>the requesting group. <code>null</code> makes the C3 branches skip linking</td><td><code>1641</code></td></tr>
+<tr><td><code>source_rank</code></td><td>str</td><td>yes</td><td>which rung produced it. <b>Written by every emit, read by no code</b> &ndash; provenance in the payload only</td><td><code>"playbook"</code></td></tr>
+<tr><td><code>ignore_recency</code></td><td>bool</td><td>no</td><td>bypasses <b>only</b> the <code>_fresh</code> skip. The conditional GET and the hash dedupe still run, so a forced refetch of unchanged bytes ends deduped, never duplicated</td><td><code>true</code></td></tr>
+</table></div>
+<p class="meta"><b>Reads.</b> <code>fetch_log</code> by <code>url_normalized</code> (<code>etag, last_modified, content_hash, doc_id, last_checked_at</code>) · <code>domain_lease.needs_playwright</code> · <code>extraction_attempt</code> via <code>archiving.hash_extracted_rev</code> · <code>document.archive_url</code> via <code>archive_handle_for_hash</code> · <code>item_group.canonical_manufacturer</code> for the archive path. Config: <code>fetch.politeness_ms</code> 2000, <code>fetch.recency_window_days</code> 21, <code>adapters.storage</code> (<b>local</b> live), <code>storage.local_root</code> <code>/archive</code>, <code>storage.base_url</code> <code>/archive</code>.</p>
+<p class="meta"><b>Writes.</b> <code>fetch_log</code> &ndash; <code>ON CONFLICT (url_normalized) DO UPDATE</code> on <code>etag, last_modified, content_hash, fetched_at, last_checked_at, source</code>, with <code>source</code> a bare <code>text</code> column whose permitted set lives only in migration 003's comment, <code>live|backfill|email|upload</code> &ndash; no CHECK. Live rows carry three of the four; nothing has yet written <code>upload</code> · <code>domain_lease</code> (politeness upsert, and the <code>needs_playwright</code> flag on a successful bot-wall fallback only) · the archive file through <code>StorageAdapter.put</code> at <code>{manufacturer}/{type_dir}/{hash[:12]}__{filename}</code>. Never the registry. Matches sketch &sect;7's row.</p>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Emits</th><th>Status</th></tr>
+<tr><td>domain lease held by another job</td><td><code>lease-wait</code></td><td>&mdash;</td><td><code>_deferred</code>, <code>run_after += politeness_ms/1000</code></td></tr>
+<tr><td>ledger fresh, hash extracted, <code>group_id</code> present</td><td><code>recency-skip-linked</code> &ndash; no network</td><td><code>validate.doc</code></td><td><code>done</code></td></tr>
+<tr><td>ledger fresh, unextracted or no group</td><td><code>recency-skip</code></td><td>&mdash;</td><td><code>done</code></td></tr>
+<tr><td>bot wall on httpx</td><td>retry via Playwright; success flags the domain</td><td>as below</td><td><code>done</code></td></tr>
+<tr><td>bot wall persists on both</td><td><code>FetchError</code></td><td>&mdash;</td><td>backoff &rarr; <code>dead</code></td></tr>
+<tr><td>304</td><td><code>not-modified</code>, <code>last_checked_at</code> touched</td><td><b>nothing</b> &ndash; even with a requesting group. <code>[fetch-304-no-c3]</code></td><td><code>done</code></td></tr>
+<tr><td>status &ne; 200 or empty body</td><td><code>FetchError</code></td><td>&mdash;</td><td>backoff &rarr; <code>dead</code></td></tr>
+<tr><td>200 but the bytes are not a document</td><td><code>not-a-document</code>. <b>Ledgered first, deliberately</b> &ndash; the URL was fetched and its hash is known, so invariant 6 stops us paying again; what must not happen is an archive write or an <code>extract.doc</code>. Magic checked over the first 8 bytes after <code>lstrip</code>, accepting <code>%PDF</code>, <code>PK\x03\x04</code>, OLE2</td><td><b>nothing</b></td><td><code>done</code>, reporting magic, bytes and content-type</td></tr>
+<tr><td>200, hash already extracted (C3)</td><td><code>hash-dedupe</code>; the ledger row is pointed at the existing <code>doc_id</code></td><td><code>validate.doc</code> iff a group asked</td><td><code>done</code></td></tr>
+<tr><td>200, new hash</td><td><code>fetched</code>: archived, ledgered</td><td><code>extract.doc {archive_url, content_hash, group_id, source_url}</code></td><td><code>done</code></td></tr>
+</table></div>
+<ul class="notes">
+<li><b>Why the byte gate exists.</b> <code>bredent.com/&hellip;/Declaration_of_Conformity.pdf</code> answers <code>200 text/html</code> with 301.268 bytes of site navigation. Until 2026-09-02 that was archived, paginated by PyMuPDF, typed <code>IFU</code> at T0 confidence 1.00 off a menu item, and approved into production by a person. Bytes, not the header and not the filename, in both directions.</li>
+<li><b>Result:</b> plain dict &ndash; <code>outcome, content_hash, archive_url, via, emitted, bytes, group_id, magic, content_type</code>. No <code>Result</code> envelope, no anomaly kinds. <b>Live:</b> 1.073 ledger rows, 194 <code>live</code> / 862 <code>backfill</code> / 17 <code>email</code>; 246 <code>fetch.url</code> jobs, 22 of them dead.</li>
+<li><span class="warn">The Playwright tier has still never run in production.</span> The fallback is coded and tested; no live fetch has hit a bot wall that it resolved.</li>
+</ul>
+</div>
+
+<div class="card">
+<header><h3><code>upload.ingest</code></h3><span class="pill live">live</span><span class="meta">PRD &sect;8 WEB-UPLOAD · handbook row 16 · <code>app/handlers/upload.py</code> (108 lines)</span></header>
+<p class="meta"><b>Entry point.</b> One: the <code>/upload</code> form, <code>web/app.py:3521</code>, key <code>upload:{upload_id}</code>. The web role holds INSERT + sequence USAGE on <code>upload_inbox</code> and <b>no SELECT</b> &ndash; the worker owns SELECT and DELETE, which is why the spool exists at all.</p>
+<div class="tablewrap"><table>
+<tr><th>Field</th><th>Type</th><th>Req</th><th>Meaning</th><th>Example</th></tr>
+<tr><td><code>upload_id</code></td><td>int</td><td>yes</td><td><code>upload_inbox</code> row id; the row is deleted on success, so a retry after a committed delete returns <code>already-processed</code></td><td><code>7</code></td></tr>
+<tr><td><code>manual_task_id</code></td><td>int</td><td>no</td><td>set when the upload came from a <code>/manual</code> discovery dead-end. Resolved <b>worker-side</b>, because <code>dentalia_api</code> is SELECT-only on <code>manual_task</code></td><td><code>88</code></td></tr>
+</table></div>
+<p class="meta"><b>Reads / writes.</b> Reads <code>upload_inbox</code> (<code>filename, content, target_group_id, catalogue</code>), <code>item_group</code> for the archive path, <code>extraction_attempt</code> for the seen-hash check. Writes <code>fetch_log</code> at <code>url_normalized = upload:{content_hash}</code> and <code>source='upload'</code>, the archive file, the <code>upload_inbox</code> delete, and the guarded <code>manual_task</code> resolve. All in sketch &sect;7's row.</p>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Emits</th><th>Note</th></tr>
+<tr><td>spool row gone</td><td><code>already-processed</code></td><td>&mdash;</td><td>idempotent</td></tr>
+<tr><td>bytes are not a document</td><td><code>not-a-document</code>, spool deleted, <b>ledger not written</b> &ndash; a refused upload is not "seen content"</td><td>&mdash;</td><td>the manual task stays <b>open</b>: nobody has supplied the document</td></tr>
+<tr><td>hash extracted, group present</td><td><code>linked</code></td><td><code>validate.doc</code></td><td>C3-style link candidate</td></tr>
+<tr><td>hash extracted, no group</td><td><code>duplicate</code></td><td>&mdash;</td><td>nothing to link</td></tr>
+<tr><td>new content</td><td><code>archived</code></td><td><code>extract.doc</code>, <code>source_url = upload:{filename}</code></td><td>&mdash;</td></tr>
+</table></div>
+<p class="meta"><b>Result:</b> plain dict. No anomaly kinds. The byte gate here is a <b>backstop</b> &ndash; the form refuses a non-document while the person is still standing there, which is the useful place to say it.</p>
+</div>
+
+<div class="card">
+<header><h3><code>backfill.scan</code></h3><span class="pill live">live</span><span class="meta">PRD &sect;4 alternate producers · handbook row 5 · the source of 862 of 1.073 ledger rows · <code>app/handlers/backfill.py</code> (439)</span></header>
+<p class="meta"><b>Entry point.</b> No handler and no scheduler enqueues it. <code>python -m app.cli enqueue backfill.scan</code> <code>&lt;key&gt;</code> <code>--payload</code> <code>'{"drive_folder":&nbsp;"/imports/dentalia-sftp/GC"}'</code> is the only producer &ndash; an operator action, with an operator-supplied dedupe key. 11 jobs have ever run.</p>
+<div class="tablewrap"><table>
+<tr><th>Field</th><th>Type</th><th>Req</th><th>Meaning</th><th>Example</th></tr>
+<tr><td><code>drive_folder</code></td><td>str</td><td>yes</td><td>a local path, mounted read-only. One <b>brand folder per job</b> &ndash; the scan root's own name becomes the archive's manufacturer bucket</td><td><code>"/imports/dentalia-sftp/KOMET"</code></td></tr>
+</table></div>
+<p class="meta"><b>Reads.</b> The corpus filesystem · <code>fetch_log</code> (hash seen-before) · the playbook store, for the coverage-map index declaration and the annex-pairing rules. <b>Writes</b> <code>fetch_log</code> with <code>url_normalized</code> = the resolved SOURCE path and <code>source='backfill'</code>, plus archive files through the same <code>StorageAdapter</code> FETCH uses.</p>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Emits</th><th>Counted as</th></tr>
+<tr><td>hash already in <code>fetch_log</code>, not an annex</td><td>skipped &ndash; this is what makes a re-dump ~free (C2/C3/AC5)</td><td>&mdash;</td><td><code>seen</code></td></tr>
+<tr><td>file is a declared annex</td><td>archived and ledgered, <b>no document of its own</b> &ndash; Komet's <code>_RA_812_Liste_DoC.pdf</code> reads to the extractor as a DoC in its own right, and filing both would leave two DoCs racing to supersede each other over one product list</td><td>&mdash;</td><td><code>annexes</code>; handle kept for its primary</td></tr>
+<tr><td>primary with a paired annex</td><td>archived</td><td><code>extract.doc</code> + <code>companion_archive_url</code></td><td><code>companions_attached</code></td></tr>
+<tr><td>declared redundant</td><td>archived, not emitted</td><td>&mdash;</td><td><code>redundant</code></td></tr>
+<tr><td>excluded by a playbook rule</td><td>not archived</td><td>&mdash;</td><td><code>excluded</code> + <code>excluded_by</code> per rule</td></tr>
+<tr><td>ordinary new file</td><td>archived</td><td><code>extract.doc</code>, <code>group_id: null</code></td><td><code>emitted</code></td></tr>
+<tr><td>scan root wrong / unreadable</td><td><code>BackfillError</code> raised, not counted &ndash; a scan that cannot be what the operator meant must not report success</td><td>&mdash;</td><td><code>dead</code></td></tr>
+</table></div>
+<p class="meta"><b>Result:</b> a 13-key plain dict (<code>scanned</code>, <code>emitted</code>, <code>seen</code>, <code>errors</code>, <code>annexes</code>, <code>companions_attached</code>, <code>companion_ambiguous</code>, <code>redundant</code>, <code>canonical_ambiguous</code>, <code>index_archived</code>, <code>excluded</code>, <code>excluded_by</code>). No anomaly kinds. <b>The corpus is not the archive</b> &ndash; it is a hand-managed SFTP dump, cleared and re-dumped, mounted at a different path in every container, so the walked path is recorded as provenance and the bytes are archived through the store. Recording the walked path as <code>archive_url</code> is what put a <code>/imports/&hellip;</code> handle on all 130 documents of the GC pilot.</p>
+</div>
+
+<div class="card">
+<header><h3><code>email.poll</code></h3><span class="pill live">live</span><span class="meta">S2.4 inbound · handbook row 6 · credentials absent (G8) · <code>app/handlers/email_poll.py</code> (411)</span></header>
+<p class="meta"><b>Entry points.</b> The <code>email.poll</code> cron, <code>app/scheduler.py:382</code>, key <code>email.poll:{period_key}</code> where <code>period_key</code> is <code>YYYY-MM-DD:HH-band</code> at <code>scheduler.email_poll_interval_hours</code> (6) &ndash; a mailbox wants sub-day cadence. <b>Gated off</b>: <code>scheduler.email_poll_enabled</code> is false in <code>app/config.py:599</code> and in both compose blocks. The <code>/scheduler</code> panel's Run now writes the identical key, deliberately: both name the same period's work, so a hand-run and the next tick collapse into one.</p>
+<p class="meta"><b>Job params: none.</b> <code>handle_email_poll</code> (<code>email_poll.py:293</code>) never touches <code>job["payload"]</code> &ndash; every setting comes from <code>cfg.email</code>, and the mailbox identity from <code>adapter.mailbox_id</code>. <span class="bad">Handbook &sect;0 row 6 lists <code>{mailbox, since}</code>; both are read by no code.</span> &sect;5.</p>
+<p class="meta"><b>Reads.</b> The mailbox (IMAP) · <code>email_poll_log</code>, the durable reprocess guard keyed <code>(mailbox, uid_validity, uid)</code> &ndash; <b>this</b> is the authority, never the IMAP <code>\Seen</code> flag · <code>extraction_attempt</code> for the seen-hash check. <b>Writes</b> <code>email_poll_log</code> (incl. the body summary, migration 030), <code>fetch_log</code> at <code>source='email'</code>, and archive files. Never the registry.</p>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Emits</th></tr>
+<tr><td>UID already in <code>email_poll_log</code></td><td>skipped entirely &ndash; no archive, no emit, <b>no re-summarisation</b>, including for a message whose summary previously failed</td><td>&mdash;</td></tr>
+<tr><td>attachment is not a PDF</td><td>skipped, reason <code>non-pdf</code>. Archives are opened first (<code>expand_containers</code>), so a supplier sending <code>documents.zip</code> is sending documents</td><td>&mdash;</td></tr>
+<tr><td>MSDS / business-doc</td><td>skipped, reason <code>noise-*</code>, via the deterministic <code>classify_doc_class</code> &ndash; <b>no LLM on this path</b></td><td>&mdash;</td></tr>
+<tr><td>new compliance content</td><td>archived</td><td><code>extract.doc</code>, <code>group_id: null</code>, <code>source_url = email:{message_id}</code></td></tr>
+<tr><td>seen hash <b>and</b> a requesting group</td><td>C3-style link candidate</td><td><code>validate.doc</code> &ndash; <b>dormant</b>: inbound <code>group_id</code> is always <code>None</code> until reply&rarr;request&rarr;group matching lands</td></tr>
+<tr><td>seen hash, no group</td><td>nothing to link</td><td>&mdash;</td></tr>
+<tr><td>IMAP not configured</td><td><code>EmailNotConfigured</code></td><td>&mdash;</td></tr>
+</table></div>
+<p class="meta"><b>The one LLM call.</b> <code>app/email_summary.py</code> compresses the body at poll time and only the summary reaches the row &ndash; the message body is never persisted. Cheap tier only (<code>models.email_summary</code>), <b>after</b> the attachments so a slow summariser can never cost the poll a document, and the summary is UI context for <code>/emails</code>: never evidence, never a production value, never a VALIDATE or GATE input, never re-read by another stage. Invariant 12 was widened for exactly this and ratified 2026-08-20. <b>Result:</b> a <code>Result</code> envelope; no anomaly kinds. <b>Live:</b> 17 ledger rows at <code>source='email'</code>, 7 jobs run.</p>
+</div>
+
+<div class="card">
+<header><h3><code>extract.doc</code></h3><span class="pill live">live</span><span class="meta">PRD &sect;5 · handbook &sect;5 · <code>app/handlers/extract.py</code> (394) + <code>app/extract/</code> (~3.100)</span></header>
+<p class="meta"><b>Entry points.</b> Four producers, <b>one</b> key shape &ndash; <code>extract:{content_hash}</code>, which is the whole dedupe story: one physical file is extracted once however many routes deliver it. FETCH via <code>archiving.emit_extract</code> (<code>archiving.py:189</code>) · <code>backfill.py:425</code> · <code>upload.py</code> via the same helper · <code>email_poll.py:384</code>. C2 active-scope means a re-extraction after a model swap is an ordinary enqueue, not a schema fight.</p>
+<div class="tablewrap"><table>
+<tr><th>Field</th><th>Type</th><th>Req</th><th>Meaning</th><th>Example</th></tr>
+<tr><td><code>archive_url</code></td><td>str</td><td>yes</td><td>the stored copy. Opened once per execution and handed to both the text sidecar and the tier ladder; also threaded to <code>validate.doc</code> and on to GATE, which is what stops GATE falling back to the corpus source path</td><td><code>"/archive/Renfert_GmbH/unknown/d82e8f794d0c__CONF_6100x000.pdf"</code></td></tr>
+<tr><td><code>content_hash</code></td><td>str</td><td>yes</td><td>sha256 of the bytes; the identity everything downstream keys on</td><td><code>"d82e8f794d0c56e4&hellip;"</code></td></tr>
+<tr><td><code>group_id</code></td><td>int | null</td><td>yes</td><td>the requesting group, or <code>null</code> for a self-identifying corpus/email document. Also decides whether a playbook's manufacturer is <b>authoritative</b> for hint steering</td><td><code>null</code></td></tr>
+<tr><td><code>source_url</code></td><td>str</td><td>no</td><td>listed by PRD &sect;5 and <b>read by no code</b>; kept because payloads are additive-only</td><td><code>"CONF_6100x000.pdf"</code></td></tr>
+<tr><td><code>email_ref</code></td><td>str</td><td>no</td><td>likewise listed and unread</td><td>&mdash;</td></tr>
+<tr><td><code>companion_archive_url</code></td><td>str</td><td>no</td><td>the annex whose REF list belongs to this document. Written by <code>backfill.py:423</code>, read at <code>extract.py:288</code>. Absent on every other path</td><td><code>"/archive/KOMET/doc/&hellip;_RA_812_Liste_.pdf"</code></td></tr>
+</table></div>
+<p class="meta"><b>Reads.</b> The archived file (PyMuPDF; pdfplumber for tables) · <code>batch_ref</code> by <code>(content_hash, tier)</code> · <code>extraction_attempt</code> for the next rev · <code>item_group.canonical_manufacturer</code> (steering) · the playbook store, for T0 templates, lexicons, <code>extract_hints</code> and <code>ref_normalize</code>. Config: <code>models.t1</code> <code>claude-haiku-4-5</code> / <code>models.t2</code> <code>claude-sonnet-5</code>, <code>batch.poll_interval_s</code> 900, <code>DENTALIA_EXTRACT_MODE</code> (env, default <code>sync</code>).</p>
+<p class="meta"><b>Writes.</b> <code>extraction_attempt</code> (<code>content_hash, tier, model_id, fields jsonb, extract_rev, at</code>, migration 004; <code>playbook_slug</code>/<code>playbook_rev</code> since 031) &ndash; <b>append-only</b>, one row per rev, which is what makes every earlier reading permanently queryable with its own verbatim · <code>extraction_cost</code> (010; the KPI board reads the <code>extraction_spend</code> view) · <code>batch_ref</code> (the C9 crash-safety row, written <b>before</b> submission is acknowledged) · <code>document_text</code> (018). All four are in sketch &sect;7's row.</p>
+<p class="meta"><b>Target schema, 11 fields</b> (<code>app/extract/target.py</code>, a leaf module importing <b>nothing</b> so the slim web image can read it without PyMuPDF): <code>type</code>, <code>regulation</code>, <code>validity_from</code>, <code>validity_to</code>, <code>coverage_scope</code>, <code>ref_list</code>, <code>basic_udi_di</code>, <code>referenced_docs</code>, <code>cert_number</code>, <code>manufacturer</code>, <code>stated_class</code>. <code>stated_class</code> is in <b>no</b> <code>_ESCALATE_*</code> set, and that absence is the entire mechanism keeping it free.</p>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Emits</th><th>Note</th></tr>
+<tr><td>PDF will not open</td><td><code>counts.unreadable_pdf = 1</code> + a note</td><td><b>nothing</b></td><td>no <code>document_text</code> row, no anomaly &ndash; "unreadable" is deliberately <b>not</b> minted as a new kind on the spot</td></tr>
+<tr><td>opens, no text layer</td><td>a <code>document_text</code> row at <code>source='none'</code></td><td>as below</td><td>anomaly <code>no_text_layer</code>. Only reachable past the open, so it can only mean a real scan</td></tr>
+<tr><td>doc-class <code>not-a-compliance-document</code></td><td>attempt row still written &ndash; what we read and why is worth keeping, and re-fetching the same bytes must not re-pay</td><td><b>nothing</b></td><td><code>emitted: null</code>. Narrower than it looks: <code>business-doc</code> and <code>msds</code> <b>do</b> still emit</td></tr>
+<tr><td>T0 satisfies every pursued field</td><td>free, confidence 1.0</td><td><code>validate.doc</code></td><td><code>tiers_used: ["T0"]</code></td></tr>
+<tr><td>fields below 0.95 after T0</td><td>T1 text on <b>only</b> the missing fields (per-field escalation)</td><td><code>validate.doc</code></td><td>a later tier's empty answer never erases an earlier hit (<code>tiers.merge</code>)</td></tr>
+<tr><td>still missing, or the page is a scan</td><td>T2 vision &ndash; but only when the target list is non-empty, so a scanned document T0/T1 already completed never pays vision rates</td><td><code>validate.doc</code></td><td>&mdash;</td></tr>
+<tr><td>batch mode, batch not ended</td><td><code>batch_ref</code> row committed, job self-defers</td><td>&mdash;</td><td><code>_deferred</code>. An existing row for this <code>(hash, tier)</code> means <b>never resubmit</b> (C9); payload never mutated (invariant 9)</td></tr>
+<tr><td>a T1/T2 <code>ref_list</code> comes back at exactly the prompt cap</td><td>flag <code>ref-list-possibly-truncated</code> on the extraction</td><td>&mdash;</td><td>raised <b>here</b>, not in VALIDATE &ndash; it is a property of how the extraction arrived</td></tr>
+<tr><td>a Basic UDI-DI fails its check-character pair</td><td>anomaly <code>basic_udi_check_failed</code>, subject = the offending value</td><td>&mdash;</td><td>2 live</td></tr>
+<tr><td>a playbook REF template matches and parses nothing</td><td>anomaly <code>t0_ref_template_miss</code>, subject = the playbook slug</td><td>&mdash;</td><td>4 subjects, 100 observations &ndash; our parser broke, which is otherwise indistinguishable from "this document lists no articles"</td></tr>
+</table></div>
+<ul class="notes">
+<li><b>Hint safety, three guards.</b> Every hint block is prefixed with an override sentence making it context rather than fact; the <code>manufacturer</code> hint is withheld whenever identity is the thing being asked (which, computed once before any tier runs, is <b>always</b>); and the lead sentence hedges unless the manufacturer came from the requesting group.</li>
+<li><b>Anomaly kinds:</b> <code>no_text_layer</code> (71 subjects / 86 observations), <code>basic_udi_check_failed</code> (2), <code>t0_ref_template_miss</code> (4 / 100). Held back on a deferred poll cycle &ndash; the batch path re-runs T0 next cycle and re-reports.</li>
+<li><b>Live:</b> 1.743 <code>extraction_attempt</code> rows, 943 <code>document_text</code> rows, 1.011 <code>extract.doc</code> jobs (14 dead). Spend to date $41,32 over 1.719 calls, 79% of it T2.</li>
+</ul>
+</div>
+
+<div class="card">
+<header><h3><code>validate.doc</code></h3><span class="pill live">live</span><span class="meta">PRD &sect;6 · handbook &sect;6 · zero AI, zero discretion, <b>zero writes</b> · <code>app/handlers/validate.py</code> (1.137)</span></header>
+<p class="meta"><b>Entry points.</b> Six producers, one key shape <code>validate:{content_hash}:{extract_rev}:{group_id}</code>. EXTRACT (<code>extract.py:175</code>) · FETCH's C3 hash-dedupe and recency-skip, both through <code>archiving.emit_validate</code> (<code>archiving.py:184</code>) · DISCOVER's recency rung, same helper · UPLOAD, same helper · and <b>three</b> operator CLIs: <code>app/repair_ref_list.py:107</code>, <code>app/komet_coverage.py:286</code> and <code>app/repair_label_dates.py:230</code>. PRD &sect;0's operator table lists the first two. <span class="bad"><code>repair_label_dates</code> is in no table.</span> &sect;5. On a <code>group_id: null</code> path the key stringifies <code>None</code> &ndash; an implementation leak with an open cleanup, <code>[dedupe-none-sentinel]</code>.</p>
+<div class="tablewrap"><table>
+<tr><th>Field</th><th>Type</th><th>Req</th><th>Meaning</th><th>Example</th></tr>
+<tr><td><code>content_hash</code></td><td>str</td><td>yes</td><td>which document</td><td><code>"d82e8f794d0c&hellip;"</code></td></tr>
+<tr><td><code>extract_rev</code></td><td>int</td><td>yes</td><td>which reading of it. A missing <code>(hash, rev)</code> row is <b>suppressed, not raised</b></td><td><code>2</code></td></tr>
+<tr><td><code>group_id</code></td><td>int | null</td><td>yes</td><td>the requesting group, or null for a self-identifying document evaluated against the whole catalogue under its own extracted manufacturer</td><td><code>1641</code></td></tr>
+<tr><td><code>archive_url</code></td><td>str</td><td>no</td><td><b>carried, never consumed.</b> GATE needs the stored copy's handle for <code>document.archive_url</code> and every <code>evidence</code> row; without it GATE falls back to <code>fetch_log.url_normalized</code>, which on a backfill is the corpus source path</td><td><code>"/archive/&hellip;.pdf"</code></td></tr>
+</table></div>
+<p class="meta"><b>Reads.</b> <code>extraction_attempt.fields</code> at that exact rev · <code>item_group</code> + <code>item_group_member</code> (<code>mfr_ref</code> and <code>item_ref</code>, the two comparands) · <code>manufacturer_alias</code>, <b>read-only</b> &ndash; VALIDATE never self-seeds the way RESOLVE does, so a garbled OCR name cannot mint a manufacturer · <code>document</code> (the current production doc for the same subject/type/regulation, and the certificate lookup) · <b><code>document_text</code></b> for the C4 device-enumeration guard · the playbook store for <code>ref_normalize</code>. Config: <code>validate.min_unscoped_ref_len</code> 6. <b>Writes: nothing.</b> Stateless by contract and in fact.</p>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Emits</th><th>Counted as</th></tr>
+<tr><td>no <code>extraction_attempt</code> row</td><td>suppressed</td><td><b>nothing</b></td><td><code>suppressed_no_extraction</code></td></tr>
+<tr><td>any of <code>type, regulation, coverage_scope</code> missing</td><td>suppressed</td><td><b>nothing</b></td><td><code>suppressed_missing_{field}</code>, per field &ndash; a doc-class short-circuit and a null regulation look identical under one bare counter</td></tr>
+<tr><td><code>coverage_scope=manufacturer</code>, no <code>ref_list</code>, no <code>basic_udi_di</code></td><td>C4 binding route</td><td><code>gate.candidate</code>, key <code>gate:{hash}:{rev}:mfr-binding</code> &ndash; <b>one</b> candidate however many groups asked</td><td><code>emitted_mfr_binding</code>; <code>mfr_binding_without_manufacturer</code> when nobody can be named</td></tr>
+<tr><td>&hellip; and the stored text enumerates its own devices</td><td>flag <code>device-enumeration</code> rides the candidate</td><td>as above</td><td>GATE's machine bind refuses on it; a person is unaffected</td></tr>
+<tr><td>scoped, REF or Basic UDI-DI overlaps the group</td><td><code>ref_gate=True</code>; links across <b>every</b> group under the pinned manufacturer, at the strongest basis per item</td><td><code>gate.candidate</code></td><td><code>ref_gate_passed</code>; <code>multi-group-match</code> reports breadth, not loss</td></tr>
+<tr><td>scoped, identifiers present but none match</td><td>C3 fallback: every member linked at <code>fetch-context</code></td><td><code>gate.candidate</code></td><td>structurally capped at staged</td></tr>
+<tr><td>no identifiers at all, not manufacturer-scope</td><td>flag <code>no-item-identifier</code> (<b>blocking</b>), link-less</td><td><code>gate.candidate</code></td><td>forces <code>manual</code>, never silently staged</td></tr>
+<tr><td>unscoped, manufacturer canonicalises to no group</td><td>flag <code>manufacturer-unresolved</code> (blocking)</td><td><code>gate.candidate</code></td><td>&mdash;</td></tr>
+<tr><td>unscoped, manufacturer resolves, nothing overlaps</td><td>flag <code>no-ref-overlap</code> (informational)</td><td><code>gate.candidate</code></td><td>the C15 <code>filed</code> precondition</td></tr>
+<tr><td>unscoped, no manufacturer, eligible REFs held by exactly one</td><td>links rewritten to <code>ref-catalogue</code>; <code>ref_gate</code> stays <b>False</b></td><td><code>gate.candidate</code></td><td>capped by CHECK <em>and</em> by <code>TRUSTED_BASES</code></td></tr>
+<tr><td>&hellip; held by more than one</td><td>flag <code>multi-manufacturer-ref</code>, links nothing &ndash; picking one attaches a certificate to another company's product</td><td><code>gate.candidate</code></td><td>capping</td></tr>
+<tr><td>&hellip; a hit exists but failed a guard (&lt;6 chars, prose, ambiguous)</td><td>flag <code>ref-unscoped</code></td><td><code>gate.candidate</code></td><td>capping</td></tr>
+<tr><td>a date string will not parse, or from&gt;to, or a year outside [1990,2100]</td><td>flag <code>date-insane</code> (blocking)</td><td><code>gate.candidate</code></td><td>an LLM must never dead-letter a document by returning <code>"2025"</code> as a date</td></tr>
+<tr><td>candidate <code>validity_from</code> older than current, both present</td><td><b>both</b> <code>older-than-current</code> (blocking) <b>and</b> <code>superseded_by_doc_id</code> + <code>auto-superseded</code> &ndash; emitted together, never one instead of the other</td><td><code>gate.candidate</code></td><td>GATE's guard decides which wins</td></tr>
+<tr><td>equal <code>validity_from</code>, both present</td><td>flag <code>same-date-revision</code> (blocking). No ordering exists between two revisions signed on one day</td><td><code>gate.candidate</code></td><td><b>new 2026-09-04</b>; until then this case matched no rule and the second document landed unrelated</td></tr>
+<tr><td>either date null</td><td>flag <code>downgrade-uncomparable</code> &ndash; never compared, never treated as older or newer</td><td><code>gate.candidate</code></td><td>capping</td></tr>
+<tr><td>candidate newer</td><td><code>supersedes = current.doc_id</code></td><td><code>gate.candidate</code></td><td>GATE applies it only at production</td></tr>
+<tr><td>a production doc of the same type, other regulation</td><td><code>related_doc_id</code> &ndash; MDR never supersedes MDD</td><td><code>gate.candidate</code></td><td>C6</td></tr>
+<tr><td>DoC with a <code>validity_to</code> whose verbatim does not name it as an expiry</td><td>flag <code>expiry-on-certless-doc</code> (capping)</td><td><code>gate.candidate</code></td><td>an unrecognised phrase leaves the flag <b>on</b>, so the list fails safe</td></tr>
+<tr><td>DoC citing a certificate we do not hold</td><td><code>cert_doc_id = null</code> + flag <code>cert-unresolved</code> (informational)</td><td><code>gate.candidate</code></td><td>anomaly <code>cert_reference_unresolved</code>, 125 subjects live</td></tr>
+</table></div>
+<ul class="notes">
+<li><b>Folding, never fuzzy.</b> The manufacturer lookup folds case, whitespace, punctuation spacing and accents and stops there: at token_set_ratio 80 the registry's manufacturers collide 30 times and ~28 are wrong merges (<code>OCO</code>/<code>VOCO</code> 85, <code>MEDIAS</code>/<code>MEDIS</code> 90), and a wrong merge attaches one company's certificate to another's product.</li>
+<li><b>An unrecognised flag gates.</b> GATE tests membership of the <em>informational</em> set, not the blocking or capping ones, so a flag a future rule adds and nobody classifies behaves conservatively rather than silently ceasing to gate.</li>
+<li><b>Result:</b> a <code>Result</code> envelope with a <code>flag_{name}</code> counter per flag raised, plus <code>emitted</code>, <code>route</code>, <code>ref_gate</code>, <code>multi_group_matches</code>. One anomaly kind: <code>cert_reference_unresolved</code>. <b>Live:</b> 3.025 jobs, 0 dead.</li>
+</ul>
+</div>
+
+<div class="card">
+<header><h3><code>gate.candidate</code></h3><span class="pill live">live</span><span class="meta">PRD &sect;7 · handbook &sect;7 · the registry's only in-pipeline writer · <code>app/handlers/gate.py</code> (1.529)</span></header>
+<p class="meta"><b>Entry points.</b> One producer, two key shapes, both VALIDATE: the normal route <code>gate:{hash}:{rev}:{group_id}</code> (<code>validate.py:1103</code>) and the C4 route <code>gate:{hash}:{rev}:mfr-binding</code> (<code>validate.py:846</code>). The <code>mfr-binding</code> literal in the second is exactly what makes one binding candidate per document rather than one per requesting group.</p>
+<div class="tablewrap"><table>
+<tr><th>Field</th><th>Type</th><th>Req</th><th>Meaning</th><th>Example</th></tr>
+<tr><td><code>content_hash</code>, <code>extract_rev</code></td><td>str, int</td><td>yes</td><td>which reading. A <b>superseded rev is a no-op decided before anything is read or written</b></td><td><code>&hellip;, 2</code></td></tr>
+<tr><td><code>group_id</code></td><td>int | null</td><td>yes</td><td>provenance, and the scope of the link retraction</td><td><code>1641</code></td></tr>
+<tr><td><code>route</code></td><td>str</td><td>no</td><td><code>"mfr-binding"</code> branches to <code>_handle_mfr_binding</code>; absent means the normal route</td><td><code>"mfr-binding"</code></td></tr>
+<tr><td><code>ref_gate</code></td><td>bool</td><td>yes</td><td>VALIDATE's verdict. <b>Required for <code>production</code></b></td><td><code>true</code></td></tr>
+<tr><td><code>flags</code></td><td>str[]</td><td>yes</td><td>VALIDATE's flags; GATE appends its own</td><td><code>["cert-unresolved"]</code></td></tr>
+<tr><td><code>links</code></td><td>obj[]</td><td>yes</td><td><code>{item_ref, match_basis, udi?}</code> per covered item</td><td><code>[{"item_ref":"2222100","match_basis":"fetch-context"}]</code></td></tr>
+<tr><td><code>supersedes</code> / <code>superseded_by_doc_id</code> / <code>related_doc_id</code> / <code>cert_doc_id</code></td><td>int</td><td>no</td><td>the four relationship pointers, all persisted <b>sticky</b></td><td><code>415</code></td></tr>
+<tr><td><code>manufacturer</code></td><td>str</td><td>no</td><td>binding route only; VALIDATE's canonicalised answer wins over the extracted string</td><td><code>"RENFERT"</code></td></tr>
+<tr><td><code>archive_url</code></td><td>str</td><td>no</td><td>the stored handle. Absent &rarr; <code>_archive_url</code> falls back to <code>fetch_log.url_normalized</code></td><td><code>"/archive/&hellip;"</code></td></tr>
+</table></div>
+<p class="meta"><b>Reads.</b> <code>extraction_attempt</code> (the fields and their evidence) · <code>document</code> (previous status, the chain targets' live <code>(type, regulation)</code>, the back-resolution scan) · <code>manufacturer_alias</code> + <code>manufacturer_bc_code</code> + <code>vendor_master</code> (canonical resolution and the code fan-out) · <code>item_mirror.md_flag</code> (tri-state) · <code>fetch_log</code> (the archive fallback and <code>source_url</code>). Config: <code>gate.high</code> <b>0.92</b> (Denis's ruling 2026-08-19, replacing the scaffold's 0.95), <code>gate.med</code> 0.75, <code>mfr_binding.auto_link</code> true, and <code>getattr(cfg, "calibration", {})</code> &ndash; which <code>Config</code> does not define, so calibration is the identity transform at both call sites.</p>
+<p class="meta"><b>Writes.</b> <code>document</code> &ndash; 16 columns in one <code>ON CONFLICT (content_hash) DO UPDATE</code> (<code>gate.py:405</code>). Status <code>doc_status</code> enum <code>staged|production|filed|rejected|superseded</code>, and the CASE <b>never moves backward</b>: <code>production</code>, <code>superseded</code> and <b><code>rejected</code></b> are terminal to a machine, and <code>filed &rarr; staged</code> is refused while <code>filed &rarr; production</code> stays a legitimate promotion. <code>rejected</code> joined that list on 2026-09-04 after a 67-document re-emission moved four rows silently, one of them out of a person's rejection. Sticky-on-conflict: <code>supersedes</code>, <code>referenced_doc_id</code>, <code>cert_doc_id</code>, <code>source_url</code>, <code>canonical_manufacturer</code>. Always-refresh: <code>type</code>, <code>regulation</code>, <code>validity_from/to</code>, <code>coverage_scope</code>, <code>basic_udi_di</code>, <code>cert_number</code>, <code>stated_class</code>, <code>archive_url</code> &ndash; a re-extraction that reads the class differently is a <em>correction</em> and should land, and nothing is lost because evidence is per-rev and append-only.
+<br>&mdash; <code>item_document</code> (<code>item_ref, doc_id, udi, match_basis, status</code>; PK <code>(item_ref, doc_id)</code>). <code>link_status</code> is <code>staged|production|rejected|retracted</code>; the live CHECK is <code>NOT (status='production' AND match_basis IN ('name-family','fetch-context','ref-catalogue'))</code> &ndash; three capped bases, exactly matching migration 021 and <code>gate.TRUSTED_BASES</code>, and <code>ref-eudamed</code> has still <b>not</b> been added.
+<br>&mdash; <code>evidence</code>, one row per valued field per rev, <code>NOT EXISTS</code>-guarded so re-delivery is idempotent. <code>audit_log</code> with a self-contained <code>job_snapshot</code> jsonb (C8). <code>manual_task</code> at <code>kind='gate-manual'</code>.</p>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Disposition</th><th>document.status</th><th>Links</th><th>Audit</th></tr>
+<tr><td>rev is not the latest</td><td><code>skipped: superseded-rev</code> &ndash; before any read or write</td><td>untouched</td><td>untouched</td><td>none</td></tr>
+<tr><td>a T1/T2 value carries no <code>page</code></td><td>flag <code>evidence-page-missing</code> (blocking) &ndash; raised by GATE's own completeness check, invariant 2</td><td><code>staged</code></td><td>staged</td><td>&mdash;</td></tr>
+<tr><td>not an MD document (<code>_is_md_document</code> false)</td><td>flag <code>not-a-device-document</code> (<b>capping</b>) on <b>every</b> candidate since 2026-09-03</td><td><code>staged</code></td><td>staged</td><td>&mdash;</td></tr>
+<tr><td><code>superseded_by_doc_id</code> present, no other blocking flag, <code>validity_from</code> conf &ge; 0.92, not <code>date-insane</code></td><td><b><code>superseded</code></b> &ndash; auto-filed into the chain, archived, evidenced, no human</td><td><code>superseded</code></td><td>as computed</td><td><code>auto-superseded</code></td></tr>
+<tr><td>&hellip; but the row is already <code>production</code></td><td>pointer withheld; <code>supersede_skipped: "target already production"</code> on the result &ndash; never silent</td><td><code>production</code></td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>score &ge; 0.92, <code>ref_gate</code>, no gating flag</td><td><b><code>production</code></b></td><td><code>production</code></td><td><code>production</code> iff basis &isin; <code>TRUSTED_BASES</code> and score &ge; 0.92</td><td><code>production-write</code> once per transition</td></tr>
+<tr><td>score &ge; 0.75, no blocking flag, links empty for <code>no-ref-overlap</code>, manufacturer resolved, not mfr-scope</td><td><b><code>filed</code></b> (C15)</td><td><code>filed</code></td><td>none</td><td><code>filed</code></td></tr>
+<tr><td>score &ge; 0.75, no blocking flag</td><td><code>staged</code></td><td><code>staged</code></td><td>staged</td><td>&mdash;</td></tr>
+<tr><td>otherwise</td><td><code>manual</code></td><td><code>staged</code></td><td>staged</td><td><code>manual_task</code> carrying flags + every tier attempt</td></tr>
+<tr><td>chain pointer would cross <code>type</code> or <code>regulation</code></td><td><b>raises</b> &ndash; both routes re-read the live registry, neither trusts the payload snapshot</td><td>rolled back</td><td>rolled back</td><td>&rarr; <code>dead</code></td></tr>
+<tr><td>links this candidate no longer claims</td><td><code>retracted</code>, <b><code>staged</code> only</b>, scoped to the candidate's own group when it has one</td><td>&mdash;</td><td><code>retracted</code></td><td><code>link-retracted</code> per item</td></tr>
+<tr><td>the document is itself an EC/ISO certificate</td><td>back-resolves every held DoC with a matching <code>cert_number</code> and a null <code>cert_doc_id</code>, R-suffix stripped on both sides</td><td>&mdash;</td><td>&mdash;</td><td><span class="bad">none</span> &ndash; <code>[backresolve-writes-without-an-audit-row]</code></td></tr>
+</table></div>
+<p class="meta"><b>The C4/C16 binding route</b> (<code>gate.py:818</code>). Machine binding needs <b>all five</b>: exactly one canonical through the alias table · that field's confidence &ge; <code>gate.med</code> · <code>coverage_scope</code>'s own confidence &ge; <code>gate.high</code> (the guard between an unparsed REF list and a catalogue-wide write) · no <code>device-enumeration</code> flag · <code>_is_md_document</code>, with <code>ISO</code> at <code>regulation='n.a.'</code> the single exception and <code>EC</code> deliberately excluded. All five are now in PRD &sect;7, conditions 4 and 5 having been written down after the 08-27 pass found them enforced but undocumented. Outcomes: one canonical + MD items &rarr; <code>production</code> + <code>mfr-scope</code> links across every BC code of that manufacturer, no review task; one canonical + items <b>declassified</b> &rarr; <code>filed</code>; one canonical + class column merely <b>blank</b> &rarr; <code>staged</code> with <code>reason: "md-class-unknown"</code>, because an empty BC class means UNKNOWN, not "not a device" &ndash; 11.693 of 15.958 rows are NULL and <b>zero</b> are FALSE, so that branch stages everything today and starts filing by itself once BC populates the column; anything else &rarr; <code>staged</code> + exactly one task.</p>
+<p class="meta"><b>Result:</b> plain dict &ndash; <code>disposition, doc_id, score, links, flags, supersede_skipped, manufacturer, reason</code>. No anomaly kinds. <b>Live:</b> 2.912 jobs (42 dead), 875 documents, 8.720 links, 7.383 evidence rows, 2.160 audit rows.</p>
+</div>
+
+<div class="card">
+<header><h3><code>gate.apply</code></h3><span class="pill live">live</span><span class="meta">PRD &sect;7 human decisions · handbook &sect;8 · <b>seven</b> decisions, not six · <code>app/handlers/gate.py:1434</code></span></header>
+<p class="meta"><b>Entry points.</b> Two web routes, two key shapes. Document decisions: <code>web/app.py:4050</code>, key <code>apply:{doc_id}:{decision}</code> &ndash; one active job per (doc, decision), so a second reviewer clicking the same decision dedupes rather than double-enqueueing. Link decisions: <code>web/app.py:4106</code>, key <code>apply:{doc_id}:{item_ref}:{decision}</code> &ndash; a ruling is per <code>(document, item)</code>, so the item segment is what stops two decisions on two items of one document colliding. Both interactive priority.</p>
+<div class="tablewrap"><table>
+<tr><th>Field</th><th>Type</th><th>Req</th><th>Meaning</th><th>Example</th></tr>
+<tr><td><code>doc_id</code></td><td>int</td><td>yes</td><td>the document</td><td><code>843</code></td></tr>
+<tr><td><code>decision</code></td><td>str</td><td>yes</td><td><code>approve | reject | reopen | bind-manufacturer | confirm-link | reject-link | reopen-link</code>. <span class="bad">PRD &sect;7 enumerates six and says the web "422s anything outside the six"; <code>web/app.py:3996</code> admits <code>reopen</code> too.</span> &sect;5</td><td><code>"confirm-link"</code></td></tr>
+<tr><td><code>decided_by</code></td><td>str</td><td>yes</td><td>the named person. <code>match_basis='manual'</code> asserts a person, so a person must be on record</td><td><code>"admin"</code></td></tr>
+<tr><td><code>item_ref</code></td><td>str</td><td>link only</td><td>required by, and only by, the three link verbs</td><td><code>"2222100"</code></td></tr>
+<tr><td><code>edits</code></td><td>obj</td><td>no</td><td>whitelisted columns only: <code>type, regulation, validity_from, validity_to, coverage_scope, basic_udi_di, cert_number</code>. Each lands as T3 evidence, verbatim = the human input, confidence 1.0</td><td><code>{"regulation": "MDR"}</code></td></tr>
+<tr><td><code>manufacturer</code></td><td>str</td><td>bind only</td><td>422'd by the route when blank</td><td><code>"GC EUROPE"</code></td></tr>
+<tr><td><code>group_id</code></td><td>int</td><td>reject only</td><td>triggers the re-discovery emission</td><td><code>1641</code></td></tr>
+</table></div>
+<div class="tablewrap"><table>
+<tr><th>Decision</th><th>Precondition</th><th>Effect</th><th>Emits</th><th>Audit</th></tr>
+<tr><td><code>approve</code></td><td>&mdash;</td><td>edits applied &rarr; document <code>production</code> &rarr; <code>_promote_pending_links</code> lifts <b>only</b> trusted-basis links &rarr; any staged <code>supersedes</code> is applied now</td><td>&mdash;</td><td><code>approve</code>, <code>production-write</code>, <code>supersede</code></td></tr>
+<tr><td><code>reject</code></td><td>&mdash;</td><td>document <code>rejected</code>; <b>every</b> link cascades to <code>rejected</code></td><td><code>discover.group</code> at interactive priority when <code>group_id</code> is given</td><td><code>reject</code> + one <code>link-rejected</code> per cascaded item</td></tr>
+<tr><td><code>reopen</code></td><td>document must be <code>rejected</code>, else <b>raises</b></td><td>document back to <code>staged</code>. <b>Deliberately no link cascade</b> &ndash; re-staging them would recreate the state the reject cascade exists to prevent; each comes back through <code>reopen-link</code>, one decision at a time</td><td>&mdash;</td><td><code>reopen</code></td></tr>
+<tr><td><code>bind-manufacturer</code></td><td>&mdash;</td><td>binding recorded <b>before</b> derivation and surviving one that links nothing &rarr; promote &rarr; derive <code>mfr-scope</code> links</td><td>&mdash;</td><td><code>bind-manufacturer</code>, <code>production-write</code></td></tr>
+<tr><td><code>confirm-link</code></td><td>document <code>production</code> and link <code>staged</code></td><td><code>match_basis &rarr; 'manual'</code>, <code>status &rarr; 'production'</code>. The <b>sole writer</b> of that basis</td><td>&mdash;</td><td><code>link-confirmed</code> carrying the <b>pre-decision</b> basis in <code>detail</code>, because the row no longer holds it</td></tr>
+<tr><td><code>reject-link</code></td><td>document <code>production</code> and link <code>staged</code></td><td><code>status &rarr; 'rejected'</code>, basis untouched so the trail records how it was proposed</td><td>&mdash;</td><td><code>link-rejected</code></td></tr>
+<tr><td><code>reopen-link</code></td><td>document <code>production</code> and link <code>rejected</code></td><td><code>status &rarr; 'staged'</code> &ndash; it must be confirmed again on the merits</td><td>&mdash;</td><td><code>link-reopened</code></td></tr>
+<tr><td>anything else</td><td>&mdash;</td><td><code>ValueError</code></td><td>&mdash;</td><td>&rarr; <code>dead</code></td></tr>
+</table></div>
+<p class="meta"><b>The asymmetry is the point.</b> A machine may never move a link out of <code>rejected</code> (<code>STICKY_LINK_STATUSES = ("production","rejected")</code>); a named person always may. <code>retracted</code> is deliberately absent from that tuple &ndash; it is a machine state meaning "the current extraction stopped claiming this", so a later extraction that claims it again <em>should</em> revive it. <b>Live:</b> 13 <code>gate.apply</code> jobs ever &ndash; 8 <code>approve</code>, 2 <code>reject</code>, 1 <code>link-confirmed</code>, 14 <code>bind-manufacturer</code> audit rows (the machine route writes that event too). <b>One link in the registry carries <code>match_basis='manual'</code>, and exactly one <code>link-confirmed</code> audit row names its decider</b> &ndash; PRD &sect;10's drift guard holds.</p>
+</div>
+
+<div class="card">
+<header><h3><code>email.request</code> / <code>email.reminder</code></h3><span class="pill live">live</span><span class="meta">S2.4 outbound · handbook rows 12-13 · the chain ends at a draft · <code>app/handlers/email_request.py</code> (860)</span></header>
+<p class="meta"><b>Entry points.</b> Four for <code>email.request</code>, three key shapes, and two of the four are gated off. (1) DISCOVER's exhausted rung, <code>discover.py:393</code>, <code>email.request:group:{group_id}</code> &ndash; gated by <code>discovery.email_rung_enabled</code> (false). (2) The expiry-scan cron, <code>scheduler.py:182</code>, <code>email.request:mfr:{canonical_manufacturer}:{period_key}</code> &ndash; gated by <code>scheduler.expiry_email_enabled</code> (false). (3) The same scan's <b>unaddressable fallback</b>, <code>email.request:doc:{doc_id}</code>, for a document with no production link and therefore no manufacturer to join a bucket. (4) <span class="bad">The <code>/manufacturers/{name}/gap-request</code> button, <code>web/registry.py:1946</code>, key <code>email.request:gap:{canonical_name}</code> &ndash; in <b>no</b> contract table, and the only one of the four that is not gated off.</span> &sect;5. <code>email.reminder</code> has one producer, itself: <code>email_request.py:732</code> arms the first and <code>:847</code> re-arms each subsequent one, key <code>email.reminder:req:{request_id}</code>, <code>run_after = now() + renewal.reminder_after_days</code> (14).</p>
+<div class="tablewrap"><table>
+<tr><th>Field</th><th>Type</th><th>Req</th><th>Meaning</th><th>Example</th></tr>
+<tr><td><code>doc_id</code></td><td>int</td><td>one of</td><td>expiry trigger; resolves the manufacturer through the production link</td><td><code>317</code></td></tr>
+<tr><td><code>manufacturer</code></td><td>str</td><td>one of</td><td>given directly by the DISCOVER and gap producers</td><td><code>"CARL MARTIN"</code></td></tr>
+<tr><td><code>reason</code></td><td>str</td><td>no</td><td><code>expiry</code> (default) | <code>discovery-exhausted</code> | <b><code>eudamed-gap</code></b>, which branches <b>before</b> the horizon read &ndash; a gap request must not be silenced by there being nothing to renew</td><td><code>"eudamed-gap"</code></td></tr>
+<tr><td><code>state</code></td><td>str</td><td>no</td><td><code>lapsed</code> | <code>upcoming</code>, from the scan</td><td><code>"lapsed"</code></td></tr>
+<tr><td><code>group_id</code>, <code>contacts</code></td><td>int, str[]</td><td>no</td><td>DISCOVER's shape</td><td>&mdash;</td></tr>
+<tr><td><code>request_id</code></td><td>int</td><td>reminder</td><td>the <code>renewal_request</code> being chased &ndash; one chase per request, which is the whole cadence rule</td><td><code>5</code></td></tr>
+</table></div>
+<p class="meta"><b>Reads.</b> <code>document</code> through <code>document_effective_expiry</code> (migration 027) · <code>item_document</code> + <code>item_group_member</code> + <code>item_group</code> to resolve which manufacturer a document is reached through · <code>manufacturer.contact_emails</code> · <code>renewal_request</code> for the cadence attach. <b>Writes</b> <code>renewal_request</code>, <code>renewal_request_document</code> and <code>email_draft</code> &ndash; all three now listed in sketch &sect;7, added 2026-08-27. Never the registry. <b>No LLM anywhere</b>: the copy is deterministic templating (invariant 12).</p>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Emits</th><th>Counted as</th></tr>
+<tr><td>no manufacturer resolvable</td><td>no draft &ndash; nothing to group by means nothing to address</td><td>&mdash;</td><td><code>no_manufacturer</code>, reported on the job</td></tr>
+<tr><td><code>reason = eudamed-gap</code></td><td>a gap draft for documents we have <b>never</b> held; the handler refuses a second ask</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>nothing within the horizon</td><td>no draft</td><td>&mdash;</td><td><code>nothing_expiring</code></td></tr>
+<tr><td>first trigger in a cadence period</td><td>a <code>renewal_request</code>, then one draft built from <b>everything</b> currently expiring for that manufacturer</td><td><code>email.reminder</code>, delayed 14 d</td><td><code>requested</code>, <code>documents_linked</code></td></tr>
+<tr><td>second trigger in the same period</td><td>attaches to the live request and <b>adds</b> its documents; the cadence guard is migration 029's partial unique index, not an if-statement, so two racing workers still get one</td><td>&mdash;</td><td><code>cadence_attached</code></td></tr>
+<tr><td>the period's draft is untouched (<code>draft</code>)</td><td>regenerated in place with fresh content</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>the draft is <code>ready</code> / <code>sent</code> / <code>cancelled</code></td><td><b>settled</b> &ndash; nothing new is drafted (Denis 2026-09-03). Until then archiving one produced another and approving one produced a twin</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>no <code>contact_emails</code></td><td>the draft is still written, unaddressed</td><td>&mdash;</td><td><code>no_contact</code> &ndash; and 378 of 384 manufacturers are in this state</td></tr>
+<tr><td>reminder: request closed (<code>received</code>/<code>parsed</code>)</td><td>stop</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>reminder: escalation cap reached</td><td>state <code>escalated</code>, stop &ndash; leave it to a person</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>reminder: still outstanding</td><td>another draft</td><td><code>email.reminder</code>, re-armed</td><td>&mdash;</td></tr>
+</table></div>
+<p class="meta"><b>There is no send handler, by client ruling 2026-08-20.</b> <code>email_draft.status = 'ready'</code> is terminal; a person sends from <code>mdr@dentalia.si</code>. <b>Result:</b> a <code>Result</code> envelope; no anomaly kinds. <b>Live:</b> 5 <code>renewal_request</code> rows, 11 <code>email_draft</code> rows, 7 <code>email.request</code> and 5 <code>email.reminder</code> jobs, one reminder still pending.</p>
+</div>
+
+<div class="card">
+<header><h3><code>report.weekly</code></h3><span class="pill live">live</span><span class="meta">S1.5 · handbook &sect;9a · read-only · <code>app/handlers/report.py:139</code> (233 lines)</span></header>
+<p class="meta"><b>Entry points.</b> The <code>report.weekly</code> cron, <code>scheduler.py:305</code>, and the <code>/scheduler</code> panel's Run now, <code>web/scheduler_view.py:413</code> &ndash; both writing the <b>identical</b> key <code>report:{period_key}</code> where <code>period_key</code> is the ISO year-week (<code>2026-W36</code>). Identical rather than origin-tokened on purpose: here the two producers name the same period's work, so collapsing them is what stops a hand-run and the next tick producing two reports for one week. Not gated by any flag.</p>
+<p class="meta"><b>Payload:</b> <code>{period_key: str}</code>, required. <b>Reads</b> <code>document</code> through <code>document_effective_expiry</code> (all three grounds apply at once and the <b>earliest</b> fires &ndash; <code>stated</code>, <code>inherited</code> from the cited certificate, or <code>staleness</code> at five years for a DoC, a review horizon rather than a legal expiry), <code>job</code> counts, and <code>discovery_log</code> + <code>item_group</code> for failure spikes. Config: <code>renewal.horizon_days</code>, <code>scheduler.report_dir</code> (<code>/archive/reports</code> live).</p>
+<p class="meta"><b>Writes nothing to the database</b> &ndash; an HTML file under <code>report_dir</code> and its own job result. <b>Emits nothing</b> (a report reflects "now", not enqueue time, which is why it takes no downstream job). <b>Live:</b> 5 jobs, 1 dead &ndash; the dead one is the historical <code>date</code>-serialisation failure that <code>queue._json_default</code> was widened to fix; the stage had never completed before that. No anomaly kinds.</p>
+</div>
+
+<div class="card">
+<header><h3><code>eudamed.sync</code></h3><span class="pill live">live</span><span class="meta">S2.3 <b>stage 1 only</b> · handbook row 11 · a leaf · <code>app/handlers/eudamed.py:226</code></span></header>
+<p class="meta"><b>Entry point.</b> Exactly one, and it is a button: <code>POST /documents/{id}/eudamed</code> at <code>web/app.py:2218</code>, key <code>eudamed:{basic_udi_di}:{date}</code> with Postgres <code>current_date</code>, so a repeated click dedupes for the day and next week's is a fresh read. The route 404s an unknown document and redirects with <code>?eudamed=no-udi</code> when the document carries no Basic UDI-DI. <b>No scheduler produces this tag</b>, though PRD &sect;8 still lists SCHEDULER as the intended producer.</p>
+<p class="meta"><b>Payload:</b> <code>{basic_udi_di: str}</code>, required. <span class="bad">Handbook &sect;0 row 11 says <code>{}</code> "(cron)" and "EUDAMED bulk export"; both are wrong &ndash; there is no bulk export and the 2026-08-20 research measured that there never was.</span> &sect;5. <b>Reads</b> <code>document.basic_udi_di</code> and the paged <code>/devices/udiDiData</code> API. <b>Writes</b> <code>eudamed_mirror</code> only (<code>udi_di</code> PK, <code>basic_udi_di, device_name, trade_name, reference, &hellip;</code>), never <code>document</code> / <code>item_document</code> / <code>evidence</code> &ndash; asserted by a test rather than trusted. <b>Emits nothing.</b></p>
+<p class="meta"><b>Outcomes.</b> Walks to <code>last</code> at <code>size=100</code> &ndash; the envelope's default page is 20, so a handler reading one response would store 20 devices and report <code>devices: 20</code>, a silent loss that reads as a clean hit. <code>_assert_filtered</code> checks the group each record actually belongs to rather than trusting a size threshold; our own catalogue holds a group of <b>7.586</b> devices in 76 pages. A transport error raises and retries. <b>Live:</b> 3 jobs, <b>16.827</b> mirror rows &ndash; and <code>cert_refs</code> is null on every one of them, which is why DISCOVER's EUDAMED rung will keep missing however full the mirror gets. No anomaly kinds.</p>
+</div>
+
+<div class="card gated">
+<header><h3><code>eudamed.certregister</code></h3><span class="pill gated">flag-gated off</span><span class="meta">S2.3 stage 2 · PRD &sect;7b · handbook &sect;9b · a leaf · <code>app/handlers/eudamed.py:424</code></span></header>
+<p class="meta"><b>Entry point.</b> One: the <code>eudamed.certregister</code> cron, <code>scheduler.py:419</code>, key <code>eudamed.certregister:{period_key}</code> where <code>period_key</code> is a <b>calendar-day</b> bucket at <code>eudamed_certregister_interval_days</code> (30) &ndash; deliberately not <code>period_key_interval</code>'s hour-banding, which degenerates to daily for any interval &ge; 24 h. Gated by <code>scheduler.eudamed_certregister_enabled</code>, <b>false</b> in <code>app/config.py:616</code> and in both compose blocks &ndash; off for an operator to enable deliberately, not because a consumer is missing.</p>
+<p class="meta"><b>Payload:</b> <code>{}</code>. <b>Reads</b> the whole EU certificate register (16 calls at <code>size=300</code>), <code>manufacturer_alias</code> and <code>manufacturer</code>. <b>Writes</b> <code>eudamed_certificate</code> (one row per certificate revision, <code>ON CONFLICT (certificate_number, revision_number, actor_srn)</code>), <code>manufacturer_srn</code> and <code>manufacturer</code> upserts. Attribution is local pg_trgm &rarr; rapidfuzz, never a per-manufacturer query &ndash; a substring <code>actorName</code> match would silently miss any registered legal name not containing our canonical string. <b>No LLM</b> (invariant 12). <b>Emits nothing.</b></p>
+<p class="meta"><b>The SRN trust rule.</b> <code>status='auto'</code> is written <b>only</b> on an exact normalised name match; a fuzzy match writes <code>'pending'</code> and waits at <code>/manufacturers/srn-queue</code>. Only <code>auto</code> and <code>confirmed</code> are ever swept, because a wrong attribution sweeps another company's registered catalogue under our manufacturer's name and eventually surfaces as a wrong request sent to a supplier. <code>status</code> and <code>decided_at</code> are absent from the DO UPDATE set on purpose, so a re-run cannot undo a human's answer. <b>Live despite the flag:</b> 2 jobs have run by hand &ndash; <b>4.788</b> certificate rows and <b>37</b> <code>manufacturer_srn</code> rows. No anomaly kinds.</p>
+</div>
+
+<div class="card gated">
+<header><h3><code>eudamed.sweep</code></h3><span class="pill gated">operator-released only</span><span class="meta">S2.3 stage 2 · PRD &sect;7b · handbook &sect;9c · a leaf · <code>app/handlers/eudamed.py:730</code></span></header>
+<p class="meta"><b>Entry point.</b> One, and it is deliberately a person: <code>POST /manufacturers/{canonical_name}/sweep</code>, <code>web/registry.py:1836</code>, key <code>eudamed.sweep:{canonical_name}</code>. <b>No scheduler and no handler ever enqueues this tag</b> &ndash; the <code>eudamed.sweep-due</code> cron writes <code>eudamed_sweep_state.due_at</code> and stops there, restoring the 2026-08-20 ruling that no sweep ever runs unattended. The release button refuses with 400 when <code>trusted_manufacturer_srn</code> holds nothing, and only stamps <code>released_at</code>/<code>released_by</code> when <code>enqueue</code> actually returned a job id &ndash; stamping on a dedupe would overwrite the audit of who released the run that is really executing.</p>
+<p class="meta"><b>Payload:</b> <code>{manufacturer: canonical_name}</code>. <b>Reads</b> <code>trusted_manufacturer_srn</code> (the view over <code>manufacturer_srn</code> at <code>auto|confirmed</code>), <code>manufacturer.srn_probed_at</code>, and for the article-probe fallback <code>item_mirror</code> + <code>item_group(_member)</code> + <code>manufacturer_alias</code>. <b>Writes</b> <code>eudamed_mirror</code>, <code>eudamed_sweep_state</code> and <code>manufacturer_srn</code> (probe bootstrap only). <b>Emits nothing.</b></p>
+<p class="meta"><span class="warn">The probe fallback is not operator-reachable.</span> It exists for a manufacturer that holds <b>no</b> certificate and therefore no trusted SRN &ndash; GC EUROPE, 356 device articles, zero certificates &ndash; but the button 400s on exactly that condition before a job is ever enqueued, so the branch can only run from <code>python -m app.cli enqueue eudamed.sweep</code>. An engineer action, not an operator one. <code>[eudamed-srn-probe-is-unreachable]</code>, <code>[eudamed-probe-not-operator-reachable]</code>. <b>Live:</b> 6 jobs. No anomaly kinds.</p>
+</div>
+
+<div class="card">
+<header><h3><code>playbook.reonboard</code></h3><span class="pill live">live &mdash; the last tag off the placeholder</span><span class="meta">S2.2 probe · <b>in no contract</b> beyond handbook &sect;0 row 14 · <code>app/handlers/playbook_probe.py</code> (230)</span></header>
+<p class="meta"><b>Entry points.</b> Two producers, two key shapes, and only one has a handler branch. (1) The playbook editor's probe button, <code>web/registry.py:2374</code>, key <code>playbook.reonboard:{slug}:{normalize_url(index_url)}</code> &ndash; active-scope, so a double-click joins the run already going while re-probing after a result is allowed, which is exactly what an author adjusting a pattern does. <span class="bad">That shape is in no contract table.</span> (2) The failure-monitor cron, <code>scheduler.py:353</code>, key <code>playbook.reonboard:{manufacturer}:{period_key}</code>, payload <code>{manufacturer, reason, miss_rate, window_days}</code>, gated by <code>scheduler.failure_reonboard_enabled</code> (false) &ndash; and <b>that branch still raises</b> <code>NotImplementedError</code> from inside the real handler, deliberately, because a half-built handler that silently no-ops is worse than the placeholder it replaced.</p>
+<div class="tablewrap"><table>
+<tr><th>Field</th><th>Type</th><th>Req</th><th>Meaning</th><th>Example</th></tr>
+<tr><td><code>index_url</code></td><td>str</td><td>probe</td><td>the branch discriminator. Absent &rarr; the reonboard path &rarr; raises</td><td><code>"https://www.edenta.com/en/downloads"</code></td></tr>
+<tr><td><code>slug</code></td><td>str</td><td>probe</td><td>the playbook; missing raises <code>KeyError</code>, loudly</td><td><code>"edenta"</code></td></tr>
+<tr><td><code>link_pattern</code>, <code>same_host_only</code>, <code>allow_hosts</code>, <code>max_links</code>, <code>doc_type_from</code></td><td>&mdash;</td><td>no</td><td>the recipe under test; defaults <code>\.pdf$</code>, true, (), 200, none</td><td><code>"\\.pdf$"</code></td></tr>
+<tr><td><code>requested_by</code></td><td>str</td><td>no</td><td>stamped on the row</td><td><code>"admin"</code></td></tr>
+</table></div>
+<div class="tablewrap"><table>
+<tr><th>Situation</th><th>Outcome</th><th>Row status</th></tr>
+<tr><td>no <code>index_url</code></td><td><code>NotImplementedError</code></td><td>&mdash; &rarr; <code>dead</code></td></tr>
+<tr><td>host on <code>playbooks/robots_refused.txt</code></td><td>refused before any request &ndash; a refused host cannot be probed, not merely cannot be saved</td><td><code>refused</code></td></tr>
+<tr><td>robots.txt disallows</td><td>refused, verdict recorded</td><td><code>refused</code></td></tr>
+<tr><td>domain lease held</td><td>job defers; the row stays <code>pending</code> and is <b>reused</b> on the next attempt (matched on <code>via_job</code>) rather than a second row per deferral</td><td><code>pending</code>, <code>_deferred</code></td></tr>
+<tr><td>the site is down</td><td>a result, not a crash &ndash; the operator needs to see "we asked and could not reach it"</td><td><code>failed</code></td></tr>
+<tr><td>zero anchors</td><td>escalates to a browser and re-harvests; <code>tier='rendered'</code> even when the browser also finds nothing</td><td><code>done</code></td></tr>
+<tr><td>harvested</td><td>complete <b>counts</b> plus a <b>20-link sample</b> &ndash; a probe of a 1.329-link index must not put 1.329 of someone else's URLs in our database to show an operator twenty, and the UI says which is which</td><td><code>done</code></td></tr>
+</table></div>
+<p class="meta"><b>Writes</b> <code>playbook_probe</code> (migration 059) and, through <code>robots.check</code> and the lease, <code>robots_cache</code> and <code>domain_lease</code>. <span class="bad">Sketch &sect;7 has no row for this tag at all.</span> &sect;5. <b>Emits nothing</b> &ndash; the one consumer of <code>app.crawl</code> that produces no <code>fetch.url</code>, and it leaves <b>no fetch-ledger row and nothing in the archive</b>, deliberately: a <code>fetch.url</code> with a flag would make invariant 6 treat the index URL as already fetched and silently suppress the real crawl later. <code>Json</code> values are unwrapped out of the return, because the runner serialises it into <code>job.result</code> and a raw adapter raises <em>after</em> the work is done &ndash; caught live against NSK, job 37728, three real fetches. <b>Live:</b> 2 jobs (1 dead, the reonboard branch), 1 probe row.</p>
+</div>
+
+<div class="card">
+<header><h3><code>scheduler.tick</code></h3><span class="pill live">live</span><span class="meta">handbook &sect;9d · <b>eight</b> perpetual jobs · <code>app/handlers/scheduler_tick.py</code> (104)</span></header>
+<p class="meta"><b>Entry points.</b> Three, one key shape <code>scheduler.tick:{cron}</code>. Migration 055 seeds the rows; <code>runner.arm_crons</code> (<code>app/workers/runner.py:249</code>) re-arms on every worker start; the <code>/scheduler</code> panel's Arm button (<code>web/scheduler_view.py:375</code>) revives one by hand. All three are idempotent for the same reason: the active-only index refuses a second row while one is <code>pending</code>. A cron reaches "not armed" only by dead-lettering, and <code>dead</code> is outside that index, so the key is free exactly when it needs to be.</p>
+<p class="meta"><b>Payload:</b> <code>{cron: str}</code>, one of the eight keys in <code>CRONS</code>. An unknown value <b>raises</b> rather than no-opping &ndash; a tick that quietly does nothing is indistinguishable from one whose period has not come round.</p>
+<div class="tablewrap"><table>
+<tr><th>cron</th><th>Poll</th><th>Period</th><th>Gate</th><th>Emits</th></tr>
+<tr><td><code>ingest.monthly</code></td><td>6 h</td><td>month</td><td><code>ingest_watch_dir</code> is <code>''</code> &rarr; <b>finds no file</b></td><td><code>ingest.run</code></td></tr>
+<tr><td><code>expiry-scan</code></td><td>1 h</td><td>day</td><td><code>expiry_email_enabled</code> false · <code>expiry_rediscover_enabled</code> false</td><td><code>email.request</code>, <code>discover.group</code></td></tr>
+<tr><td><code>failure-monitor</code></td><td>1 h</td><td>day</td><td><code>failure_reonboard_enabled</code> false</td><td><code>playbook.reonboard</code> (whose handler branch raises)</td></tr>
+<tr><td><code>coverage-scan</code></td><td>1 h</td><td>day</td><td><code>coverage_scan_enabled</code> false</td><td><code>discover.group</code></td></tr>
+<tr><td><code>report.weekly</code></td><td>1 h</td><td>ISO week</td><td>none &ndash; the one cron that actually fires</td><td><code>report.weekly</code></td></tr>
+<tr><td><code>email.poll</code></td><td>15 min</td><td>6 h band</td><td><code>email_poll_enabled</code> false (G8)</td><td><code>email.poll</code></td></tr>
+<tr><td><code>eudamed.certregister</code></td><td>6 h</td><td>30-day bucket</td><td><code>eudamed_certregister_enabled</code> false</td><td><code>eudamed.certregister</code></td></tr>
+<tr><td><code>eudamed.sweep-due</code></td><td>1 h</td><td><b>no ledger at all</b></td><td>none</td><td><b>nothing</b> &ndash; writes <code>eudamed_sweep_state.due_at</code> and stops. Polling <em>is</em> its correctness model, the write being an idempotent upsert</td></tr>
+</table></div>
+<p class="meta"><b><code>run_after</code> is a poll interval, not a fire time.</b> <code>scheduler_run</code> stays the sole authority on whether a period has fired, so defer precision does not matter and drift is harmless. <b>Isolation is structural</b> rather than a try/except: one cron per job means one cron's failure dead-letters one cron and leaves the other seven claimable. The handler returns <code>{"_deferred": True}</code> every time, so the runner commits the cron's writes and skips <code>finish</code> &ndash; the job never completes, never frees its key, and <code>queue.defer</code> refunds the claim's attempt so a perpetual tick cannot walk its way to <code>dead</code> just by running. <b>Bound:</b> nothing in a tick may exceed the visibility timeout; every <code>_tick_*</code> is sub-second in-DB work today, which is a constraint on what a cron may grow into, not an observation. <b>Live:</b> 8 pending jobs, one per cron, 0 dead. There is <b>no <code>scheduler</code> service</b> in <code>docker-compose.yml</code> &ndash; the standalone loop was deleted 2026-09-02 and <code>worker</code> claims these like any other job. <span class="bad">PRD &sect;8 says "seven perpetual <code>scheduler.tick</code> jobs".</span> &sect;5.</p>
+</div>
+
+<div class="card">
+<header><h3>One document, end to end &mdash; the real column values</h3><span class="pill live">live registry, re-read 2026-09-04</span></header>
+<p class="meta">Document <b>843</b>, RENFERT's Sympress declaration. Chosen because it is the only chain in the registry that exercises the live web fetch, the T2 vision tier, the C3 <code>fetch-context</code> fallback, a machine retraction <b>and</b> the C17 human link verb &ndash; the last of which nothing had ever written until this map.</p>
+<div class="tablewrap"><table>
+<tr><th>Stage</th><th>What actually happened</th><th>Row values</th></tr>
+<tr><td><code>discover.group</code></td><td>group 1641 (RENFERT), the <code>playbook</code> rung fired on an authored <code>kind:"direct"</code> URL &ndash; the first open-web document this pipeline ever produced</td><td><code>discovery_log(group_id=1641, source='playbook', outcome='hit')</code></td></tr>
+<tr><td><code>fetch.url</code></td><td>httpx, 200, new hash, archived through <code>LocalFsStore</code></td><td><code>fetch_log(url_normalized='https://www.renfert.com/en/content/download/17062/file/CONF_6100x000.pdf', source='live', content_hash='d82e8f79…', doc_id=NULL)</code></td></tr>
+<tr><td><code>extract.doc</code></td><td>escalated to <b>T2 vision</b> &ndash; every one of the eight evidence rows is <code>tier='T2'</code></td><td><code>extraction_attempt(content_hash='d82e8f79…', extract_rev=1, tier='T2')</code></td></tr>
+<tr><td><code>validate.doc</code></td><td>the extracted REF list (<code>61000000, 61001000, …</code>) matched no member of the requesting group, so the C3 fallback linked every member at <code>fetch-context</code></td><td><code>links=[{item_ref:'18510000', basis:'fetch-context'}, {item_ref:'2222100', basis:'fetch-context'}]</code></td></tr>
+<tr><td><code>gate.candidate</code></td><td><code>staged</code> &ndash; <code>fetch-context</code> is outside <code>TRUSTED_BASES</code> and barred from production by the CHECK. A later rev stopped claiming 18510000 and it was <b>retracted</b>, not deleted</td><td><code>document(doc_id=843, type='DoC', regulation='MDR', validity_from=2024-01-28, validity_to=2027-01-27, coverage_scope='group', cert_number=NULL, status='staged')</code> · <code>audit_log(link-retracted, item_ref=18510000, by='gate', via_job=35565)</code></td></tr>
+<tr><td><code>gate.apply approve</code></td><td>a person promoted the document. <code>_promote_pending_links</code> lifted nothing &ndash; the only surviving link was untrusted-basis, which is precisely the hole C17 was written to close</td><td><code>status='production'</code> · <code>audit_log(approve, by='admin', via_job=35566)</code> + <code>production-write</code></td></tr>
+<tr><td>ops repair</td><td><code>repair-archive-urls</code> re-pointed the document and all 8 evidence rows off a source path onto the stored handle &ndash; an <b>audited</b> registry write outside GATE</td><td><code>archive_url='/archive/Renfert_GmbH/unknown/d82e8f794d0c__CONF_6100x000.pdf'</code> · <code>audit_log(archive-url-repair, by='ops:repair-archive-urls', detail={"evidence_rows_repointed": 8})</code></td></tr>
+<tr><td><code>gate.apply confirm-link</code></td><td>the reviewer asserted the coverage the machine could not. <b>The system's only <code>manual</code> link</b></td><td><code>item_document(item_ref='2222100', doc_id=843, match_basis='manual', status='production')</code> · <code>audit_log(link-confirmed, by='admin', detail={"link_status_before":"staged","match_basis_before":"fetch-context"})</code> + <code>production-write</code></td></tr>
+<tr><td>ops repair</td><td><code>repair-document-manufacturer</code> back-filled the 053 edge from the extracted evidence &ndash; the third audited registry writer outside GATE</td><td><code>canonical_manufacturer='RENFERT'</code> · <code>audit_log(manufacturer-backfilled, by='tool:repair-document-manufacturer', detail={"basis":"manufacturer-evidence","printed":"Renfert GmbH"})</code></td></tr>
+</table></div>
+<p class="meta"><b>Evidence, all eight rows at <code>tier='T2'</code>, <code>page</code> present on every one</b> (invariant 2): <code>type</code> 0.97 &larr; "CE KONFORMITÄTSERKLÄRUNG / Declaration of CE Confo…" p1 · <code>regulation</code> 0.98 &larr; "NACH VERORDNUNG (EU) 2017/745…" p1 · <code>manufacturer</code> 0.98 &larr; "Renfert GmbH Untere Gießwiesen 2 78247 Hilzingen" p1 · <code>coverage_scope</code> 0.85 &larr; "Produktgruppe: Sympress" p1 · <code>ref_list</code> 0.95 &larr; "REF column: 61000000, 61001000, 61002000, 61003000…" p1 · <code>basic_udi_di</code> 0.85 &larr; "++J0096000ZN" p1 · <code>validity_from</code> 0.90 &larr; "Hilzingen, 28.01.2024" p3 · <code>validity_to</code> 0.95 &larr; "Diese Konformitätserklärung gilt bis zum 27.01.202…" p3. Seven audit rows, four deciders (<code>gate</code>, <code>admin</code>, <code>ops:repair-archive-urls</code>, <code>tool:repair-document-manufacturer</code>), each self-contained.</p>
+</div>
+<h2><span class="sec">3</span>State machines</h2>
+<div class="grid2">
+<div>
+<h3><code>document.status</code></h3>
+<div class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  [*] --> staged: gate.candidate, score &gt;= MED
+  [*] --> production: score &gt;= HIGH + ref_gate + no gating flag
+  [*] --> filed: read right, covers nothing we stock (C15)
+  [*] --> superseded: task-5 fast path, all four guards pass
+  staged --> production: gate.apply approve
+  staged --> production: gate.apply bind-manufacturer
+  staged --> filed: a later rev finds no items
+  staged --> rejected: gate.apply reject
+  filed --> production: a later rev finds items
+  production --> superseded: a newer doc, same (subject, type, regulation)
+  rejected --> staged: gate.apply reopen (a person, 2026-09-04)
+  production --> rejected: gate.apply reject
+  note right of rejected
+    terminal to machines
+  end note
+  note right of superseded
+    terminal, always
+  end note
+</pre>
+</div>
+<ul class="notes">
+<li><b>Never backward.</b> <code>_upsert_document</code>'s CASE holds <code>production</code>, <code>superseded</code> and <code>rejected</code> against any re-delivery, and refuses <code>filed &rarr; staged</code> while allowing <code>filed &rarr; production</code>.</li>
+<li><b>Live, 875 documents:</b> 439 <code>filed</code> · 228 <code>staged</code> · 203 <code>production</code> · 4 <code>superseded</code> · 1 <code>rejected</code>. Every state in the enum is now occupied &ndash; on the 08-27 map <code>superseded</code> and <code>rejected</code> were still theoretical.</li>
+<li><b>763 of 875</b> carry <code>canonical_manufacturer</code>, the 053 edge; 710 of those were back-filled by an audited ops tool rather than written at gate time.</li>
+</ul>
+</div>
+<div>
+<h3><code>item_document.status</code></h3>
+<div class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  [*] --> staged: any candidate link
+  [*] --> production: trusted basis + doc production + score &gt;= HIGH
+  [*] --> production: mfr-scope derivation
+  staged --> production: gate.apply approve (trusted basis only)
+  staged --> production: gate.apply confirm-link (basis becomes manual)
+  staged --> retracted: this extraction stopped claiming it
+  staged --> rejected: gate.apply reject-link
+  retracted --> staged: a later extraction claims it again
+  production --> rejected: the reject cascade
+  rejected --> staged: gate.apply reopen-link ONLY
+  note left of production
+    provenance immutable:
+    status, basis and udi
+    all frozen
+  end note
+</pre>
+</div>
+<ul class="notes">
+<li><b>Live, 8.720 links:</b> 7.939 <code>production</code> · 412 <code>staged</code> · 369 <code>retracted</code> · <b>0</b> <code>rejected</code>. By basis: <code>mfr-scope</code> 6.304 · <code>ref-list</code> 1.166 · <code>ref-item</code> 807 · <code>map-supplier</code> 303 · <code>fetch-context</code> 139 · <b><code>manual</code> 1</b>. <code>name-family</code>, <code>ref-catalogue</code>, <code>udi</code> and <code>basic-udi-di</code> have never been written.</li>
+<li><span class="bad"><code>rejected</code> is still a never-written state.</span> Both producers exist &ndash; the reject cascade and <code>reject-link</code> &ndash; and neither has fired: the one rejected document had no links to cascade.</li>
+<li><b>72% of all coverage is <code>mfr-scope</code></b>, i.e. derived from a manufacturer binding rather than from an article number on a page.</li>
+</ul>
+</div>
+</div>
+<div class="grid2">
+<div>
+<h3><code>job.status</code></h3>
+<div class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  [*] --> pending: enqueue (deduped against ACTIVE only)
+  pending --> running: claim, attempts+1
+  running --> done: finish, result written
+  running --> failed: fail, exponential backoff
+  running --> pending: defer, attempt refunded
+  running --> pending: visibility timeout, worker died
+  failed --> running: run_after elapsed
+  failed --> dead: attempts exhausted
+  dead --> pending: /dead re-run, or /dead group re-queue
+  note right of dead
+    raises a dead-job-followup
+    manual task, same transaction
+  end note
+  note left of done
+    frees the dedupe key,
+    closes the followup task
+  end note
+</pre>
+</div>
+<ul class="notes">
+<li><b>Live:</b> 17.500 <code>done</code> · 81 <code>dead</code> · 9 <code>pending</code> (8 perpetual ticks + 1 armed reminder) · 0 <code>running</code> · 0 <code>failed</code>. The dead 81: <code>gate.candidate</code> 42, <code>fetch.url</code> 22, <code>extract.doc</code> 14, <code>discover.group</code> 1, <code>playbook.reonboard</code> 1, <code>report.weekly</code> 1.</li>
+<li><b>Both dedupe-key transitions are terminal ones.</b> A key is held by <code>pending|running|failed</code> and freed by <code>done|dead</code> &ndash; which is why a dead job stays a visible work item without blocking next month's re-check.</li>
+</ul>
+</div>
+<div>
+<h3><code>manual_task</code></h3>
+<div class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  [*] --> open_dead: queue.fail, any tag
+  [*] --> open_gate: gate.candidate manual / mfr-binding
+  [*] --> open_disc: discover.group ladder exhausted
+  open_dead --> resolved: queue.finish, same dedupe key completes
+  open_gate --> resolved: gate.apply, or a settled disposition
+  open_disc --> resolved: a later rung hits, or an upload arrives
+</pre>
+</div>
+<ul class="notes">
+<li><b>Live, 399 rows:</b> <code>discovery-dead-end</code> 183 open · <code>gate-manual</code> 179 open / 5 resolved · <b><code>dead-job-followup</code> 26 open / 6 resolved</b>.</li>
+<li><span class="s-live"><b>Hole closed:</b></span> <code>dead-job-followup</code> has carried an enum value since migration 009 and had <b>no producer</b> on every previous map. <code>queue._raise_dead_job_task</code> (<code>app/queue.py:172</code>) now writes one inside <code>fail</code>'s own transaction, so a task cannot exist for a job that is not dead nor a dead job go unannounced &ndash; and <code>queue.finish</code> closes it when the same work later completes, not when someone presses re-run, because re-queueing is not success.</li>
+<li><span class="bad">The UI copy did not follow.</span> <code>web/templates/manual.html:12</code> still reads "<b>dead-job-followup</b> has no producing handler yet". &sect;4.</li>
+</ul>
+</div>
+</div>
+<h2><span class="sec">4</span>Loose ends, honestly</h2>
+<div class="tablewrap"><table>
+<tr><th>Class</th><th>Item</th><th>Ref</th></tr>
+
+<tr><td class="st s-live">closed</td><td><strong>The raising placeholder is empty for the first time.</strong> <code>app/handlers/noop.py</code> registers 19 tags with <code>setdefault</code>; resolving <code>HANDLERS</code> in the running worker leaves <b>none</b> of them on <code>_noop</code>, and <code>scheduler.tick</code> &ndash; the twentieth enum value, which never had a placeholder &ndash; is registered too. The last to move was <code>playbook.reonboard</code>, whose probe branch landed 2026-09-03; its failure-monitor branch still raises, but from inside the real handler, which is the honest place for it.</td><td>verified live this pass</td></tr>
+
+<tr><td class="st s-live">closed</td><td><strong>DISCOVER's T1 candidate ranker is wired.</strong> <code>_default_rank</code> (<code>discover.py:184</code>) builds an <code>AnthropicRanker</code> per call rather than per process, deliberately &ndash; a module-level client would bind an API key at import time, which is what let a worker run 20 minutes on a placeholder key on 2026-09-02 without anything noticing. The degrade path is unchanged: any failure logs <code>detail.rank_error</code> and falls through to manual.</td><td><code>discover-t1-ranking</code></td></tr>
+
+<tr><td class="st s-live">closed</td><td><strong><code>dead-job-followup</code> has a producer, and <code>match_basis='manual'</code> has a row.</strong> Both were listed as unreachable states on every previous edition. <code>queue._raise_dead_job_task</code> writes the first inside <code>fail</code>'s own transaction (26 open, 6 resolved); <code>gate.apply confirm-link</code> wrote the second exactly once, on doc 843 / item 2222100, with the matching <code>link-confirmed</code> audit row naming <code>admin</code>. PRD &sect;10's "a <code>manual</code> basis with no <code>link-confirmed</code> entry is a bug" holds, 1 for 1.</td><td>verified live this pass</td></tr>
+
+<tr><td class="st s-hole">stale UI copy</td><td><code>web/templates/manual.html:12</code> still tells the operator "<b>dead-job-followup</b> has no producing handler yet, so&hellip;" &ndash; on a board that is currently showing <b>26 open ones</b>. The sentence was true when it was written and is now the opposite of what the page beneath it displays.</td><td>new this pass</td></tr>
+
+<tr><td class="st s-gated">half wired</td><td><strong><code>app/robots.py</code> has callers &mdash; two of them, and neither is FETCH.</strong> The 08-27 map's largest seam is half closed: <code>robots_mod.check</code> is called by the crawl rung (<code>discover.py:616</code>) and by the probe (<code>playbook_probe.py:136</code>), and <code>robots_cache</code> holds <b>2</b> rows where it held 0. <code>app/handlers/fetch.py</code> does <b>not</b> import it, so the ordinary fetch path &ndash; which is 194 of 1.073 ledger rows &ndash; still does not read robots.txt. And the Crawl-delay half is still inert: <code>domain_lease.min_politeness_ms</code> is <code>0</code> on all <b>99</b> rows, the column's <code>NOT NULL DEFAULT</code>, never a value the reader wrote.</td><td><code>robots-reader-unwired</code></td></tr>
+
+<tr><td class="st s-hole">hole</td><td><strong>The shared dev database is one migration BEHIND master, and the gap is load-bearing.</strong> <code>061_crawl_link_rank.sql</code> is in the tree and not in the ledger, so <code>discover._judge_links</code>' cache SELECT raises against a table that does not exist, <code>_rank_links</code> catches it, and every crawl silently spends its budget in <b>page order</b> with <code>rank.fallback = "page-order"</code> in the log. The designed degrade path, running for an undesigned reason &ndash; which is exactly the shape that is hard to notice, because the log line looks like a model failure. One <code>migrate</code> closes it.</td><td>new this pass</td></tr>
+
+<tr><td class="st s-hole">hole</td><td><strong>A crawl's index fetch leaves no ledger row.</strong> <code>_crawl_playbook</code> calls <code>fetcher.get(url)</code> directly and never writes <code>fetch_log</code>, so the library page is re-fetched once per requesting group &ndash; EDENTA has <b>103</b> groups, NSK 136. The link <em>judgement</em> is now cached per library version (migration 061), which is the expensive half, but the HTTP request is not, and invariant 6's "unchanged content never re-fetched" does not reach it. Contrast the probe, where leaving no ledger row is a documented requirement. No contract says which rule applies here.</td><td>new this pass</td></tr>
+
+<tr><td class="st s-noop">not on master</td><td><strong>Nothing is ahead of master &mdash; and that is a measurement, not an assumption.</strong> A map is a snapshot of one commit, so unmerged work is invisible to it by construction. <code>git worktree list</code> shows <b>23</b> rows and <code>git branch -a</code> <b>27</b> refs; <code>git rev-list --count master..&lt;ref&gt;</code> is <b>0</b> for every one of them, remotes included. The 08-27 map had two branches ahead and a doubly-forked migration number; both have merged. There is nothing this page cannot see for that reason today.</td><td>verified this pass</td></tr>
+
+<tr><td class="st s-gated">gated in production</td><td><strong><code>DISCOVER_HOLD</code> is ON in the running stack.</strong> <code>app/config.py:166</code> defaults it false; <code>docker-compose.yml:192</code> sets <code>${DISCOVER_HOLD:-true}</code> and the live worker reads <b>true</b>. So RESOLVE emits <b>no</b> <code>discover.group</code> at all &ndash; every discovery this registry has ever done came from an operator button, the CLI, or a gate reject. <b>351 of 8.208</b> groups have ever been searched. The flag is reversible by construction (the constant cycle token plus active-scope dedupe), but it is the single largest reason coverage looks the way it does.</td><td>PRD &sect;11 <code>discover.hold</code></td></tr>
+
+<tr><td class="st s-gated">one manufacturer</td><td><strong>The crawl rung is live for exactly one playbook.</strong> 39 manufacturer bodies carry a playbook; <b>1</b> (<code>EDENTA</code>, mirrored at <code>playbooks/edenta.json</code>) authors a <code>crawl</code> block. The rung, the ranker, the browser escalation and the exclusion rules are all built and tested; what gates them in production is authoring. <code>discovery_log</code> records <b>75</b> playbook hits against 354 misses.</td><td><code>static-pdf-crawl-recipe-candidates</code></td></tr>
+
+<tr><td class="st s-gated">blocker</td><td><code>gate.high</code> is <b>0.92</b> by Denis's ruling of 2026-08-19; <code>med</code> is still the 0.75 scaffold placeholder; and calibration is still the identity transform &ndash; <code>gate.py</code> reads <code>getattr(cfg, "calibration", {})</code> at two call sites and <code>Config</code> defines no such field, <b>re-confirmed by loading it in the running worker this pass</b>. <code>high</code> gates four separate decisions (<code>coverage_scope</code> confidence, the supersession fast path's <code>validity_from</code>, the document disposition, per-link production), which is worth stating before anyone measures it.</td><td>G5 / G2 / <code>gate-thresholds</code></td></tr>
+
+<tr><td class="st s-gated">unreachable</td><td>RESOLVE's <code>_default_adjudicator</code> still raises, and is still <em>unreachable</em>: <code>name_suggest</code> equals <code>name_accept</code> at 0.90, so there is no SUGGEST band to adjudicate and all <b>5.831</b> grouping suggestions ever raised are resolved. Lowering <code>name_suggest</code> re-arms it. The C4 resolve-time binding hook (<code>resolve.py:250</code>) returns 0 unconditionally for a structural reason: invariant 1 forbids RESOLVE writing <code>item_document</code> and <code>gate.candidate</code> cannot take a link-only candidate.</td><td><code>resolve-t1-ranking</code>, <code>resolve-c4</code></td></tr>
+
+<tr><td class="st s-gated">dormant</td><td><strong>Seven data paths carry no data.</strong> <code>item_mirror.udi</code> null on all <b>15.958</b> rows (the LJ CSV profile has no UDI column) &middot; <code>item_group.basic_udi_di</code> null on all <b>8.208</b> and with <b>no writer anywhere</b> &ndash; the only <code>INSERT INTO item_group</code> in the tree (<code>resolve.py:179</code>) names two columns and that is not one of them, so RESOLVE's <code>_by_basic_udi_di</code> rung can never match &middot; <code>eudamed_mirror.cert_refs</code> null on all <b>16.827</b>, which is why DISCOVER's EUDAMED rung misses however full the mirror gets &middot; <code>domain_lease.min_politeness_ms</code> 0 on all 99 &middot; <code>onboarding_state</code> <b>0</b> rows &ndash; the surface migration 060 built has never been used &middot; <code>item_document.status='rejected'</code> <b>0</b> rows, both producers built &middot; anomaly kind <code>reclassified_non_md</code> <b>0</b> rows, producer built. <span class="s-live">One came alive:</span> <code>document.stated_class</code> is now non-null on <b>51</b> documents where it was 0, so <code>item_class_check</code> (033) finally compares something.</td><td><code>udi-group-key</code>, <code>udi-never-populated-blocks-article-matching</code></td></tr>
+
+<tr><td class="st s-gated">stub</td><td><code>GoogleDriveStore.put()</code> raises (G7 unanswered: auth mechanics and root folder are client input) &middot; <code>BcApiAdapter.read()</code> raises without injected records, deliberately, so a missing feed cannot read as "0 items changed". <code>STORAGE_ADAPTER</code> resolves to <code>local</code>, and unlike the 08-27 reading the <code>Adapters</code> dataclass default is <b>also</b> <code>local</code> now (<code>app/config.py:207</code>) &ndash; the loader is no longer the only thing making it so.</td><td>G7, <code>ingest-bc-odata-always-fails</code></td></tr>
+
+<tr><td class="st s-hole">ruled exception</td><td><strong>Invariant 1 now has THREE exceptions, up from two, all ruled and all audited.</strong> <code>app/repair_archive_urls.py:116,119</code> updates <code>document.archive_url</code> and the matching <code>evidence.archive_url</code>; <code>app/repair_mfr_overbind.py:124</code> flips <code>item_document.status</code> to <code>retracted</code>; and <b>new since 08-27</b>, <code>app/repair_document_manufacturer.py:110</code> writes <code>document.canonical_manufacturer</code>. Each is dry-run by default and writes a self-contained audit row under <code>decided_by='ops:&lt;tool&gt;'</code> or <code>'tool:&lt;name&gt;'</code>. <b>1.468 of the 2.160 audit rows</b> are ops writes: 710 <code>manufacturer-backfilled</code>, 389 <code>archive-url-repair</code>, 369 <code>link-retracted</code>. <code>web/</code> writes none of the three tables &ndash; the producer boundary holds there structurally. The exception is recorded in the tools' own docstrings and nowhere else: CLAUDE.md invariant 1 and PRD &sect;10 still read as absolutes.</td><td><code>invariant1-ops-exception-undocumented</code></td></tr>
+
+<tr><td class="st s-gated">waiting on a ruling</td><td><b>17</b> entries, all unticked, read on 2026-09-04.</td><td><code>followups.md</code> &sect; Waiting on a ruling</td></tr>
+
+<tr><td class="st s-noop">hardening</td><td>A JS challenge served inside a 200 is undetected &middot; a 304 emits nothing even when a group is waiting (<code>fetch-304-no-c3</code>) &middot; a re-emitted <code>extract.doc</code> re-pays T1/T2 on already-parsed content, there being no <code>extraction_attempt</code> pre-check &middot; a registry <code>TRUNCATE &hellip; CASCADE</code> also empties <code>fetch_log</code>, the table backfill dedupe depends on &middot; <code>expiry-on-certless-doc</code> has not been about certificates since 2026-08-17 and the name misleads &middot; the <code>None</code> a null <code>group_id</code> stringifies into two dedupe keys &middot; GATE's certificate back-resolution writes without an audit row.</td><td>followups</td></tr>
+
+</table></div>
+<p class="caption">Register shape on 2026-09-04, counting unticked bullets between one <code>##</code> heading and the next: <code>## Open</code> holds <b>194</b> entries (192 before this run appended two); <code>## Waiting on a ruling</code> holds <b>17</b>; <code>## Done</code> holds <b>241</b>, all ticked. PHASES.md was rebuilt to v4 the same day and is a status board now &ndash; the rulings moved to <code>docs/decisions.md</code> (70 rows) and the measurements to <code>docs/state/2026-09-04.md</code>, which is where the coverage figures this page does not repeat are read. Its gap register carries <b>7</b> open G-numbers &ndash; G4, G5, G7, G8, G10, G12, G15 &ndash; of which G4, G7, G8 and G12 are waiting on the client rather than on us; <b>G6 left the register entirely</b>, closed 2026-09-03 when the crawl rung shipped, and there are <b>no</b> <code>[GAP]</code> or <code>[FILLED &mdash; needs review]</code> markers anywhere in the file.</p>
+<h2><span class="sec">5</span>Contract vs as-built</h2>
+<p class="sub">Every row is a place where <code>docs/dentalia-pipeline-contract-prd-v3.md</code>, <code>dentalia-schema-sketch.md</code>, <code>dentalia-job-type-handbook.md</code> or <code>docs/vocabulary.md</code> and the code as it stood on 2026-09-04 disagree. <b>26 open rows: 0 drift, 5 undocumented, 15 doc stale, 6 not built yet.</b> The <b>drift</b> column is empty for the first time &ndash; the 08-27 map's single drift row, SCHEDULER writing <code>email.request:doc:{doc_id}</code> where the contract named a manufacturer-and-cadence key, was closed when <code>app/scheduler.py:182</code> was synced. That is worth saying plainly: nowhere does the code contradict a contract that still stands. What is left is documentation that has not kept up with deliberate decisions, plus phase-scoped gaps. By the rule this page is produced under, <b>nothing here was fixed and no contract doc was edited</b>; the undocumented rows are appended to <code>tasks/followups.md</code> instead.</p>
+
+<div class="tablewrap"><table>
+<tr><th>Class</th><th>Contract clause</th><th>What it requires</th><th>What the code does</th></tr>
+
+<tr><td class="st s-hole">undocumented</td><td>PRD &sect;0 dedupe conventions + the operator table</td><td>"every shape a producer actually writes is listed here or in the operator producers table that follows; a key shape in neither is drift"</td><td><b>Four shapes are in neither.</b> <code>email.request:gap:{canonical_name}</code> (<code>web/registry.py:1946</code>, the EUDAMED gap-request button &ndash; and the only <code>email.request</code> producer that is <em>not</em> flag-gated off) · <code>playbook.reonboard:{slug}:{normalize_url(index_url)}</code> (<code>web/registry.py:2374</code> via <code>probe_dedupe_key</code>; the table lists only SCHEDULER's <code>{manufacturer}:{period_key}</code>) · SCHEDULER as a producer of <code>discover:refetch:{gid}:{date}</code> (<code>scheduler.py:225</code> and <code>:284</code>; the table attributes that shape to the web button and the CLI only) · <code>app/repair_label_dates.py:230</code> writing <code>validate:{hash}:{rev}:{group_id}</code>, a third repair CLI the operator table does not list beside <code>repair_ref_list</code> and <code>komet_coverage</code>. The predecessor entry <code>[prd-dedupe-table-two-missing-shapes]</code> was verified done on 2026-09-02; this is a fresh set</td></tr>
+
+<tr><td class="st s-hole">undocumented</td><td>CLAUDE.md invariant 1 &middot; PRD &sect;10 drift guards</td><td>"Only <code>gate.candidate</code> / <code>gate.apply</code> handlers write <code>document</code>, <code>item_document</code>, <code>evidence</code>." No exception clause</td><td><b>Three</b> operator CLIs write the registry, up from two: <code>repair_archive_urls.py:116,119</code>, <code>repair_mfr_overbind.py:124</code>, and now <code>repair_document_manufacturer.py:110</code> (<code>document.canonical_manufacturer</code>). All three are dry-run by default and audited; <b>1.468 of 2.160</b> audit rows are ops writes. The ruling lives in the tools' docstrings only. On the register as <code>[invariant1-ops-exception-undocumented]</code>, whose text still says two</td></tr>
+
+<tr><td class="st s-hole">undocumented</td><td>PRD &sect;3 crawl rung &middot; CLAUDE.md invariant 6</td><td>"Unchanged content never re-fetched or re-parsed (fetch ledger: ETag / hash / recency window)"</td><td><code>_crawl_playbook</code> fetches the index page through <code>fetcher.get</code> and writes <b>no</b> <code>fetch_log</code> row, so the library page is re-requested once per requesting group &ndash; 103 for EDENTA, 136 for NSK. Migration 061 caches the expensive half (the model's judgement, keyed on a hash of the harvest) but not the request. The probe's docstring states the opposite rule for itself and explains why; no contract says which applies to the crawl</td></tr>
+
+<tr><td class="st s-hole">undocumented</td><td>Whole document set: PRD, sketch, handbook, <code>vocabulary.md</code></td><td>Nothing. G3 (2026-07-23) ruled "HTTP Basic at a reverse proxy; <code>caddy</code> is the sole ingress", and that is the entire written access contract</td><td><code>web/access.py</code> classifies every request <code>staff</code>/<code>service</code>/<code>bc</code>/<code>anon</code> and is <b>default-deny</b> over <b>95</b> routes. Three config keys ride with it and PRD &sect;11 lists none. Re-checked 2026-09-02 and found closed <em>operationally</em> (<code>docs/dev/web.md</code>, <code>config-reference.md</code>) and still open in the contract. <code>[web-access-classes-undocumented]</code></td></tr>
+
+<tr><td class="st s-hole">undocumented</td><td>PRD &sect;1b <code>vendor.import</code> &middot; handbook &sect;1b</td><td><code>allow_renames</code> is the operator's opt-in to re-pointing a code</td><td>Both specify the field and the all-or-nothing refusal; neither says <b>where the opt-in may be granted</b>. Web-only at job level (<code>web/app.py:3790</code> adds it for this tag alone), while <code>vendor_master.apply</code> also takes it from the CLI. <code>[vendor-import-allow-renames-authority]</code></td></tr>
+
+<tr><td class="st s-gated">doc stale</td><td>PRD &sect;7, human decisions enum</td><td>"<code>gate.apply {doc_id, decision: approve | reject | bind-manufacturer | confirm-link | reject-link | reopen-link, &hellip;}</code>" &mdash; and, explicitly, "the web producer 422s anything outside the six above"</td><td><b>There are seven.</b> <code>gate.apply reopen</code> (document-level) landed 2026-09-04 alongside making <code>rejected</code> sticky in <code>_upsert_document</code>: closing the accidental un-reject hole would otherwise have made a reviewer's mistake permanent, so the deliberate escape was built with a person's name on it. <code>web/app.py:3996</code> admits it, <code>gate.py:1479</code> handles it and raises when the document is not <code>rejected</code>. <code>docs/vocabulary.md:94</code> documents it; the PRD's decision enum &ndash; and its claim about what the web refuses &ndash; does not</td></tr>
+
+<tr><td class="st s-gated">doc stale</td><td>PRD &sect;6 flag classes &middot; handbook &sect;6 (:722) &middot; handbook &sect;7</td><td>Blocking six, capping six, informational five</td><td><b>Three flags exist in <code>gate.py</code> and in neither the PRD nor the handbook.</b> <code>not-a-device-document</code> is <b>capping</b> (<code>gate.py:89</code>) and is raised on <b>every</b> candidate since 2026-09-03 &ndash; before that the device-type guard ran on the mfr-scope path only, so a machinery or cosmetics declaration whose REF list overlapped the catalogue reached production on an article-level basis (measured: 4 production links across docs 27, 50, 82). <code>iso-without-standard-number</code> and <code>date-label-not-adjacent</code> are <b>informational</b> (<code>gate.py:115-133</code> via <code>tiers</code>). All three are fully written up in <code>docs/vocabulary.md:191,202,203</code>; the two normative docs are the ones that lag</td></tr>
+
+<tr><td class="st s-gated">doc stale</td><td>PRD &sect;0 job envelope</td><td>Thirteen columns, ending at <code>created_at</code></td><td>The table has <b>sixteen</b>. <code>result</code> (019), <code>finished_at</code> (026) and <code>caused_by</code> (037) are three migrations old and in no contract. <code>caused_by</code> especially: it is the lineage edge the whole <code>/jobs</code> tree view is built on. On the register as <code>[job-result-prd-schema]</code></td></tr>
+
+<tr><td class="st s-gated">doc stale</td><td>PRD &sect;8 SCHEDULER row</td><td>"carried since 2026-08-31 by <b>seven</b> perpetual <code>scheduler.tick</code> jobs"</td><td><b>Eight.</b> <code>scheduler_tick.CRONS</code> has eight entries and the live queue holds eight pending tick jobs, one per cron; <code>coverage-scan</code> is the one the sentence misses. CLAUDE.md says eight and is right</td></tr>
+
+<tr><td class="st s-gated">doc stale</td><td>PRD &sect;11 config surface</td><td>"<code>gate.threshold.high/med</code> (0.95/0.75 proposal)", then a one-line "full list"</td><td><code>high</code> is <b>0.92</b> by Denis's ruling of 2026-08-19, recorded in <code>app/config.py:54-71</code> and nowhere in the PRD. The "full list" also omits the great majority of what <code>Config</code> now carries &ndash; every <code>Scheduler.*</code> flag, <code>discovery.crawl_rank_floor/max</code>, <code>discovery.manufacturer_button_cap</code>, <code>validate.min_unscoped_ref_len</code>, <code>fetch.robots_ttl_hours</code>, the three <code>web.*</code> access keys, the whole <code>email.*</code> block. <code>[prd-config-keys]</code></td></tr>
+
+<tr><td class="st s-gated">doc stale</td><td>Schema sketch &sect;7, <code>discover.group</code> row</td><td>writes: <code>discovery_log, manual_task</code></td><td>Three more, and two of them are new tables. <code>crawl_link_rank</code> (<code>discover.py:522</code>, migration 061) · <code>robots_cache</code> (<code>discover.py:616</code> through <code>robots.check</code>, migration 036) · <code>domain_lease</code> (the per-host crawl lease, <code>discover.py:1094</code>). The sketch defines both new tables in &sect;3 and never adds them to the access matrix, which is the table a reader consults to answer "who writes this"</td></tr>
+
+<tr><td class="st s-gated">doc stale</td><td>Schema sketch &sect;7 access matrix</td><td>One row per queue tag</td><td><b><code>playbook.reonboard</code> has no row at all.</b> Its live handler writes <code>playbook_probe</code> (059), <code>robots_cache</code> and <code>domain_lease</code>. The tag has been in the enum since migration 001 and was the last unbuilt one, so the matrix never needed a row until 2026-09-03</td></tr>
+
+<tr><td class="st s-gated">doc stale</td><td>Schema sketch &sect;7, the "any handler (019)" row</td><td>writes: <code>job</code> (via <code>queue.finish</code>'s <code>result</code>), <code>data_anomaly</code></td><td><b><code>manual_task</code> belongs there now.</b> <code>queue._raise_dead_job_task</code> writes a <code>dead-job-followup</code> row inside <code>fail</code>'s transaction for <b>every</b> tag, and <code>queue.finish</code> resolves it. 26 open rows say so. It is the only <code>manual_task</code> writer that is not a stage</td></tr>
+
+<tr><td class="st s-gated">doc stale</td><td>Handbook &sect;0 row 1, <code>ingest.run</code> payload</td><td><code>{source, ref, catalogue}</code></td><td>Three fields short and one value short: <code>dry_run</code>, <code>filename</code>, <code>preview_job_id</code>, and <code>source</code> now admits <code>"upload"</code> with <code>ref</code> as <code>{upload_id}</code>. PRD &sect;1 carries all of it correctly with dates; only the overview lags. Carried unchanged from the 08-27 map</td></tr>
+
+<tr><td class="st s-gated">doc stale</td><td>Handbook &sect;0 row 6, <code>email.poll</code> payload</td><td><code>{mailbox, since}</code></td><td><code>handle_email_poll</code> (<code>email_poll.py:293</code>) <b>never reads <code>job["payload"]</code> at all</b>. The folder comes from <code>cfg.email.imap_folder</code>, the window from <code>cfg.email.poll_max_messages</code>, the mailbox identity from <code>adapter.mailbox_id</code>. Both listed fields are inert</td></tr>
+
+<tr><td class="st s-gated">doc stale</td><td>Handbook &sect;0 row 11 &middot; PRD &sect;8 &middot; <code>vocabulary.md</code>, all on <code>eudamed.sync</code></td><td>Payload <code>{}</code> "(cron)"; reads "EUDAMED bulk export"; SCHEDULER listed as the producer, marked "S2.3-deferred &mdash; no producer exists yet"</td><td>Every clause still wrong, and in the same direction as on 08-27. The payload is <code>{basic_udi_di}</code>; there is no bulk export and the 2026-08-20 research measured that there never was &ndash; the handler walks a paged device API to <code>last</code>; and the sole producer is a <b>button on the document page</b> (<code>web/app.py:2218</code>). The PRD's dedupe table has the shape right, so one document already contradicts the other two</td></tr>
+
+<tr><td class="st s-gated">doc stale</td><td>Handbook &sect;0 row 14, <code>playbook.reonboard</code> payload</td><td><code>{manufacturer_id, reason}</code></td><td>Wrong for both branches. The scheduler writes <code>{manufacturer, reason, miss_rate, window_days}</code> (<code>scheduler.py:344</code>) &ndash; a name, not an id, plus two fields. The branch that is actually <b>built</b> takes an entirely different payload, <code>{slug, index_url, link_pattern, same_host_only, allow_hosts, max_links, doc_type_from, requested_by}</code>, and discriminates on <code>index_url</code>. This was cheap to fix when the tag was unbuilt and is now the only description of a live handler's input</td></tr>
+
+<tr><td class="st s-gated">doc stale</td><td><code>docs/vocabulary.md</code>:42, <code>gate.apply</code></td><td>"Apply a human decision (approve / reject / <b>edit</b> / bind-manufacturer)"</td><td><code>edit</code> was removed from the PRD's decision enum on 2026-08-25 because <code>handle_gate_apply</code> raises <code>ValueError</code> on it. The same file documents <code>reopen</code>, <code>confirm-link</code>, <code>reject-link</code> and <code>reopen-link</code> at length further down; only this one line is stale, and it is the line a reader hits first</td></tr>
+
+<tr><td class="st s-gated">doc stale</td><td><code>app/results.py</code> &harr; migration 019</td><td>"<code>kind</code> is a CLOSED vocabulary mirrored in <code>app/results.py</code>"; adding one is "a deliberate act in both places"</td><td>Migration 019 enumerates no kinds and defines <code>kind text NOT NULL</code> with no CHECK. The vocabulary is enforced in Python only (<code>Result.anomaly</code> raises on an unknown kind), so the second place has nothing to keep in sync and the two-place discipline the comment describes can be neither violated nor observed. The set is now <b>9</b> kinds, all with producers, 8 with live rows. Carried unchanged</td></tr>
+
+<tr><td class="st s-gated">doc stale</td><td>migration <code>002_ingest.sql</code>:45 vs schema sketch &sect;2</td><td>Migration comment: <code>existing-link|udi|basic-udi-di|name-family|manual</code></td><td>The sketch additionally lists <code>singleton</code>, ratified in handbook &sect;2, and it is the most common value on the live table. Editing an applied migration is safe (<code>app/db.py</code> keys the ledger on filename, no checksum) but would leave a fresh database and this one describing themselves differently, so it is left alone. Carried unchanged</td></tr>
+
+<tr><td class="st s-noop">not built yet</td><td>PRD &sect;7b &middot; handbook &sect;7b</td><td>"future items resolving to that manufacturer receive the link at RESOLVE time without re-review"</td><td><code>resolve._apply_manufacturer_bindings</code> (<code>resolve.py:250</code>) returns 0 unconditionally. Invariant 1 forbids RESOLVE writing <code>item_document</code> and <code>gate.candidate</code> cannot take a link-only candidate, so the write path does not exist. <code>[resolve-c4]</code></td></tr>
+
+<tr><td class="st s-noop">not built yet</td><td>PRD &sect;11 &middot; PHASES G5 / G2</td><td>Gate-time calibration <code>effective = raw &times; factor(model_id, field)</code> fed by a <code>[calibration]</code> config map, plus measured HIGH/MED</td><td><code>gate.py</code> reads <code>getattr(cfg, "calibration", {})</code> at two call sites; <code>Config</code> defines no such field &ndash; re-confirmed this pass by loading it inside the running worker &ndash; so the map is always empty and calibration is the identity. <code>high</code> was <em>ruled</em> to 0.92 rather than measured; <code>tools/calibration.py</code> was never written and the calibration plan is at 0 of 10 steps</td></tr>
+
+<tr><td class="st s-noop">not built yet</td><td>PRD &sect;1 &middot; &sect;11 <code>source_adapter</code></td><td>Interchangeable adapters producing byte-identical downstream payloads</td><td><code>BcApiAdapter.read()</code> raises without injected records, deliberately, so a missing feed cannot read as "0 items changed". v2 scope. The contract's "two" is now three &ndash; <code>UploadExportAdapter</code> joined 2026-08-25 and PRD &sect;1's Adapter row names all three. <code>[ingest-bc-odata-always-fails]</code>, <code>[odata-profile-is-guessed]</code></td></tr>
+
+<tr><td class="st s-noop">not built yet</td><td>PRD &sect;9 storage layout</td><td>Drive v1, client-owned, behind <code>StorageAdapter</code></td><td><code>GoogleDriveStore.put()</code> raises pending G7 (auth mechanics and root folder are client input). <code>LocalFsStore</code> is what runs, and all 875 documents carry an <code>/archive/&hellip;</code> handle</td></tr>
+
+<tr><td class="st s-noop">not built yet</td><td>PRD &sect;3 &middot; &sect;8 &middot; handbook &sect;9, the EUDAMED <b>discovery</b> rung</td><td>EUDAMED as a source in <code>discovery.default_source_priority</code>: look a group up, get document URLs</td><td><b>Not buildable, not merely unbuilt.</b> The mirror is full &ndash; 16.827 rows, up from 591 &ndash; but <code>discover.py:171</code> reads <code>cert_refs</code>, which is null on every one of them, because EUDAMED serves no document URLs at all. 354 logged misses. This is a clause that needs striking, not implementing</td></tr>
+
+<tr><td class="st s-noop">not built yet</td><td>PRD &sect;4 politeness &middot; &sect;11 config surface</td><td>"Job carries <code>domain</code>; worker claims max one job per domain per interval." Nothing about robots.txt at all</td><td>Half built since the last map. <code>app/robots.py</code> now has two callers &ndash; the crawl rung and the probe &ndash; and <code>robots_cache</code> holds 2 rows. <b><code>app/handlers/fetch.py</code> still does not import it</b>, so the path that produced 194 of 1.073 ledger rows does not read robots.txt, and <code>domain_lease.min_politeness_ms</code> is 0 on all 99 rows. PRD &sect;3's crawl-rung prose now mentions robots; &sect;4 and &sect;11 still do not. <code>[robots-reader-unwired]</code></td></tr>
+
+</table></div>
+
+<p class="caption"><b>What was checked and held.</b> <b>Emits rows:</b> every handler emits only tags its PRD row lists. DISCOVER's crawl rung adds reach and no tag &ndash; it emits <code>fetch.url</code>, which its row already names. <code>playbook.reonboard</code>, <code>eudamed.sync</code>, <code>eudamed.certregister</code>, <code>eudamed.sweep</code>, <code>vendor.import</code> and <code>report.weekly</code> emit <b>nothing</b>, which is what their rows say. <b>Payload immutability:</b> no handler writes <code>job.payload</code>; every <code>UPDATE job</code> in the tree is in <code>app/queue.py</code> and touches status, attempts, result, error, <code>run_after</code> and <code>finished_at</code>. The two-phase import makes this visible rather than testing it &ndash; the apply route builds a <b>new</b> dict and enqueues a second job. <b>Closed job-type enum:</b> the live <code>job_type</code> enum has 20 values, <code>noop.JOB_TYPES</code> 19 (<code>scheduler.tick</code> never had a placeholder), and resolving <code>HANDLERS</code> in the running worker leaves <b>zero</b> on <code>_noop</code>. <b>Registry writers:</b> <code>web/</code> contains no <code>INSERT</code> or <code>UPDATE</code> against <code>document</code>, <code>item_document</code> or <code>evidence</code> &ndash; the producer boundary is structural, and the only writers outside GATE are the three audited ops CLIs above. <b>Link cap:</b> the live <code>item_document_trusted_basis_ck</code> reads <code>NOT (status='production' AND match_basis IN ('name-family','fetch-context','ref-catalogue'))</code>, exactly matching migration 021 and <code>gate.TRUSTED_BASES</code>; <code>ref-eudamed</code> has still not been added, and <b>zero</b> production links carry a capped basis. <b>Supersession:</b> both routes to a chain pointer re-read <code>(type, regulation)</code> live and raise on a mismatch; all 4 <code>superseded</code> documents and both <code>supersede</code> audit rows are within-type, within-regulation. <b>Evidence:</b> <code>_require_complete_evidence</code> runs before any write, <code>page</code> required for T1/T2 only. <b>The <code>manual</code> basis:</b> 1 link, 1 <code>link-confirmed</code> audit row naming its decider &ndash; the PRD &sect;10 guard holds at the first opportunity it has ever had.</p>
+<p class="caption">By the rule this page is produced under, <b>no divergence was fixed here and no contract doc was edited</b>. Rows appended to <code>tasks/followups.md</code> by this run: <b>two</b> &ndash; the four missing dedupe shapes and the unledgered crawl index fetch &ndash; plus an amendment to <code>[invariant1-ops-exception-undocumented]</code>, which says two tools and needs to say three. Nothing else was appended: the other three undocumented rows are already on the register from earlier passes.</p>
+
+<footer>
+Sources: first-hand reads of <code>app/</code>, <code>web/</code>, <code>migrations/</code>, <code>docker-compose.yml</code>, <code>tasks/followups.md</code>, <code>PHASES.md</code> and the four normative docs at master as it stood on 2026-09-04; every live figure is a <code>count(*)</code> against the dev registry, read 2026-09-04, not a planner estimate &ndash; read the card at the top on why that database is one migration behind master. Config values were read by loading <code>load_config()</code> <em>inside the running <code>worker</code> container</em>, not from the dataclass defaults, and the handler registry the same way; that is the difference between what is coded and what is running. Every status was re-derived for this edition; none carried forward from the 2026-08-27 edition. Suite: <b>3287 passed, 2 skipped, 0 failed &mdash; 3m08s, exit 0, via <code>./scripts/test.sh</code></b>, run three times &ndash; once at the session's opening tree and once at each re-pin, with the same result each time. The final run was at that last re-pin against a tree clean under <code>app/</code>, <code>web/</code>, <code>migrations/</code> and <code>tests/</code>. Render-verified before shipping: 5 of 5 <code>pre.mermaid</code> blocks produce an <code>svg</code>, and both Centrale Sans Rounded weights (300 and 600) report loaded.
+</footer>
+</main>
+<script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+mermaid.initialize({ startOnLoad: true, theme: dark ? "dark" : "neutral" });
+</script>
+</body>
+</html>

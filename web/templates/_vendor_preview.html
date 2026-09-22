@@ -1,0 +1,147 @@
+{#
+  The `vendor.import` diff report. Sibling of `_import_preview.html`, and
+  deliberately not a branch inside it: a vendor run has four diff categories
+  where an item run has two, and one of those categories is refused unless the
+  operator opts in.
+
+  Targets `closest .vendor-preview`, never `#result` -- that id exists only on
+  /import, and `_result.html` hands out a bare <a href> to this page, which
+  invites a bookmark. See `import_preview_page.html` for the standalone wrapper.
+#}
+<div class="vendor-preview">
+  {#- The file, not the job number: see `_import_preview.html`. -#}
+  <h3>{% if job.payload and job.payload.filename %}{{ job.payload.filename }}{% else %}The manufacturer master{% endif %}</h3>
+  {% if job.status in ("pending", "running") %}
+    <p hx-get="/import/{{ job.id }}/preview" hx-trigger="every 2s" hx-target="closest .vendor-preview" hx-swap="outerHTML">
+      Reading the manufacturer master…
+    </p>
+  {% elif job.status in ("failed", "dead") %}
+    <p class="error">The import failed. {{ job.last_error }}</p>
+  {% else %}
+    {#
+      Same two-column treatment the item import got: what we said would happen,
+      then what happened. Applying re-reads the file and re-diffs against the
+      master as it stands at write time, so the two are allowed to disagree --
+      and a disagreement is the one thing here worth finding without reading
+      every row. One column on a dry run, or when the preview job is gone.
+    #}
+    <table>
+      {% if compared %}
+        <tr><th></th><th>Previewed</th><th>Applied</th></tr>
+      {% endif %}
+      {% for row in counts %}
+        <tr{% if row.differs %} class="differs"{% endif %}>
+          <th>{{ row.label }}</th>
+          {% if compared %}<td>{{ row.previewed }}</td>{% endif %}
+          <td>{{ row.applied }}</td>
+        </tr>
+      {% endfor %}
+    </table>
+    {% if compared %}
+      {% set drift = counts | selectattr("differs") | list %}
+      {% if drift %}
+        <p class="error">
+          {{ drift | length }} count(s) moved since the preview:
+          {% for row in drift %}{{ row.label }} ({{ row.previewed }} &rarr; {{ row.applied }}){% if not loop.last %}, {% endif %}{% endfor %}.
+          The master moved between the two runs.
+        </p>
+      {% else %}
+        <p>Every count matches the preview.</p>
+      {% endif %}
+    {% endif %}
+
+    {% if result.renamed %}
+      {#
+        Every triple, not a count. The operator is being asked to authorise
+        these specific re-pointings, so they have to be readable.
+      #}
+      <h4>Codes that would be re-pointed</h4>
+      <table>
+        <tr><th>Code</th><th>Currently</th><th>In this file</th></tr>
+        {% for code, old, new in result.renamed %}
+          <tr class="differs"><th>{{ code }}</th><td>{{ old }}</td><td>{{ new }}</td></tr>
+        {% endfor %}
+      </table>
+    {% endif %}
+
+    {% if result.disappeared %}
+      <h4>Codes absent from this file</h4>
+      <p>
+        <strong>Kept, not deleted.</strong> These rows stay exactly as they are,
+        with a stale import batch — a code items already point at is a fact to
+        report, and removing it would strand any alias derived from it.
+      </p>
+      <p><code>{{ result.disappeared | join(", ") }}</code></p>
+    {% endif %}
+
+    {% if result.outcome == "rename-refused" %}
+      <p class="error">
+        <strong>Refused — nothing was written.</strong> {{ result.error }}
+      </p>
+      <p>
+        The upload is still held, so you can apply it again with the box ticked
+        once you have checked which groups those codes affect. Go back to
+        <a href="/import">Import</a> and re-open the preview.
+      </p>
+    {% elif result.dry_run %}
+      <p>
+        Nothing has been written. Codes absent from this file are left alone.
+        Applying re-reads the file and re-diffs it against the master as it is
+        <em>now</em>.
+      </p>
+      {% if appliable %}
+        <form hx-post="/import/{{ job.id }}/apply" hx-target="closest .vendor-preview" hx-swap="outerHTML">
+          {% if result.renamed %}
+            {#
+              Rendered only when there is something to authorise. An unticked
+              checkbox posts nothing at all, which the route reads as false --
+              the opt-in is never inferred.
+            #}
+            <label class="danger-optin">
+              <input type="checkbox" name="allow_renames" value="on">
+              Re-point {{ result.renamed | length }} code(s) to a different
+              manufacturer. Item groups already resolved under the old name keep
+              it, and this import will not fix them.
+            </label>
+          {% endif %}
+          <button type="submit">
+            Apply — write {{ result.added }} new, {{ result.renamed | length }} renamed
+          </button>
+        </form>
+      {% endif %}
+    {% else %}
+      <p>
+        Applied. {{ result.added }} new code(s), {{ result.renamed | length }}
+        re-pointed, {{ result.spool_gc | default(0) }} abandoned upload(s)
+        collected.
+      </p>
+      {#- This partial renders on /import, which is an OFFICE screen ("Import
+          from Business Central" in the menu). The step below is real and it
+          matters, but it is a shell command an office reader cannot run, so
+          the sentence says what is true and who it is for and the command
+          itself sits in Technical details with the rest of the machine side
+          (Denis, 2026-09-15). -#}
+      <p class="hint">
+        One more step is needed before the next catalogue import, and it is for
+        an operator. Until it runs, items already filed under a supplier's old
+        name stay where they are: re-pointing a name does not move work that was
+        already done under the old one.
+      </p>
+    {% endif %}
+    <details class="technical">
+      <summary>Technical details</summary>
+      {#- Only after an apply: before one, nothing is stale yet. Same condition
+          as the "Applied." sentence above, which is the `{% else %}` of the
+          rename-refused branch. -#}
+      {% if result.outcome != "rename-refused" %}
+      <p><code>manufacturer_alias</code> is stale for anything this added. Run
+        <code>python -m app.cli playbooks sync</code> <strong>before</strong> the
+        next item ingest, not after: re-pointing an alias does not retro-fix
+        <code>item_group</code> rows already resolved under the old value.</p>
+      {% endif %}
+      <p class="hint">Job #{{ job.id }} · <code>{{ job.type }}</code> ·
+        {{ job.status }}</p>
+      <pre>{{ result_pretty }}</pre>
+    </details>
+  {% endif %}
+</div>

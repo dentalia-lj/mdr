@@ -1,0 +1,24 @@
+{
+  "manufacturer": "MELAG",
+  "aliases": [
+    "MELAG Medizintechnik GmbH & Co. KG",
+    "MELAG oHG"
+  ],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "030"
+    }
+  ],
+  "domains": [
+    "melag.com"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "IFU",
+      "kind": "portal",
+      "url": "https://www.melag.com/en/service/downloadcenter",
+      "note": "Fetched 2026-08-20, HTTP 200. Rendered HTML contains zero document links (\"Please use the following selection or search fields\") -- browser tier required for discovery. The files underneath are plain static and fetch fine: https://www.melag.com/download/{CODE}.pdf with meaningful prefixes TH_ (Technisches Handbuch), BA_ (Bedienungsanleitung), CL_ (Checkliste), IP_ (Installationsprotokoll) plus _DE/_EN and sometimes a region suffix; one such PDF was fetched with an extractable text layer. Codes are device models (24BL+, 10DT, Careclave), not article numbers. robots.txt blocks only /account/, but the sitemap exceeds 10 MB and must be streamed. DECLARATIONS ARE PROBABLY NOT PUBLISHED: MELAG's own documentation states the Konformitaetserklaerung is part of the Werkspruefungsprotokoll handed over at installation, which makes this an email.request case for DoCs. The second alias is the older entity that appears on legacy declarations."
+    }
+  ]
+}

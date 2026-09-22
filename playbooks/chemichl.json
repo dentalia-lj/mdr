@@ -1,0 +1,40 @@
+{
+  "manufacturer": "Chemichl AG",
+  "aliases": [
+    "MIYO",
+    "InSync",
+    "JENSEN",
+    "Jensen GmbH",
+    "Jensen Dental",
+    "Custom Designed Ceramics",
+    "Chemichl Aktiengesellschaft"
+  ],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "10127"
+    },
+    {
+      "catalogue": "LJ",
+      "code": "10128"
+    }
+  ],
+  "domains": [
+    "miyoworld.eu",
+    "jensendental.de"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "DoC",
+      "kind": "portal",
+      "url": "https://www.miyoworld.eu/en/downloads",
+      "note": "Dealer portal named by Jensen's International Sales in an email to Dentalia 2026-08-17, forwarded by the client 2026-08-20: declaration of conformity, MDR certificate, Technical Data Sheets, the new IFU (Revision 3, 2026-04-30, 23 languages) and an ISO-based \"Getting Started\" document. Confirmed 2026-08-20 to publish an EN ISO 13485:2016 certificate No. 50958-21-00 (2024-2025), and to carry Chemichl AG as manufacturer with Jensen GmbH as distributor on its safety data sheets. THE EC CERTIFICATE IS NOT PUBLISHED HERE -- it requires a request through their contact form, so that document is an email.request case."
+    },
+    {
+      "doc_type": "DoC",
+      "kind": "portal",
+      "url": "https://www.jensendental.de/en/downloads-en",
+      "note": "The EU-side download page; miyoworld.eu's IFU link redirects here. Same Jensen GmbH distribution entity."
+    }
+  ]
+}

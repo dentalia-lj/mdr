@@ -1,0 +1,5 @@
+# Every account line lives in a file matched by `import /etc/caddy/users/*.caddy`
+# (see ../../Caddyfile). Those files carry bcrypt password hashes, so they are
+# never committed. This directory IS committed, together with README.md, so a
+# fresh clone has somewhere for the compose bind-mount to land.
+*.caddy

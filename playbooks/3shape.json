@@ -1,0 +1,11 @@
+{
+  "manufacturer": "3SHAPE TRIOS A/S",
+  "aliases": ["3Shape", "3Shape A/S", "3Shape Medical A/S", "3Shape Group",
+              "3Shape Poland Sp. z o.o."],
+  "bc_codes": [{"catalogue": "LJ", "code": "10003"},
+               {"catalogue": "LJ", "code": "10004"},
+               {"catalogue": "LJ", "code": "10005"}],
+  "domains": ["3shape.com"],
+  "contacts": ["info@3shape.com"],
+  "doc_sources": []
+}

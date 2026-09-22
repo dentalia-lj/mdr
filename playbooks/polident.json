@@ -1,0 +1,29 @@
+{
+  "manufacturer": "POLIDENT",
+  "aliases": [
+    "POLIDENT d.o.o."
+  ],
+  "bc_codes": [
+    {
+      "catalogue": "LJ",
+      "code": "054"
+    }
+  ],
+  "domains": [
+    "polident.si"
+  ],
+  "doc_sources": [
+    {
+      "doc_type": "IFU",
+      "kind": "portal",
+      "url": "https://www.polident.si/en/downloads/instruction-for-use/",
+      "note": "Fetched 2026-08-20, HTTP 200. 31 IFUs, hrefs in the served HTML. Link text carries product name AND regulation (\"POLIDENT MDR - POLIREPAR S\", \"POLIDENT MDD-PMMA CAD/CAM DISC\"). CAUTION: third-party brands are mixed into the same list (Kulzer PALA, Dental Direkt \"DD poly Y ML\", ORGANIC, DEGOS) -- not everything here is Polident-manufactured. RE-AUTHORED portal 2026-08-21: this is an HTML LISTING page, not a document. It was kind:\"direct\" while nothing read that key; the playbook DISCOVER rung now fetches direct sources, and FETCH has no content-type gate -- a listing page would be archived as an unreadable PDF and dead-end at EXTRACT silently. Turning it into documents is the crawl recipe (docs/superpowers/specs/2026-08-21-playbook-crawl-recipe-design.md)."
+    },
+    {
+      "doc_type": "EC",
+      "kind": "portal",
+      "url": "https://www.polident.si/en/company/certificates/",
+      "note": "Fetched 2026-08-20, HTTP 200. 7 certificates with human-readable filenames: ISO 13485, ISO 9001, MDD_CE, MDD_CE_extension (Article 120 legacy), mdr-ce-part-1/2, and MDSAP-cert-exp-29.10.2026.pdf whose filename carries its own expiry date. The ?m= query parameter is a unix mtime, usable as a change signal. Two PDFs fetched returned no text layer -- expect OCR. RE-AUTHORED portal 2026-08-21: this is an HTML LISTING page, not a document. It was kind:\"direct\" while nothing read that key; the playbook DISCOVER rung now fetches direct sources, and FETCH has no content-type gate -- a listing page would be archived as an unreadable PDF and dead-end at EXTRACT silently. Turning it into documents is the crawl recipe (docs/superpowers/specs/2026-08-21-playbook-crawl-recipe-design.md)."
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{# The queue, on every step. It is the point of the flow: 346 suppliers is a
+   shift somebody picks up and puts down, not a form, and the count going down
+   is what makes it one. Ordered by item count because that is where a playbook
+   buys the most coverage. #}
+<div class="card">
+  <h2>Waiting</h2>
+  <p><strong style="font-size:1.6rem">{{ queue_size | num }}</strong>
+     supplier{{ "" if queue_size == 1 else "s" }} with no playbook</p>
+  {% if queue %}
+  <table>
+    <tbody>
+      {% for r in queue %}
+      <tr{% if here is defined and here == r.canonical_name %} class="differs"{% endif %}>
+        <td><a href="/onboarding/{{ r.canonical_name | urlencode }}/start">{{ r.canonical_name }}</a></td>
+        <td style="text-align:right">{{ r['items'] | num }} item{{ "" if r['items'] == 1 else "s" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="hint">
+    Most items first · that is where a playbook is worth the most. Skipping is
+    a real answer and is remembered.
+  </p>
+  <p class="hint">
+    Only suppliers that have items in Business Central are queued. One with
+    none has nothing for a playbook to cover yet, so it waits until an item
+    arrives rather than sitting here as work nobody can do.
+  </p>
+  {% else %}
+  <p class="hint">Nothing waiting. Every supplier with items has a playbook or
+    a recorded reason for not having one.</p>
+  {% endif %}
+</div>

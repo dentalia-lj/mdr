@@ -1,0 +1,14 @@
+{
+  "manufacturer": "INSTITUT STRAUMANN AG",
+  "aliases": [],
+  "bc_codes": [{"catalogue": "LJ", "code": "002"}],
+  "domains": ["straumann.com", "ifu.straumann.com"],
+  "doc_sources": [
+    {
+      "doc_type": "IFU",
+      "kind": "portal",
+      "url": "https://ifu.straumann.com/",
+      "note": "Straumann's dedicated IFU portal, printed in its own corpus documents (imports/dentalia-sftp/STRAUMANN, 7 occurrences). Verified 200 on 2026-08-11."
+    }
+  ]
+}

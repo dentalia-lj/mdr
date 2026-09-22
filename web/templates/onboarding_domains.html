@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ canonical_name }} — websites{% endblock %}
+{% block content %}
+<h1>{{ canonical_name }}</h1>
+<p class="page-lede">Step 2 of 4: their own websites, which narrow every search
+  we run for them.</p>
+<p class="hint"><a href="/onboarding">&laquo; Onboarding queue</a> ·
+  playbook <a href="/playbooks/{{ slug }}">{{ slug }}</a></p>
+
+{% if error %}<div class="result error">{{ error }}</div>{% endif %}
+
+{% set step = 2 %}{% include "_onboarding_steps.html" %}
+
+<div class="card">
+  <h2>Their own websites</h2>
+  <p class="hint">
+    One per line. These restrict our searches to the manufacturer's own sites,
+    which sharply raises the quality of what comes back. <strong>A wrong entry
+    costs candidates, never coverage</strong> — if a restricted search finds
+    nothing, the system retries without the restriction.
+  </p>
+  <form method="post" action="/onboarding/{{ slug }}/domains">
+    <input type="hidden" name="rev" value="{{ rev }}">
+    <textarea name="domains" rows="4" cols="52"
+              placeholder="example.com&#10;example.de">{{ domains | join("\n") }}</textarea>
+    <p>
+      <button type="submit">Continue</button>
+    </p>
+  </form>
+  <p class="hint">
+    Don't know their website? Leave it empty and continue — searching without a
+    restriction still works, it just returns more that is not theirs.
+  </p>
+</div>
+
+{% include "_onboarding_rail.html" %}
+{% endblock %}

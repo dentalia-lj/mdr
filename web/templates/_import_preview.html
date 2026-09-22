@@ -1,0 +1,65 @@
+<div class="import-preview">
+  {#- The file, not the job number (spec § 9, rule 1 and rule 5): the operator
+      is authorising an export they chose, and the number that carries it is
+      under Technical details at the foot of this report. -#}
+  <h3>{% if job.payload and job.payload.filename %}{{ job.payload.filename }}{% else %}The item catalogue export{% endif %}</h3>
+  {% if job.status in ("pending", "running") %}
+    <p hx-get="/import/{{ job.id }}/preview" hx-trigger="every 2s" hx-target="closest .import-preview" hx-swap="outerHTML">
+      Reading the export…
+    </p>
+  {% elif job.status in ("failed", "dead") %}
+    <p class="error">The preview failed. {{ job.last_error }}</p>
+  {% else %}
+    {#
+      One column on a dry run (nothing has been written, so there is nothing to
+      compare against) and on an applied run whose preview we cannot read back.
+      Two when we can: what we said would happen, then what happened.
+    #}
+    <table>
+      {% if compared %}
+        <tr><th></th><th>Previewed</th><th>Applied</th></tr>
+      {% endif %}
+      {% for row in counts %}
+        <tr{% if row.differs %} class="differs"{% endif %}>
+          <th>{{ row.label }}</th>
+          {% if compared %}<td>{{ row.previewed }}</td>{% endif %}
+          <td>{{ row.applied }}</td>
+        </tr>
+      {% endfor %}
+    </table>
+    {% if compared %}
+      {% set drift = counts | selectattr("differs") | list %}
+      {% if drift %}
+        <p class="error">
+          {{ drift | length }} count(s) moved since the preview:
+          {% for row in drift %}{{ row.label }} ({{ row.previewed }} → {{ row.applied }}){% if not loop.last %}, {% endif %}{% endfor %}.
+          Applying re-read the export and re-diffed it against the catalogue as
+          it stood at write time, so the catalogue moved between the two runs.
+        </p>
+      {% else %}
+        <p>Every count matches the preview.</p>
+      {% endif %}
+    {% endif %}
+    {% if result.dry_run %}
+      <p>
+        Nothing has been written. Items absent from this file are left alone.
+        Applying re-reads the export and diffs it against the catalogue as it is
+        <em>now</em> — the applied counts are reported next to these, so any
+        drift since this preview is visible rather than assumed away.
+      </p>
+      {% if appliable %}
+        <button hx-post="/import/{{ job.id }}/apply" hx-target="closest .import-preview" hx-swap="outerHTML">
+          Apply — write {{ result.changed }} item(s)
+        </button>
+      {% endif %}
+    {% else %}
+      <p>Applied. {{ result.changed }} item(s) written, {{ result.spool_gc | default(0) }} abandoned upload(s) collected.</p>
+    {% endif %}
+    <details class="technical">
+      <summary>Technical details</summary>
+      <p class="hint">Job #{{ job.id }} · <code>{{ job.type }}</code> ·
+        {{ job.status }}</p>
+      <pre>{{ result_pretty }}</pre>
+    </details>
+  {% endif %}
+</div>

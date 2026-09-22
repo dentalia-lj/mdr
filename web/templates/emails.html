@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}Emails received — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+{#- Emails received (office UI redesign spec § 9, P7c). The name, the document
+    statuses and the attachment words are the § 9 list; the model that wrote a
+    summary is filed under Technical details on the row it belongs to, because
+    it is provenance and not something a person acts on. -#}
+<h1>Emails received</h1>
+{% call ui.intro("What has arrived by email, and what the system found attached.") %}
+  Each PDF attachment is classified at the door: compliance documents enter the
+  pipeline at extraction, while safety data sheets, business paperwork and
+  non-PDF files are skipped (and still recorded here, never silently). Archives
+  are opened first, so a supplier sending <code>documents.zip</code> is sending
+  documents. A processed message is never polled again — which is also why the
+  one-line summary under each subject is written once and never revised: the
+  message body is read at poll time, compressed, and dropped. What is kept is
+  the summary, never the correspondence.
+{% endcall %}
+
+<div class="card">
+  <div class="stat-row">
+    <div class="stat-tile">
+      <div class="n">{{ total | num }}</div>
+      <div class="label">emails processed</div>
+    </div>
+  </div>
+  {% if shown < total %}
+  <p class="hint">Showing the {{ shown | num }} most recent of {{ total | num }}.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  {% if rows %}
+  <table>
+    <thead>
+      <tr><th>Received</th><th>From</th><th>Subject &amp; what it asked for</th><th>Attachments</th></tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        {#- A date as a person reads it, and the time beside it: the minute a
+            message arrived matters when two answers cross in the post. -#}
+        {%- set when = r.received_at or r.processed_at %}
+        <td>{% if when %}{{ when | day }} · {{ when.strftime('%H:%M') }}{% else %}—{% endif %}</td>
+        <td>{{ r.from_addr or '—' }}</td>
+        <td>
+          <div class="email-subject">{{ r.subject or '—' }}</div>
+          {# Which chase this answers (`email.poll` `_match_request`, 2026-09-11).
+             By reference: the subject carries the draft's own [DENT-n] token.
+             Otherwise the sender's domain belongs to the one manufacturer with
+             an open request, which is a guess, and the line says so. #}
+          {% if r.renewal_request_id %}
+          {% set by_ref = ('[DENT-' ~ r.renewal_request_id ~ ']') in (r.subject or '') %}
+          <div class="email-reply-to hint">
+            {%- if r.request_draft_id %}<a href="/drafts/{{ r.request_draft_id }}">{% endif -%}
+            Reply to request #{{ r.renewal_request_id }}, {{ r.request_manufacturer or 'unknown manufacturer' }}
+            {%- if r.request_draft_id %}</a>{% endif -%}
+            {%- if not by_ref %} (matched by sender address){% endif -%}
+          </div>
+          {% endif %}
+          {# What the message asked for. The body is never stored (invariant 12):
+             this is a cheap-tier summary made once, at poll time, and the model
+             id rides with it so it is never mistaken for the sender's own
+             words.
+
+             Two lines and a disclosure: the badge answers "what kind of mail
+             is this" and leads, the summary answers "what did it say", and the
+             model attribution moved under Technical details in slice P7c --
+             it is provenance, it is a model id, and rule 5 files a model id
+             where a number goes. It is not deleted: a summary read as the
+             sender's own words is the failure the attribution prevents, so
+             the line under it still says the sentence was written for us and
+             the disclosure names what wrote it. A message with no body
+             renders nothing at all -- the
+             subject already carries it, and a "no summary" hint there reads as
+             a failure when nothing failed (Denis, 2026-08-21). Only a summary
+             that was attempted and did NOT arrive is worth saying out loud. #}
+          {% if r.body_summary %}
+          <div class="email-summary">
+            <p class="email-summary-line">
+              {% if r.summary_intent %}
+              <span class="badge badge-pending">{{ r.summary_intent }}</span>
+              {% endif %}
+              {{ r.body_summary }}
+            </p>
+            <p class="email-summary-src">Written for us when the message
+              arrived. The email body itself is not stored.</p>
+            <details class="technical">
+              <summary>Technical details</summary>
+              <p class="hint">Summarised by <code>{{ r.summary_model }}</code>
+                at poll time.</p>
+            </details>
+          </div>
+          {% elif r.summary_status in ('llm-error', 'too-short') %}
+          <div class="email-summary">
+            <p class="email-summary-line"><span class="hint">{{
+              'summary failed — the body was read but not compressed'
+              if r.summary_status == 'llm-error'
+              else 'body below the configured summary floor' }}</span></p>
+          </div>
+          {% endif %}
+        </td>
+        <td>
+          {% if not r.had_attachments %}
+            <span class="hint">no attachments</span>
+          {% else %}
+          <ul class="plain">
+            {% for a in r.attachments %}
+            {# The badge, not the link, is the state. A bare "document #814"
+               reads as success for a document that is staged, unreviewed, or
+               already lapsed -- so the registry status leads, and the type /
+               regulation / expiry line behind it says whether the parse
+               produced something usable. #}
+            <li>
+              {% if a.verdict == 'useful' %}
+                {% set doc = docs.get(a.content_hash) %}
+                {% if doc %}
+                  {#- The stored status, in the § 9 word. The badge CLASS keeps
+                      the stored value -- it is a colour, not a sentence. -#}
+                  {% if doc.status == 'staged' %}
+                  <a href="/staging?doc={{ doc.doc_id }}#doc-{{ doc.doc_id }}"
+                     ><span class="badge badge-{{ doc.status }}">{{ doc.status | word }}</span></a>
+                  {% else %}
+                  <span class="badge badge-{{ doc.status }}">{{ doc.status | word }}</span>
+                  {% endif %}
+                  <a href="/documents/{{ doc.doc_id }}"><strong>{{ doc.type_label }}</strong></a>
+                  {% if doc.regulation and doc.regulation != 'n.a.' %}
+                  <span class="hint">{{ doc.regulation }}</span>
+                  {% endif %}
+                  {% if doc.expires %}
+                    {% if doc.expires < today %}
+                    <span class="badge badge-rejected">expired {{ doc.expires | day }}</span>
+                    {% else %}
+                    <span class="hint">valid to {{ doc.expires | day }}</span>
+                    {% endif %}
+                    {%- if doc.expiry_basis == 'inherited' %}
+                    <span class="hint">(inherited)</span>{% endif %}
+                  {% else %}
+                  <span class="hint">no expiry date</span>
+                  {% endif %}
+                {% elif a.disposition == 'archived' %}
+                  <span class="badge badge-running">Being read</span>
+                {% else %}
+                  <span class="badge badge-pending">{{ disposition_words.get(a.disposition, a.disposition) }}</span>
+                {% endif %}
+              {% else %}
+                <span class="badge badge-failed">skipped</span>
+                <span class="hint">{{ a.reason }}</span>
+              {% endif %}
+              <br><code class="hint">{{ a.filename }}</code>
+              {# Why a document is already staged when the email only just
+                 arrived: we held the bytes before, by another route. Without
+                 this the page reads as if the email produced the document. #}
+              {% set origin = origins.get(a.content_hash) %}
+              {% if origin %}
+              <span class="hint">— already held via
+                {{ origin.other_sources | join(", ") }},
+                {{ origin.first_seen | day }}</span>
+              {% elif a.verdict == 'useful' %}
+              <span class="hint">— first seen in this email</span>
+              {% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="hint">No emails processed yet. The mailbox poll is off until a mailbox is wired (GAP G8).</p>
+  {% endif %}
+</div>
+{% endblock %}

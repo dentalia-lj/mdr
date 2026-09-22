@@ -1,0 +1,54 @@
+# Client-server overlay. Enable it in that server's .env:
+#
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
+#   ARCHIVE_HOST=/srv/compliance/archive
+#
+# Three things a dev checkout does not want and a shared server does
+# (docs/2026-09-18-server-audit.md §§ 6.3, 6.4; docs/dev/deployment.md § 4):
+#
+# 1. The archive becomes a host directory. The base file keeps it in the named
+#    volume `archive_data`, which `docker compose down -v` deletes and a host
+#    backup never sees. Compose merges `volumes` by TARGET path, so these
+#    entries replace that mount rather than adding to it. Checked 2026-09-18
+#    with Compose v5.3.0 (dev): the merged config binds the host path and
+#    names `archive_data` nowhere. tests/test_compose_config.py pins that both
+#    files mount at the same target; the merge itself is Compose's, so prove it
+#    on the server's own Compose before the first `up`:
+#      docker compose config | grep -i archive     # host path twice, no archive_data
+#
+# 2. `worker` gets a memory cap. The first server has 7.6 GiB, no swap, and
+#    Dentalia's production PocketBase on the same kernel. Without a cap the OOM
+#    killer chooses its own victim; with one it can only kill inside this
+#    container, compose restarts it (`unless-stopped`), and the job it held is
+#    reclaimed after the visibility timeout and dead-letters if it keeps
+#    failing. 3g against 2g for postgres left ~1.8 GiB for everything else on
+#    that host (2026-09-18). The worker's peak under a backfill has never been
+#    measured: read `cat /sys/fs/cgroup/memory.peak` inside it after the first
+#    one and move this number with evidence.
+#
+# 3. Logs rotate. The base declares no `logging:`, so every container writes
+#    json-file logs with no size cap, and Caddy logs every request by design.
+#    10 MB x 5 files per container, for the services that run by default.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  postgres:
+    logging: *logging
+  migrate:
+    logging: *logging
+  worker:
+    mem_limit: 3g
+    logging: *logging
+    volumes:
+      - ${ARCHIVE_HOST:?set ARCHIVE_HOST in .env}:/archive
+  web:
+    logging: *logging
+    volumes:
+      - ${ARCHIVE_HOST:?set ARCHIVE_HOST in .env}:/archive:ro
+  caddy:
+    logging: *logging

@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Onboard a supplier{% endblock %}
+{% block content %}
+<h1>Onboard a supplier</h1>
+{#- One word for one thing (spec § 9): a supplier's search recipe is a
+    PLAYBOOK, which is what the page that holds it is called and what the menu
+    calls it. The exit reasons are words too, out of `EXITS` -- the state slug
+    is ours and stays under Technical details. -#}
+<p class="page-lede">Suppliers the system searches for blindly, and the job of
+  giving each one a playbook.</p>
+<details class="page-intro">
+  <summary>A supplier with no playbook is one we look for blindly.</summary>
+  <div class="page-intro-body">
+    Every search for them runs unrestricted, and we know no page that lists
+    their documents. Writing a playbook takes four short steps: who they are,
+    their websites, their document library, and what happens next.
+  </div>
+</details>
+
+{% if done %}
+<div class="result ok">
+  {% set kind, who = done.split(":", 1) %}
+  {% if kind == "skipped" %}{{ who }} is out of the queue. It is listed below and
+    can be put back.{% elif kind == "returned" %}{{ who }} is back in the queue.
+  {% else %}{{ done }}{% endif %}
+</div>
+{% endif %}
+
+{% if next_up %}
+<div class="card">
+  <h2>Next up</h2>
+  <p>
+    <strong>{{ next_up.canonical_name }}</strong> ·
+    {{ next_up['items'] | num }} item{{ "" if next_up['items'] == 1 else "s" }} in
+    Business Central, no playbook.
+  </p>
+  <p>
+    <a class="button" href="/onboarding/{{ next_up.canonical_name | urlencode }}/start">Start with {{ next_up.canonical_name }}</a>
+  </p>
+  <p class="hint">
+    Takes four short steps. Nothing is fetched from anybody's website until you
+    ask for it, and nothing is published without a person.
+  </p>
+</div>
+{% endif %}
+
+{% include "_onboarding_rail.html" %}
+
+<div class="card">
+  <h2>Out of the queue ({{ triaged | length }})</h2>
+  {% if triaged %}
+  {# Shown, never hidden. A queue that silently shrinks is one nobody can
+     audit, and `not-a-manufacturer` on the wrong entity costs us every
+     document that entity publishes. #}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Supplier</th><th>Reason</th><th>Why</th><th>Who</th><th></th></tr></thead>
+    <tbody>
+      {% for t in triaged %}
+      <tr>
+        <td><a href="/manufacturers/{{ t.canonical_name }}">{{ t.canonical_name }}</a></td>
+        {#- The reason in the words the form offered, not the stored slug. -#}
+        <td>{{ exits.get(t.state, t.state) }}</td>
+        <td>{{ t.reason }}</td>
+        <td>{{ t.decided_by }} · {{ t.at | day }}</td>
+        <td>
+          <form method="post" action="/onboarding/{{ t.canonical_name | urlencode }}/unskip">
+            <button type="submit">Put back</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="hint">Nobody has been taken out of the queue yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

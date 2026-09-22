@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Import preview — Dentalia Compliance Registry{% endblock %}
+{% block content %}
+{#
+  The standalone wrapper for `_import_preview.html`.
+
+  `_result.html` hands the operator an `<a href>` to this URL, so it has to
+  survive a bookmark, a reload, or a middle-click. The partial alone does not:
+  htmx is loaded by `base.html`, so a bare fragment renders `hx-post` markup
+  that nothing on the page interprets, and the Apply button silently does
+  nothing at all. Measured against the running app 2026-08-26 -- the click
+  enqueued no job and reported no error.
+
+  The route picks between the two by the `HX-Request` header: htmx's own poll
+  and Apply get the bare fragment (swapping a whole page into `#result` would
+  nest a second document inside the current one), a human typing the URL gets
+  this.
+
+  `partial` names which fragment to include -- `_import_preview.html` for an
+  item run, `_vendor_preview.html` for a vendor one. The wrapper is identical
+  either way, so it is parameterised rather than duplicated.
+#}
+<h1>Import preview</h1>
+<p class="page-lede">What this export would change, before anything is written.</p>
+<p><a href="/import">&larr; Back to import</a></p>
+<div id="result">
+  {% include partial %}
+</div>
+{% endblock %}
