@@ -229,6 +229,55 @@ def test_imap_second_poll_reaches_what_the_first_deferred():
     assert (second.already_logged, second.deferred) == (2, 0)
 
 
+def _capture_imaplib(monkeypatch):
+    """Replace imaplib's constructors so the DEFAULT factory path runs without
+    a network, and record exactly how it built the connection."""
+    import imaplib
+
+    server = RecordingImap(SEP)
+    seen = {}
+
+    def ssl_ctor(host, port, **kw):
+        seen.update(kind="ssl", **kw)
+        return server
+
+    def plain_ctor(host, port, **kw):
+        seen.update(kind="plain", **kw)
+        return server
+
+    monkeypatch.setattr(imaplib, "IMAP4_SSL", ssl_ctor)
+    monkeypatch.setattr(imaplib, "IMAP4", plain_ctor)
+    return seen
+
+
+def test_imap_tls_verifies_the_server_certificate(monkeypatch):
+    """imaplib's own default context is UNVERIFIED (ssl._create_stdlib_context
+    is _create_unverified_context): CERT_NONE, no hostname check. The mailbox
+    password crosses the internet, so the adapter must pass a verifying one."""
+    import ssl
+
+    seen = _capture_imaplib(monkeypatch)
+    ImapEmailAdapter(host="mail.example.test", user="u", password="p",
+                     since="2026-09-24").fetch_new(processed=_none_logged)
+
+    ctx = seen.get("ssl_context")
+    assert seen["kind"] == "ssl"
+    assert ctx is not None, "no ssl_context: imaplib falls back to an unverified one"
+    assert ctx.verify_mode == ssl.CERT_REQUIRED
+    assert ctx.check_hostname is True
+
+
+def test_imap_connection_has_a_timeout(monkeypatch):
+    """Without one, a hung server blocks the worker process, and every other
+    job queued behind it, indefinitely."""
+    seen = _capture_imaplib(monkeypatch)
+    ImapEmailAdapter(host="h", user="u", password="p", ssl=False,
+                     since="2026-09-24").fetch_new(processed=_none_logged)
+
+    assert seen["kind"] == "plain"
+    assert seen.get("timeout") and seen["timeout"] > 0
+
+
 @pytest.mark.parametrize("d, expected", [
     (date(2026, 1, 1), "01-Jan-2026"),
     (date(2026, 9, 4), "04-Sep-2026"),

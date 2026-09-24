@@ -270,6 +270,12 @@ _IMAP_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 
+#: Seconds any single socket operation may take. Without it a hung server blocks
+#: the worker process, and every job queued behind the poll, indefinitely. Per
+#: operation, not per poll, so a large attachment streaming steadily is fine.
+IMAP_TIMEOUT_S = 60
+
+
 def imap_date(d: date) -> str:
     """`date(2026, 9, 4)` -> `"04-Sep-2026"`, the RFC 3501 `date` form."""
     return f"{d.day:02d}-{_IMAP_MONTHS[d.month - 1]}-{d.year}"
@@ -355,10 +361,22 @@ class ImapEmailAdapter:
     def _connect(self):
         self._require_configured()
         factory = self._imap_factory
-        if factory is None:  # pragma: no cover - real network I/O
+        if factory is None:
             import imaplib
+            import ssl
 
-            factory = imaplib.IMAP4_SSL if self.ssl else imaplib.IMAP4
+            if self.ssl:
+                # imaplib's own default is UNVERIFIED -- ssl._create_stdlib_context
+                # is _create_unverified_context: CERT_NONE, no hostname check --
+                # and the mailbox password crosses the internet. Verify.
+                ctx = ssl.create_default_context()
+
+                def factory(host, port):
+                    return imaplib.IMAP4_SSL(host, port, ssl_context=ctx,
+                                             timeout=IMAP_TIMEOUT_S)
+            else:
+                def factory(host, port):
+                    return imaplib.IMAP4(host, port, timeout=IMAP_TIMEOUT_S)
         conn = factory(self.host, self.port)
         conn.login(self.user, self.password)
         # readonly=True sends EXAMINE: the server itself refuses flag changes.
