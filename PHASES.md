@@ -201,7 +201,7 @@ Compatibility on 2026-08-18 as `SPP` — the registry holds 5 of them.)*
 
 ## 5. Decisions
 
-**Every ruling is in [docs/decisions.md](docs/decisions.md) — 97 rows, and the
+**Every ruling is in [docs/decisions.md](docs/decisions.md) — 98 rows, and the
 first place to look before proposing anything that sounds already-decided.**
 Split out of this file 2026-09-04. The most recent, because they are the ones a
 current session collides with:

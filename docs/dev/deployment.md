@@ -57,9 +57,9 @@ Two documents answer "what is this system" for the client: [what it does, EN](..
   reachable from the server and filtered from elsewhere, so it is allowlisted to
   the server's address. A container leaves through the host's NAT with the same
   source IPv4, so the allowlist admits it too. Not yet exercised from inside a
-  container. **Plain HTTP means the BC credentials cross the internet
-  unencrypted**; the access request asked for HTTPS for exactly that reason, and
-  that is still open with Dentalia's network side.
+  container. **Plain HTTP is accepted** (Denis, 2026-09-24,
+  [decisions](../decisions.md)): the allowlist is the protection relied on, and
+  the credentials cross between the two sites unencrypted.
 
 ### 1.1 Directories
 
