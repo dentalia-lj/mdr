@@ -215,6 +215,9 @@ services:
       IMAP_FOLDER: ${IMAP_FOLDER:-INBOX}
       IMAP_USER: ${IMAP_USER:-}
       IMAP_PASSWORD: ${IMAP_PASSWORD:-}
+      # First day to read, YYYY-MM-DD. Required once the mailbox is set: the poll
+      # dead-letters without it rather than read the whole mailbox's history.
+      EMAIL_POLL_SINCE: ${EMAIL_POLL_SINCE:-}
       EMAIL_POLL_MAX_MESSAGES: ${EMAIL_POLL_MAX_MESSAGES:-200}
     volumes:
       - archive_data:/archive

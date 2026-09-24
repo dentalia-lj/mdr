@@ -3,7 +3,14 @@ sibling-producer / §5 EXTRACT, handbook row 6).
 
 Reads a dedicated mailbox, pulls PDF attachments, archives each under our
 control (hash-addressed, PRD §9), and enters the spine at extract.doc — the same
-door backfill.scan and upload.ingest use. Inbound attachments carry
+door backfill.scan and upload.ingest use.
+
+Reads ONLY: mail that arrived on or after `email.poll_since`, with the folder
+opened read-only, so nothing on the server is marked, moved or deleted
+(`app/adapters/email.py`, `ImapEmailAdapter`). UIDs already in the ledger are
+filtered out before anything is downloaded; new mail past
+`email.poll_max_messages` waits for the next poll and is counted as
+`deferred_to_next_poll`. Inbound attachments carry
 `group_id=None` and self-identify from their content (REF list / Basic UDI-DI),
 exactly like backfill.
 
@@ -267,6 +274,20 @@ def _already_processed(conn, mailbox: str, uid_validity: str, uid: str,
     ).fetchone() is not None
 
 
+def _logged_uids(conn, mailbox: str):
+    """The ledger as the adapter's pre-fetch filter: one query per UIDVALIDITY
+    epoch, returning every UID already recorded for this mailbox. It is what
+    lets the poll search a fixed start date forever without downloading
+    everything since it on every run."""
+    def processed(uid_validity: str) -> set[str]:
+        rows = conn.execute(
+            "SELECT imap_uid FROM email_poll_log WHERE mailbox=%s AND uid_validity=%s",
+            (mailbox, uid_validity),
+        ).fetchall()
+        return {r["imap_uid"] for r in rows}
+    return processed
+
+
 #: The chase's reference as `email_request.subject_for` stamps it.
 _REFERENCE = re.compile(r"\[DENT-(\d+)\]")
 _ADDR_DOMAIN = re.compile(r"@([A-Za-z0-9.-]+)")
@@ -343,19 +364,31 @@ def handle_email_poll(conn, job, *, adapter=None, store=None, llm=None) -> dict:
         adapter = make_email_adapter(cfg)
 
     r = Result()
+    mailbox = adapter.mailbox_id
 
     try:
-        messages = adapter.fetch_unseen(limit=cfg.email.poll_max_messages)
+        batch = adapter.fetch_new(
+            processed=_logged_uids(conn, mailbox),
+            limit=cfg.email.poll_max_messages,
+        )
     except EmailNotConfigured as exc:
         # A keyless poll is a skipped rung, not a dead job (mirrors DISCOVER's
         # SearchNotConfigured). The scheduler flag is off until G8 anyway.
+        # A configured mailbox with no EMAIL_POLL_SINCE is NOT this: that
+        # raises ValueError and dead-letters, loudly, on purpose.
         log.info("email.poll: %s", exc)
         return {**r.as_dict(), "outcome": "not-configured"}
 
-    mailbox = adapter.mailbox_id
+    # Counted, never silent: mail already in the ledger is not fetched again,
+    # and new mail past the per-poll cap waits for the next poll.
+    if batch.already_logged:
+        r.count("already_processed", batch.already_logged)
+    if batch.deferred:
+        r.count("deferred_to_next_poll", batch.deferred)
+
     own_domain = _domain(mailbox)
 
-    for msg in messages:
+    for msg in batch.messages:
         r.count("messages_seen")
 
         if _already_processed(conn, mailbox, msg.uid_validity, msg.uid, msg.message_id):
@@ -454,8 +487,8 @@ def handle_email_poll(conn, job, *, adapter=None, store=None, llm=None) -> dict:
                 had_attachments=bool(msg.attachments),
                 attachments=att_records, emitted=emitted, summary=summary,
                 renewal_request_id=request_id)
-
-        adapter.mark_seen(msg.uid)  # courtesy; the ledger row is the real guard
+        # Nothing is marked on the server. The mailbox is read-only to us; this
+        # ledger row is the whole record that the message was processed.
 
     return {**r.as_dict(), "outcome": "polled", "mailbox": mailbox}
 

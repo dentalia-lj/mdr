@@ -198,7 +198,7 @@ class Adapters:
     implementation is invisible downstream (CLAUDE.md invariant 11).
 
     `email` default `imap` is safe: the S2.4 poll is flag-gated off
-    (`scheduler.email_poll_enabled`) and `ImapEmailAdapter.fetch_unseen` raises
+    (`scheduler.email_poll_enabled`) and `ImapEmailAdapter.fetch_new` raises
     `EmailNotConfigured` while host/creds are empty, so nothing connects until
     Denis wires the mailbox (GAP G8). Tests inject `FakeEmailAdapter`."""
 
@@ -315,13 +315,19 @@ class Email:
 
     `send_policy` — 'draft' = draft-for-approval (default), 'auto' (outbound slice).
     `imap_host`/`imap_port`/`imap_ssl`/`imap_folder` — the polled mailbox.
-    `poll_max_messages` — cap on messages pulled per poll (politeness/cost)."""
+    `poll_since` — ISO date (YYYY-MM-DD). Mail that arrived before it is never
+    read. Required once the mailbox is configured: the poll refuses to run
+    without it rather than read a whole mailbox's history (Denis, 2026-09-24:
+    "only from the day of first prod deploy").
+    `poll_max_messages` — messages taken per poll. Pacing, not a limit: new mail
+    past it stays for the next poll and is counted on the job result."""
 
     send_policy: str = "draft"
     imap_host: str = ""
     imap_port: int = 993
     imap_ssl: bool = True
     imap_folder: str = "INBOX"
+    poll_since: str = ""
     poll_max_messages: int = 200
 
     # ZIP expansion (2026-08-20). Suppliers send archives of documents, and the
@@ -940,6 +946,7 @@ def load_config() -> Config:
         imap_port=_int("IMAP_PORT", _dig(t, "email", "imap_port"), 993),
         imap_ssl=_bool("IMAP_SSL", _dig(t, "email", "imap_ssl"), True),
         imap_folder=_str("IMAP_FOLDER", _dig(t, "email", "imap_folder"), "INBOX"),
+        poll_since=_str("EMAIL_POLL_SINCE", _dig(t, "email", "poll_since"), ""),
         poll_max_messages=_int(
             "EMAIL_POLL_MAX_MESSAGES", _dig(t, "email", "poll_max_messages"), 200
         ),

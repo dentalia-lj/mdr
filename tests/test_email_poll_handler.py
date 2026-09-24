@@ -482,6 +482,24 @@ def test_mixed_attachments_one_useful_one_noise(conn, tmp_path):
     assert len(_jobs(conn, f"extract:{h}")) == 1
 
 
+def test_mail_past_the_cap_is_counted_and_taken_next_poll(conn, tmp_path, monkeypatch):
+    """The per-poll cap paces; it never drops. What it holds back is on the
+    job result, and the next poll takes it because the ledger filter runs first."""
+    monkeypatch.setenv("EMAIL_POLL_MAX_MESSAGES", "1")
+    store = LocalFsStore(str(tmp_path))
+    msgs = [_msg("60", []), _msg("61", [])]
+
+    first = _run(conn, msgs, store)
+    assert first["counts"]["messages_seen"] == 1
+    assert first["counts"]["deferred_to_next_poll"] == 1
+
+    second = _run(conn, msgs, store)
+    assert second["counts"]["messages_seen"] == 1
+    assert second["counts"]["already_processed"] == 1
+    assert "deferred_to_next_poll" not in second["counts"]
+    assert conn.execute("SELECT count(*) c FROM email_poll_log").fetchone()["c"] == 2
+
+
 # --- not configured: a keyless poll is a skipped rung, not a dead job ------
 def test_not_configured_returns_cleanly(conn, tmp_path):
     store = LocalFsStore(str(tmp_path))

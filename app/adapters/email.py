@@ -24,8 +24,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Protocol, runtime_checkable
+from datetime import date, datetime
+from typing import Callable, Protocol, runtime_checkable
 
 __all__ = [
     "EmailAttachment",
@@ -33,6 +33,7 @@ __all__ = [
     "EmailMessage",
     "EmailAdapter",
     "EmailNotConfigured",
+    "PollBatch",
     "ImapEmailAdapter",
     "FakeEmailAdapter",
     "make_email_adapter",
@@ -82,6 +83,25 @@ class EmailMessage:
     body_text: str = ""
 
 
+@dataclass(frozen=True)
+class PollBatch:
+    """What one poll took from the mailbox, and what it knowingly did not.
+
+    `already_logged` — on the server, already in `email_poll_log`, so never
+    fetched again. `deferred` — new, but past the per-poll cap; the next poll
+    takes them. Both are counted on the job result: nothing is skipped silently."""
+
+    messages: list[EmailMessage]
+    already_logged: int = 0
+    deferred: int = 0
+
+
+#: `processed(uid_validity)` -> the UIDs the ledger already holds for this
+#: mailbox in that UIDVALIDITY epoch. The adapter calls it once, after opening
+#: the folder, so the filter runs BEFORE any message is downloaded.
+ProcessedUids = Callable[[str], "set[str]"]
+
+
 @runtime_checkable
 class EmailAdapter(Protocol):
     @property
@@ -90,9 +110,9 @@ class EmailAdapter(Protocol):
         so two mailboxes cannot collide on the same IMAP UID."""
         ...
 
-    def fetch_unseen(self, *, limit: int | None = None) -> list[EmailMessage]: ...
-
-    def mark_seen(self, uid: str) -> None: ...
+    def fetch_new(
+        self, *, processed: ProcessedUids, limit: int | None = None
+    ) -> PollBatch: ...
 
 
 # --------------------------------------------------------------------------- #
@@ -244,6 +264,17 @@ def parse_message(uid: str, uid_validity: str, raw_bytes: bytes) -> EmailMessage
     )
 
 
+#: RFC 3501 dates use English month abbreviations whatever the host locale is;
+#: `strftime("%b")` would give "sep." under a Slovene one.
+_IMAP_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def imap_date(d: date) -> str:
+    """`date(2026, 9, 4)` -> `"04-Sep-2026"`, the RFC 3501 `date` form."""
+    return f"{d.day:02d}-{_IMAP_MONTHS[d.month - 1]}-{d.year}"
+
+
 # --------------------------------------------------------------------------- #
 # live IMAP adapter (built to the imaplib API; not connected in this slice)
 # --------------------------------------------------------------------------- #
@@ -253,9 +284,24 @@ class ImapEmailAdapter:
     stdlib, but the discipline matches search.py/fetcher.py).
 
     Uses UID commands throughout so message coordinates are stable across the
-    session. Construction is inert; the connection opens on the first
-    `fetch_unseen`. An empty host/user/password raises `EmailNotConfigured`
-    (a skipped rung, not a dead job)."""
+    session. Construction is inert; the connection opens on `fetch_new`. An
+    empty host/user/password raises `EmailNotConfigured` (a skipped rung, not a
+    dead job); a configured mailbox without a start date raises `ValueError`
+    (a dead job, loudly), because the alternative is reading its whole history.
+
+    READ ONLY, and it has to be structurally rather than by care, since the
+    mailbox is a person's as well as ours:
+
+    - `EXAMINE`, not `SELECT`: the server refuses any flag change this session.
+    - `BODY.PEEK[]`, not `RFC822`: a plain body fetch sets `\\Seen` by itself.
+    - `LOGOUT` only, never `CLOSE`: `CLOSE` on a writable mailbox expunges every
+      message flagged `\\Deleted`, including ones another client flagged.
+    - no `STORE`, `EXPUNGE`, `MOVE` or `COPY` anywhere. `tests/test_email_adapter.py`
+      records every command sent and asserts none of them appears.
+
+    Nothing is marked on the server to say a message was processed. Exchange's
+    IMAP keeps only the standard flags, and those belong to the people reading
+    the mailbox; the record of what the poll took is `email_poll_log`."""
 
     def __init__(
         self,
@@ -266,6 +312,8 @@ class ImapEmailAdapter:
         password: str = "",
         folder: str = "INBOX",
         ssl: bool = True,
+        since: str = "",
+        imap_factory: Callable | None = None,
     ) -> None:
         self.host = host
         self.port = port
@@ -273,7 +321,9 @@ class ImapEmailAdapter:
         self.password = password
         self.folder = folder
         self.ssl = ssl
-        self._conn = None
+        self.since = since
+        # Test seam: a callable (host, port) -> connection with imaplib's API.
+        self._imap_factory = imap_factory
         self._uid_validity: str | None = None
 
     @property
@@ -281,82 +331,103 @@ class ImapEmailAdapter:
         return f"{self.host}/{self.user}/{self.folder}"
 
     # -- connection ---------------------------------------------------------
-    def _require_configured(self) -> None:
+    def _require_configured(self) -> date:
         if not self.host or not self.user or not self.password:
             raise EmailNotConfigured(
                 "IMAP mailbox not configured (IMAP_HOST/IMAP_USER/IMAP_PASSWORD "
                 "empty) — the email.poll rung is not wired (GAP G8). Set the "
                 "credentials or leave scheduler.email_poll_enabled off."
             )
+        if not self.since:
+            raise ValueError(
+                "EMAIL_POLL_SINCE is unset. With a mailbox configured, the poll "
+                "refuses to run without a start date rather than read the "
+                "mailbox's whole history. Set it to the first day to read, "
+                "YYYY-MM-DD."
+            )
+        try:
+            return date.fromisoformat(self.since)
+        except ValueError:
+            raise ValueError(
+                f"EMAIL_POLL_SINCE={self.since!r} is not a date; expected YYYY-MM-DD"
+            ) from None
 
-    def _connect(self):  # pragma: no cover - real network I/O
-        import imaplib
-
+    def _connect(self):
         self._require_configured()
-        conn = (imaplib.IMAP4_SSL if self.ssl else imaplib.IMAP4)(self.host, self.port)
+        factory = self._imap_factory
+        if factory is None:  # pragma: no cover - real network I/O
+            import imaplib
+
+            factory = imaplib.IMAP4_SSL if self.ssl else imaplib.IMAP4
+        conn = factory(self.host, self.port)
         conn.login(self.user, self.password)
-        typ, _ = conn.select(self.folder, readonly=False)
+        # readonly=True sends EXAMINE: the server itself refuses flag changes.
+        typ, _ = conn.select(self.folder, readonly=True)
         if typ != "OK":
-            raise RuntimeError(f"IMAP SELECT {self.folder!r} failed: {typ}")
+            raise RuntimeError(f"IMAP EXAMINE {self.folder!r} failed: {typ}")
         # UIDVALIDITY comes back as an untagged response to SELECT.
         vtyp, vdata = conn.response("UIDVALIDITY")
         if vdata and vdata[0]:
             self._uid_validity = vdata[0].decode() if isinstance(vdata[0], bytes) else str(vdata[0])
         else:
             self._uid_validity = "0"
-        self._conn = conn
         return conn
 
     # -- reads --------------------------------------------------------------
-    def fetch_unseen(self, *, limit: int | None = None) -> list[EmailMessage]:
-        # Not-configured is checked eagerly so a keyless poll raises the typed
-        # skip signal before any socket work.
-        self._require_configured()
-        conn = self._connect()  # pragma: no cover - real network I/O
-        try:  # pragma: no cover - real network I/O
-            typ, data = conn.uid("SEARCH", None, "UNSEEN")
+    def fetch_new(
+        self, *, processed: ProcessedUids, limit: int | None = None
+    ) -> PollBatch:
+        """Every message that arrived on or after `since` and is not in the
+        ledger, oldest first, at most `limit` of them.
+
+        `SINCE` compares the server's arrival date, day granular, so the start
+        day itself is included. \\Seen plays no part: a message a person has
+        already opened is still new to us, and nothing we do opens one for them."""
+        # Checked eagerly so a keyless poll raises the typed skip signal, and a
+        # dateless one the loud error, before any socket work.
+        since = self._require_configured()
+        conn = self._connect()
+        try:
+            typ, data = conn.uid("SEARCH", None, "SINCE", imap_date(since))
             if typ != "OK":
                 raise RuntimeError(f"IMAP UID SEARCH failed: {typ}")
-            uids = (data[0].split() if data and data[0] else [])
-            if limit is not None:
-                uids = uids[:limit]
+            found = sorted(
+                {(u.decode() if isinstance(u, bytes) else str(u))
+                 for u in (data[0].split() if data and data[0] else [])},
+                key=int,
+            )
+            logged = processed(self._uid_validity or "0")
+            new = [u for u in found if u not in logged]
+            take = new if limit is None else new[:limit]
             messages: list[EmailMessage] = []
-            for raw_uid in uids:
-                uid = raw_uid.decode() if isinstance(raw_uid, bytes) else str(raw_uid)
-                ftyp, fdata = conn.uid("FETCH", uid, "(RFC822)")
+            for uid in take:
+                ftyp, fdata = conn.uid("FETCH", uid, "(BODY.PEEK[])")
                 if ftyp != "OK" or not fdata or not isinstance(fdata[0], tuple):
                     continue
-                raw_bytes = fdata[0][1]
-                messages.append(parse_message(uid, self._uid_validity or "0", raw_bytes))
-            return messages
-        finally:  # pragma: no cover - real network I/O
+                messages.append(parse_message(uid, self._uid_validity or "0", fdata[0][1]))
+            return PollBatch(
+                messages,
+                already_logged=len(found) - len(new),
+                deferred=len(new) - len(take),
+            )
+        finally:
+            # LOGOUT only. CLOSE would expunge \Deleted messages on a writable
+            # mailbox; EXAMINE already makes this one read-only, and not sending
+            # CLOSE at all keeps that true even if the open mode ever changes.
             try:
-                conn.close()
                 conn.logout()
             except Exception:
                 pass
-
-    def mark_seen(self, uid: str) -> None:  # pragma: no cover - real network I/O
-        # Courtesy only — the durable email_poll_log row is the reprocess guard,
-        # not \Seen (spec §2). Best-effort: a mailbox that refuses the flag must
-        # not fail the poll, because the ledger already recorded the message.
-        conn = self._conn
-        if conn is None:
-            return
-        try:
-            conn.uid("STORE", uid, "+FLAGS", "(\\Seen)")
-        except Exception:
-            pass
 
 
 # --------------------------------------------------------------------------- #
 # test/dev fake
 # --------------------------------------------------------------------------- #
 class FakeEmailAdapter:
-    """In-memory mailbox for tests/dev. `fetch_unseen` returns injected messages
-    the fake has not been told are seen; `mark_seen` records the UID. The
-    handler's `email_poll_log` remains the durable authority, so a test can also
-    prove idempotency without relying on this seen-set."""
+    """In-memory mailbox for tests/dev. `fetch_new` returns the injected
+    messages whose UID the ledger callback does not already hold, in the order
+    given, honouring `limit` and counting what it held back — the same contract
+    as the IMAP adapter, minus the network and the start date."""
 
     def __init__(
         self,
@@ -367,27 +438,36 @@ class FakeEmailAdapter:
     ) -> None:
         self._messages = list(messages or [])
         self._mailbox_id = mailbox_id
-        self._seen: set[str] = set()
         self._error = error
 
     @property
     def mailbox_id(self) -> str:
         return self._mailbox_id
 
-    def fetch_unseen(self, *, limit: int | None = None) -> list[EmailMessage]:
+    def fetch_new(
+        self, *, processed: ProcessedUids, limit: int | None = None
+    ) -> PollBatch:
         if self._error is not None:
             raise self._error
-        out = [m for m in self._messages if m.uid not in self._seen]
-        return out[:limit] if limit is not None else out
-
-    def mark_seen(self, uid: str) -> None:
-        self._seen.add(str(uid))
+        logged_by_epoch: dict[str, set[str]] = {}
+        new: list[EmailMessage] = []
+        for m in self._messages:
+            if m.uid_validity not in logged_by_epoch:
+                logged_by_epoch[m.uid_validity] = processed(m.uid_validity)
+            if m.uid not in logged_by_epoch[m.uid_validity]:
+                new.append(m)
+        take = new if limit is None else new[:limit]
+        return PollBatch(
+            take,
+            already_logged=len(self._messages) - len(new),
+            deferred=len(new) - len(take),
+        )
 
 
 def make_email_adapter(cfg) -> EmailAdapter:
     """Config-switched adapter over the closed `email` enum (`imap | fake`).
     `cfg` is the full composed `Config`. Credentials may be empty — the IMAP
-    adapter raises `EmailNotConfigured` from `fetch_unseen`, so a misconfigured
+    adapter raises `EmailNotConfigured` from `fetch_new`, so a misconfigured
     but flag-gated poll skips cleanly rather than dead-lettering."""
     name = cfg.adapters.email
     if name == "imap":
@@ -398,6 +478,7 @@ def make_email_adapter(cfg) -> EmailAdapter:
             password=cfg.connection.imap_password,
             folder=cfg.email.imap_folder,
             ssl=cfg.email.imap_ssl,
+            since=cfg.email.poll_since,
         )
     if name == "fake":
         return FakeEmailAdapter()

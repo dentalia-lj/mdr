@@ -7,6 +7,7 @@ bytes — no IMAP server (GAP G8).
 
 from __future__ import annotations
 
+from datetime import date
 from email.message import EmailMessage as StdEmailMessage
 
 import pytest
@@ -20,6 +21,7 @@ from app.adapters.email import (
     ImapEmailAdapter,
     make_email_adapter,
     extract_body_text,
+    imap_date,
     parse_message,
 )
 from app.config import load_config
@@ -46,17 +48,194 @@ def test_make_email_adapter_selects_fake(monkeypatch):
     assert isinstance(adapter, FakeEmailAdapter)
 
 
+def test_make_email_adapter_carries_the_start_date(monkeypatch):
+    monkeypatch.delenv("EMAIL_ADAPTER", raising=False)
+    monkeypatch.setenv("EMAIL_POLL_SINCE", "2026-09-24")
+    assert make_email_adapter(load_config()).since == "2026-09-24"
+
+
 def test_make_email_adapter_unknown_raises(monkeypatch):
     monkeypatch.setenv("EMAIL_ADAPTER", "graph")
     with pytest.raises(ValueError):
         make_email_adapter(load_config())
 
 
+def _none_logged(uid_validity):
+    return set()
+
+
 # --- ImapEmailAdapter: never connects unconfigured -------------------------
-def test_imap_fetch_unseen_unconfigured_raises():
+def test_imap_fetch_new_unconfigured_raises():
     adapter = ImapEmailAdapter(host="", user="", password="")
     with pytest.raises(EmailNotConfigured):
-        adapter.fetch_unseen()
+        adapter.fetch_new(processed=_none_logged)
+
+
+def test_imap_without_a_start_date_refuses_loudly():
+    """Credentials set, EMAIL_POLL_SINCE not: the poll must NOT read the whole
+    mailbox's history. ValueError, not EmailNotConfigured, so it dead-letters
+    and alerts rather than skipping quietly."""
+    adapter = ImapEmailAdapter(host="h", user="u", password="p", since="",
+                               imap_factory=_boom)
+    with pytest.raises(ValueError, match="EMAIL_POLL_SINCE is unset"):
+        adapter.fetch_new(processed=_none_logged)
+
+
+def test_imap_with_a_malformed_start_date_refuses_loudly():
+    adapter = ImapEmailAdapter(host="h", user="u", password="p", since="24.9.2026",
+                               imap_factory=_boom)
+    with pytest.raises(ValueError, match="not a date"):
+        adapter.fetch_new(processed=_none_logged)
+
+
+def _boom(host, port):
+    raise AssertionError("must refuse before opening any connection")
+
+
+# --- ImapEmailAdapter against a recording IMAP double ----------------------
+#
+# The wire path used to be `pragma: no cover` because no IMAP server exists in
+# the suite. This double speaks imaplib's call shapes and records every command
+# sent, which is what the read-only guarantee is asserted against.
+
+_RAW = (b"From: a@manu.example\r\nSubject: s\r\nMessage-ID: <m%d@x>\r\n"
+        b"\r\nbody %d\r\n")
+
+
+class RecordingImap:
+    """UIDs 1..n; `arrived[uid]` is the INTERNALDATE the server compares SINCE with."""
+
+    def __init__(self, arrived: dict[int, date], uidvalidity: str = "7"):
+        self.arrived = arrived
+        self.uidvalidity = uidvalidity
+        self.commands: list[tuple] = []
+
+    def __call__(self, host, port):          # the factory
+        self.commands.append(("CONNECT", host, port))
+        return self
+
+    def login(self, user, password):
+        self.commands.append(("LOGIN", user))
+        return "OK", [b"logged in"]
+
+    def select(self, mailbox, readonly=False):
+        self.commands.append(("EXAMINE" if readonly else "SELECT", mailbox))
+        return "OK", [str(len(self.arrived)).encode()]
+
+    def response(self, code):
+        return code, [self.uidvalidity.encode()]
+
+    def uid(self, command, *args):
+        args = tuple(a for a in args if a is not None)
+        self.commands.append(("UID", command.upper(), *args))
+        if command.upper() == "SEARCH":
+            assert args[0] == "SINCE", args
+            d, mon, y = args[1].split("-")
+            months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+            floor = date(int(y), months.index(mon) + 1, int(d))
+            hits = sorted(u for u, day in self.arrived.items() if day >= floor)
+            return "OK", [" ".join(str(u) for u in reversed(hits)).encode()]
+        if command.upper() == "FETCH":
+            u = int(args[0])
+            return "OK", [(b"%d (UID %d BODY[] {99}" % (u, u), _RAW % (u, u)), b")"]
+        return "NO", [b"unexpected"]
+
+    def logout(self):
+        self.commands.append(("LOGOUT",))
+        return "BYE", [b""]
+
+    # Present so a regression that calls them is recorded, not an AttributeError
+    def close(self):
+        self.commands.append(("CLOSE",))
+
+    def store(self, *a):
+        self.commands.append(("STORE",) + a)
+
+    def expunge(self):
+        self.commands.append(("EXPUNGE",))
+
+    def verbs(self) -> set[str]:
+        out = set()
+        for c in self.commands:
+            out.add(c[1] if c[0] == "UID" else c[0])
+        return out
+
+
+def _adapter(server, since="2026-09-24"):
+    return ImapEmailAdapter(host="mail.example.test", user="mdr@x.test",
+                            password="p", since=since, imap_factory=server)
+
+
+SEP = {1: date(2026, 9, 20), 2: date(2026, 9, 23), 3: date(2026, 9, 24),
+       4: date(2026, 9, 25), 5: date(2026, 9, 26)}
+
+
+def test_imap_reads_only_mail_on_or_after_the_start_date():
+    server = RecordingImap(SEP)
+    batch = _adapter(server).fetch_new(processed=_none_logged)
+
+    assert [m.uid for m in batch.messages] == ["3", "4", "5"]   # the start day included
+    assert ("UID", "SEARCH", "SINCE", "24-Sep-2026") in server.commands
+
+
+def test_imap_is_read_only_on_the_wire():
+    """Never delete, never mark: EXAMINE not SELECT, BODY.PEEK[] not RFC822,
+    LOGOUT not CLOSE, and no STORE / EXPUNGE / MOVE / COPY at all."""
+    server = RecordingImap(SEP)
+    _adapter(server).fetch_new(processed=_none_logged)
+
+    assert "EXAMINE" in server.verbs()
+    assert not server.verbs() & {"SELECT", "CLOSE", "STORE", "EXPUNGE", "MOVE", "COPY"}
+    fetches = [c for c in server.commands if c[:2] == ("UID", "FETCH")]
+    assert fetches and all(c[3] == "(BODY.PEEK[])" for c in fetches)
+    assert server.commands[-1] == ("LOGOUT",)
+
+
+def test_imap_filters_the_ledger_before_downloading_anything():
+    server = RecordingImap(SEP)
+    asked = []
+
+    def processed(uid_validity):
+        asked.append(uid_validity)
+        return {"3", "4"}
+
+    batch = _adapter(server).fetch_new(processed=processed)
+
+    assert asked == ["7"]                                      # once, in the right epoch
+    assert [m.uid for m in batch.messages] == ["5"]
+    assert batch.already_logged == 2
+    fetched = [c[2] for c in server.commands if c[:2] == ("UID", "FETCH")]
+    assert fetched == ["5"]                                    # 3 and 4 never downloaded
+
+
+def test_imap_cap_paces_oldest_first_and_counts_the_rest():
+    server = RecordingImap(SEP)
+    batch = _adapter(server).fetch_new(processed=_none_logged, limit=2)
+
+    assert [m.uid for m in batch.messages] == ["3", "4"]       # oldest first
+    assert batch.deferred == 1                                  # 5 waits, counted
+
+
+def test_imap_second_poll_reaches_what_the_first_deferred():
+    """With the ledger filter before the cap, a fixed start date can never
+    starve: each poll moves forward."""
+    server = RecordingImap(SEP)
+    first = _adapter(server).fetch_new(processed=_none_logged, limit=2)
+    logged = {m.uid for m in first.messages}
+    second = _adapter(server).fetch_new(processed=lambda uv: logged, limit=2)
+
+    assert [m.uid for m in second.messages] == ["5"]
+    assert (second.already_logged, second.deferred) == (2, 0)
+
+
+@pytest.mark.parametrize("d, expected", [
+    (date(2026, 1, 1), "01-Jan-2026"),
+    (date(2026, 9, 4), "04-Sep-2026"),
+    (date(2026, 12, 31), "31-Dec-2026"),
+])
+def test_imap_date_is_rfc3501_and_locale_free(d, expected):
+    assert imap_date(d) == expected
 
 
 def test_imap_mailbox_id_shape():
@@ -65,22 +244,25 @@ def test_imap_mailbox_id_shape():
 
 
 # --- FakeEmailAdapter ------------------------------------------------------
-def test_fake_fetch_unseen_returns_injected_and_respects_limit():
+def test_fake_fetch_new_returns_injected_and_paces_with_the_cap():
     fake = FakeEmailAdapter([_msg("1"), _msg("2"), _msg("3")])
-    assert [m.uid for m in fake.fetch_unseen()] == ["1", "2", "3"]
-    assert [m.uid for m in fake.fetch_unseen(limit=2)] == ["1", "2"]
+    assert [m.uid for m in fake.fetch_new(processed=_none_logged).messages] == ["1", "2", "3"]
+    batch = fake.fetch_new(processed=_none_logged, limit=2)
+    assert [m.uid for m in batch.messages] == ["1", "2"]
+    assert batch.deferred == 1
 
 
-def test_fake_mark_seen_hides_message():
+def test_fake_skips_what_the_ledger_holds():
     fake = FakeEmailAdapter([_msg("1"), _msg("2")])
-    fake.mark_seen("1")
-    assert [m.uid for m in fake.fetch_unseen()] == ["2"]
+    batch = fake.fetch_new(processed=lambda uv: {"1"})
+    assert [m.uid for m in batch.messages] == ["2"]
+    assert batch.already_logged == 1
 
 
 def test_fake_error_propagates():
     fake = FakeEmailAdapter(error=RuntimeError("imap down"))
     with pytest.raises(RuntimeError):
-        fake.fetch_unseen()
+        fake.fetch_new(processed=_none_logged)
 
 
 # --- parse_message: real RFC822 bytes, no server ---------------------------
