@@ -60,6 +60,10 @@ trap:
    archive and flag-set, or a mailbox migration can clear or set it wrongly).
    `\Seen` is used only as the adapter's cheap first-pass filter
    (`UID SEARCH UNSEEN`); the ledger is what actually decides.
+   **Superseded 2026-09-24:** `\Seen` plays no part at all now. The adapter
+   searches `SINCE email.poll_since` and filters against the ledger before
+   downloading; the folder is opened read-only and nothing is marked
+   (`app/adapters/email.py`, `docs/dev/handlers.md`).
 
 2. **Content-attachment dedupe (existing).** The `fetch_log` content-hash
    ledger + `extract:{content_hash}` dedupe key. Two different emails carrying
@@ -114,6 +118,13 @@ class EmailAdapter(Protocol):
     def mark_seen(self, uid: str) -> None: ...
 ```
 
+> **Superseded 2026-09-24.** The interface is now
+> `fetch_new(*, processed, limit) -> PollBatch`, and `mark_seen` is gone: the
+> poll is read-only on the server. The wire commands below became `EXAMINE`,
+> `UID SEARCH SINCE <date>`, `UID FETCH <uid> (BODY.PEEK[])` and `LOGOUT` with
+> no `STORE` and no `CLOSE`, since `CLOSE` on a writable mailbox expunges
+> `\Deleted` messages. Kept as written for the record of the slice.
+
 - `ImapEmailAdapter` — `imaplib` **lazy-imported** inside the connect path (the
   fake-adapter tests and the web container never import it). Uses UID commands
   throughout (`SELECT`, `UID SEARCH UNSEEN`, `UID FETCH <uid> (RFC822)`,
@@ -163,6 +174,7 @@ Per message (skipping any `(mailbox, uid_validity, uid)` already in
    disposition}`), `emitted_jobs` jsonb, `renewal_request_id` NULL (populated
    by the outbound slice's reply-matching, §9).
 5. `adapter.mark_seen(uid)` — courtesy only; the ledger row is the durable guard.
+   *(Removed 2026-09-24: nothing is marked on the server.)*
 
 Counts roll up into the standard `Result` envelope (`app/results.py`):
 `messages_seen`, `already_processed`, `attachments`, `pdf`, `archived`,

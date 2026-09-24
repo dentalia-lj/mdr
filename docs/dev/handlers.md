@@ -30,7 +30,7 @@ never clobber a real handler.
 | `backfill.scan` | `handlers/backfill.py:270` | `extract.doc` | `test_backfill_handler.py` |
 | `upload.ingest` | `handlers/upload.py:33` | `extract.doc` or `validate.doc` | `test_upload_handler.py` |
 | `vendor.import` | `handlers/vendor_import.py:40` | nothing, deliberately | `test_vendor_import_handler.py` |
-| `email.poll` | `handlers/email_poll.py:340` | `extract.doc` | `test_email_poll_handler.py` |
+| `email.poll` | `handlers/email_poll.py:361` | `extract.doc` | `test_email_poll_handler.py` |
 | `email.request` | `handlers/email_request.py:858` | `email.reminder` | `test_email_request_handler.py` |
 | `email.reminder` | `handlers/email_request.py:1025` | nothing; defers its own job to the next rung | `test_email_request_handler.py` |
 | `eudamed.sync` | `handlers/eudamed.py:226` | nothing | `test_eudamed_handler.py` |
@@ -147,6 +147,7 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 - writes: `email_poll_log`, `fetch_log`
 - emits: `extract.doc` per new attachment
 - fails how: `EmailNotConfigured` is reported as `not-configured`, not a failure. The zip/archive refusal taxonomy is all counted
+- note: **read-only on the server** (2026-09-24). The adapter opens the folder with `EXAMINE`, fetches with `BODY.PEEK[]`, ends with `LOGOUT` and never `CLOSE`, and sends no `STORE`, `EXPUNGE`, `MOVE` or `COPY`; `tests/test_email_adapter.py` records the commands and asserts it. It reads mail that arrived on or after `email.poll_since` (required once configured, else `ValueError`), filters UIDs already in `email_poll_log` before downloading, and takes at most `email.poll_max_messages` per poll, oldest first, counting the rest as `deferred_to_next_poll`. Nothing is marked on the server: Exchange's IMAP stores no custom keywords, and the standard flags belong to the people reading the mailbox
 - note: idempotency comes from the durable `email_poll_log` UID guard, not IMAP `\Seen`. The one LLM call is body summarisation — UI context only, never evidence (invariant 12)
 - note: **reply matching** (2026-09-11): `_match_request` links a message to a `renewal_request` and stores it on `email_poll_log.renewal_request_id` — by the `[DENT-{id}]` token every draft of a chase carries in its subject (`email_request.subject_for`), else by sender domain when it is a contact domain of exactly one manufacturer with an open request. The polled mailbox's own domain never matches. Counted as `reply_linked_by_reference` / `reply_linked_by_sender` / `reply_unlinked`. The link is shown on `/emails`; it closes nothing and changes no request state
 

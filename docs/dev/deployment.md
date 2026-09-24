@@ -661,7 +661,7 @@ Know that before you hand the screen to anyone.
 | `failure-monitor` | 1h | Yes. Re-onboarding gated by `SCHEDULER_FAILURE_REONBOARD_ENABLED` (off) |
 | `coverage-scan` | 1h | **No** — gated by `SCHEDULER_COVERAGE_SCAN_ENABLED` (off). This is the one that sends uncovered groups through DISCOVER unattended, capped by `SCHEDULER_COVERAGE_SCAN_CAP`. `DISCOVER_HOLD` does **not** gate it |
 | `report.weekly` | 1h | Yes |
-| `email.poll` | 15m | **No** — needs IMAP credentials and `SCHEDULER_EMAIL_POLL_ENABLED` |
+| `email.poll` | 15m | **No** — needs IMAP credentials, `EMAIL_POLL_SINCE` (the deploy day; without it the poll dead-letters rather than read the mailbox's history) and `SCHEDULER_EMAIL_POLL_ENABLED`. Read-only: it never marks, moves or deletes mail |
 | `eudamed.certregister` | 6h | **No** — gated by `SCHEDULER_EUDAMED_CERTREGISTER_ENABLED` (off). The tick runs and emits nothing |
 | `eudamed.sweep-due` | 1h | Yes. It only marks manufacturers due (`due_at`); it emits no sweep |
 | `health-watch` | 5m | Yes |

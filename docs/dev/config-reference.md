@@ -221,7 +221,8 @@ the scheduler is already chasing it.
 | `email.imap_port` | int | `993` | `IMAP_PORT` |
 | `email.imap_ssl` | bool | `True` | `IMAP_SSL` |
 | `email.imap_folder` | str | `INBOX` | `IMAP_FOLDER` |
-| `email.poll_max_messages` | int | `200` | `EMAIL_POLL_MAX_MESSAGES` |
+| `email.poll_since` | str | `""` | `EMAIL_POLL_SINCE` — ISO date, the first day of mail the poll reads (IMAP `SINCE`, the server's arrival date, the day itself included). **Required once the mailbox is configured**: empty or malformed with credentials set raises `ValueError`, so the poll dead-letters and alerts rather than reading the mailbox's whole history. **Blast radius:** moving it later re-reads nothing already in `email_poll_log` (the ledger filter runs first), but moving it EARLIER pulls every older message in, each with a summary call and its attachments archived and extracted. Set it once, to the day of the first production deploy (Denis, 2026-09-24) |
+| `email.poll_max_messages` | int | `200` | `EMAIL_POLL_MAX_MESSAGES` — messages taken per poll. **Pacing, not a limit** since 2026-09-24: the ledger filter runs before the cap, so new mail past it waits for the next poll and is counted as `deferred_to_next_poll`, never lost. It bounds one job's work, which keeps a poll well inside the 30-minute visibility timeout |
 | `email.zip_expand` | bool | `True` | `EMAIL_ZIP_EXPAND` |
 | `email.zip_max_members` | int | `50` | `EMAIL_ZIP_MAX_MEMBERS` |
 | `email.zip_max_member_mb` | int | `25` | `EMAIL_ZIP_MAX_MEMBER_MB` |
