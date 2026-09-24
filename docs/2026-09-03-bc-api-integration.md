@@ -27,6 +27,10 @@ Two custom API pages on Dentalia's **on-premise** BC, publisher `dentalia`, grou
 
 Base observed: `http://denwebnav:7048/proddentalia-NAS/api/dentalia/api/v1.0/`.
 
+> **Corrected 2026-09-24:** from cw the base is
+> `http://mail.dentalia.si:7048/proddentalia-NAS/api/dentalia/api/v1.0/`.
+> `denwebnav` is incorrect there (Denis); do not use it in `BC_BASE_URL`.
+
 **Observed facts about the transport**, all from the screenshots:
 
 - Plain HTTP on port 7048. Chrome shows "Ni varno". There is no TLS today.

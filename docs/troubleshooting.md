@@ -45,7 +45,7 @@ The diff is against the last **accepted** value per field in `bc_push_log`, not 
 The item is not on the `dataitems` page. That page is "a subset" and nobody has told us of what, which is why a 404 is counted and sampled separately rather than folded into failures — the count is the answer to that question. A 404 is not treated as accepted, so the value goes again if the page is ever widened.
 
 **A BC request times out.**
-BC is at `mail.dentalia.si:7048` and admits only the server's address (`91.98.42.140`); from anywhere else, a laptop included, the connection times out rather than being refused. `denwebnav` is the LAN name and does not resolve outside Dentalia.
+BC is at `mail.dentalia.si:7048` and admits only the server's address (`91.98.42.140`); from anywhere else, a laptop included, the connection times out rather than being refused. `BC_BASE_URL` must use `mail.dentalia.si`: `denwebnav`, the host in b-s.si's original links, is incorrect from cw.
 
 **A BC job fails with `BcAuthRejected`.**
 BC refused `BC_USERNAME` / `BC_PASSWORD`. The worker process remembers the refusal and does not send the same pair again, so the domain account is not locked out by retries; every later BC job fails immediately with the same error until the value is fixed **and the worker restarted**. Check the username is `DOMAIN\user` and single-quoted in `.env`. A plain `401` from `curl -u` or `curl --ntlm` proves nothing: BC ignores both, it only accepts NTLM inside `Negotiate`.

@@ -102,6 +102,9 @@ HEAD requests from the server, no proxy in the environment:
 
 ### 5.2 Business Central
 
+> **Superseded 2026-09-24:** cw calls BC at `mail.dentalia.si:7048` (allowlisted to
+> this server); `denwebnav` is incorrect from cw. The reading below is as of 09-18.
+
 `denwebnav` does not resolve, so nothing can reach `denwebnav:7048`. BC is on
 Dentalia's LAN and this is a public VPS. Consequences:
 
