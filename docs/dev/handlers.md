@@ -39,7 +39,7 @@ never clobber a real handler.
 **Running the register by hand.** `POST /scheduler/run/eudamed.certregister` (the **Run now** button on `/scheduler`) enqueues one pull with the cron's own empty payload and dedupe key, so a hand-run and the cron collapse into one job. This is currently the ONLY way the register refreshes: `eudamed_certregister_enabled` is off by default, so the `eudamed.certregister` cron tick fires and does nothing. (The reason used to be that the `scheduler` service sat behind compose profile `full`; that service was deleted 2026-09-02 and the crons run on the queue, so the flag is now the whole story.) Everything on `/expiry` that reads `certificate_drift`, `certificate_drift_candidate`, `certificate_status_alert` and `certificate_gap` is therefore as old as the last hand-run.
 | `eudamed.sweep` | `handlers/eudamed.py:730` | nothing, never self-emits | `test_eudamed_handler.py` |
 | `report.weekly` | `handlers/report.py:156` | nothing | `test_report_handler.py` |
-| `scheduler.tick` | `handlers/scheduler_tick.py:91` | itself, forever (`queue.defer`) | `test_scheduler_tick.py` |
+| `scheduler.tick` | `handlers/scheduler_tick.py:92` | itself, forever (`queue.defer`) | `test_scheduler_tick.py` |
 | `playbook.reonboard` | `handlers/playbook_probe.py:86` | **nothing** — the only `app.crawl` consumer that emits no `fetch.url` | `test_playbook_probe.py`, `test_playbook_probe_web.py` |
 | `bc.push` | `handlers/bc_push.py:106` | nothing — a leaf, like `report.weekly` | `test_bc_push.py`, `test_bc_fields.py` |
 
@@ -312,9 +312,10 @@ document at all, so there is usually nothing in the ledger to skip.
 
 ### `bc.push`
 - consumes: `run_id`, `item_refs` (a batch, ~200)
-- produced by: the item button and the bulk apply (web), and the `bc.push-drift` cron — a rolling window, oldest-pushed first, capped by `bc.drift_cap`
+- produced by: the item button and the bulk apply (web), and the `bc.push-drift` cron — a rolling window, oldest-pushed first, capped by `bc.drift_cap`, emitted only when `bc.write_enabled` AND `scheduler.bc_push_drift_enabled` are both on
 - writes: `bc_push_log` only. No registry table, so invariant 1 is untouched — this stage reads the registry and writes someone else's system
 - emits: nothing
-- fails how: a **404 counts `absent`** and is sampled by `item_ref` — `dataitems` is "a subset" and nobody has said of what, so the first real run answers that instead of hiding it behind retries. Any other non-2xx counts `failed` and is kept in the ledger, but is excluded from the next run's diff, so a refused value is retried rather than silently believed. One item failing never stops the batch
+- client: built by the handler from `cfg.bc` (`BcClient`) only when `bc.write_enabled` is on and none is injected, and closed at the end of the job; writes on with `BC_BASE_URL` empty raise by name. Each item is `PATCH {base}/dataitems('<no>')`, the number with `'` doubled and fully percent-encoded, `/` as `%2F` included (verified live 2026-09-24), `If-Match: *` -- the ledger is the diff source and BC is never read back
+- fails how: a **`BcAuthRejected` fails the whole job**, so one refused login never becomes one per item (domain lockout). A **404 counts `absent`** and is sampled by `item_ref` -- measured 2026-09-24 `dataitems` and `allitems` both hold 19.357 rows, so a 404 now means an item BC no longer has. Any other non-2xx counts `failed` and is kept in the ledger, but is excluded from the next run's diff, so a refused value is retried rather than silently believed. One item failing never stops the batch
 - note: the EUDAMED certificate status behind `pteValidCECertificate` is read only under a **trusted SRN of the item's manufacturer**, against the base certificate number (`R2` / `Rev. 2` stripped as `held_certificate` strips it), latest revision only (`_HOLDINGS_SQL`, 2026-09-11). Until then it joined on the printed number alone: any company's certificate with a colliding number could falsify the field, and two revisions let an older `issued` row outvote a newer withdrawal
 - note: **`bc.write_enabled` is false by default.** Off, the handler still computes the diff and reports `would_send` — that is what the bulk preview reads. The rule itself is `app/bc_fields.py` and is tested without a database or a connection

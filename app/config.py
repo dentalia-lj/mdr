@@ -478,11 +478,10 @@ class Bc:
 
     write_enabled: bool = False
     base_url: str = ""
-    #: Auth is UNVERIFIED: BC on-premises commonly takes Basic or NTLM, b-s.si
-    #: have not said which, and external access is still blocked so nobody has
-    #: been able to try. Empty means no `Authorization` header at all -- an
-    #: empty Basic header is worse than none, since some servers read it as an
-    #: anonymous identity rather than rejecting it.
+    #: A Windows domain account, `DOMAIN\user`: BC logs in with NTLM inside
+    #: `Negotiate` (measured 2026-09-24, `app/adapters/bc_client.py`). Empty
+    #: means no `Authorization` header at all -- an empty credential is worse
+    #: than none, since some servers read it as an anonymous identity.
     username: str = ""
     password: str = ""
     #: Items the drift cron may re-evaluate per run. A rolling window over the
@@ -648,6 +647,11 @@ class Scheduler:
     # day-granularity scans.
     email_poll_enabled: bool = False
     email_poll_interval_hours: int = 6
+    # `bc.push-drift` needs BOTH this and `bc.write_enabled`. Separate so writes
+    # can be on for the item button and the bulk apply while the cron stays off
+    # until the first bulk run has been checked: with an empty ledger every item
+    # is "changed" (Denis, 2026-09-24).
+    bc_push_drift_enabled: bool = False
     # EUDAMED (Denis, 2026-08-26: "certificates monthly, device sweeps
     # quarterly"). `eudamed_certregister_enabled` gates emission of
     # `eudamed.certregister` -- default off, same footing as the flags above.
@@ -1174,6 +1178,11 @@ def load_config() -> Config:
         email_poll_enabled=_bool(
             "SCHEDULER_EMAIL_POLL_ENABLED",
             _dig(t, "scheduler", "email_poll_enabled"),
+            False,
+        ),
+        bc_push_drift_enabled=_bool(
+            "SCHEDULER_BC_PUSH_DRIFT_ENABLED",
+            _dig(t, "scheduler", "bc_push_drift_enabled"),
             False,
         ),
         email_poll_interval_hours=_int(

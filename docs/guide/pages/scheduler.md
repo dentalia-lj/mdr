@@ -82,7 +82,7 @@ The ten tasks, and whether each one has a working **Run now** button:
 | **EUDAMED certificate register pull** | Downloads the EU certificate register in one go and matches it to our manufacturers | **Yes** — and this is the only way it ever refreshes, because its own schedule is switched off |
 | **EUDAMED device sweep — mark due** | Marks manufacturers as due for a device check. It never starts one: a person presses **Start the check** for each supplier, from [Manufacturers](manufacturers.md) | No |
 | **Health watch** | Sends one line to the alert channel when a service stops reporting in, the queue stops moving, or one of these tasks dies. Once per problem, with a second line when it clears | No |
-| **Business Central — re-push what drifted** | Sends the three compliance fields back to Business Central for the items whose answer has changed, oldest first. Does nothing at all while the writeback is switched off, which is the normal setting | No |
+| **Business Central — re-push what drifted** | Sends the three compliance fields back to Business Central for the items whose answer has changed, oldest first. Needs two switches: the writeback itself, and a second one for this task alone, so a first bulk send can be checked before this starts filling Business Central on its own. Both are off, which is the normal setting | No |
 
 The seven without a button run inside the system itself — there is nothing
 separate to start by hand. The screen says so directly, in the small print

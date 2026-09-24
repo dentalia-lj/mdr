@@ -60,7 +60,8 @@ CRONS = {
     "health-watch": lambda conn, cfg, now: scheduler._tick_health_watch(
         conn, cfg, now=now),
     "bc.push-drift": lambda conn, cfg, now: scheduler._tick_bc_push_drift(
-        conn, enabled=cfg.bc.write_enabled, batch=scheduler.BC_PUSH_BATCH,
+        conn, enabled=cfg.bc.write_enabled and cfg.scheduler.bc_push_drift_enabled,
+        batch=scheduler.BC_PUSH_BATCH,
         cap=cfg.bc.drift_cap, now=now),
 }
 

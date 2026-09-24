@@ -41,6 +41,37 @@ def test_every_scheduler_key_reaches_the_container(service):
     )
 
 
+# BC runs in the worker: `ingest.run` (bc_odata) builds the client there, and
+# `bc.push` plus its drift cron read the write switch there. Unwired, all of it
+# ran on empty defaults: no client, writes off, and no way to change either.
+def test_every_bc_key_reaches_the_worker():
+    missing = _keys_config_reads("BC_") - _keys_service_declares("worker", "BC_")
+    assert missing == set(), (
+        f"worker cannot be configured for: {sorted(missing)}. "
+        "Compose does not inject .env; add them to worker's environment: block."
+    )
+
+
+def test_web_sees_the_same_bc_write_switch_as_the_worker():
+    """The item button and the bulk preview say whether a push will write.
+    Reading a different value than the worker that actually writes would show
+    "withheld" for a push that goes through, or the reverse."""
+    assert "BC_WRITE_ENABLED" in _keys_service_declares("web", "BC_")
+
+
+def test_bc_credentials_stay_out_of_web():
+    """web builds no BC client; a secret it cannot use is only exposure."""
+    assert {"BC_USERNAME", "BC_PASSWORD"} & _keys_service_declares("web", "BC_") == set()
+
+
+def test_worker_gets_what_bc_push_builds_the_warehouse_url_from():
+    """`pteWarehouseURL` is `{WEB_PUBLIC_BASE_URL}/item/{ref}?k={WEB_BC_LINK_KEY}`,
+    built in the worker. Declared on web only, a push would write a link with
+    no host and no key into every BC item card (followup [bc-push-link-env])."""
+    declared = _keys_service_declares("worker", "WEB_")
+    assert {"WEB_PUBLIC_BASE_URL", "WEB_BC_LINK_KEY"} <= declared
+
+
 def test_the_crons_start_without_a_profile_flag():
     """The guard that caught the ten silent days, repointed.
 

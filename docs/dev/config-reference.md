@@ -403,13 +403,14 @@ Two cautions:
 | `scheduler.failure_reonboard_enabled` | bool | `False` | `SCHEDULER_FAILURE_REONBOARD_ENABLED` |
 | `scheduler.email_poll_enabled` | bool | `False` | `SCHEDULER_EMAIL_POLL_ENABLED` |
 | `scheduler.email_poll_interval_hours` | int | `6` | `SCHEDULER_EMAIL_POLL_INTERVAL_HOURS` |
+| `scheduler.bc_push_drift_enabled` | bool | `False` | `SCHEDULER_BC_PUSH_DRIFT_ENABLED` — the hourly `bc.push-drift` cron needs this AND `bc.write_enabled`. **Blast radius:** with an empty ledger every item is "changed", so turning both on writes up to `bc.drift_cap` items an hour into BC until the catalogue has come round once. Keep it off until the first bulk apply at `/bc-push` has been checked (Denis, 2026-09-24). Declared on `worker` and `web` |
 | `scheduler.eudamed_certregister_enabled` | bool | `False` | `SCHEDULER_EUDAMED_CERTREGISTER_ENABLED` |
 | `scheduler.eudamed_certregister_interval_days` | int | `30` | `SCHEDULER_EUDAMED_CERTREGISTER_INTERVAL_DAYS` |
 | `scheduler.eudamed_sweep_interval_days` | int | `90` | `SCHEDULER_EUDAMED_SWEEP_INTERVAL_DAYS` |
 
-Six scheduler flags default off: expiry emails, expiry re-discovery, the
-coverage scan, re-onboarding, mail polling and the EUDAMED certificate
-register (the email discovery rung is `discovery.email_rung_enabled`, above,
+Seven scheduler flags default off: expiry emails, expiry re-discovery, the
+coverage scan, re-onboarding, mail polling, the EUDAMED certificate
+register and the BC drift re-push (the email discovery rung is `discovery.email_rung_enabled`, above,
 not a scheduler key). An empty
 `ingest_watch_dir` makes the monthly ingest tick a no-op.
 
@@ -503,9 +504,9 @@ throughput on any single manufacturer.
 
 | Key | Env | Default | Blast radius |
 |---|---|---|---|
-| `bc.write_enabled` | `BC_WRITE_ENABLED` | `false` | The only gate between this repo and data inside a system we do not own. False everywhere except the one machine that runs it for real: `bc.push` still computes and reports its diff, and sends nothing. Turning it on is what makes the writeback live |
+| `bc.write_enabled` | `BC_WRITE_ENABLED` | `false` | The only gate between this repo and data inside a system we do not own. False everywhere except the one machine that runs it for real: `bc.push` still computes and reports its diff, sends nothing, and builds no client (so a preview never logs in). Turning it on makes the item button and the bulk apply write; the hourly drift cron also needs `scheduler.bc_push_drift_enabled`. **Off as of 2026-09-24 by Denis's decision** -- turned on later, deliberately |
 | `bc.base_url` | `BC_BASE_URL` | `""` | The company-scoped OData root b-s.si issued. The writable fields are on its `dataitems` page; `allitems` is read-only and must never be the target. Empty means `ingest.run` with `source: bc_odata` gets no client and refuses rather than reading an empty catalogue |
-| `bc.username` / `bc.password` | `BC_USERNAME` / `BC_PASSWORD` | `""` | **Auth scheme unverified.** BC on-premises commonly takes Basic or NTLM and b-s.si have not said which; access is blocked, so nobody has tried. Both empty sends no `Authorization` header at all — an empty Basic header is worse than none, because some servers read it as an anonymous identity rather than rejecting it |
+| `bc.username` / `bc.password` | `BC_USERNAME` / `BC_PASSWORD` | `""` | A Windows domain account, written `DOMAIN\user` (in `.env` use single quotes, `BC_USERNAME='DENTALIA3\dentalia.mdr'`: single-quoted values are literal in compose's `.env` format). BC logs in with **NTLM inside `Negotiate`**, measured 2026-09-24; Basic is refused and never sent. Both empty sends no `Authorization` header at all. **Blast radius of a wrong password:** a domain account locks after a few failed logins, so the first refusal is remembered per worker process and the same pair is never sent again until a restart (`BcAuthRejected`); every BC job then fails fast and dead-letters, and fixing the value needs a worker restart anyway |
 
 | `bc.drift_cap` | `BC_DRIFT_CAP` | `1000` | Items the drift cron re-evaluates per run. A rolling window, not a full sweep: at 1000/day a 16k catalogue comes round about every 16 days. Cheap to be generous with — an unchanged item costs one diff query and no PATCH — but it bounds a mistake in the rule to one day's items |
 

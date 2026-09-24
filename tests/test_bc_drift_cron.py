@@ -127,3 +127,28 @@ def test_running_twice_does_not_double_enqueue(conn, processed_item):
     _tick_bc_push_drift(conn, enabled=True, batch=200, cap=10, now=NOW)
 
     assert len(_enqueued(conn)) == 1
+
+
+@pytest.mark.parametrize("write, drift, expect", [
+    ("false", "false", 0),
+    ("true", "false", 0),
+    ("false", "true", 0),
+    ("true", "true", 1),
+])
+def test_the_live_cron_needs_writes_and_its_own_switch(conn, processed_item,
+                                                       monkeypatch, write, drift,
+                                                       expect):
+    """Writes can be on for the item button and the bulk apply while the cron
+    stays off: with an empty ledger every item is "changed", so turning writes
+    on would otherwise start filling BC at `BC_DRIFT_CAP` items an hour before
+    the first bulk run had been checked (Denis, 2026-09-24)."""
+    from app.config import load_config
+    from app.handlers import scheduler_tick
+
+    processed_item()
+    monkeypatch.setenv("BC_WRITE_ENABLED", write)
+    monkeypatch.setenv("SCHEDULER_BC_PUSH_DRIFT_ENABLED", drift)
+
+    result = scheduler_tick.CRONS["bc.push-drift"](conn, load_config(), NOW)
+
+    assert (result["enqueued"] > 0) == bool(expect)

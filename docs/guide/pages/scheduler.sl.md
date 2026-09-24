@@ -80,7 +80,7 @@ Deset opravil, in ali ima vsako od njih delujoč gumb **Run now**:
 | **EUDAMED certificate register pull** | Naenkrat prenese evropski register certifikatov in ga poveže z našimi proizvajalci | **Da** — in to je edini način, da se sploh kdaj osveži, saj je njegov lastni urnik izklopljen |
 | **EUDAMED device sweep — mark due** | Označi proizvajalce, pri katerih je pregled pripomočkov na vrsti. Pregleda nikoli ne zažene sam: za vsakega dobavitelja človek pritisne **Start the check** na strani [Manufacturers](manufacturers.sl.md) | Ne |
 | **Health watch** | Pošlje eno vrstico na opozorilni kanal, kadar se storitev neha javljati, se čakalna vrsta ustavi ali eno od teh opravil odmre. Enkrat na težavo, z drugo vrstico, ko se razreši | Ne |
-| **Business Central — re-push what drifted** | Pošlje tri skladnostna polja nazaj v Business Central za tiste artikle, pri katerih se je odgovor spremenil, najstarejše najprej. Dokler je pisanje nazaj izklopljeno -- kar je običajna nastavitev -- ne naredi ničesar | Ne |
+| **Business Central — re-push what drifted** | Pošlje tri skladnostna polja nazaj v Business Central za tiste artikle, pri katerih se je odgovor spremenil, najstarejše najprej. Potrebuje dve stikali: pisanje nazaj samo in še ločeno stikalo samo za to opravilo, da lahko prvo skupno pošiljanje preverite, preden začne samo polniti Business Central. Obe sta izklopljeni, kar je običajna nastavitev | Ne |
 
 Sedem opravil brez gumba teče znotraj sistema samega — ni ničesar ločenega,
 kar bi lahko zagnali ročno. Stran to pove neposredno, z drobnim tiskom pod

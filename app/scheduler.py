@@ -552,8 +552,10 @@ def _tick_bc_push_drift(conn, *, enabled: bool, batch: int, cap: int,
     Cheap to be wrong about: `bc.push` recomputes and diffs, so an item that
     turns out unchanged costs one query and no PATCH.
 
-    Gated on the same flag as the write itself. A queue full of pushes that will
-    be withheld is noise, not safety, so the work is not created either.
+    Gated on the write flag AND its own `scheduler.bc_push_drift_enabled`. A
+    queue full of pushes that will be withheld is noise, not safety, so the work
+    is not created either; the second flag lets writes go on for the button and
+    the bulk apply while this stays off (2026-09-24).
     """
     if not enabled:
         return {"enqueued": 0, "batches": 0}
@@ -628,7 +630,8 @@ def tick(conn, cfg: Config, now: dt.datetime) -> dict:
         ),
         ("health-watch", lambda: _tick_health_watch(conn, cfg, now=now)),
         ("bc.push-drift", lambda: _tick_bc_push_drift(
-            conn, enabled=cfg.bc.write_enabled, batch=BC_PUSH_BATCH,
+            conn, enabled=cfg.bc.write_enabled and cfg.scheduler.bc_push_drift_enabled,
+            batch=BC_PUSH_BATCH,
             cap=cfg.bc.drift_cap, now=now)),
     ):
         try:

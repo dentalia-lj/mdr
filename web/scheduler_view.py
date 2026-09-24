@@ -254,10 +254,13 @@ def _cron_specs(sched) -> list[dict]:
             "cadence_hours": 24,
             "period": None,
             "job_type": "bc.push",
-            "enabled": True,
+            "enabled": sched.bc_push_drift_enabled,
             "note": (
-                "does nothing while bc.write_enabled is false, which is the "
-                "default. A rolling window, oldest-pushed first, because these "
+                "emission is "
+                + ("ON" if sched.bc_push_drift_enabled else "OFF")
+                + " (SCHEDULER_BC_PUSH_DRIFT_ENABLED), and does nothing either "
+                "while bc.write_enabled is false; both default off. "
+                "A rolling window, oldest-pushed first, because these "
                 "values change with the calendar and not only with a row -- an "
                 "item that turns out unchanged costs a diff and no write"
             ),

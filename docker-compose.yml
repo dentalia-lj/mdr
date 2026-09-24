@@ -156,6 +156,7 @@ services:
       SCHEDULER_FAILURE_MIN_SAMPLE: ${SCHEDULER_FAILURE_MIN_SAMPLE:-5}
       SCHEDULER_FAILURE_REONBOARD_ENABLED: ${SCHEDULER_FAILURE_REONBOARD_ENABLED:-false}
       SCHEDULER_EMAIL_POLL_ENABLED: ${SCHEDULER_EMAIL_POLL_ENABLED:-false}
+      SCHEDULER_BC_PUSH_DRIFT_ENABLED: ${SCHEDULER_BC_PUSH_DRIFT_ENABLED:-false}
       SCHEDULER_EMAIL_POLL_INTERVAL_HOURS: ${SCHEDULER_EMAIL_POLL_INTERVAL_HOURS:-6}
       SCHEDULER_EUDAMED_CERTREGISTER_ENABLED: ${SCHEDULER_EUDAMED_CERTREGISTER_ENABLED:-false}
       SCHEDULER_EUDAMED_CERTREGISTER_INTERVAL_DAYS: ${SCHEDULER_EUDAMED_CERTREGISTER_INTERVAL_DAYS:-30}
@@ -219,6 +220,20 @@ services:
       # dead-letters without it rather than read the whole mailbox's history.
       EMAIL_POLL_SINCE: ${EMAIL_POLL_SINCE:-}
       EMAIL_POLL_MAX_MESSAGES: ${EMAIL_POLL_MAX_MESSAGES:-200}
+      # Business Central. `ingest.run` (bc_odata) and `bc.push` both run HERE.
+      # Empty BC_BASE_URL means no client: a bc_odata ingest refuses rather than
+      # reading an empty catalogue. The login is NTLM inside Negotiate, so the
+      # username is DOMAIN\user -- single-quote it in .env.
+      BC_BASE_URL: ${BC_BASE_URL:-}
+      BC_USERNAME: ${BC_USERNAME:-}
+      BC_PASSWORD: ${BC_PASSWORD:-}
+      BC_WRITE_ENABLED: ${BC_WRITE_ENABLED:-false}
+      BC_DRIFT_CAP: ${BC_DRIFT_CAP:-1000}
+      # bc.push builds pteWarehouseURL from these two in THIS process; on web
+      # only, a push would write a link with no host and no key into every BC
+      # item card. Same values as web's.
+      WEB_PUBLIC_BASE_URL: ${WEB_PUBLIC_BASE_URL:-}
+      WEB_BC_LINK_KEY: ${WEB_BC_LINK_KEY:-}
     volumes:
       - archive_data:/archive
       # The corpus backfill.scan walks, read-only: the worker archives FROM here
@@ -274,6 +289,10 @@ services:
       WEB_API_KEYS: ${WEB_API_KEYS:-}
       WEB_BC_LINK_KEY: ${WEB_BC_LINK_KEY:-}
       WEB_PUBLIC_BASE_URL: ${WEB_PUBLIC_BASE_URL:-}
+      # The same write switch the worker obeys, so the item button and the bulk
+      # preview say what a push will actually do. No BC credentials here: web
+      # builds no BC client.
+      BC_WRITE_ENABLED: ${BC_WRITE_ENABLED:-false}
       # Which Caddy logins count as operators (office UI redesign spec § 2, D3).
       # Comma-separated, matched exactly against X-Forwarded-User. EMPTY -- the
       # default, and how every deployment stands today -- means EVERY login is an
@@ -314,6 +333,7 @@ services:
       # S2.4: gates EMISSION of email.poll only -- the handler is the worker's.
       # Default off; the poll fires once per interval bucket when on.
       SCHEDULER_EMAIL_POLL_ENABLED: ${SCHEDULER_EMAIL_POLL_ENABLED:-false}
+      SCHEDULER_BC_PUSH_DRIFT_ENABLED: ${SCHEDULER_BC_PUSH_DRIFT_ENABLED:-false}
       SCHEDULER_EMAIL_POLL_INTERVAL_HOURS: ${SCHEDULER_EMAIL_POLL_INTERVAL_HOURS:-6}
       SCHEDULER_EUDAMED_CERTREGISTER_ENABLED: ${SCHEDULER_EUDAMED_CERTREGISTER_ENABLED:-false}
       SCHEDULER_EUDAMED_CERTREGISTER_INTERVAL_DAYS: ${SCHEDULER_EUDAMED_CERTREGISTER_INTERVAL_DAYS:-30}
