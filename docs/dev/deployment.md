@@ -56,10 +56,14 @@ Two documents answer "what is this system" for the client: [what it does, EN](..
   `mail.dentalia.si:7048` (`89.212.58.227`, IPv4 only, no AAAA), **plain HTTP**,
   reachable from the server and filtered from elsewhere, so it is allowlisted to
   the server's address. A container leaves through the host's NAT with the same
-  source IPv4, so the allowlist admits it too. Not yet exercised from inside a
-  container. **Plain HTTP is accepted** (Denis, 2026-09-24,
-  [decisions](../decisions.md)): the allowlist is the protection relied on, and
-  the credentials cross between the two sites unencrypted.
+  source IPv4, so the allowlist admits it too: exercised 2026-09-24 from a
+  throwaway `python:3.12-slim` container on the server, `allitems?$top=1`
+  returned 200. **Plain HTTP is the rule, not a gap** (Denis, 2026-09-24,
+  [decisions](../decisions.md)): an isolated integration inside a secure
+  network, treated as safe; HTTPS will not be enabled and is not to be asked
+  for again. The password never crosses in clear, because BC offers only
+  `WWW-Authenticate: Negotiate` and accepts an NTLM token inside it; Basic and
+  bare `NTLM` are both refused.
 
 ### 1.1 Directories
 
@@ -153,8 +157,8 @@ Copy [.env.example](../../.env.example) and work through it. Three groups.
 `docker-compose.yml` declares **no `env_file:`**, so `.env` is used only to
 interpolate `${VAR}` into the compose file. A key reaches a container **only if
 compose names it in that service's `environment:` block**. Most of
-`app/config.py`'s surface is not named there: verified 2026-09-14, `BC_BASE_URL`,
-`BC_USERNAME`, `BC_PASSWORD`, `BC_WRITE_ENABLED`, `UPLOAD_MAX_MB`,
+`app/config.py`'s surface is not named there: verified 2026-09-14,
+`UPLOAD_MAX_MB`,
 `GATE_THRESHOLD_HIGH`/`MED`, `MODELS_*`, `RESOLVE_NAME_*`, `DISCOVER_*`,
 `FETCH_*`, `BUDGET_*`, `QUEUE_*`, `STORAGE_ADAPTER` and `SOURCE_ADAPTER` appear
 zero times in it. Setting any of those in `.env` changes nothing; the dataclass
@@ -191,7 +195,7 @@ Three groups of what you do set:
 | `BRAVE_API_KEY` | empty | Discovery's search credential. Inert while `DISCOVER_HOLD` is on |
 | `WEB_API_KEYS`, `WEB_BC_LINK_KEY` | empty | **Empty disables the caller class it names.** No `WEB_BC_LINK_KEY` means `/item/*` 404s outright, so the BC item-card hyperlink does not work |
 | `WEB_PUBLIC_BASE_URL` | empty | Absolute base prefixed onto document URLs in the item payload. Required if the webshop backend embeds our links |
-| `BC_BASE_URL`, `BC_USERNAME`, `BC_PASSWORD` | empty | Only for the BC routes (§ 6.2, § 6.4). **Not passed by compose** -- see the warning above and § 6.4 Route C |
+| `BC_BASE_URL`, `BC_USERNAME`, `BC_PASSWORD`, `BC_WRITE_ENABLED`, `BC_DRIFT_CAP` | empty, `false`, `1000` | On `worker` since 2026-09-24; `BC_WRITE_ENABLED` also on `web`, credentials deliberately not. Username `'DOMAIN\user'`, single-quoted. Before `BC_WRITE_ENABLED=true`, set `WEB_PUBLIC_BASE_URL` and `WEB_BC_LINK_KEY`: the worker builds `pteWarehouseURL` from them. After changing any, `docker compose up -d worker web` |
 | `ALERTS_WEBHOOK_URL` | empty | Wired into `worker` and `web`. Empty means a dead-lettered job is announced nowhere and somebody has to open `/dead` |
 | `SCHEDULER_INGEST_WATCH_DIR` | empty | Empty makes the monthly ingest a documented no-op (§ 8) |
 
@@ -447,20 +451,19 @@ docker compose run --rm worker python -m app.cli enqueue ingest.run \
     --priority interactive
 ```
 
-**Route C — BC OData, from the CLI only.** Usable today with four caveats, all
-verified 2026-09-14. `app/handlers/ingest.py` builds an HTTP client only when
-`cfg.bc.base_url` is non-empty, and with it empty the adapter raises
-`NotImplementedError` rather than reading anything -- **and `BC_BASE_URL` is one
-of the keys compose does not pass** (§ 3), so putting it in `.env` is not enough.
-Either add the three `BC_*` keys to `worker`'s `environment:` block, or pass them
-on the one command that needs them:
+**Route C — BC OData, from the CLI only.** `app/handlers/ingest.py` builds an
+HTTP client only when `cfg.bc.base_url` is non-empty; with it empty the adapter
+raises `NotImplementedError` rather than reading anything. The `BC_*` keys are
+on `worker` since 2026-09-24 (§ 3), so set them in `.env` and recreate the
+worker. **The job runs in the long-lived `worker`, not in the container that
+enqueues it**: the earlier advice to pass `-e BC_…` on the enqueue command never
+reached the handler, because `cli enqueue` only inserts a row.
 
 ```bash
-docker compose run --rm \
-    -e BC_BASE_URL=http://denwebnav:7048 -e BC_USERNAME=... -e BC_PASSWORD=... \
-    worker python -m app.cli enqueue ingest.run \
+docker compose up -d worker    # picks up BC_* from .env
+docker compose run --rm worker python -m app.cli enqueue ingest.run \
     "ingest:bc:$(date +%F)" \
-    --payload '{"source":"bc_odata","catalogue":"LJ","ref":"http://denwebnav:7048/proddentalia-NAS/api/dentalia/api/v1.0/companies(25ccc3d7-63f8-ec11-9e03-00155d012200)/allitems"}' \
+    --payload '{"source":"bc_odata","catalogue":"LJ","ref":"http://mail.dentalia.si:7048/proddentalia-NAS/api/dentalia/api/v1.0/companies(25ccc3d7-63f8-ec11-9e03-00155d012200)/allitems"}' \
     --priority interactive
 ```
 
@@ -665,7 +668,7 @@ Know that before you hand the screen to anyone.
 | `eudamed.certregister` | 6h | **No** — gated by `SCHEDULER_EUDAMED_CERTREGISTER_ENABLED` (off). The tick runs and emits nothing |
 | `eudamed.sweep-due` | 1h | Yes. It only marks manufacturers due (`due_at`); it emits no sweep |
 | `health-watch` | 5m | Yes |
-| `bc.push-drift` | 1h | **Unreachable**, not merely off: emission is gated by `BC_WRITE_ENABLED`, which compose does not pass (§ 3), so no `.env` value enables it |
+| `bc.push-drift` | 1h | Off until BOTH `BC_WRITE_ENABLED=true` and `SCHEDULER_BC_PUSH_DRIFT_ENABLED=true`. Writes stay off by Denis's decision (2026-09-24); when they go on, run and check one bulk apply at `/bc-push` before the drift switch |
 
 Turning a gated cron on is a spend decision, not a config tidy-up: `coverage-scan` fetches and extracts, `eudamed.certregister` reaches a public register, and `email.poll` reads a mailbox. Turn them on one at a time, with someone watching `/scheduler` and the KPI board's spend tile.
 
@@ -775,8 +778,9 @@ end.
 - **Real logins.** Decisions record `user:admin` unless a trusted proxy sets
   `WEB_TRUSTED_USER_HEADER`. See `WEB_REQUIRE_AUTHENTICATED_USER`.
 - **BC write-back.** The stage is built and gated off (`BC_WRITE_ENABLED`);
-  nothing in the tree has ever made a real PATCH, and the auth scheme is a
-  guess. [limits.md](limits.md) carries the detail.
+  the handler builds its client and addresses items correctly (2026-09-24), but
+  nothing has ever made a real PATCH: writes stay off until Denis turns them on.
+  [limits.md](limits.md) carries the detail.
 - **A second Business Central.** There is one BC, one article numbering, one
   pipeline. Do not reintroduce a catalogue choice.
 

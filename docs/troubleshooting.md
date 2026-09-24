@@ -44,8 +44,17 @@ The diff is against the last **accepted** value per field in `bc_push_log`, not 
 **Everything comes back `absent` (404).**
 The item is not on the `dataitems` page. That page is "a subset" and nobody has told us of what, which is why a 404 is counted and sampled separately rather than folded into failures — the count is the answer to that question. A 404 is not treated as accepted, so the value goes again if the page is ever widened.
 
-**`bc.push` fails with a connection error.**
-Expected outside Dentalia's network: `denwebnav:7048` is not reachable from here, and nothing in the tree has ever made a real request against it. `app/adapters/bc_client.py` is injected into the handler and every test passes a fake.
+**A BC request times out.**
+BC is at `mail.dentalia.si:7048` and admits only the server's address (`91.98.42.140`); from anywhere else, a laptop included, the connection times out rather than being refused. `denwebnav` is the LAN name and does not resolve outside Dentalia.
+
+**A BC job fails with `BcAuthRejected`.**
+BC refused `BC_USERNAME` / `BC_PASSWORD`. The worker process remembers the refusal and does not send the same pair again, so the domain account is not locked out by retries; every later BC job fails immediately with the same error until the value is fixed **and the worker restarted**. Check the username is `DOMAIN\user` and single-quoted in `.env`. A plain `401` from `curl -u` or `curl --ntlm` proves nothing: BC ignores both, it only accepts NTLM inside `Negotiate`.
+
+**`bc.push` fails with `BC_WRITE_ENABLED is on but BC_BASE_URL is empty`.**
+Writes were switched on without the endpoint. Set `BC_BASE_URL` in `.env` and `docker compose up -d worker`.
+
+**The drift cron enqueues nothing although writes are on.**
+It needs its own switch too: `SCHEDULER_BC_PUSH_DRIFT_ENABLED=true` on `worker` (and `web`, for the `/scheduler` panel). Deliberate: the first bulk apply is checked before BC is filled automatically.
 
 **A boolean is `false` and the review card shows amber.**
 Not a contradiction. `app/bc_fields.py` is deliberately not `compliance.cell_state`: the card's `expiring` and `review-due` are a person's "look at this", while BC gets a boolean an ERP acts on — a document inside its stated validity is `true` however soon it lapses. And a passed date falsifies only when `document_effective_expiry.basis` is `stated` or `inherited`; `staleness` is our own review horizon and never falsifies.

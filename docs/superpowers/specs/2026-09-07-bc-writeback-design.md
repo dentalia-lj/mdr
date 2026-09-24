@@ -277,13 +277,20 @@ Both found by re-checking on 2026-09-07, both in our favour.
 
 ## 9. Open, and not ours to close
 
-- **Is `dataitems` filtered?** The correspondence with b-s.si describes it as a
+- ~~**Is `dataitems` filtered?**~~ **No** -- measured 2026-09-24, `$count` is
+  19.357 on both `dataitems` and `allitems`. Every item is writable. Every key
+  form was addressable by `dataitems('<no>')` with the value fully
+  percent-encoded, `/` as `%2F` included (tested: space, `/`, `#`, `Č`).
+  Original question: the correspondence with b-s.si describes it as a
   subset, without saying a subset of what. If it is filtered to medical devices,
   items we intend to write are simply absent and a bulk run skips them silently.
   **Ask b-s.si before the first bulk run**; the preview's skip count is the
   symptom to watch for.
-- **External access is blocked.** Per b-s.si it works locally, outside is blocked,
-  Dentalia's sysadmins must open it and `denwebnav` will likely become an IP.
-  Everything here is codeable and testable against a stub without it; nothing is
-  provable with it until that lands.
+- ~~**External access is blocked.**~~ **Open since 2026-09-24**: BC answers at
+  `http://mail.dentalia.si:7048/...`, allowlisted to the server's address, login
+  NTLM inside `Negotiate` (`app/adapters/bc_client.py`). Measured from the server
+  that day with the pipeline's own client: `$metadata` gives `dataitem` a single
+  key, `no`, and 5 properties; each row carries `@odata.etag`. A GET of 100
+  `dataitems` rows took one request after the first login. No PATCH has been
+  sent yet.
 - **Scope.** Denis has confirmed the three writable fields exist to be used.
