@@ -70,15 +70,17 @@ a `.git` directory fails at the first command.
 
 ```bash
 # on the server, as the user that will run the stack
-ssh-keygen -t ed25519 -C "dentalia-server" -f ~/.ssh/id_ed25519_mdr
+ssh-keygen -t ed25519 -C "dentalia-server" -f ~/.ssh/id_ed25519_mdr -N ""
 cat ~/.ssh/id_ed25519_mdr.pub          # add to the repo's Deploy keys, WRITE ACCESS OFF
 ```
 
 GitHub refuses to use one deploy key on two repositories, so this key must be
-new rather than one borrowed from elsewhere.
+new rather than one borrowed from elsewhere. ssh does not offer a key under a
+non-default name by itself, so give it a host alias in `~/.ssh/config`
+(the block is in [deployment.md § 1.2](docs/dev/deployment.md)), then:
 
 ```bash
-git clone git@github.com:dentalia-lj/mdr.git /srv/compliance/app
+git clone github-mdr:dentalia-lj/mdr.git /srv/compliance/app
 ```
 
 Two things that will bite:
@@ -98,7 +100,9 @@ git pull
 ./scripts/deploy.sh
 ```
 
-`deploy.sh` builds the images, **dumps the database before it migrates**,
+`deploy.sh` never fetches, so pull first: it verifies the running images
+against the checkout, and a stale checkout verifies green. It builds the images,
+**dumps the database before it migrates**,
 applies pending migrations, restarts `worker` and `web`, and then verifies that
 what is running is what is in the checkout. That last step is the point: a
 deploy that builds and restarts without checking has told you nothing.
@@ -106,6 +110,11 @@ deploy that builds and restarts without checking has told you nothing.
 ```bash
 ./scripts/deploy.sh --check    # verify only, change nothing
 ```
+
+It restarts `worker` and `web` only. A pull that touched `Caddyfile` needs
+`docker compose up -d caddy`, and one that touched `playbooks/` needs the
+database updated too, since the pipeline reads playbooks from there
+([deployment.md § 5.1](docs/dev/deployment.md)).
 
 Each deploy keeps the five most recent dumps in `backups/` and appends one line
 to `backups/deploy.log` recording when it ran, from which commit, and whether

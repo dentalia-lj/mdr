@@ -21,6 +21,7 @@ from the CLI with the warnings in § 6.4 understood.
 
 | Thing | Why it blocks | Where it goes |
 |---|---|---|
+| A read-only deploy key on the GitHub repository | The server installs from a git clone, and `scripts/deploy.sh` reads its git metadata (§ 1.2) | GitHub repo settings, Deploy keys |
 | Two host directories: Postgres data, archive | Compose refuses to start without the first; the second decides whether `down -v` can destroy the archive | `PGDATA_HOST`, the prod overlay in § 4 |
 | A host directory for the corpus and the BC exports | The worker mounts it read-only; `backfill.scan` and `/ingest` both read it | `IMPORTS_HOST` |
 | `ANTHROPIC_API_KEY` | Compose fails fast without it; every in-scope document escalates past T0 | `.env` |
@@ -42,13 +43,87 @@ Two documents answer "what is this system" for the client: [what it does, EN](..
   system runs on the host: no Postgres, no Node, no app. `python3` is there
   only because `scripts/deploy.sh` hashes the checkout with it (standard
   library, any 3.x the tree runs on).
+- `docker-buildx`, which Compose v2 builds through. Check with
+  `dpkg-query -W docker-buildx`; on Ubuntu, `sudo apt install docker-buildx`
+  in an interactive session if absent.
 - Outbound HTTPS to `api.anthropic.com`, and to the search API once discovery is
   unheld. Nothing needs **inbound** internet.
 - Disk: the archive grows with the corpus. The dev registry is 713 MB of archive
   against a 746 MB corpus ([state 2026-09-04](../state/2026-09-04.md)); budget
   for both, since the corpus stays on disk as the backfill's source.
-- If BC OData is in play, the worker container must reach the BC host
-  (`denwebnav:7048` today, LAN-only, plain HTTP).
+- If BC OData is in play, the worker container must reach the BC host.
+  Measured 2026-09-24 on the Dentalia server: BC answers at
+  `mail.dentalia.si:7048` (`89.212.58.227`, IPv4 only, no AAAA), **plain HTTP**,
+  reachable from the server and filtered from elsewhere, so it is allowlisted to
+  the server's address. A container leaves through the host's NAT with the same
+  source IPv4, so the allowlist admits it too. Not yet exercised from inside a
+  container. **Plain HTTP means the BC credentials cross the internet
+  unencrypted**; the access request asked for HTTPS for exactly that reason, and
+  that is still open with Dentalia's network side.
+
+### 1.1 Directories
+
+Follow the host's own convention rather than inventing one. On the Dentalia
+server the application directories under `/srv` belong to the `deploy` group
+(their own app lives in `/srv/dentalia`, `deploy:deploy`), so ours does too:
+
+```bash
+sudo usermod -aG deploy "$USER"              # then log out and back in
+sudo mkdir -p /srv/compliance/{pgdata,archive,imports}
+sudo chown -R "$USER":deploy /srv/compliance
+sudo chmod -R g+rwX /srv/compliance
+sudo find /srv/compliance -type d -exec chmod g+s {} +
+```
+
+The setgid bit makes everything created later inherit the group, so whoever
+takes this over gets access by being added to `deploy`, with no `chown` and no
+downtime. Owning it as one person instead means every host-side action,
+including reading a backup, needs `sudo` for anyone else. Two residues: the
+Postgres data directory is written by the postgres container as its own uid,
+and both images run as root, so container-written files land root-owned either
+way. The group buys the directories a person actually works in: `imports` and
+`archive`.
+
+### 1.2 Getting the code there
+
+The server runs from a **git clone of `git@github.com:dentalia-lj/mdr.git`**, not
+an rsync and not shipped images. `scripts/deploy.sh` reads the checkout's git
+metadata unconditionally, so a tree without `.git` stops at its first command,
+and `--check` included.
+
+A read-only deploy key, generated on the server:
+
+```bash
+ssh-keygen -t ed25519 -C "dentalia-server" -f ~/.ssh/id_ed25519_mdr -N ""
+cat ~/.ssh/id_ed25519_mdr.pub
+# GitHub: repo Settings -> Deploy keys -> Add. Leave "Allow write access" OFF.
+```
+
+GitHub refuses one deploy key on two repositories, so this key is new, not one
+borrowed from elsewhere. And ssh does not offer a key under a non-default name
+on its own, so name it for this host:
+
+```
+# ~/.ssh/config
+Host github-mdr
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/id_ed25519_mdr
+    IdentitiesOnly yes
+```
+
+```bash
+git clone github-mdr:dentalia-lj/mdr.git /srv/compliance/app
+```
+
+Two traps:
+
+- **No `--depth`.** A shallow clone cannot check out an earlier commit, and the
+  rollback (runbook § Deploy the working tree, "Rolling back") does exactly that.
+- **Do not clone with `sudo`.** A root-owned checkout makes git refuse it as your
+  user ("dubious ownership"), and `deploy.sh` dies on it before printing
+  anything. If it has already happened:
+  `git config --global --add safe.directory /srv/compliance/app`.
 
 ## 2. What the stack is
 
@@ -101,7 +176,7 @@ Three groups of what you do set:
 |---|---|
 | `PGDATA_HOST` | Host directory for Postgres data. No default since 2026-09-11 |
 | `ANTHROPIC_API_KEY` | `${ANTHROPIC_API_KEY:?}` in the worker env |
-| `DENTALIA_WEB_PASSWORD_HASH` | `docker compose run --rm caddy caddy hash-password --plaintext '...'` |
+| `DENTALIA_WEB_PASSWORD_HASH` | `docker run --rm -it caddy:2.8 caddy hash-password`, then type the password at the prompt. Not `--plaintext`, which leaves it in shell history and `ps`; and not `docker compose run caddy`, which needs this very hash to start and pulls up the whole stack behind it |
 
 ### 3.2 Set these or regret it later
 
@@ -216,6 +291,32 @@ install: it builds, dumps the database to `backups/`, migrates, restarts, then
 `migrations/`. Each run leaves a line in `backups/deploy.log` naming the commit,
 the one it replaced and the dump taken before it; that line is the rollback
 (runbook § Deploy the working tree, "Rolling back").
+
+### 5.1 Updating a running server
+
+```bash
+cd /srv/compliance/app
+git pull
+./scripts/deploy.sh
+```
+
+`deploy.sh` never fetches: it verifies the images against **the checkout**, so
+a forgotten `git pull` still prints "Deployed and verified", against old code.
+Pull first, every time.
+
+Two kinds of change it does not carry, because they live outside what it
+rebuilds and restarts:
+
+- **`Caddyfile` or `caddy/users/`.** `deploy.sh` restarts `worker` and `web`
+  only. After a pull that touched either, `docker compose up -d caddy`.
+- **`playbooks/*.json`.** The running pipeline reads playbooks from the
+  database, not the files (§ 6.3), so a pulled JSON change sits unused.
+  `docker compose run --rm worker python -m app.cli playbooks drift` shows what
+  differs, and § 6.3 applies it.
+
+Not yet exercised on the Dentalia server: at the time of writing no clone exists
+there. The loop is what the tooling is built for and is run daily in
+development.
 
 ## 6. Bring-up order
 
