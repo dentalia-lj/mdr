@@ -25,9 +25,12 @@ class FakeBc:
         self.calls: list[tuple[str, dict]] = []
         self.status = status
 
-    def patch(self, item_ref: str, fields: dict) -> tuple[int, str]:
+    def patch_item(self, item_ref: str, fields: dict) -> tuple[int, str]:
         self.calls.append((item_ref, dict(fields)))
         return self.status, ""
+
+    def close(self) -> None:
+        self.closed = True
 
 
 @pytest.fixture(autouse=True)
@@ -184,7 +187,7 @@ def test_a_refused_patch_is_resent_next_run(conn, seed_item):
 
 def test_one_item_failing_does_not_stop_the_batch(conn, seed_item):
     class Flaky(FakeBc):
-        def patch(self, item_ref, fields):
+        def patch_item(self, item_ref, fields):
             self.calls.append((item_ref, dict(fields)))
             return (500, "boom") if len(self.calls) == 1 else (204, "")
 
@@ -343,3 +346,74 @@ def test_the_latest_revision_decides_not_any_revision(conn, seed_item):
     _eudamed_cert(conn, "G1 124", srn, "withdrawn", revision="2")
 
     assert _valid_ce(conn, item_ref) is False
+
+
+# --------------------------------------------------------------------------- #
+# the real client, built from config
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def built(monkeypatch):
+    """Stands in for `BcClient` so a test can see the handler build one from
+    config without any test being able to reach a real server."""
+    made = []
+
+    class Recorder(FakeBc):
+        def __init__(self, base_url, *, username="", password=""):
+            super().__init__(status=200)
+            self.args = (base_url, username, password)
+            self.closed = False
+            made.append(self)
+
+    import app.adapters.bc_client as bc_client
+    monkeypatch.setattr(bc_client, "BcClient", Recorder)
+    monkeypatch.setenv("BC_BASE_URL", "http://bc/api/companies(1)")
+    monkeypatch.setenv("BC_USERNAME", "DOM\\svc")
+    monkeypatch.setenv("BC_PASSWORD", "pw")
+    return made
+
+
+def test_without_an_injected_client_it_builds_one_from_config(conn, seed_item, built):
+    """The running handler is never given a client; until 2026-09-24 it would
+    have called `patch` on `None` the first time writes were switched on."""
+    item_ref = seed_item()
+
+    result = handle_bc_push(conn, _job([item_ref]))
+
+    assert result["counts"]["sent"] == 1
+    assert [b.args for b in built] == [("http://bc/api/companies(1)", "DOM\\svc", "pw")]
+    assert built[0].calls[0][0] == item_ref
+    assert built[0].closed, "a client this handler built is closed by it"
+
+
+def test_a_withheld_run_never_logs_in(conn, seed_item, built, monkeypatch):
+    """The bulk preview runs with writes off; it must not cost a BC login."""
+    monkeypatch.setenv("BC_WRITE_ENABLED", "false")
+
+    handle_bc_push(conn, _job([seed_item()]))
+
+    assert built == []
+
+
+def test_writes_on_without_a_base_url_fail_the_job_by_name(conn, seed_item, built,
+                                                           monkeypatch):
+    monkeypatch.setenv("BC_BASE_URL", "")
+
+    with pytest.raises(RuntimeError, match="BC_BASE_URL"):
+        handle_bc_push(conn, _job([seed_item()]))
+
+
+def test_a_refused_login_stops_the_batch(conn, seed_item):
+    """One refusal is one failed domain login. Carrying on would make it one
+    per item in the batch -- 200 -- and lock the account."""
+    from app.adapters.bc_client import BcAuthRejected
+
+    class Refusing(FakeBc):
+        def patch_item(self, item_ref, fields):
+            self.calls.append((item_ref, dict(fields)))
+            raise BcAuthRejected("refused")
+
+    bc = Refusing()
+    with pytest.raises(BcAuthRejected):
+        handle_bc_push(conn, _job([seed_item(), seed_item()]), client=bc)
+
+    assert len(bc.calls) == 1

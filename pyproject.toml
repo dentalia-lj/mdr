@@ -70,6 +70,7 @@ discover = [
 ingest = [
     "pandas>=2.2",            # S1.1 INGEST: uniform CSV + Excel reader, NA handling
     "openpyxl>=3.1",          # S1.1 INGEST: pandas .xlsx engine (BC exports)
+    "pyspnego>=0.12",         # BC login: NTLM inside Negotiate (app/adapters/bc_client.py)
 ]
 fetch = [
     "httpx>=0.27",            # S1.4 FETCH: conditional-GET transport (shared with S1.3 SearchAdapter)

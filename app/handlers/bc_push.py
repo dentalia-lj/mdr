@@ -105,6 +105,26 @@ def _wire(value) -> str:
 
 def handle_bc_push(conn, job: dict, *, client=None) -> dict:
     cfg = load_config()
+    # The running handler is never given a client, so it builds one -- and only
+    # when it may write: a withheld run is what the bulk preview reads, and it
+    # must not cost a BC login. Lazy import: `web` imports this module for its
+    # holdings query and its image has no httpx.
+    owned = None
+    if client is None and cfg.bc.write_enabled:
+        if not cfg.bc.base_url:
+            raise RuntimeError("BC_WRITE_ENABLED is on but BC_BASE_URL is empty")
+        from app.adapters import bc_client
+
+        client = owned = bc_client.BcClient(
+            cfg.bc.base_url, username=cfg.bc.username, password=cfg.bc.password)
+    try:
+        return _push(conn, job, cfg, client)
+    finally:
+        if owned is not None:
+            owned.close()
+
+
+def _push(conn, job: dict, cfg, client) -> dict:
     today = date.today()
     r = Result()
     for key in ("seen", "sent", "unchanged", "unprocessed", "failed",
@@ -141,7 +161,9 @@ def handle_bc_push(conn, job: dict, *, client=None) -> dict:
                                     "fields": sorted(changed)})
             continue
 
-        status, body = client.patch(item_ref, changed)
+        # A `BcAuthRejected` here propagates and fails the job: one refused
+        # login must not become one per item in the batch.
+        status, body = client.patch_item(item_ref, changed)
         for field, value in changed.items():
             conn.execute(
                 "INSERT INTO bc_push_log (item_ref, field, old_value, new_value, "
