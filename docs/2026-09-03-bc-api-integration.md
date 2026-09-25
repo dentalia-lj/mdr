@@ -111,7 +111,8 @@ enote` = `2085`; `unitCost` = `Strošek enote` = `91.11`; `vatProdPostingGroup` 
 > Corrected in `app/adapters/source.py` together with `UnknownOdataProperty`, the
 > guard that makes the next wrong name raise on the first record instead of
 > yielding a catalogue of nulls. `manufacturer_raw` resolved to
-> `pteManufCodePrimary`; `udi` was dropped rather than mapped to `gtin`, which is
+> `pteManufCodePrimary`, **wrong: corrected to `manufacturerCode` on
+> 2026-09-25**, measured on live BC 2026-09-25 from the server, 200 items: `manufacturerCode` filled on 200 and equal to the export's `Šifra proizvajalca` on all 100 we hold; `pteManufCodePrimary` filled on 14 and equal to neither. Sample: `docs/samples/bc-api-2026-09-25-allitems.json`; `udi` was dropped rather than mapped to `gtin`, which is
 > not a Basic UDI-DI. The section below is kept as the record of what was wrong.
 
 `app/adapters/source.py:159` guesses PascalCase property names. BC v1.0 API pages

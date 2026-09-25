@@ -561,18 +561,15 @@ docker compose run --rm worker python -m app.cli enqueue ingest.run \
 > instead, and nothing converts that into a URL, so the browser route cannot
 > work. Use the CLI.
 
-> **The manufacturer property is disputed, and getting it wrong is silent.**
-> `LJ_ODATA_PROFILE` maps `manufacturer_raw` to `pteManufCodePrimary`
-> ([app/adapters/source.py](../../app/adapters/source.py)), on an answer from
-> b-s.si dated 2026-09-07. In the only payload we hold
-> ([docs/samples/bc-api-2026-09-02-allitems.json](../samples/bc-api-2026-09-02-allitems.json))
-> that property is **present but empty on all three records**, while
-> `manufacturerCode` carries `"011"`. `_assert_profile_matches` checks presence,
-> not emptiness, so a wrong choice mirrors the whole catalogue with no
-> manufacturer code: no group is named, no playbook binds, and the REF gate can
-> never establish a manufacturer. **Before any BC cutover, pull one live record
-> and compare the two properties.** `curl` the endpoint with `?$top=1`, save it
-> under `docs/samples/`, and run `python -m tools bc-api`.
+> **The manufacturer property is `manufacturerCode`, settled 2026-09-25.**
+> Until then `LJ_ODATA_PROFILE` read `pteManufCodePrimary`, on an answer from
+> b-s.si dated 2026-09-07. Measured on live BC from the server, 200 items:
+> `manufacturerCode` is filled on all 200 and equals the export's
+> `Šifra proizvajalca` on all 100 we hold; `pteManufCodePrimary` (the export's
+> `Šifra proizvajalca (primarni)`) is filled on 14 and equals neither
+> ([sample](../samples/bc-api-2026-09-25-allitems.json)). The guard checks
+> presence, not emptiness, so the old mapping would have mirrored the catalogue
+> with no manufacturer and reported success. No BC ingest had run.
 
 > **There is no delta.** Nothing builds an OData `$filter`; `delta_since` is read
 > by the web form and by nothing else. Every OData run is a full catalogue read.
@@ -873,7 +870,7 @@ end.
 | Compose refuses to start | `PGDATA_HOST`, `ANTHROPIC_API_KEY` or `DENTALIA_WEB_PASSWORD_HASH` missing | § 3.1 |
 | Every group unnamed, playbooks bind nothing | `playbooks sync` skipped, or the vendor master landed after the first ingest | `playbooks sync`, then `regroup --apply` per manufacturer |
 | `manufacturers seed` refuses | `vendor_master` empty | Step 2 first |
-| BC ingest mirrors items with no manufacturer | The `pteManufCodePrimary` / `manufacturerCode` question in § 6.4 | Pull a live record before cutover |
+| BC ingest mirrors items with no manufacturer | The profile reads a property BC leaves empty; `pteManufCodePrimary` did until 2026-09-25 (§ 6.4) | Compare a live record with the export before trusting a BC ingest |
 | `backfill.scan` dead-letters | Wrong path, host path instead of container path, empty folder, or a `skip_backfill` playbook | § 6.6 |
 | A deleted `extract.doc` job strands its document forever | `fetch_log` already records the hash, so a re-scan never re-emits it | Delete the `fetch_log` rows with the jobs, and only while no `document` references them (`fetch_log.doc_id`) |
 | The archive vanishes | `docker compose down -v` on a named-volume install | § 4, bind it |
