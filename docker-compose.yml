@@ -379,9 +379,12 @@ services:
     # `docker compose ps` and for restart policy, not for the status strip.
     # Its own admin API on :2019 answers without traversing the proxy, so a
     # broken upstream does not read as a broken Caddy. busybox wget, no curl
-    # in this image.
+    # in this image. 127.0.0.1, not `localhost`: the admin API binds IPv4 only,
+    # and where Docker gives the container IPv6 (the Dentalia server,
+    # 2026-09-25) busybox resolves `localhost` to ::1, is refused, and never
+    # falls back -- a working proxy reported unhealthy.
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:2019/config/"]
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:2019/config/"]
       interval: 30s
       timeout: 5s
       start_period: 10s
