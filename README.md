@@ -64,43 +64,37 @@ handing the system over.
 
 ## Getting the code onto the server
 
-The system is deployed from a **git clone**, not from an rsync or a shipped
+The system is deployed from a **git checkout**, not from an rsync or a shipped
 image. `scripts/deploy.sh` reads the checkout's git metadata, so a copy without
 a `.git` directory fails at the first command.
 
-```bash
-# on the server, as the user that will run the stack
-ssh-keygen -t ed25519 -C "dentalia-server" -f ~/.ssh/id_ed25519_mdr -N ""
-cat ~/.ssh/id_ed25519_mdr.pub          # add to the repo's Deploy keys, WRITE ACCESS OFF
-```
-
-GitHub refuses to use one deploy key on two repositories, so this key must be
-new rather than one borrowed from elsewhere. ssh does not offer a key under a
-non-default name by itself, so give it a host alias in `~/.ssh/config`
-(the block is in [deployment.md § 1.2](docs/dev/deployment.md)), then:
+The server holds **no GitHub credential**. Code reaches it by `git push` from a
+machine that has the repository, over the SSH access used to run the install.
+The server's checkout accepts the push and updates its working tree.
 
 ```bash
-git clone github-mdr:dentalia-lj/mdr.git /srv/compliance/app
+# on the server, once, as the user that will run the stack (not sudo)
+git init -b main /srv/compliance/app
+git -C /srv/compliance/app config receive.denyCurrentBranch updateInstead
+
+# on your machine, once
+git remote add server <user>@<server>:/srv/compliance/app
+git push server main
 ```
 
-Two things that will bite:
-
-- **Do not use `--depth`.** A shallow clone cannot check out an earlier commit,
-  which is what rolling back needs.
-- **If you clone with `sudo`**, the directory ends up owned by root and git
-  refuses to read it as your own user. Either clone as the user that will run
-  the stack, or run
-  `git config --global --add safe.directory /srv/compliance/app`.
+The push carries the whole history, which is what rolling back needs.
+`-b main` matters: pushing `main` into a checkout that sits on another branch
+stores the commits and leaves the working tree empty.
 
 ## Updating a running server
 
 ```bash
-cd /srv/compliance/app
-git pull
+git push server main                  # on your machine
+cd /srv/compliance/app                # on the server
 ./scripts/deploy.sh
 ```
 
-`deploy.sh` never fetches, so pull first: it verifies the running images
+`deploy.sh` never fetches, so push first: it verifies the running images
 against the checkout, and a stale checkout verifies green. It builds the images,
 **dumps the database before it migrates**,
 applies pending migrations, restarts `worker` and `web`, and then verifies that
@@ -111,7 +105,11 @@ deploy that builds and restarts without checking has told you nothing.
 ./scripts/deploy.sh --check    # verify only, change nothing
 ```
 
-It restarts `worker` and `web` only. A pull that touched `Caddyfile` needs
+The push is refused if files tracked by git were edited on the server. Change
+code on your machine, never in the server's checkout; `.env` and `backups/` are
+untracked and are not affected.
+
+It restarts `worker` and `web` only. A push that touched `Caddyfile` needs
 `docker compose up -d caddy`, and one that touched `playbooks/` needs the
 database updated too, since the pipeline reads playbooks from there
 ([deployment.md § 5.1](docs/dev/deployment.md)).
@@ -124,8 +122,8 @@ Restoring loses everything written after the dump was taken.
 
 > Not yet exercised on the production server. The loop above is what the tooling
 > is built for and it is used daily in development, but at the time of writing
-> no clone exists on the server, so nobody has run `git pull && ./scripts/deploy.sh`
-> there. Expect to smooth something on the first run.
+> no checkout exists on the server, so nobody has run it there. Expect to smooth
+> something on the first run.
 
 ## What it does not do
 

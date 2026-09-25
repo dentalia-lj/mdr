@@ -187,6 +187,13 @@ restriction below is what has to land, not an optional hardening step. Until it
 does, reach the UI over an SSH tunnel from a trusted workstation rather than
 over the public address.
 
+> **Correction 2026-09-25:** no "ingress restriction" section follows, here or
+> anywhere else; the sentence above points at nothing. What exists is Basic auth
+> on the office name, the API name narrowed to the machine paths, and no rate
+> limit (`tasks/followups.md` `[public-surface-rate-limit]`). Whether the UI goes
+> public on that, or stays behind an SSH tunnel until something more lands, is
+> an open decision for Denis, to take before the ingress step.
+
 ### 6.2 BC routes (§§ 6.2, 6.4)
 
 File routes only, per § 5.2.

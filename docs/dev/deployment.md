@@ -21,7 +21,7 @@ from the CLI with the warnings in § 6.4 understood.
 
 | Thing | Why it blocks | Where it goes |
 |---|---|---|
-| A read-only deploy key on the GitHub repository | The server installs from a git clone, and `scripts/deploy.sh` reads its git metadata (§ 1.2) | GitHub repo settings, Deploy keys |
+| SSH access to the server from a machine that has the repository | The server gets its code by `git push`, and `scripts/deploy.sh` reads its git metadata (§ 1.2). No GitHub credential goes on the server | your machine's git remotes |
 | Two host directories: Postgres data, archive | Compose refuses to start without the first; the second decides whether `down -v` can destroy the archive | `PGDATA_HOST`, the prod overlay in § 4 |
 | A host directory for the corpus and the BC exports | The worker mounts it read-only; `backfill.scan` and `/ingest` both read it | `IMPORTS_HOST` |
 | `ANTHROPIC_API_KEY` | Compose fails fast without it; every in-scope document escalates past T0 | `.env` |
@@ -90,44 +90,47 @@ way. The group buys the directories a person actually works in: `imports` and
 
 ### 1.2 Getting the code there
 
-The server runs from a **git clone of `git@github.com:dentalia-lj/mdr.git`**, not
-an rsync and not shipped images. `scripts/deploy.sh` reads the checkout's git
-metadata unconditionally, so a tree without `.git` stops at its first command,
-and `--check` included.
+The server runs from a **git checkout**, not an rsync and not shipped images.
+`scripts/deploy.sh` reads the checkout's git metadata unconditionally, so a tree
+without `.git` stops at its first command, and `--check` included.
 
-A read-only deploy key, generated on the server:
-
-```bash
-ssh-keygen -t ed25519 -C "dentalia-server" -f ~/.ssh/id_ed25519_mdr -N ""
-cat ~/.ssh/id_ed25519_mdr.pub
-# GitHub: repo Settings -> Deploy keys -> Add. Leave "Allow write access" OFF.
-```
-
-GitHub refuses one deploy key on two repositories, so this key is new, not one
-borrowed from elsewhere. And ssh does not offer a key under a non-default name
-on its own, so name it for this host:
-
-```
-# ~/.ssh/config
-Host github-mdr
-    HostName github.com
-    User git
-    IdentityFile ~/.ssh/id_ed25519_mdr
-    IdentitiesOnly yes
-```
+**The server does not clone from GitHub.** `dentalia-lj/mdr` is private, so a
+clone would need a GitHub credential on the server, and the narrowest one, a
+deploy key, can only be added by a repository admin. We are not admins there
+(2026-09-25). Instead the code is **pushed** to the server over the SSH access
+the install already uses, into a checkout that updates its own working tree:
 
 ```bash
-git clone github-mdr:dentalia-lj/mdr.git /srv/compliance/app
+# on the server, once, as the user that will run the stack
+git init -b main /srv/compliance/app
+git -C /srv/compliance/app config receive.denyCurrentBranch updateInstead
+
+# on your machine, once
+git remote add server denis@91.98.42.140:/srv/compliance/app
+git push server main
 ```
 
-Two traps:
+`updateInstead` makes a push to the checked-out branch update the files as
+well, and refuses the push if tracked files on the server were edited, so a
+change made by hand there is never silently overwritten. `.env` and `backups/`
+are untracked and play no part.
 
-- **No `--depth`.** A shallow clone cannot check out an earlier commit, and the
-  rollback (runbook § Deploy the working tree, "Rolling back") does exactly that.
-- **Do not clone with `sudo`.** A root-owned checkout makes git refuse it as your
-  user ("dubious ownership"), and `deploy.sh` dies on it before printing
-  anything. If it has already happened:
+Three traps:
+
+- **`-b main`.** Without it `git init` may start on `master`; pushing `main`
+  then stores the commits and leaves the working tree empty.
+- **Not with `sudo`.** A root-owned checkout makes git refuse it as your user
+  ("dubious ownership"), and `deploy.sh` dies on it before printing anything.
+  If it has already happened:
   `git config --global --add safe.directory /srv/compliance/app`.
+- **After a rollback** (runbook § Deploy the working tree, "Rolling back") the
+  server's checkout is on a detached commit. A push to `main` then updates the
+  branch but not the files. Run `git checkout main` on the server before the
+  next `deploy.sh`.
+
+GitHub stays the shared home of the code; the server is only ever a target.
+Whoever deploys needs the repository and SSH access to the server, nothing on
+GitHub's side.
 
 ## 2. What the stack is
 
@@ -172,6 +175,19 @@ only the `SCHEDULER_*` half. So **treat `.env` as the wired list, not as
 add it to that service's `environment:` block in the same change -- do not put it
 in `.env` and assume.
 
+**Quoting.** Compose expands `$name` inside unquoted and double-quoted `.env`
+values, and does it silently: measured 2026-09-25, an unquoted bcrypt hash
+`$2a$14$abc...` arrived as `$2a$14` with the rest gone. Single-quoted values are
+taken literally. So single-quote every value that can contain `$` or `\`: the
+web password hash, `BC_USERNAME` (`'DOMAIN\user'`), and any password you did not
+generate yourself (`IMAP_PASSWORD`, `BC_PASSWORD`). `$$` also works, and is what
+the dev `.env` uses.
+
+**Passwords that end up in a connection string.** `POSTGRES_PASSWORD` and
+`DENTALIA_API_PASSWORD` are pasted unescaped into a `postgresql://user:pass@...`
+URL, so `@ : / # % ?` in either breaks the connection. Generate both as hex:
+`openssl rand -hex 24`.
+
 Three groups of what you do set:
 
 ### 3.1 Compose refuses to start without these
@@ -180,7 +196,7 @@ Three groups of what you do set:
 |---|---|
 | `PGDATA_HOST` | Host directory for Postgres data. No default since 2026-09-11 |
 | `ANTHROPIC_API_KEY` | `${ANTHROPIC_API_KEY:?}` in the worker env |
-| `DENTALIA_WEB_PASSWORD_HASH` | `docker run --rm -it caddy:2.8 caddy hash-password`, then type the password at the prompt. Not `--plaintext`, which leaves it in shell history and `ps`; and not `docker compose run caddy`, which needs this very hash to start and pulls up the whole stack behind it |
+| `DENTALIA_WEB_PASSWORD_HASH` | `docker run --rm -it caddy:2.8 caddy hash-password`, then type the password at the prompt, and **single-quote** the result in `.env`. Not `--plaintext`, which leaves it in shell history and `ps`; and not `docker compose run caddy`, which needs this very hash to start and pulls up the whole stack behind it |
 
 ### 3.2 Set these or regret it later
 
@@ -188,7 +204,8 @@ Three groups of what you do set:
 |---|---|---|
 | `IMPORTS_HOST` | `./imports` | Where the corpus and BC exports live on the host. Mounted read-only into `worker` and `web` |
 | `IMPORTS_HOST_ABS` | empty | Absolute host path of the same directory; compose turns it into `WEB_PATH_REWRITES` so document links resolve without a per-request hash |
-| `POSTGRES_PASSWORD` | `dentalia` | Only takes effect on the **first** `up` (initdb). Change it before the stack ever starts |
+| `COMPOSE_PROJECT_NAME` | the directory's name | In `/srv/compliance/app` that is `app`, which names every container `app-worker-1` and every volume `app_...`. Set `compliance` before the first `up`: changing it later leaves the old containers and volumes behind |
+| `POSTGRES_PASSWORD` | `dentalia` | Only takes effect on the **first** `up` (initdb). Change it before the stack ever starts. Hex only, see above |
 | `DENTALIA_API_PASSWORD` | `dentalia_api` | **Read § 3.3 before changing this** |
 | `DENTALIA_WEB_USER` | `admin` | The Basic auth login |
 | `API_PORT` | `8000` | Host port Caddy publishes on |
@@ -215,11 +232,16 @@ runs on a password that is published in this repository.
 On a client server, after `migrate` has run and before anyone uses the UI:
 
 ```bash
-docker compose exec -T postgres psql -U dentalia -d dentalia \
-  -c "ALTER ROLE dentalia_api PASSWORD 'the-real-one'"
+openssl rand -hex 24                                  # the new password
+docker compose exec postgres psql -U dentalia -d dentalia
+#   dentalia=# \password dentalia_api                 # paste it at both prompts
+#   dentalia=# \q
 # then put the same value in .env as DENTALIA_API_PASSWORD, and:
 docker compose up -d web
 ```
+
+`\password` sends only the hash to the server. An `ALTER ROLE ... PASSWORD
+'...'` on the command line puts the password in shell history and `ps`.
 
 **It stays set.** `dentalia_api` is a cluster-global role while 008 runs once
 per database, so every fresh database migrated in the same cluster runs 008
@@ -299,27 +321,27 @@ the one it replaced and the dump taken before it; that line is the rollback
 ### 5.1 Updating a running server
 
 ```bash
-cd /srv/compliance/app
-git pull
+git push server main                  # on your machine
+cd /srv/compliance/app                # on the server
 ./scripts/deploy.sh
 ```
 
 `deploy.sh` never fetches: it verifies the images against **the checkout**, so
-a forgotten `git pull` still prints "Deployed and verified", against old code.
-Pull first, every time.
+a forgotten push still prints "Deployed and verified", against old code.
+Push first, every time.
 
 Two kinds of change it does not carry, because they live outside what it
 rebuilds and restarts:
 
 - **`Caddyfile` or `caddy/users/`.** `deploy.sh` restarts `worker` and `web`
-  only. After a pull that touched either, `docker compose up -d caddy`.
+  only. After a push that touched either, `docker compose up -d caddy`.
 - **`playbooks/*.json`.** The running pipeline reads playbooks from the
-  database, not the files (§ 6.3), so a pulled JSON change sits unused.
+  database, not the files (§ 6.3), so a pushed JSON change sits unused.
   `docker compose run --rm worker python -m app.cli playbooks drift` shows what
   differs, and § 6.3 applies it.
 
-Not yet exercised on the Dentalia server: at the time of writing no clone exists
-there. The loop is what the tooling is built for and is run daily in
+Not yet exercised on the Dentalia server: at the time of writing no checkout
+exists there. The loop is what the tooling is built for and is run daily in
 development.
 
 ## 6. Bring-up order
