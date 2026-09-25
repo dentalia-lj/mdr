@@ -34,8 +34,10 @@ Follow-up `[bc-auth-ntlm-in-negotiate]`. Status: **built and live-verified 2026-
       `.env`), `docs/dev/limits.md`, `docs/troubleshooting.md` (the
       "denwebnav not reachable" entry), `docs/dev/deployment.md` examples
       (`denwebnav` -> `mail.dentalia.si`), `docs/code-map.md` row.
-- [ ] Rebuild the worker and test images (dependency set changed). Test: done.
-      Worker: not yet, it is shared with other sessions.
+- [x] Rebuild the worker and test images (dependency set changed). **Done
+      2026-09-25**: `./scripts/deploy.sh` at `d19f9c1` (verified, no drift,
+      dump `backups/20260925T075556Z-ran-c1476c0.dump`), then the `test` image.
+      `pyspnego` imports in both; the worker carries its 5 `BC_*` keys.
 - [x] Tests: `./scripts/test.sh tests/test_bc_client.py tests/test_ingest*.py`,
       then the full suite once before commit.
 - [x] Live check on cw with the new client (Denis ran it, 2026-09-24): first
