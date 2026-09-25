@@ -244,11 +244,11 @@ def test_invariant11_csv_and_odata_persist_identically(conn, tmp_path):
     ref = _write(tmp_path / "lj.csv", data)
     odata = [
         {"no": "0.900.0001", "description": "MOTOR KL703", "vendorItemNo": "09000001",
-         "pteManufCodePrimary": "011", "pteMedicalDeviceClass": "RAZRED IIA"},
+         "manufacturerCode": "011", "pteMedicalDeviceClass": "RAZRED IIA"},
         {"no": "ND1", "description": "CONSUMABLE", "vendorItemNo": "R2",
-         "pteManufCodePrimary": "011", "pteMedicalDeviceClass": "NI MP"},
+         "manufacturerCode": "011", "pteMedicalDeviceClass": "NI MP"},
         {"no": "U1", "description": "UNCLASSIFIED", "vendorItemNo": "R3",
-         "pteManufCodePrimary": "011", "pteMedicalDeviceClass": ""},
+         "manufacturerCode": "011", "pteMedicalDeviceClass": ""},
     ]
 
     def snapshot():
@@ -276,9 +276,9 @@ def test_invariant11_csv_and_odata_persist_identically(conn, tmp_path):
 def test_ingest_records_blank_device_class_as_an_anomaly(conn):
     records = [
         {"no": "U1", "description": "UNCLASSIFIED", "vendorItemNo": "R3",
-         "pteManufCodePrimary": "011", "pteMedicalDeviceClass": ""},
+         "manufacturerCode": "011", "pteMedicalDeviceClass": ""},
         {"no": "K1", "description": "KNOWN", "vendorItemNo": "R4",
-         "pteManufCodePrimary": "011", "pteMedicalDeviceClass": "RAZRED IIA"},
+         "manufacturerCode": "011", "pteMedicalDeviceClass": "RAZRED IIA"},
     ]
     result = _run_via_runner(conn, "odata", source="bc_odata", records=records)
     rows = conn.execute(
@@ -294,9 +294,9 @@ def test_ingest_records_blank_device_class_as_an_anomaly(conn):
 def test_ingest_records_prose_in_mfr_ref_as_an_anomaly(conn):
     records = [
         {"no": "P1", "description": "WIDGET", "vendorItemNo": "NE BO VEC NA ZALOGI!",
-         "pteManufCodePrimary": "011", "pteMedicalDeviceClass": "RAZRED IIA"},
+         "manufacturerCode": "011", "pteMedicalDeviceClass": "RAZRED IIA"},
         {"no": "P2", "description": "BUR", "vendorItemNo": "104 H251EF 060",
-         "pteManufCodePrimary": "011", "pteMedicalDeviceClass": "RAZRED IIA"},
+         "manufacturerCode": "011", "pteMedicalDeviceClass": "RAZRED IIA"},
     ]
     _run_via_runner(conn, "odata", source="bc_odata", records=records)
     rows = conn.execute(
@@ -352,7 +352,7 @@ def test_scrubbed_prose_is_counted_and_its_value_kept_on_the_anomaly(conn):
     original remark survives on the anomaly, so the scrub loses no evidence."""
     records = [
         {"no": "P1", "description": "WIDGET", "vendorItemNo": "NE BO VEČ NA ZALOGI!",
-         "pteManufCodePrimary": "011", "pteMedicalDeviceClass": "RAZRED IIA"},
+         "manufacturerCode": "011", "pteMedicalDeviceClass": "RAZRED IIA"},
     ]
     result = _run_via_runner(conn, "odata", source="bc_odata", records=records)
 

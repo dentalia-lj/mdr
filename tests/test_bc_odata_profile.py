@@ -29,15 +29,18 @@ def cfg():
 
 #: One record as `allitems` actually returns it, trimmed to the properties the
 #: profile reads. `no`/`description`/`searchDescription`/`vendorItemNo` are
-#: confirmed against the captured payload; `pteMedicalDeviceClass` and
-#: `pteManufCodePrimary` are the observed extension names.
+#: confirmed against the captured payload; `pteMedicalDeviceClass` is the
+#: observed extension name. `pteManufCodePrimary` is here, filled with a
+#: different value, because live BC carries it that way on a few items: the
+#: profile must not read it (see the test below).
 LIVE_RECORD = {
     "no": "0.900.0001",
     "description": "HANDPIECE MOTOR, LED, WITH TUBING",
     "searchDescription": "HANDPIECE MOTOR",
     "vendorItemNo": "1.007.4400",
     "pteMedicalDeviceClass": "IIa",
-    "pteManufCodePrimary": "011",
+    "manufacturerCode": "011",
+    "pteManufCodePrimary": "077-A",
     "gtin": "00000000000000",
 }
 
@@ -49,6 +52,18 @@ def test_the_profile_reads_a_live_record(cfg):
     assert rows[0].item_ref == "0.900.0001"
     assert rows[0].name == "HANDPIECE MOTOR, LED, WITH TUBING"
     assert rows[0].mfr_ref == "1.007.4400"
+    assert rows[0].manufacturer_raw == "011"
+
+
+def test_the_manufacturer_comes_from_manufacturerCode_not_pteManufCodePrimary(cfg):
+    """Measured on live BC 2026-09-25 (200 items, `docs/samples/
+    bc-api-2026-09-25-allitems.json`): `manufacturerCode` filled on 200/200 and
+    equal to the export's `Šifra proizvajalca` on 100/100 items we hold;
+    `pteManufCodePrimary` filled on 14, equal to neither. Reading the latter
+    mirrors the catalogue with no manufacturer and reports success."""
+    rows = list(BcApiAdapter("x", "LJ", cfg, records=[LIVE_RECORD]).read())
+
+    assert LJ_ODATA_PROFILE["manufacturer_raw"] == "manufacturerCode"
     assert rows[0].manufacturer_raw == "011"
 
 

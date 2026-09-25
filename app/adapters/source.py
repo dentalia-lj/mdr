@@ -162,6 +162,12 @@ LJ_CSV_PROFILE = {
 # said so, because a missing property reads as None all the way through
 # normalization. `UnknownOdataProperty` below is the guard that ends that.
 #
+# `manufacturer_raw` is `manufacturerCode`, measured on live BC 2026-09-25: of
+# 200 items it is filled on all 200 and equals the export's `Šifra proizvajalca`
+# on all 100 we hold. `pteManufCodePrimary` (the 2026-09-07 mapping answer) is
+# the export's `Šifra proizvajalca (primarni)`: filled on 14, equal to neither.
+# The guard checks presence, not emptiness, so the wrong one imported silently.
+#
 # `udi` is deliberately absent: no property carries one. `gtin` is the only
 # candidate and a GTIN is not a Basic UDI-DI, so mapping it would manufacture
 # evidence rather than read it.
@@ -169,7 +175,7 @@ LJ_ODATA_PROFILE = {
     "item_ref": "no",
     "name": "description",
     "name_fallback": "searchDescription",
-    "manufacturer_raw": "pteManufCodePrimary",
+    "manufacturer_raw": "manufacturerCode",
     "mfr_ref": "vendorItemNo",
     "md_class": "pteMedicalDeviceClass",
 }

@@ -257,7 +257,7 @@ def _odata_rec(no, desc, vendor, mfr_code, mdclass, udi=None):
     dropped the key rather than manufacture the evidence.
     """
     return {"no": no, "description": desc, "vendorItemNo": vendor,
-            "pteManufCodePrimary": mfr_code, "pteMedicalDeviceClass": mdclass}
+            "manufacturerCode": mfr_code, "pteMedicalDeviceClass": mdclass}
 
 
 def test_bc_adapter_normalizes_odata_records():
