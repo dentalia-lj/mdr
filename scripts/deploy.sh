@@ -62,7 +62,12 @@ command -v python3 >/dev/null || {
 # server's Compose 2.40.3. Check there before the first up:
 #   docker compose config | grep -i archive
 # expects the host path twice and archive_data nowhere.
-if [[ -n "${ARCHIVE_HOST:-}" ]] && docker compose config 2>/dev/null | grep -q 'archive_data'; then
+#
+# Read from .env as well as the shell: compose reads .env itself, this script
+# does not, so a check on the shell alone never fired on a server whose
+# ARCHIVE_HOST lives, as it should, in .env (found 2026-09-25).
+archive_host=${ARCHIVE_HOST:-$(sed -n 's/^ARCHIVE_HOST=//p' .env 2>/dev/null | tail -1 || true)}
+if [[ -n "$archive_host" ]] && docker compose config 2>/dev/null | grep -q 'archive_data'; then
   echo "ARCHIVE_HOST is set but the prod overlay is not loaded: the archive would" >&2
   echo "go to the archive_data volume, which 'down -v' deletes. Set in .env:" >&2
   echo "  COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml" >&2
