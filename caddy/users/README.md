@@ -15,8 +15,10 @@ it in this directory. `docker-compose.yml` mounts the directory read-only at
 Generate a hash with:
 
 ```bash
-docker compose run --rm caddy caddy hash-password --plaintext 'their-password'
+docker run --rm -it caddy:2.8 caddy hash-password    # type it at the prompt
 ```
+
+Not `--plaintext`, which leaves the password in shell history and `ps`.
 
 Nothing here is committed except this file and `.gitignore`: the hashes are the
 credential. An empty directory is fine -- the proxy then runs on the

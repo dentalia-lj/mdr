@@ -388,7 +388,8 @@ services:
       retries: 3
     environment:
       DENTALIA_WEB_USER: ${DENTALIA_WEB_USER:-admin}
-      # Generate with: docker compose run --rm caddy caddy hash-password --plaintext 'your-password'
+      # Generate with: docker run --rm -it caddy:2.8 caddy hash-password (type it at
+      # the prompt), and single-quote the hash in .env: see .env.example
       DENTALIA_WEB_PASSWORD_HASH: "${DENTALIA_WEB_PASSWORD_HASH:?set DENTALIA_WEB_PASSWORD_HASH in .env}"
     restart: unless-stopped
     ports:

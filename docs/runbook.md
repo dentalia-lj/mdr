@@ -158,10 +158,10 @@ Two non-browser caller classes now also reach it, and Caddy does **not** demand 
 First-time setup — set the fallback account in `.env`:
 
 ```bash
-docker compose run --rm caddy caddy hash-password --plaintext 'your-password'
-# put the output in .env:
+docker run --rm -it caddy:2.8 caddy hash-password    # type it at the prompt, not --plaintext
+# put the output in .env, SINGLE-QUOTED (unquoted, compose expands each $ and cuts it short):
 #   DENTALIA_WEB_USER=your-username
-#   DENTALIA_WEB_PASSWORD_HASH=<the bcrypt hash>
+#   DENTALIA_WEB_PASSWORD_HASH='<the bcrypt hash>'
 ```
 
 ### Adding a person
@@ -174,7 +174,7 @@ the container. That directory is committed; its `*.caddy` files are gitignored,
 because the hashes are the credential.
 
 ```bash
-docker compose run --rm caddy caddy hash-password --plaintext 'their-password'
+docker run --rm -it caddy:2.8 caddy hash-password    # they type it at the prompt
 # append one line to caddy/users/people.caddy (create it if it is not there):
 #   maja $2a$14$...
 docker compose up -d caddy          # picks up the new file

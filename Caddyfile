@@ -8,7 +8,7 @@
 #
 # `basic_auth` (renamed from `basicauth` in Caddy 2.8) hashes are bcrypt.
 # Generate one with, e.g.:
-#   docker compose run --rm caddy caddy hash-password --plaintext 'your-password'
+#   docker run --rm -it caddy:2.8 caddy hash-password    (type it at the prompt)
 # then set DENTALIA_WEB_USER / DENTALIA_WEB_PASSWORD_HASH in .env.
 #
 # Pointing this site block at a real hostname instead of `:8000` is the one

@@ -39,8 +39,8 @@ reason for each step, not the commands themselves.
    migrations run in
    the normal flow — see below for what "pending" means when two branches
    both add one.
-4. **Set web credentials** (`docker compose run --rm caddy caddy
-   hash-password ...` into `.env`) before `http://127.0.0.1:8000` behind
+4. **Set web credentials** (`docker run --rm -it caddy:2.8 caddy
+   hash-password`, single-quoted into `.env`) before `http://127.0.0.1:8000` behind
    Caddy answers anything but `/healthz`.
 5. **Run the tests** (below) before you touch anything, so a red suite you
    didn't cause doesn't get blamed on your first commit.

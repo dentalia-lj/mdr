@@ -68,7 +68,7 @@ Working as designed, not a bug. The web container connects as `dentalia_api`, wh
 Host bind is `127.0.0.1:${API_PORT}` on the `caddy` service on purpose (G3 v0 — HTTP Basic in front of `web`; `web` itself publishes no port). Do not open the bind or publish `web`'s own port without moving the auth boundary with it. `WEB_HOST=0.0.0.0` inside the `web` container is a different thing (container-namespace bind so `caddy` can reach it) and is correct.
 
 **401 on every page except `/healthz`.**
-Expected — G3 v0. Set `DENTALIA_WEB_USER` / `DENTALIA_WEB_PASSWORD_HASH` in `.env` (generate the hash with `docker compose run --rm caddy caddy hash-password --plaintext '...'`) and authenticate with those credentials, not the Postgres ones.
+Expected — G3 v0. Set `DENTALIA_WEB_USER` / `DENTALIA_WEB_PASSWORD_HASH` in `.env` (generate the hash with `docker run --rm -it caddy:2.8 caddy hash-password` and type the password at the prompt; single-quote the hash in `.env`) and authenticate with those credentials, not the Postgres ones.
 
 **A button answers 403, "This action is for operators."**
 Working as designed since 2026-09-15 (office UI redesign, spec § 7 P5b, D3).
