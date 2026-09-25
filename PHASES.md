@@ -34,6 +34,12 @@ The pipeline runs end to end and has produced a registry of 891 documents over
 built.** What it has never done is run against a live BC feed, or have its output
 reviewed anywhere near the rate it is produced.
 
+**Installed on the Dentalia server 2026-09-25** (`91.98.42.140`, compose project
+`compliance`): stack up and verified, manufacturer master, playbooks and the
+September catalogue loaded (15.968 items, 8.412 groups, 0 failed). No documents
+there yet, discovery held, reached by SSH tunnel until the host Caddy block goes
+in. Record and what is left: [deployment.md § 9](docs/dev/deployment.md).
+
 | Phase | Scope | Status |
 |---|---|---|
 | **0** | spike: queue, EXTRACT, GATE, corpus run | **DONE** 2026-07-13 |
@@ -134,7 +140,7 @@ here, so citations elsewhere stay valid.
 | Waiting on | What | Gap |
 |---|---|---|
 | **Client** | Manufacturer contacts. **7 of 384** carry one (Carl Martin added 09-14); **IVOCLAR alone holds 60 of the 88 expired production documents (68,2%)** and has no address anywhere in the corpus. Mining the documents was built and measured: it proposes zero (F42) | — |
-| **Client** | Mailbox read access for `mdr@dentalia.si` — protocol, host, credentials. Drafts-only means send-as rights are not needed | **G8** |
+| **Us** | Mailbox read access for `mdr@dentalia.si`: **received 2026-09-25** (IMAP on `mail.dentalia.si`, in the server's `.env`). Left: one poll run by hand and a check in Outlook that nothing turned read, then `SCHEDULER_EMAIL_POLL_ENABLED`. Drafts-only means send-as rights are not needed | **G8** |
 | **Client / BC** | `mfr_ref` source-field confirmation, then the per-supplier map. `missing_mfr_ref` is 7.082/15.958 ≈ 44,4%, which bounds AC1 | **G4** |
 | **Denis / client** | Drive auth mechanics + root folder. `GoogleDriveStore.put()` raises; `LocalFsStore` is live | **G7** |
 | **Client** | External-AI-API policy, before any cheap-model tier swap | **G12** |
@@ -201,7 +207,7 @@ Compatibility on 2026-08-18 as `SPP` — the registry holds 5 of them.)*
 
 ## 5. Decisions
 
-**Every ruling is in [docs/decisions.md](docs/decisions.md) — 98 rows, and the
+**Every ruling is in [docs/decisions.md](docs/decisions.md) — 99 rows, and the
 first place to look before proposing anything that sounds already-decided.**
 Split out of this file 2026-09-04. The most recent, because they are the ones a
 current session collides with:

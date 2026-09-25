@@ -58,8 +58,9 @@ command -v python3 >/dev/null || {
 # loaded. Dev sets neither, so dev skips this entirely.
 #
 # Verified on Compose v5.3.0, 2026-09-22: with the overlay the merge drops the
-# volume everywhere, top-level declaration included. NOT yet verified on the
-# server's Compose 2.40.3. Check there before the first up:
+# volume everywhere, top-level declaration included. Verified the same way on
+# the Dentalia server's Compose 2.40.3 on 2026-09-25, before its first up. On
+# any other host, check before the first up:
 #   docker compose config | grep -i archive
 # expects the host path twice and archive_data nowhere.
 #

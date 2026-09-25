@@ -261,16 +261,29 @@ runs on a password that is published in this repository.
 On a client server, after `migrate` has run and before anyone uses the UI:
 
 ```bash
-openssl rand -hex 24                                  # the new password
-docker compose exec postgres psql -U dentalia -d dentalia
-#   dentalia=# \password dentalia_api                 # paste it at both prompts
-#   dentalia=# \q
-# then put the same value in .env as DENTALIA_API_PASSWORD, and:
+pw=$(openssl rand -hex 24)
+printf "ALTER ROLE dentalia_api PASSWORD '%s';\n" "$pw" \
+  | docker compose exec -T postgres psql -U dentalia -d dentalia
+echo "DENTALIA_API_PASSWORD=$pw" >> .env
+unset pw
 docker compose up -d web
 ```
 
-`\password` sends only the hash to the server. An `ALTER ROLE ... PASSWORD
-'...'` on the command line puts the password in shell history and `ps`.
+The password travels on stdin only: `printf` is a shell builtin, so it never
+appears in `ps`, and the history records the command, not the value. Nobody has
+to see or paste it. An `ALTER ROLE ... PASSWORD '...'` typed on the command line
+puts the password in both. Run this way on the Dentalia server, 2026-09-25.
+
+`web`'s health check does not prove it worked: `/healthz` is deliberately
+database-free. A read-API call does, since it answers from the database as
+`dentalia_api` (`200` or a JSON `404` = connected; `500` = the role and `.env`
+disagree):
+
+```bash
+k=$(sed -n 's/^WEB_API_KEYS=//p' .env)
+curl -s -w '\n%{http_code}\n' -H "X-API-Key: $k" http://127.0.0.1:8000/api/items/TEST-0/documents
+unset k
+```
 
 **It stays set.** `dentalia_api` is a cluster-global role while 008 runs once
 per database, so every fresh database migrated in the same cluster runs 008
@@ -309,9 +322,10 @@ backfill and move it with evidence.
 
 Compose is documented to merge a service's `volumes` by **target path**, so
 the overlay's binds replace the `archive_data` mounts rather than adding to
-them. Checked with Compose v5.3.0 on dev; **prove it on the server's own
-Compose before the first `up`**, because an additive merge would leave the
-archive in the volume and nothing would say so:
+them. Checked with Compose v5.3.0 on dev, and with Compose 2.40.3 on the
+Dentalia server on 2026-09-25 before its first `up`. On any other host **prove
+it on that host's Compose before the first `up`**, because an additive merge
+would leave the archive in the volume and nothing would say so:
 
 ```bash
 docker compose config | grep -i archive
@@ -331,6 +345,13 @@ tell their IT exactly that, in writing, and let them decide.
 docker compose up -d            # postgres -> migrate -> worker, web, caddy
 docker compose ps               # every service healthy, `migrate` exited 0
 ```
+
+The first `up` builds both images on the server: about 3 GB for the worker,
+several minutes on the Dentalia server, done 2026-09-25 alongside their live
+app without trouble. `caddy` reports `healthy` about 30 seconds after it
+starts; until 2026-09-25 its check asked `localhost`, which on a host where
+Docker gives containers IPv6 resolves to `::1`, where Caddy's admin API does not
+listen, so a working proxy read `unhealthy` forever.
 
 `migrate`'s log warns that `storage.local_root './archive' is relative` and that
 archived files are "lost on container restart". Ignore it: `migrate` never
@@ -498,14 +519,25 @@ This is the route for a file that arrived over SFTP: drop it in `IMPORTS_HOST`
 and pick it in the browser. A relative path resolves against the imports
 directory, an absolute one is used as-is.
 
-Or from the shell:
+Or from the shell, a dry run first. `"dry_run": true` works for a file on the
+server as it does for an upload: the job reports the diff and writes nothing.
 
 ```bash
 docker compose run --rm worker python -m app.cli enqueue ingest.run \
-    "ingest:$(date +%F)" \
-    --payload '{"source":"csv","ref":"Artikli 3.7.2026.xlsx","catalogue":"LJ"}' \
+    "ingest:dry:$(date +%F)" \
+    --payload '{"source":"csv","ref":"/imports/Artikli.xlsx","catalogue":"LJ","dry_run":true}' \
     --priority interactive
+docker compose exec -T postgres psql -U dentalia -d dentalia -At -c "
+  SELECT status, (result - 'skipped_sample' - 'anomalies_preview')::text
+  FROM job WHERE dedupe_key LIKE 'ingest:dry:%' ORDER BY id DESC LIMIT 1"
+# then the same enqueue with key "ingest:$(date +%F)" and no dry_run
 ```
+
+The file needs the columns `Št.`, `Opis`, `Šifra proizvajalca`,
+`Dobaviteljeva št. artikla` and `Razred medicinskega pripomočka`; a missing one
+fails the job with the list of what it found. `Opis za iskanje` is optional
+since 2026-09-25: it is only the fallback for a blank `Opis`, and the September
+export left it out. Other columns are ignored.
 
 **Route C — BC OData, from the CLI only.** `app/handlers/ingest.py` builds an
 HTTP client only when `cfg.bc.base_url` is non-empty; with it empty the adapter
@@ -692,6 +724,18 @@ name to the machine paths (runbook § Web UI, "The API name"). The API name is
 hardcoded in our `Caddyfile`; renaming it means editing that rule and the test
 beside it.
 
+**Not yet done (2026-09-25).** The host Caddy block is not in place, by
+choice, so the UI is reachable only through an SSH tunnel from a workstation:
+
+```bash
+ssh -N -L 8100:127.0.0.1:8000 <user>@91.98.42.140
+# browser: http://127.0.0.1:8100   (127.0.0.1, not localhost: Windows tries ::1 first)
+```
+
+Port 8100 locally because a dev checkout's own Caddy holds 8000. The steps for
+the host Caddy are in the [server audit](../2026-09-18-server-audit.md) § 6.1;
+`systemctl reload caddy`, never `restart`.
+
 Set `WEB_PUBLIC_BASE_URL=https://api.cw.dentalia.si` **before the first BC
 push**. That base is written into the links `bc.push` stores in Business
 Central, so changing it afterwards leaves every link already pushed pointing at
@@ -794,6 +838,17 @@ drained in about 8 minutes with one worker; 0 failed or dead, 0 `discover.group`
 10 scheduler ticks, no drift. Office pages answered 200 as staff through the web
 role; a real `dentalia_api` password set per § 3.3 survived `schema-drift` and a
 `web` restart. Not exercised: documents (step 6) and discovery (step 7).
+
+**Installed on the Dentalia server 2026-09-25**, commit `7f3c7ce`, compose
+project `compliance`, in the order above. Steps 1-5 matched the rehearsal: 390
+vendor codes, 381 manufacturers (38 with a playbook), 445 aliases. The catalogue
+was the September export `Artikli.xlsx`: `seen` 19.342, `non_md` 3.374,
+`md_unknown` 11.635, `missing_mfr_ref` 7.168, `mfr_ref_prose` 345, so 15.968
+items and 8.412 groups; the `resolve.group` fan-out drained in 4 min 24 s with one worker.
+0 unnamed groups (1 group with no manufacturer code at all), 0 failed or dead,
+0 `discover.group`, 10 armed crons, `deploy.sh --check` verified, the office
+pages checked through the tunnel. Not yet done there: documents (step 6),
+discovery (step 7), ingress (§ 7), the first IMAP poll, the first BC read.
 
 **Failed or dead jobs need reading, not just counting.** GATE raises rather than
 stages when a required field has no value, or when its evidence carries no

@@ -20,7 +20,7 @@ Read before writing any code touching the relevant area. On conflict: **contract
 | `docs/dentalia-workflow-structured-v2.md` | Workflow decisions, email agent, UDI/EUDAMED research | v2 |
 | `docs/dentalia-etl-stage-alternatives.md` | Tooling choices + upgrade paths per stage | v1 |
 | `PHASES.md` | **Status board**: progress per session, open scope in three buckets (blockers · ours · waiting on someone), headline numbers, gap register | live, v4 2026-09-04 |
-| `docs/decisions.md` | **Every ruling** the rest depends on, 98 rows. Check before proposing anything that looks already-decided | live |
+| `docs/decisions.md` | **Every ruling** the rest depends on, 99 rows. Check before proposing anything that looks already-decided | live |
 | `docs/state/<date>.md` | Dated database readings behind PHASES.md § 3. Never edited after its date; a newer reading gets a new file | dated |
 | `docs/build-log.md` | Archive: done-session retrospectives, out-of-band slices, audits, closed gaps. Read for *why*; never plan from it | archive |
 | `docs/README.md` | Docs index + operational docs (architecture, runbook, troubleshooting, code-map) | live |
