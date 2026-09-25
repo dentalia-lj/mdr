@@ -205,6 +205,29 @@ def test_csv_adapter_missing_expected_column_fails_loudly(tmp_path):
         list(S.CsvExportAdapter(str(p), "LJ", DEFAULT).read())
 
 
+def test_csv_adapter_export_without_name_fallback_column_reads(tmp_path):
+    # The 2026-09 export has no `Opis za iskanje`. It is only the fallback for a
+    # blank `Opis`, so its absence is a fact about the export, not drift -- the
+    # same rule the OData route applies (_OPTIONAL_PROFILE_KEYS).
+    p = tmp_path / "no_fallback.xlsx"
+    pd.DataFrame([{
+        "Št.": "A1", "Opis": "Kompozit", "Šifra proizvajalca": "011",
+        "Dobaviteljeva št. artikla": "REF-1",
+        "Razred medicinskega pripomočka": "IIa",
+    }]).to_excel(p, index=False)
+    [row] = list(S.CsvExportAdapter(str(p), "LJ", DEFAULT).read())
+    assert (row.item_ref, row.name, row.manufacturer_raw) == ("A1", "Kompozit", "011")
+
+
+def test_csv_adapter_still_refuses_a_missing_identity_column(tmp_path):
+    # Optional means name_fallback only: dropping a real column still fails.
+    p = tmp_path / "no_mfr.xlsx"
+    pd.DataFrame([{"Št.": "A1", "Opis": "X", "Dobaviteljeva št. artikla": "R",
+                   "Razred medicinskega pripomočka": "IIa"}]).to_excel(p, index=False)
+    with pytest.raises(ValueError, match="Šifra proizvajalca"):
+        list(S.CsvExportAdapter(str(p), "LJ", DEFAULT).read())
+
+
 def test_xlsx_numeric_typed_cell_reads_as_string(tmp_path):
     # A numeric-TYPED Excel cell (BC may store item/mfr numbers as numbers) must
     # read back as a plain string — no scientific notation, no trailing '.0' —

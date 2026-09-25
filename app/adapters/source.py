@@ -275,7 +275,8 @@ class _ExportAdapter:
         otherwise map every row to None and silently skip the whole export (or,
         worse, fan every row into RESOLVE as md_unknown). A hard error
         dead-letters the job with an actionable message instead."""
-        missing = [col for col in self.profile.values() if col not in df.columns]
+        missing = [col for key, col in self.profile.items()
+                   if key not in _OPTIONAL_PROFILE_KEYS and col not in df.columns]
         if missing:
             raise ValueError(
                 f"export {name} missing expected column(s) {missing}; "
