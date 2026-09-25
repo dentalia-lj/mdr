@@ -64,37 +64,47 @@ handing the system over.
 
 ## Getting the code onto the server
 
-The system is deployed from a **git checkout**, not from an rsync or a shipped
-image. `scripts/deploy.sh` reads the checkout's git metadata, so a copy without
-a `.git` directory fails at the first command.
+The system is deployed from a **git clone** of the GitHub repository, not from
+an rsync or a shipped image. `scripts/deploy.sh` reads the checkout's git
+metadata, so a copy without a `.git` directory fails at the first command.
 
-The server holds **no GitHub credential**. Code reaches it by `git push` from a
-machine that has the repository, over the SSH access used to run the install.
-The server's checkout accepts the push and updates its working tree.
+The repository is private, and **the server stores no GitHub credential.** The
+person deploying logs in with SSH agent forwarding (`ssh -A`), and `git` on the
+server uses that person's own GitHub key through the connection. It works only
+while they are logged in, which is when a deploy happens anyway. Anyone who
+takes this over needs SSH access to the server and read access to the
+repository, nothing else.
 
 ```bash
-# on the server, once, as the user that will run the stack (not sudo)
-git init -b main /srv/compliance/app
-git -C /srv/compliance/app config receive.denyCurrentBranch updateInstead
+# your machine
+eval "$(ssh-agent -s)"; ssh-add ~/.ssh/<your GitHub key>
+ssh -A <user>@<server>
 
-# on your machine, once
-git remote add server <user>@<server>:/srv/compliance/app
-git push server main
+# on the server, once, as the user that runs the stack (not sudo)
+ssh -T git@github.com         # first time: check GitHub's published host key fingerprint
+git clone git@github.com:dentalia-lj/mdr.git /srv/compliance/app
 ```
 
-The push carries the whole history, which is what rolling back needs.
-`-b main` matters: pushing `main` into a checkout that sits on another branch
-stores the commits and leaves the working tree empty.
+Do not use `--depth`: a shallow clone cannot check out an earlier commit, which
+is what rolling back needs. If a repository admin later adds a read-only deploy
+key for the server, `git pull` works without anyone logged in and nothing else
+changes; [deployment.md § 1.2](docs/dev/deployment.md) has the details and what
+to check when a pull fails.
 
 ## Updating a running server
 
 ```bash
-git push server main                  # on your machine
-cd /srv/compliance/app                # on the server
+# your machine: an agent holding your GitHub key, forwarded with -A
+eval "$(ssh-agent -s)"; ssh-add ~/.ssh/<your GitHub key>
+ssh -A <user>@<server>
+
+# on the server
+cd /srv/compliance/app
+git pull
 ./scripts/deploy.sh
 ```
 
-`deploy.sh` never fetches, so push first: it verifies the running images
+`deploy.sh` never fetches, so pull first: it verifies the running images
 against the checkout, and a stale checkout verifies green. It builds the images,
 **dumps the database before it migrates**,
 applies pending migrations, restarts `worker` and `web`, and then verifies that
@@ -105,11 +115,10 @@ deploy that builds and restarts without checking has told you nothing.
 ./scripts/deploy.sh --check    # verify only, change nothing
 ```
 
-The push is refused if files tracked by git were edited on the server. Change
-code on your machine, never in the server's checkout; `.env` and `backups/` are
-untracked and are not affected.
+Change code in the repository, never in the server's checkout: a local edit
+there makes the next `git pull` refuse or merge.
 
-It restarts `worker` and `web` only. A push that touched `Caddyfile` needs
+It restarts `worker` and `web` only. A pull that touched `Caddyfile` needs
 `docker compose up -d caddy`, and one that touched `playbooks/` needs the
 database updated too, since the pipeline reads playbooks from there
 ([deployment.md § 5.1](docs/dev/deployment.md)).
@@ -120,10 +129,8 @@ the verification passed. That line and that dump are the rollback; the
 procedure is in [docs/runbook.md](docs/runbook.md) under *Rolling back*.
 Restoring loses everything written after the dump was taken.
 
-> Not yet exercised on the production server. The loop above is what the tooling
-> is built for and it is used daily in development, but at the time of writing
-> no checkout exists on the server, so nobody has run it there. Expect to smooth
-> something on the first run.
+> The clone was made on the production server on 2026-09-25; the update loop
+> has not yet run there. Expect to smooth something on the first run.
 
 ## What it does not do
 

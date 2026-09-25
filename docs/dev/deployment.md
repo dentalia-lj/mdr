@@ -21,7 +21,7 @@ from the CLI with the warnings in § 6.4 understood.
 
 | Thing | Why it blocks | Where it goes |
 |---|---|---|
-| SSH access to the server from a machine that has the repository | The server gets its code by `git push`, and `scripts/deploy.sh` reads its git metadata (§ 1.2). No GitHub credential goes on the server | your machine's git remotes |
+| SSH access to the server, and a GitHub account with read access to the repository | The server clones and pulls through the deployer's forwarded SSH agent, and `scripts/deploy.sh` reads the checkout's git metadata (§ 1.2). No GitHub credential is stored on the server | — |
 | Two host directories: Postgres data, archive | Compose refuses to start without the first; the second decides whether `down -v` can destroy the archive | `PGDATA_HOST`, the prod overlay in § 4 |
 | A host directory for the corpus and the BC exports | The worker mounts it read-only; `backfill.scan` and `/ingest` both read it | `IMPORTS_HOST` |
 | `ANTHROPIC_API_KEY` | Compose fails fast without it; every in-scope document escalates past T0 | `.env` |
@@ -90,47 +90,76 @@ way. The group buys the directories a person actually works in: `imports` and
 
 ### 1.2 Getting the code there
 
-The server runs from a **git checkout**, not an rsync and not shipped images.
-`scripts/deploy.sh` reads the checkout's git metadata unconditionally, so a tree
-without `.git` stops at its first command, and `--check` included.
+The server runs from a **git clone of `git@github.com:dentalia-lj/mdr.git`**,
+not an rsync and not shipped images. `scripts/deploy.sh` reads the checkout's
+git metadata unconditionally, so a tree without `.git` stops at its first
+command, and `--check` included.
 
-**The server does not clone from GitHub.** `dentalia-lj/mdr` is private, so a
-clone would need a GitHub credential on the server, and the narrowest one, a
-deploy key, can only be added by a repository admin. We are not admins there
-(2026-09-25). Instead the code is **pushed** to the server over the SSH access
-the install already uses, into a checkout that updates its own working tree:
+**How the server reads a private repository without a stored credential.** The
+person deploying logs in with SSH agent forwarding, and `git` on the server
+authenticates to GitHub with that person's own key, through the connection.
+Nothing is written to the server, and access ends when they log out. Deploys are
+manual, so someone is always logged in when one runs.
+
+Why not a deploy key: it is the narrowest credential GitHub offers (read-only,
+one repository) and would let the server pull unattended, but only a
+repository admin can add one, and we are collaborators, not admins (2026-09-25).
+If an admin adds one later, generate it on the server, give it an ssh alias,
+point `origin` at the alias, and everything below stays the same. Pushing from a
+workstation straight into the server was also considered and rejected: the
+server could then run commits that exist nowhere but on that workstation.
+
+The one cost of forwarding: while you are connected, root on the server can use
+your agent to authenticate as you. It is our server and our session, so that
+is accepted.
+
+Once, as the user that will run the stack:
 
 ```bash
-# on the server, once, as the user that will run the stack
-git init -b main /srv/compliance/app
-git -C /srv/compliance/app config receive.denyCurrentBranch updateInstead
+# your machine
+eval "$(ssh-agent -s)"; ssh-add ~/.ssh/<your GitHub key>
+ssh -A <user>@<server>
 
-# on your machine, once
-git remote add server denis@91.98.42.140:/srv/compliance/app
-git push server main
+# on the server
+ssh -T git@github.com
+git clone git@github.com:dentalia-lj/mdr.git /srv/compliance/app
 ```
 
-`updateInstead` makes a push to the checked-out branch update the files as
-well, and refuses the push if tracked files on the server were edited, so a
-change made by hand there is never silently overwritten. `.env` and `backups/`
-are untracked and play no part.
+The first `ssh -T` asks to trust GitHub's host key. Accept only if the
+fingerprint matches the one GitHub publishes
+(`SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU` for ED25519, checked
+against `api.github.com/meta` on 2026-09-25). It then greets the GitHub
+account whose key was forwarded.
 
-Three traps:
+Optional, on your machine, so that `ssh <alias>` is all it takes:
 
-- **`-b main`.** Without it `git init` may start on `master`; pushing `main`
-  then stores the commits and leaves the working tree empty.
-- **Not with `sudo`.** A root-owned checkout makes git refuse it as your user
-  ("dubious ownership"), and `deploy.sh` dies on it before printing anything.
-  If it has already happened:
-  `git config --global --add safe.directory /srv/compliance/app`.
-- **After a rollback** (runbook § Deploy the working tree, "Rolling back") the
-  server's checkout is on a detached commit. A push to `main` then updates the
-  branch but not the files. Run `git checkout main` on the server before the
-  next `deploy.sh`.
+```
+# ~/.ssh/config
+Host dentalia
+    HostName <server>
+    User <user>
+    ForwardAgent yes
+    AddKeysToAgent yes
+```
 
-GitHub stays the shared home of the code; the server is only ever a target.
-Whoever deploys needs the repository and SSH access to the server, nothing on
-GitHub's side.
+and in `~/.bashrc`, so every terminal has an agent:
+`[ -z "$SSH_AUTH_SOCK" ] && eval "$(ssh-agent -s)" >/dev/null`.
+
+**No `--depth`.** A shallow clone cannot check out an earlier commit, and the
+rollback (runbook § Deploy the working tree, "Rolling back") does exactly that.
+
+**When it fails:**
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Could not open a connection to your authentication agent` (on your machine) | No agent runs in this terminal | `eval "$(ssh-agent -s)"`, then `ssh-add` |
+| `git pull` on the server: `Permission denied (publickey)` | Logged in without `-A`, or the agent holds no key | On the server `ssh-add -l` must list your key. If it says it cannot connect, reconnect with `ssh -A`; if it lists nothing, `ssh-add` on your machine |
+| `ssh -T git@github.com` greets a user without access to the repo | The forwarded key is a different GitHub account | Load the key of an account that is a collaborator on the repo |
+| `You are not currently on a branch` | A rollback checked out an older commit | `git checkout main`, then `git pull` |
+| `dubious ownership` | The checkout was created with `sudo` | `git config --global --add safe.directory /srv/compliance/app` |
+
+Done on the Dentalia server 2026-09-25: cloned to `/srv/compliance/app` this
+way.
 
 ## 2. What the stack is
 
@@ -321,27 +350,32 @@ the one it replaced and the dump taken before it; that line is the rollback
 ### 5.1 Updating a running server
 
 ```bash
-git push server main                  # on your machine
-cd /srv/compliance/app                # on the server
+# your machine: an agent holding your GitHub key, forwarded with -A
+eval "$(ssh-agent -s)"; ssh-add ~/.ssh/<your GitHub key>
+ssh -A <user>@<server>
+
+# on the server
+cd /srv/compliance/app
+git pull
 ./scripts/deploy.sh
 ```
 
 `deploy.sh` never fetches: it verifies the images against **the checkout**, so
-a forgotten push still prints "Deployed and verified", against old code.
-Push first, every time.
+a forgotten `git pull` still prints "Deployed and verified", against old code.
+Pull first, every time.
 
 Two kinds of change it does not carry, because they live outside what it
 rebuilds and restarts:
 
 - **`Caddyfile` or `caddy/users/`.** `deploy.sh` restarts `worker` and `web`
-  only. After a push that touched either, `docker compose up -d caddy`.
+  only. After a pull that touched either, `docker compose up -d caddy`.
 - **`playbooks/*.json`.** The running pipeline reads playbooks from the
-  database, not the files (§ 6.3), so a pushed JSON change sits unused.
+  database, not the files (§ 6.3), so a pulled JSON change sits unused.
   `docker compose run --rm worker python -m app.cli playbooks drift` shows what
   differs, and § 6.3 applies it.
 
-Not yet exercised on the Dentalia server: at the time of writing no checkout
-exists there. The loop is what the tooling is built for and is run daily in
+Not yet exercised on the Dentalia server: the clone exists since 2026-09-25,
+no update has run there yet. The loop is what the tooling is built for and is run daily in
 development.
 
 ## 6. Bring-up order
