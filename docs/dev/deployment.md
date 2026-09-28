@@ -655,7 +655,10 @@ Rules that are not optional, each of which has cost someone a day:
 
 Expect this to cost money: a fresh database dedupes against nothing, so the
 whole corpus is extracted at full price. Measured $0.041 per document **in sync
-mode**, so a 1.300-PDF corpus is roughly $40-55. The budget keys are **display
+mode**, so a 1.300-PDF corpus is roughly $40-55. On the Dentalia server's first brand
+(STRAUMANN, 13 PDFs, 2026-09-28) it was **$0.074 per PDF** in sync mode, at the
+official Sonnet 5 price ($2/$10 per MTok): 11 of 13 escalated to T2. The ledger
+logged $0.093, because the price table still carried $3/$15 until that day. The budget keys are **display
 only** -- they show on the KPI board and stop nothing.
 
 `EXTRACT_MODE=batch` (compose default `sync`) roughly halves that through the
