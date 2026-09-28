@@ -174,12 +174,11 @@ services:
       # stage that spends money per call.
       BRAVE_API_KEY: ${BRAVE_API_KEY:-}
       # Extraction transport. `batch` halves the LLM bill (Batch API discount)
-      # and is what the PRD asks for on sweep work, but the code default is
-      # `sync` and every extraction run so far has been sync — all 112 rows in
-      # the cost ledger carried batch=false — so the batch path has never met
-      # the real API. Surfaced here rather than left to an undocumented env var
-      # an operator has to know about: running the sweep without it silently
-      # pays double. Flip per-run with EXTRACT_MODE=batch in .env.
+      # and is what the PRD asks for on sweep work, but it cannot be timed: on
+      # 2026-09-28 the Dentalia server's T2 (Sonnet) batches returned nothing in
+      # 2.5 hours while T1 ended in minutes, and ~70% of backfilled PDFs reach
+      # T2. Keep `sync` for a backfill (docs/dev/deployment.md § 6.6); batch
+      # only where nobody is waiting. Flip per-run with EXTRACT_MODE in .env.
       DENTALIA_EXTRACT_MODE: ${EXTRACT_MODE:-sync}
       # How often a waiting extract.doc asks whether its batch has ended. The
       # code default is 900 s; measured 2026-09-28, Anthropic ended one-request

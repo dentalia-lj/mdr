@@ -663,22 +663,24 @@ only** -- they show on the KPI board and stop nothing.
 
 `EXTRACT_MODE=batch` (compose default `sync`) roughly halves that through the
 Batch API, and it is the obvious lever to reach for once you see the estimate.
-**It has never run against the real API** -- every row in the cost ledger so far
-carried `batch=false`, per `docker-compose.yml`'s own comment -- so flipping it on
-a client's first backfill makes that install the first live exercise of the
-self-defer and poll path. If you want it, prove it on one brand folder first.
+It ran live on dev on 2026-08-13 and on the Dentalia server on 2026-09-28;
+see below for why it is the wrong mode for a backfill.
 
-**Batch is also the fast route for a large folder, once the poll is short.**
-Sync extracts one PDF at a time on the one worker: STRAUMANN took about 21 s a
-PDF, so 850 PDFs is about five hours. Batch submits them all and Anthropic runs
-them in parallel; one-request batches ended within 7 minutes on 2026-09-28. What
-made batch feel slow there was our own poll: `BATCH_POLL_INTERVAL_S` defaults to
-900 s and was not wired to the worker until that day, so a document escalating
-T1 -> T2 waited up to 30 minutes on polling alone. On a backfill set
-`BATCH_POLL_INTERVAL_S=60` in `.env` and `docker compose up -d worker`. Each
-waiting job then makes one status call a minute, which at hundreds of jobs is
-still far inside the API's limits. Batch mode ran live on the Dentalia server the
-same day (INTERDENT).
+**Use sync for a backfill; batch cannot be timed.** Measured on the Dentalia
+server 2026-09-28, wave 1 (17 brands, 784 PDFs) in batch mode: all 728 T1
+(Haiku) batches ended within minutes, but the 538 T2 (Sonnet 5) batches returned
+**nothing in 2.5 hours**, with the first still `in_progress` at Anthropic and no
+incident on their status page. Anthropic says "most batches completing within
+1 hour" and expires a batch after 24 hours, and that is the whole guarantee.
+Since about 70% of these PDFs escalate to T2 (81% on dev), a batch backfill
+waits on the slowest queue for most of its documents. The wave was switched to
+sync (`EXTRACT_MODE=sync`, `docker compose up -d --scale worker=2 worker`) and
+the waiting batches cancelled, which Anthropic does not bill for a request not
+yet sent to the model. Two sync workers then ran about 11 PDFs a minute.
+Switching drops the batch work: a waiting job restarts its extraction from T0
+in sync and pays T1 again (about $0.01 a document). `BATCH_POLL_INTERVAL_S`
+(on `worker` since that day, default 900 s) only decides how often a waiting
+job asks; 60 is sensible if batch is used at all.
 
 Keep the catalogue ahead of the corpus for a second reason beyond § 6.1:
 `backfill.scan` enqueues its `extract.doc` at the queue's bare `sweep` default

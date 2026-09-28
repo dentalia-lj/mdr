@@ -183,7 +183,7 @@ Invariant 12 caps it at the cheap tier.
 
 | Key | Type | Default | Env var |
 |---|---|---|---|
-| `batch.poll_interval_s` | int | `900` | `BATCH_POLL_INTERVAL_S`. On `worker` since 2026-09-28; before that it was unsettable. How long a batch-mode `extract.doc` waits between status checks: a document escalating to T2 waits two of these on top of Anthropic's own time. 60 on a backfill |
+| `batch.poll_interval_s` | int | `900` | `BATCH_POLL_INTERVAL_S`. On `worker` since 2026-09-28; before that it was unsettable. How long a batch-mode `extract.doc` waits between status checks: a document escalating to T2 waits two of these on top of Anthropic's own time. Batch is the wrong mode for a backfill (deployment.md § 6.6, measured 2026-09-28): use `EXTRACT_MODE=sync` |
 | `fetch.politeness_ms` | int | `2000` | `FETCH_POLITENESS_MS` |
 | `fetch.recency_window_days` | int | `21` | `FETCH_RECENCY_WINDOW_DAYS` |
 | `fetch.robots_ttl_hours` | int | `24` | `FETCH_ROBOTS_TTL_HOURS` |
