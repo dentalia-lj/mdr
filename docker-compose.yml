@@ -181,6 +181,11 @@ services:
       # an operator has to know about: running the sweep without it silently
       # pays double. Flip per-run with EXTRACT_MODE=batch in .env.
       DENTALIA_EXTRACT_MODE: ${EXTRACT_MODE:-sync}
+      # How often a waiting extract.doc asks whether its batch has ended. The
+      # code default is 900 s; measured 2026-09-28, Anthropic ended one-request
+      # batches within 7 minutes, so a document escalating T1 -> T2 sat up to 30
+      # minutes on our polling alone. One status call per waiting job per poll.
+      BATCH_POLL_INTERVAL_S: ${BATCH_POLL_INTERVAL_S:-900}
       # Corpus-first cold start. RESOLVE must run before BACKFILL (it builds the
       # groups a backfill document resolves against), but at that moment nothing
       # is covered, so resolve.py's C3 "already has a doc" suppression cannot

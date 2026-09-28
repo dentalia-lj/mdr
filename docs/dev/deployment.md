@@ -196,7 +196,7 @@ compose names it in that service's `environment:` block**. Most of
 zero times in it. Setting any of those in `.env` changes nothing; the dataclass
 default in `app/config.py` wins. What IS wired: `DATABASE_URL`,
 `ANTHROPIC_API_KEY`, `BRAVE_API_KEY`, `ALERTS_WEBHOOK_URL`, `DISCOVER_HOLD`,
-`EXTRACT_MODE`, `STORAGE_LOCAL_ROOT`, `STORAGE_BASE_URL`, every `SCHEDULER_*`
+`EXTRACT_MODE`, `BATCH_POLL_INTERVAL_S` (since 2026-09-28), `STORAGE_LOCAL_ROOT`, `STORAGE_BASE_URL`, every `SCHEDULER_*`
 key (a test pins that one), the `WEB_*` keys and the `IMPORTS_HOST` /
 `PGDATA_HOST` / `API_PORT` interpolations. `tests/test_compose_config.py` guards
 only the `SCHEDULER_*` half. So **treat `.env` as the wired list, not as
@@ -667,6 +667,18 @@ Batch API, and it is the obvious lever to reach for once you see the estimate.
 carried `batch=false`, per `docker-compose.yml`'s own comment -- so flipping it on
 a client's first backfill makes that install the first live exercise of the
 self-defer and poll path. If you want it, prove it on one brand folder first.
+
+**Batch is also the fast route for a large folder, once the poll is short.**
+Sync extracts one PDF at a time on the one worker: STRAUMANN took about 21 s a
+PDF, so 850 PDFs is about five hours. Batch submits them all and Anthropic runs
+them in parallel; one-request batches ended within 7 minutes on 2026-09-28. What
+made batch feel slow there was our own poll: `BATCH_POLL_INTERVAL_S` defaults to
+900 s and was not wired to the worker until that day, so a document escalating
+T1 -> T2 waited up to 30 minutes on polling alone. On a backfill set
+`BATCH_POLL_INTERVAL_S=60` in `.env` and `docker compose up -d worker`. Each
+waiting job then makes one status call a minute, which at hundreds of jobs is
+still far inside the API's limits. Batch mode ran live on the Dentalia server the
+same day (INTERDENT).
 
 Keep the catalogue ahead of the corpus for a second reason beyond § 6.1:
 `backfill.scan` enqueues its `extract.doc` at the queue's bare `sweep` default
