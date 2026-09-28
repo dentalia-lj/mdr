@@ -36,11 +36,14 @@ class Price:
     cache_write_mult: Decimal = Decimal("1.25")
 
 
-# Model prices (2026-06, verified via the claude-api skill). Keys are config.models
-# ids (config.models.t1 / .t2). Add a row here when a tier's model is swapped.
+# Model prices, checked against platform.claude.com/docs/en/about-claude/pricing
+# on 2026-09-28. Keys are config.models ids (config.models.t1 / .t2). Add a row
+# here when a tier's model is swapped. Sonnet 5 was $3/$15 here until that day;
+# its $2/$10 launch price became the standard one, so every Sonnet 5 row logged
+# before it overstates the spend by half (the ledger stores the computed cost).
 PRICES: dict[str, Price] = {
     "claude-haiku-4-5": Price(Decimal("1"), Decimal("5")),
-    "claude-sonnet-5": Price(Decimal("3"), Decimal("15")),
+    "claude-sonnet-5": Price(Decimal("2"), Decimal("10")),
     "claude-sonnet-4-6": Price(Decimal("3"), Decimal("15")),  # retained: prices already-logged spend
 }
 
