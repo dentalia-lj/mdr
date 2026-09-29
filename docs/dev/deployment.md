@@ -423,7 +423,7 @@ against an empty database, and both fail *silently* when skipped.
   vendor_rows`, so a master that loaded but is missing even one code a playbook
   claims still dies on the raw `ForeignKeyViolation: Key (code_source,
   code)=(LJ, 001)`. That is a live risk with a client-supplied export, not a
-  theoretical one -- the 38 playbooks in the tree claim **46 distinct BC codes**,
+  theoretical one -- the 43 playbooks in the tree claim **51 distinct BC codes** (38 and 46 until 2026-09-29),
   and the last recorded check that every claimed code is in the master covered 39
   codes on 2026-08-26 (migration 049's own comment). If step 3 dies on an FK, the
   fix is the missing vendor row, not the playbook.
@@ -479,7 +479,7 @@ the documented fallback rather than a blocker — 390 rows that change rarely.
 
 ### 6.3 Steps 3 and 4: playbooks (no branch)
 
-The 38 playbook JSON files ship in the repository, so they exist on a fresh
+The 43 playbook JSON files ship in the repository, so they exist on a fresh
 server whatever the data sources are. They are the seed; after import the
 database holds the bodies (migration 050) and the UI edits them.
 

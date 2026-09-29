@@ -1,0 +1,12 @@
+{
+  "manufacturer": "BOTISS",
+  "bc_codes": [
+    {
+      "code": "10171"
+    }
+  ],
+  "aliases": [
+    "botiss biomaterials GmbH"
+  ],
+  "note": "Authored 2026-09-29 from the Dentalia server's wave-2 backfill: VALIDATE flagged `manufacturer-unresolved` on this manufacturer's documents because they print the legal entity, which no alias carried. BC code from the vendor master."
+}

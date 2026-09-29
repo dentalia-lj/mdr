@@ -421,11 +421,11 @@ def test_ultradent_names_the_cdn_its_documents_actually_live_on():
 
 
 def test_the_shipped_playbooks_still_validate_with_the_crawl_field_added():
-    """Additive-only regression: every one of the 38 delivered files must
+    """Additive-only regression: every one of the delivered files (43 since 2026-09-29) must
     still parse and validate now that `Playbook` carries a new optional
     field with a default."""
     loaded = playbooks.load_playbooks()
-    assert len(loaded) == 38
+    assert len(loaded) == 43
     playbooks.validate(loaded)
 
 
