@@ -43,7 +43,8 @@ class Price:
 # before it overstates the spend by half (the ledger stores the computed cost).
 PRICES: dict[str, Price] = {
     "claude-haiku-4-5": Price(Decimal("1"), Decimal("5")),
-    "claude-sonnet-5": Price(Decimal("2"), Decimal("10")),
+    "claude-sonnet-5-5": Price(Decimal("2"), Decimal("10")),  # T2 from 2026-09-29
+    "claude-sonnet-5": Price(Decimal("2"), Decimal("10")),  # retained: prices already-logged spend
     "claude-sonnet-4-6": Price(Decimal("3"), Decimal("15")),  # retained: prices already-logged spend
 }
 

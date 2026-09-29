@@ -231,7 +231,7 @@ class Models:
     """models.t1 / models.t2 / models.rank / models.email_summary"""
 
     t1: str = "claude-haiku-4-5"
-    t2: str = "claude-sonnet-5"
+    t2: str = "claude-sonnet-5-5"
     rank: str = "claude-haiku-4-5"
     # Inbound email-body summarisation (S2.4, invariant 12 widened + ratified
     # 2026-08-20). Cheap tier only, and deliberately its own key rather than
@@ -875,7 +875,7 @@ def load_config() -> Config:
 
     models = Models(
         t1=_str("MODELS_T1", _dig(t, "models", "t1"), "claude-haiku-4-5"),
-        t2=_str("MODELS_T2", _dig(t, "models", "t2"), "claude-sonnet-5"),
+        t2=_str("MODELS_T2", _dig(t, "models", "t2"), "claude-sonnet-5-5"),
         rank=_str("MODELS_RANK", _dig(t, "models", "rank"), "claude-haiku-4-5"),
         email_summary=_str(
             "MODELS_EMAIL_SUMMARY", _dig(t, "models", "email_summary"),

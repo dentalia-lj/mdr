@@ -26,7 +26,11 @@ def _usage_msg(**kw):
         # Haiku 4.5: $1 in / $5 out per MTok.
         ("claude-haiku-4-5", Usage(1000, 1000), False, Decimal("0.006")),
         ("claude-haiku-4-5", Usage(1000, 1000), True, Decimal("0.003")),  # batch 50%
-        # Sonnet 5 (the T2 model): $2 in / $10 out per MTok, batch $1 / $5.
+        # Sonnet 5.5 (the T2 model from 2026-09-29): $2 in / $10 out per MTok,
+        # batch $1 / $5, cache hit $0.20 (0.1x). Pricing page read 2026-09-29.
+        ("claude-sonnet-5-5", Usage(1000, 1000), False, Decimal("0.012")),
+        ("claude-sonnet-5-5", Usage(1000, 1000), True, Decimal("0.006")),
+        # Sonnet 5 (T2 until 2026-09-29, retained for logged spend): $2 / $10.
         # platform.claude.com/docs/en/about-claude/pricing, read 2026-09-28: the
         # launch price became standard, the planned rise to $3/$15 did not happen.
         ("claude-sonnet-5", Usage(1000, 1000), False, Decimal("0.012")),

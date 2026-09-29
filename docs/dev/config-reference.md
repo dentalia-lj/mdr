@@ -172,7 +172,7 @@ Not to be confused with the extraction escalation threshold, which is a hardcode
 | Key | Type | Default | Env var |
 |---|---|---|---|
 | `models.t1` | str | `claude-haiku-4-5` | `MODELS_T1` |
-| `models.t2` | str | `claude-sonnet-5` | `MODELS_T2` |
+| `models.t2` | str | `claude-sonnet-5-5` | `MODELS_T2` |
 | `models.rank` | str | `claude-haiku-4-5` | `MODELS_RANK` |
 | `models.email_summary` | str | `claude-haiku-4-5` | `MODELS_EMAIL_SUMMARY` |
 
