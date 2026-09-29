@@ -79,6 +79,12 @@ DUMP_DIR=backups
 DEPLOY_LOG=$DUMP_DIR/deploy.log
 KEEP_DUMPS=5
 mkdir -p "$DUMP_DIR"
+source scripts/lib/dump.sh
+
+# A deploy waits for a running backup (scripts/backup.sh) to finish, and holds
+# the same lock until it exits, so no backup snapshots a half-migrated database.
+# --check changes nothing and needs no lock.
+[[ $CHECK_ONLY -eq 0 ]] && take_lock "$DUMP_DIR/.lock" 900
 
 # The commit the running stack was last deployed from, per the log.
 previous_sha() {
@@ -116,37 +122,19 @@ if [[ $CHECK_ONLY -eq 0 ]]; then
   docker compose build worker web
 
   # After the build, so the dump is as fresh as it can be, and before the
-  # migration, so it holds the schema the previous commit ran on. pg_dump reads
-  # a snapshot: reads, writes and the workers carry on while it runs; only DDL
-  # waits, and the migration below starts after it finishes. Written to a
-  # .partial name and renamed only once it has been restored for real, so a
-  # dump that died halfway, or one that does not restore, never looks like a
-  # rollback point. Under `set -e` a failed dump stops the deploy before
-  # anything migrates.
+  # migration, so it holds the schema the previous commit ran on. The dump and
+  # its trial restore live in scripts/lib/dump.sh, shared with backup.sh.
+  # A dump that does not restore stops the deploy before anything migrates.
   say "Dumping the database (commit ${PREVIOUS} is running)"
   DUMP="$DUMP_DIR/$(date -u +%Y%m%dT%H%M%SZ)-ran-${PREVIOUS}.dump"
-  docker compose exec -T postgres sh -c \
-    'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$DUMP.partial"
-
-  # A readable table of contents is not a restorable dump: on 2026-09-18 the
-  # dev database's dump listed cleanly and failed to restore on four orphaned
-  # array types. So restore it, strictly, into a scratch database in the same
-  # cluster, and drop that. No migration runs there, so it touches no role.
-  # About 4 s for the 64 MB dev database.
-  CHECK_DB="dentalia_restore_check_$(head -c6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-  docker compose exec -T postgres sh -c "createdb -U \"\$POSTGRES_USER\" $CHECK_DB"
-  restored=1
-  docker compose exec -T postgres sh -c \
-    "pg_restore -U \"\$POSTGRES_USER\" -d $CHECK_DB --exit-on-error" < "$DUMP.partial" || restored=0
-  docker compose exec -T postgres sh -c "dropdb -U \"\$POSTGRES_USER\" --force $CHECK_DB"
-  if [[ $restored -ne 1 ]]; then
-    echo "The dump does not restore ($DUMP.partial kept). Nothing was migrated." >&2
-    exit 1
-  fi
-  mv "$DUMP.partial" "$DUMP"
+  dump_verified "$DUMP" || { echo "Nothing was migrated." >&2; exit 1; }
   echo "$DUMP  $(du -h "$DUMP" | cut -f1)"
-  # Keep the newest $KEEP_DUMPS; name order is time order (UTC stamp first).
-  ls -1 "$DUMP_DIR"/*.dump | head -n -"$KEEP_DUMPS" | xargs -r rm --
+  # Keep the newest $KEEP_DUMPS deploy dumps; name order is time order (UTC
+  # stamp first). Only names starting with a digit: nothing else in backups/
+  # may ever take a slot, or a deploy deletes the rollback point it just made
+  # (other dumps once sorted after these and did exactly that, 2026-09-28;
+  # the hourly backup dumps live in backups/hourly/).
+  ls -1 "$DUMP_DIR"/[0-9]*.dump | head -n -"$KEEP_DUMPS" | xargs -r rm --
 
   say "Applying migrations"
   docker compose run --rm migrate
