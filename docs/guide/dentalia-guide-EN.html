@@ -3396,7 +3396,7 @@ tbody tr:last-child td{border-bottom:0}
 <hr>
 <h2 id="what-happens-then">What happens then</h2>
 <h3 id="board-1-printed-names-without-a-manufacturer">Board 1 — printed names without a manufacturer</h3>
-<p>Once your developer adds the name to the playbook and re-checks the waiting documents, each one is matched again. A document whose article numbers match your products is published on its own, and its Review task closes. One whose numbers match nothing you stock stays on Review, now with a more precise reason. Future documents printing that name are matched without anyone doing anything.</p>
+<p>Once your developer adds the name to the playbook and re-checks the waiting documents, each one is matched again. A document whose article numbers match your products is published when the reading is confident, and its Review task closes; if something else about it is doubtful, it stays on Review. One that lists nothing you stock is filed, when the reading is otherwise sound. A document that stays on Review may still show its old reason there. The row leaves this board once the document is matched. Future documents printing that name are matched without anyone doing anything.</p>
 <h3 id="board-2-oddities-in-your-product-list">Board 2 — oddities in your product list</h3>
 <p>Every row is something the system read from Business Central and could not interpret. A repeated oddity bumps a counter rather than being listed again, so this list stays the size of the problem, not the size of your catalogue.</p>
 <h3 id="board-3-device-class-vs-business-central">Board 3 — device class vs Business Central</h3>
@@ -3411,22 +3411,22 @@ tbody tr:last-child td{border-bottom:0}
 </tr></thead><tbody>
 <tr>
 <td><strong>Alias exists</strong></td>
-<td>The name is already known; these documents were checked before it was added</td>
+<td>The name is already known; these documents were checked before it was. If the manufacturer has no products in the catalogue, the row says so and there is nothing to re-check</td>
 <td>Ask your developer to re-check them (one command)</td>
 </tr>
 <tr>
 <td><strong>Article numbers</strong></td>
-<td>Most of the documents' article numbers belong to one manufacturer's products: strong evidence</td>
-<td>Pass the name and the suggested playbook to your developer</td>
+<td>At least 3 of the documents' article numbers belong only to one manufacturer's products, and they are at least 80 % of those found in the catalogue. If most of what the documents list is not in the catalogue, the row warns you</td>
+<td>Pass the name and the suggested playbook to your developer. Heed the warning: a distributor lists many manufacturers' articles</td>
 </tr>
 <tr>
 <td><strong>Name only</strong></td>
-<td>The name contains a Business Central brand, but no article number confirms it</td>
+<td>The name contains a Business Central brand, but the article numbers do not confirm it. A brand can also be a distributor</td>
 <td>Open one document and check the manufacturer before passing it on</td>
 </tr>
 <tr>
 <td><strong>No match</strong></td>
-<td>Neither the article numbers nor the name point to anyone</td>
+<td>Neither the article numbers nor the name point to one manufacturer</td>
 <td>Look at the documents. It may be a distributor, whose name must never be added as a manufacturer's</td>
 </tr>
 </tbody></table></div>

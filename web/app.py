@@ -3873,7 +3873,7 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             # First card: printed names no alias knows, the documents waiting
             # on them, and which playbook needs the name. Suggests only; the
             # alias is added in the playbook file (spec 2026-09-29).
-            unmatched = unmatched_names.groups(conn, min_ref_len=min_ref_len)
+            unmatched = unmatched_names.find(conn, min_ref_len=min_ref_len)
             summary = conn.execute(
                 "SELECT kind, count(*) AS subjects, sum(seen_count) AS observations "
                 "FROM data_anomaly GROUP BY kind ORDER BY subjects DESC"
@@ -3938,7 +3938,7 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
              "pager": _pager(page, DATA_QUALITY_PAGE_SIZE, total),
              "class_summary": class_summary, "class_rows": class_rows,
              "class_total": class_total, "class_shown": CLASS_CHECK_LIMIT,
-             "unmatched": unmatched, "unmatched_summary": unmatched_names.summary(unmatched),
+             "unmatched": unmatched.groups, "unmatched_summary": unmatched_names.summary(unmatched),
              "strong_min_refs": unmatched_names.STRONG_MIN_REFS,
              "strong_share": int(unmatched_names.STRONG_SHARE * 100)},
         )

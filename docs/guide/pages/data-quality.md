@@ -77,10 +77,12 @@ Nothing. Being logged in is enough.
 
 Once your developer adds the name to the playbook and re-checks the waiting
 documents, each one is matched again. A document whose article numbers match
-your products is published on its own, and its Review task closes. One whose
-numbers match nothing you stock stays on Review, now with a more precise
-reason. Future documents printing that name are matched without anyone doing
-anything.
+your products is published when the reading is confident, and its Review task
+closes; if something else about it is doubtful, it stays on Review. One that
+lists nothing you stock is filed, when the reading is otherwise sound. A
+document that stays on Review may still show its old reason there. The row
+leaves this board once the document is matched. Future documents printing
+that name are matched without anyone doing anything.
 
 ### Board 2 — oddities in your product list
 
@@ -103,10 +105,10 @@ and where they genuinely disagree.
 
 | You see | It means | What to do |
 |---|---|---|
-| **Alias exists** | The name is already known; these documents were checked before it was added | Ask your developer to re-check them (one command) |
-| **Article numbers** | Most of the documents' article numbers belong to one manufacturer's products: strong evidence | Pass the name and the suggested playbook to your developer |
-| **Name only** | The name contains a Business Central brand, but no article number confirms it | Open one document and check the manufacturer before passing it on |
-| **No match** | Neither the article numbers nor the name point to anyone | Look at the documents. It may be a distributor, whose name must never be added as a manufacturer's |
+| **Alias exists** | The name is already known; these documents were checked before it was. If the manufacturer has no products in the catalogue, the row says so and there is nothing to re-check | Ask your developer to re-check them (one command) |
+| **Article numbers** | At least 3 of the documents' article numbers belong only to one manufacturer's products, and they are at least 80 % of those found in the catalogue. If most of what the documents list is not in the catalogue, the row warns you | Pass the name and the suggested playbook to your developer. Heed the warning: a distributor lists many manufacturers' articles |
+| **Name only** | The name contains a Business Central brand, but the article numbers do not confirm it. A brand can also be a distributor | Open one document and check the manufacturer before passing it on |
+| **No match** | Neither the article numbers nor the name point to one manufacturer | Look at the documents. It may be a distributor, whose name must never be added as a manufacturer's |
 
 ### Board 2 — what each kind means
 

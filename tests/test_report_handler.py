@@ -674,7 +674,7 @@ def test_the_report_counts_printed_names_without_a_manufacturer(conn, tmp_path):
     _doc(conn, "Henry <Schein> Inc.")
     page = _run_report(conn, tmp_path)
     assert ("Printed names without a manufacturer: 2 names,\n 3 documents waiting.\n"
-            " 1 have a suggested manufacturer from article numbers.") in page
+            " Suggested from article numbers: 1. Alias already exists: 0.") in page
     assert "<td>botiss biomaterials GmbH</td><td>2</td><td>BOTISS (article numbers)</td>" in page
     assert "<td>Henry &lt;Schein&gt; Inc.</td><td>1</td><td>none</td>" in page
 

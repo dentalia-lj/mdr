@@ -38,7 +38,7 @@ SELECT d.doc_id, d.content_hash, d.archive_url, d.type, d.status,
 # trust) and whether it flagged the manufacturer unresolved, reviewer edits
 # (T3 evidence), and a reviewer's reopen.
 _CONTEXT_SQL = """
-SELECT d.doc_id, vj.has_job, vj.group_id, vj.unresolved,
+SELECT d.doc_id, vj.has_job, vj.group_id, vj.unresolved, vj.finished,
        EXISTS (SELECT 1 FROM evidence e
                 WHERE e.doc_id = d.doc_id AND e.tier = 'T3') AS edited,
        EXISTS (SELECT 1 FROM audit_log l
@@ -46,7 +46,8 @@ SELECT d.doc_id, vj.has_job, vj.group_id, vj.unresolved,
   FROM document d
   LEFT JOIN LATERAL (
       SELECT true AS has_job, j.payload->>'group_id' AS group_id,
-             COALESCE(j.result->'flags' ? 'manufacturer-unresolved', false) AS unresolved
+             COALESCE(j.result->'flags' ? 'manufacturer-unresolved', false) AS unresolved,
+             j.result IS NOT NULL AS finished
         FROM job j
        WHERE j.type = 'validate.doc' AND j.payload->>'content_hash' = d.content_hash
        ORDER BY j.id DESC LIMIT 1
@@ -56,7 +57,7 @@ SELECT d.doc_id, vj.has_job, vj.group_id, vj.unresolved,
 
 #: Why a document printing the name is left alone, in the order they are tested.
 LEFT_ALONE = ("production", "rejected", "superseded", "no_validate_job",
-              "grouped", "edited", "reopened", "resolved")
+              "grouped", "edited", "reopened", "pending", "resolved")
 
 
 @dataclass
@@ -102,6 +103,10 @@ def plan(conn, name: str) -> Plan:
             out.left_alone["edited"] += 1
         elif ctx["reopened"]:
             out.left_alone["reopened"] += 1
+        elif not ctx["finished"]:
+            # Its latest validation is queued, running or failed: it will
+            # read the alias itself when it runs, and has no verdict yet.
+            out.left_alone["pending"] += 1
         elif not ctx["unresolved"]:
             # Its last validation already named a manufacturer: the alias
             # changes nothing for it, and sending it round again is churn.
@@ -115,7 +120,7 @@ def plan(conn, name: str) -> Plan:
 _WORDS = {"production": "published", "rejected": "rejected", "superseded": "superseded",
           "no_validate_job": "never validated", "grouped": "in a catalogue group",
           "edited": "edited by a reviewer", "reopened": "reopened by a reviewer",
-          "resolved": "manufacturer already found"}
+          "pending": "validation not finished", "resolved": "manufacturer already found"}
 
 
 def render(p: Plan) -> list[str]:

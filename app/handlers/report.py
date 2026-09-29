@@ -155,11 +155,11 @@ def failure_spikes(
 
 
 def _unmatched_names(conn, min_ref_len: int) -> dict:
-    found = unmatched_names.groups(conn, min_ref_len=min_ref_len)
+    found = unmatched_names.find(conn, min_ref_len=min_ref_len)
     return {**unmatched_names.summary(found),
             "rows": [{"printed": g.printed, "waiting": g.waiting,
                       "level": g.suggestion.level,
-                      "manufacturer": g.suggestion.manufacturer} for g in found]}
+                      "manufacturer": g.suggestion.manufacturer} for g in found.groups]}
 
 
 def handle_report_weekly(conn, job: dict) -> dict:
@@ -274,7 +274,7 @@ def _write_html(report_dir: str, result: dict) -> str | None:
             for d in docs
         )
 
-    level_words = {"alias": "alias exists, re-validate", "refs": "article numbers",
+    level_words = {"alias": "alias exists", "refs": "article numbers",
                    "name": "name only", "none": ""}
 
     def unmatched_rows(rows: list[dict]) -> str:
@@ -305,7 +305,7 @@ def _write_html(report_dir: str, result: dict) -> str | None:
  · Due review: {review}</p>
 <p>Printed names without a manufacturer: {unmatched['names']} name{'' if unmatched['names'] == 1 else 's'},
  {unmatched['documents']} document{'' if unmatched['documents'] == 1 else 's'} waiting.
- {unmatched['by_refs']} have a suggested manufacturer from article numbers.</p>
+ Suggested from article numbers: {unmatched['by_refs']}. Alias already exists: {unmatched.get('alias_exists', 0)}.</p>
 <p class="meta">The system has {dead} failed task{'' if dead == 1 else 's'}, listed
  under Failed tasks.</p>
 <h2>Already expired ({lapsed})</h2>
@@ -323,8 +323,8 @@ def _write_html(report_dir: str, result: dict) -> str | None:
 <table><tr><th>Document</th><th>Type</th><th>Manufacturer</th><th>Due since</th></tr>
 {rows(result.get('review_due') or [])}</table>
 <h2>Printed names without a manufacturer ({unmatched['names']})</h2>
-<p class="meta">Each name needs a playbook alias before its documents can be matched.
- Details and evidence on the Data quality page.</p>
+<p class="meta">A name marked "alias exists" needs its documents re-validated; every
+ other name needs a playbook alias first. Evidence and what to do are on the Data quality page.</p>
 <table><tr><th>Printed name</th><th>Waiting</th><th>Suggested</th></tr>
 {unmatched_rows(unmatched.get('rows') or [])}</table>
 """

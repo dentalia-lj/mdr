@@ -582,7 +582,7 @@ docker compose exec worker python -m app.cli revalidate --name "botiss biomateri
 docker compose exec worker python -m app.cli revalidate --name "botiss biomaterials GmbH" --apply
 ```
 
-It refuses a name that does not resolve to exactly one manufacturer yet (step 2 not done). It sends only documents whose last validation flagged the name, that are staged or filed and that nobody touched: published, rejected, superseded, grouped, reviewer-edited, reopened and never-validated documents are left alone and counted. A document whose REFs match is published and its task closes; one whose REFs match nothing stays on Review as `no-ref-overlap`. **Row:** `app/revalidate_name.py`; the grouping is `app/unmatched_names.py`.
+It refuses a name that does not resolve to exactly one manufacturer yet (step 2 not done). It sends only documents whose last validation flagged the name, that are staged or filed and that nobody touched: published, rejected, superseded, grouped, reviewer-edited, reopened, never-validated and still-validating documents are left alone and counted. What GATE then does is its usual rule: REFs match and the score clears `gate.high` with no capping flag → production, task closed; no REF matches and the score clears `gate.med` with no blocking flag → `filed` (C15, out of catalogue); otherwise staged or manual. A document that stays on Review keeps its task's old payload (`gate._push_manual` never refreshes an open task), so Review may still show `manufacturer-unresolved`; the card reads the latest validation instead and drops the row. **Row:** `app/revalidate_name.py`; the grouping is `app/unmatched_names.py`.
 
 ### Komet coverage map (`komet-coverage`)
 

@@ -96,23 +96,44 @@ def test_spelling_variants_of_one_name_group_together(conn):
     _doc(conn, "botiss biomaterials GmbH")
     _doc(conn, "BOTISS  Biomaterials GmbH")
     _doc(conn, "Someone Else Ltd")
-    found = un.groups(conn, min_ref_len=6)
+    found = un.find(conn, min_ref_len=6).groups
     assert [(g.printed.casefold().split()[0], g.waiting) for g in found] == [
         ("botiss", 2), ("someone", 1)]
 
 
-def test_only_open_unresolved_tasks_on_waiting_documents_count(conn):
+def test_only_staged_or_filed_documents_whose_latest_validation_flags_count(conn):
     _doc(conn, "Acme GmbH")
+    _doc(conn, "Acme GmbH", status="filed", task=False)
     _doc(conn, "Acme GmbH", unresolved=False)
     _doc(conn, "Acme GmbH", status="production")
-    closed = _doc(conn, "Acme GmbH")
-    conn.execute("UPDATE manual_task SET status='resolved' WHERE doc_id=%s", (closed,))
-    [g] = un.groups(conn, min_ref_len=6)
-    assert g.waiting == 1
+    _doc(conn, "Acme GmbH", group_id=7)
+    [g] = un.find(conn, min_ref_len=6).groups
+    assert g.waiting == 2
+
+
+def test_a_resolved_revalidation_clears_the_row_though_the_old_task_stays_open(conn):
+    """GATE never refreshes an open task's payload (`gate._push_manual`), so the
+    card must read the latest validation, not the task."""
+    did = _doc(conn, "Acme GmbH")
+    h = conn.execute("SELECT content_hash FROM document WHERE doc_id=%s", (did,)).fetchone()["content_hash"]
+    conn.execute(
+        "INSERT INTO job (type, payload, dedupe_key, status, result) "
+        "VALUES ('validate.doc', %s, 'later', 'done', %s)",
+        (Json({"content_hash": h, "group_id": None, "extract_rev": 1}),
+         Json({"flags": ["no-item-identifier"]})))
+    assert conn.execute("SELECT payload->'flags' AS f FROM manual_task WHERE doc_id=%s",
+                        (did,)).fetchone()["f"] == ["manufacturer-unresolved"]
+    assert un.find(conn, min_ref_len=6).groups == []
+
+
+def test_a_name_that_folds_to_nothing_is_counted_not_listed(conn):
+    _doc(conn, "   ")
+    found = un.find(conn, min_ref_len=6)
+    assert found.groups == [] and found.unnamed == 1
 
 
 def test_nothing_waiting_is_an_empty_list(conn):
-    assert un.groups(conn, min_ref_len=6) == []
+    assert un.find(conn, min_ref_len=6).groups == []
 
 
 # --- suggestion levels ----------------------------------------------------------------
@@ -121,7 +142,7 @@ def test_article_numbers_suggest_the_manufacturer_holding_them(conn):
     _mfr(conn, "BOTISS", ["10171"], slug="botiss")
     _items(conn, "BOTISS", "10171", ["BT1001", "BT1002", "BT1003"])
     _doc(conn, "botiss biomaterials GmbH", refs=["BT1001", "BT1002", "BT1003", "ZZ9999"])
-    [g] = un.groups(conn, min_ref_len=6)
+    [g] = un.find(conn, min_ref_len=6).groups
     s = g.suggestion
     assert (s.level, s.manufacturer, s.slug) == ("refs", "BOTISS", "botiss")
     assert (s.held, s.matched, s.listed) == (3, 3, 4)
@@ -131,8 +152,30 @@ def test_fewer_than_three_refs_is_not_article_number_evidence(conn):
     _mfr(conn, "BOTISS", ["10171"], slug="botiss")
     _items(conn, "BOTISS", "10171", ["BT1001", "BT1002"])
     _doc(conn, "Lambda SpA", refs=["BT1001", "BT1002"])
-    [g] = un.groups(conn, min_ref_len=6)
+    [g] = un.find(conn, min_ref_len=6).groups
     assert g.suggestion.level == "none"
+
+
+def test_refs_both_manufacturers_hold_are_nobodys_evidence(conn):
+    """A REF two manufacturers carry counts for neither: with every REF shared,
+    the alphabetically first used to win at 100 %."""
+    _mfr(conn, "HENRY SCHEIN", ["814"])
+    _mfr(conn, "IVOCLAR", ["001"])
+    _items(conn, "HENRY SCHEIN", "814", ["SH1001", "SH1002", "SH1003"])
+    _items(conn, "IVOCLAR", "001", ["SH1001", "SH1002", "SH1003"])
+    _doc(conn, "Some Depot GmbH", refs=["SH1001", "SH1002", "SH1003"])
+    [g] = un.find(conn, min_ref_len=6).groups
+    s = g.suggestion
+    assert (s.level, s.manufacturer, s.matched, s.shared) == ("none", None, 3, 3)
+
+
+def test_mostly_uncatalogued_refs_say_so(conn):
+    _mfr(conn, "BOTISS", ["10171"], slug="botiss")
+    _items(conn, "BOTISS", "10171", ["BT1001", "BT1002", "BT1003"])
+    listed = ["BT1001", "BT1002", "BT1003"] + [f"XX{i:04d}" for i in range(10)]
+    _doc(conn, "Depot Ltd", refs=listed)
+    [g] = un.find(conn, min_ref_len=6).groups
+    assert g.suggestion.level == "refs" and g.suggestion.few_known
 
 
 def test_refs_split_between_two_manufacturers_is_not_evidence(conn):
@@ -141,7 +184,7 @@ def test_refs_split_between_two_manufacturers_is_not_evidence(conn):
     _items(conn, "BOTISS", "10171", ["BT1001", "BT1002", "BT1003"])
     _items(conn, "VOCO", "200", ["VC2001", "VC2002"])
     _doc(conn, "Dental Depot GmbH", refs=["BT1001", "BT1002", "BT1003", "VC2001", "VC2002"])
-    [g] = un.groups(conn, min_ref_len=6)
+    [g] = un.find(conn, min_ref_len=6).groups
     assert g.suggestion.level == "none"          # 3 of 5 = 60 %, under 80 %
 
 
@@ -150,14 +193,14 @@ def test_refs_across_several_documents_of_one_name_add_up(conn):
     _items(conn, "BOTISS", "10171", ["BT1001", "BT1002", "BT1003"])
     _doc(conn, "botiss biomaterials GmbH", refs=["BT1001", "BT1002"])
     _doc(conn, "botiss biomaterials GmbH", refs=["BT1003"])
-    [g] = un.groups(conn, min_ref_len=6)
+    [g] = un.find(conn, min_ref_len=6).groups
     assert (g.suggestion.level, g.suggestion.held) == ("refs", 3)
 
 
 def test_a_brand_in_the_name_is_only_a_hint(conn):
     _mfr(conn, "HAGER", ["300"], slug="hager")
     _doc(conn, "Hager Werken GmbH")
-    [g] = un.groups(conn, min_ref_len=6)
+    [g] = un.find(conn, min_ref_len=6).groups
     assert (g.suggestion.level, g.suggestion.manufacturer) == ("name", "HAGER")
 
 
@@ -165,14 +208,31 @@ def test_a_name_that_already_resolves_needs_revalidating_not_an_alias(conn):
     _mfr(conn, "NEODENT", ["500"], slug="neodent")
     _alias(conn, "JJGC Indústria S/A", "NEODENT")
     _doc(conn, "JJGC Indústria S/A")
-    [g] = un.groups(conn, min_ref_len=6)
+    [g] = un.find(conn, min_ref_len=6).groups
     assert (g.suggestion.level, g.suggestion.manufacturer) == ("alias", "NEODENT")
-    assert un.summary([g]) == {"names": 1, "documents": 1, "by_refs": 0, "alias_exists": 1}
+    assert g.suggestion.has_items is False          # NEODENT has no item_group here
+    assert un.summary(un.find(conn, min_ref_len=6)) == {
+        "names": 1, "documents": 1, "by_refs": 0, "alias_exists": 1, "unnamed": 0}
+
+
+def test_an_alias_whose_manufacturer_has_products_says_revalidate(conn):
+    _mfr(conn, "NEODENT", ["500"], slug="neodent")
+    _items(conn, "NEODENT", "500", ["ND1001"])
+    _alias(conn, "JJGC Indústria S/A", "NEODENT")
+    _doc(conn, "JJGC Indústria S/A")
+    [g] = un.find(conn, min_ref_len=6).groups
+    assert (g.suggestion.level, g.suggestion.has_items) == ("alias", True)
+
+
+def test_the_shell_command_quotes_the_printed_name(conn):
+    _doc(conn, 'Bob "Quote" $HOME GmbH')
+    [g] = un.find(conn, min_ref_len=6).groups
+    assert g.shell_name == """'Bob "Quote" $HOME GmbH'"""
 
 
 def test_no_evidence_is_no_match(conn):
     _doc(conn, "Henry Schein Inc.", refs=["NOPE123"])
-    [g] = un.groups(conn, min_ref_len=6)
+    [g] = un.find(conn, min_ref_len=6).groups
     assert (g.suggestion.level, g.suggestion.manufacturer, g.suggestion.listed) == ("none", None, 1)
 
 
@@ -228,6 +288,10 @@ def test_revalidate_sends_only_untouched_unresolved_documents(conn):
     conn.execute("INSERT INTO audit_log (event, doc_id, decided_by, job_snapshot) "
                  "VALUES ('reopen', %s, 'natasa', '{}')", (reopened,))
     _doc(conn, n, unresolved=False)
+    pending = _doc(conn, n)
+    conn.execute("UPDATE job SET status='pending', result=NULL "
+                 "WHERE payload->>'content_hash' = (SELECT content_hash FROM document WHERE doc_id=%s)",
+                 (pending,))
     _doc(conn, "Someone Else GmbH")
 
     p = revalidate_name.plan(conn, n)
@@ -236,7 +300,7 @@ def test_revalidate_sends_only_untouched_unresolved_documents(conn):
     assert [r["doc_id"] for r in p.send] == sorted([send1, send2])
     assert p.left_alone == {"production": 1, "rejected": 1, "superseded": 1,
                             "no_validate_job": 1, "grouped": 1, "edited": 1,
-                            "reopened": 1, "resolved": 1}
+                            "reopened": 1, "pending": 1, "resolved": 1}
 
 
 def test_revalidate_dry_run_queues_nothing_and_apply_queues_the_plan(conn):

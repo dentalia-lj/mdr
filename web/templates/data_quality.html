@@ -39,23 +39,36 @@
         <td>
           {% if s.level == "alias" %}
             <strong>{{ s.manufacturer }}</strong> <span class="badge badge-done">Alias exists</span>
-            <br><span class="hint">The name is already an alias. These documents were checked before it was added.</span>
+            {% if s.has_items %}
+            <br><span class="hint">The name already resolves to {{ s.manufacturer }}. These documents were last checked before it did.</span>
+            {% else %}
+            <br><span class="hint">The name resolves to {{ s.manufacturer }}, but {{ s.manufacturer }} has no products in the catalogue, so checking again will not match them.</span>
+            {% endif %}
           {% elif s.level == "refs" %}
             <strong>{{ s.manufacturer }}</strong> <span class="badge badge-done">Article numbers</span>
-            <br><span class="hint">{{ s.held }} of {{ s.listed }} article numbers are {{ s.manufacturer }} items
-              {%- if s.matched > s.held %}; {{ s.matched - s.held }} belong to another manufacturer{% endif %}.</span>
+            <br><span class="hint">{{ s.held }} of the {{ s.matched }} article numbers found in the catalogue belong only to {{ s.manufacturer }}
+              {%- if s.matched > s.held %}; {{ s.matched - s.held }} belong to another manufacturer or to several{% endif %}.
+              {%- if s.few_known %} Only {{ s.matched }} of the {{ s.listed }} it lists are in the catalogue: check the document is from the manufacturer, not a distributor.{% endif %}</span>
           {% elif s.level == "name" %}
             <strong>{{ s.manufacturer }}</strong> <span class="badge badge-staged">Name only</span>
-            <br><span class="hint">The name contains the BC brand {{ s.manufacturer }}.
-              {%- if s.listed %} None of its article numbers confirms it.{% else %} The documents list no article numbers, so nothing confirms it.{% endif %}</span>
+            <br><span class="hint">The name contains the BC brand {{ s.manufacturer }}, which may also be a distributor.
+              {%- if not s.listed %} The documents list no article numbers.
+              {%- elif not s.matched %} None of their {{ s.listed }} article numbers is in the catalogue.
+              {%- else %} {{ s.matched }} of their {{ s.listed }} article numbers are in the catalogue, not enough to confirm it.{% endif %}</span>
           {% else %}
             <span class="badge badge-pending">No match</span>
-            <br><span class="hint">No article number matches a catalogue item and no BC brand is in the name. Possibly a distributor, or a supplier Dentalia does not stock.</span>
+            <br><span class="hint">
+              {%- if not s.listed %}The documents list no article numbers and no BC brand is in the name.
+              {%- elif not s.matched %}None of their {{ s.listed }} article numbers is in the catalogue and no BC brand is in the name.
+              {%- else %}{{ s.matched }} of their {{ s.listed }} article numbers are in the catalogue, but not enough of them belong to one manufacturer.{% endif %}
+              Possibly a distributor, or a supplier Dentalia does not stock.</span>
           {% endif %}
         </td>
         <td>
-          {% if s.level == "alias" %}
-            Run <code>revalidate --name "{{ g.printed }}"</code>
+          {% if s.level == "alias" and s.has_items %}
+            Run <code>revalidate --name {{ g.shell_name }}</code>
+          {% elif s.level == "alias" %}
+            Nothing to re-check. The documents wait until {{ s.manufacturer }} has products in the catalogue.
           {% elif s.level == "refs" and s.slug %}
             Add to playbook <a href="/playbooks/{{ s.slug }}"><code>{{ s.slug }}</code></a>
           {% elif s.level == "refs" %}
@@ -75,10 +88,15 @@
     {{ unmatched_summary.names }} name{{ "" if unmatched_summary.names == 1 else "s" }},
     {{ unmatched_summary.documents }} document{{ "" if unmatched_summary.documents == 1 else "s" }} waiting.
     <strong>Article numbers</strong> means at least {{ strong_min_refs }} of the documents'
-    article numbers, and {{ strong_share }} % or more of those the catalogue knows, belong to one manufacturer.
+    article numbers belong only to one manufacturer, and they are {{ strong_share }} % or more of the
+    article numbers the catalogue knows.
+    {%- if unmatched_summary.unnamed %} {{ unmatched_summary.unnamed }} {{ "waiting document prints a blank manufacturer name and is" if unmatched_summary.unnamed == 1 else "waiting documents print a blank manufacturer name and are" }} not listed.{% endif %}
   </p>
   <p class="hint">After the alias is in the playbook file and synced, send the waiting documents
-    through again: <code>dentalia revalidate --name "&lt;printed name&gt;"</code> (dry run), then add <code>--apply</code>.</p>
+    through again: <code>dentalia revalidate --name "&lt;printed name&gt;"</code> (dry run), then add <code>--apply</code>.
+    A document whose article numbers then match is published when the reading is confident, and stays on
+    Review otherwise; one that lists nothing Dentalia stocks is filed when the reading is otherwise sound.
+    The reason shown on Review for a document that stays there may still be the old one.</p>
   {% else %}
   <p class="hint">No document is waiting for a manufacturer name.</p>
   {% endif %}
