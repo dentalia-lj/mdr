@@ -3365,16 +3365,18 @@ tbody tr:last-child td{border-bottom:0}
 <li><a href="../glossary.html">Glossary</a> — every word in one place</li>
 </ul></section>
 <section class="page" id="pages/data-quality"><h1 id="data-quality">Data quality</h1>
-<p><strong>In one sentence:</strong> two separate boards — one lists odd things in your product list, the other compares Business Central's device class against what your documents actually say.</p>
-<p><strong>Status:</strong> Live. Checked against the running screen on 2026-08-31.</p>
+<p><strong>In one sentence:</strong> three separate boards — one lists the manufacturer names printed on waiting documents that the system does not know yet, one lists odd things in your product list, and one compares Business Central's device class against what your documents actually say.</p>
+<p><strong>Status:</strong> Live. Checked against the running screen on 2026-08-31; the first board added on 2026-09-29.</p>
 <hr>
 <h2 id="what-this-is">What this is</h2>
 <p>This screen is read-only. It writes nothing, here or anywhere else — Business Central always stays the record of truth.</p>
-<p>The first board is a running list of things the system could not make sense of while reading your product list out of Business Central. Most of it is a question for whoever manages that export, not for you.</p>
-<p>The second board is different, and matters more to you: it puts Business Central's device class for a product beside the class your held documents actually state, so the two can be checked against each other.</p>
+<p>The first board, <strong>Printed names without a manufacturer</strong>, lists documents waiting on Review because the manufacturer name they print is not one the system knows. A supplier often prints its full legal name (for example "botiss biomaterials GmbH") where Business Central has a short label ("BOTISS"). Until that name is added to the supplier's playbook, the system cannot tell whose document it is, so it cannot check the article numbers either. The board groups the documents by the name they print and suggests the manufacturer, with the evidence for it.</p>
+<p>The second board is a running list of things the system could not make sense of while reading your product list out of Business Central. Most of it is a question for whoever manages that export, not for you.</p>
+<p>The third board is different, and matters more to you: it puts Business Central's device class for a product beside the class your held documents actually state, so the two can be checked against each other.</p>
 <hr>
 <h2 id="when-you-use-it">When you use it</h2>
 <ul>
+<li>Weekly, when the weekly report says names are waiting: the first board is where you find which ones and why.</li>
 <li>Monthly, or when a developer or your Business Central contact asks you to look at something here.</li>
 <li>When you want to fill in a product's device class using paperwork you already hold, instead of guessing.</li>
 <li>When you want to check whether a product's recorded class actually matches its declaration.</li>
@@ -3386,19 +3388,49 @@ tbody tr:last-child td{border-bottom:0}
 <h2 id="what-you-do">What you do</h2>
 <ol>
 <li>Click <strong>Data quality</strong> in the <strong>Operator</strong> block at the bottom of the menu.</li>
-<li>On the first board, click a kind in the <strong>By kind</strong> table to filter the list below it to just that kind.</li>
-<li>On the second board, read the <strong>To look at</strong> table. Each row is one product whose Business Central class needs a look.</li>
+<li>On <strong>Printed names without a manufacturer</strong>, read each row: the name, how many documents wait on it (click the count to list them), the suggested manufacturer and <strong>What to do</strong>. Pass the name and the suggestion to your developer, who adds it to the playbook. Nothing on this board changes anything itself.</li>
+<li>On the <strong>By kind</strong> board, click a kind to filter the list below it to just that kind.</li>
+<li>On the device-class board, read the <strong>To look at</strong> table. Each row is one product whose Business Central class needs a look.</li>
 <li>Open the product or the document from the row, decide what is right, and pass the correction to whoever maintains Business Central. This screen cannot make the change itself.</li>
 </ol>
 <hr>
 <h2 id="what-happens-then">What happens then</h2>
-<h3 id="board-1-oddities-in-your-product-list">Board 1 — oddities in your product list</h3>
+<h3 id="board-1-printed-names-without-a-manufacturer">Board 1 — printed names without a manufacturer</h3>
+<p>Once your developer adds the name to the playbook and re-checks the waiting documents, each one is matched again. A document whose article numbers match your products is published on its own, and its Review task closes. One whose numbers match nothing you stock stays on Review, now with a more precise reason. Future documents printing that name are matched without anyone doing anything.</p>
+<h3 id="board-2-oddities-in-your-product-list">Board 2 — oddities in your product list</h3>
 <p>Every row is something the system read from Business Central and could not interpret. A repeated oddity bumps a counter rather than being listed again, so this list stays the size of the problem, not the size of your catalogue.</p>
-<h3 id="board-2-device-class-vs-business-central">Board 2 — device class vs Business Central</h3>
+<h3 id="board-3-device-class-vs-business-central">Board 3 — device class vs Business Central</h3>
 <p>Every row compares one product's Business Central class against what a document you hold for that product actually states. Nothing here changes Business Central. It only tells you where the two agree, where one is blank, and where they genuinely disagree.</p>
 <hr>
 <h2 id="what-can-go-wrong">What can go wrong</h2>
-<h3 id="board-1-what-each-kind-means">Board 1 — what each kind means</h3>
+<h3 id="board-1-what-each-suggestion-means">Board 1 — what each suggestion means</h3>
+<div class="tw"><table><thead><tr>
+<th>You see</th>
+<th>It means</th>
+<th>What to do</th>
+</tr></thead><tbody>
+<tr>
+<td><strong>Alias exists</strong></td>
+<td>The name is already known; these documents were checked before it was added</td>
+<td>Ask your developer to re-check them (one command)</td>
+</tr>
+<tr>
+<td><strong>Article numbers</strong></td>
+<td>Most of the documents' article numbers belong to one manufacturer's products: strong evidence</td>
+<td>Pass the name and the suggested playbook to your developer</td>
+</tr>
+<tr>
+<td><strong>Name only</strong></td>
+<td>The name contains a Business Central brand, but no article number confirms it</td>
+<td>Open one document and check the manufacturer before passing it on</td>
+</tr>
+<tr>
+<td><strong>No match</strong></td>
+<td>Neither the article numbers nor the name point to anyone</td>
+<td>Look at the documents. It may be a distributor, whose name must never be added as a manufacturer's</td>
+</tr>
+</tbody></table></div>
+<h3 id="board-2-what-each-kind-means">Board 2 — what each kind means</h3>
 <p>The <strong>Kind</strong> column shows one of these internal names. This is the one place on this page where the raw name is unavoidable — there is no pill or plain label standing in for it.</p>
 <div class="tw"><table><thead><tr>
 <th>You see</th>
@@ -3461,7 +3493,7 @@ tbody tr:last-child td{border-bottom:0}
 <td>A developer's</td>
 </tr>
 </tbody></table></div>
-<h3 id="board-2-what-each-verdict-means">Board 2 — what each verdict means</h3>
+<h3 id="board-3-what-each-verdict-means">Board 3 — what each verdict means</h3>
 <div class="tw"><table><thead><tr>
 <th>You see</th>
 <th>It means</th>
@@ -3500,6 +3532,14 @@ tbody tr:last-child td{border-bottom:0}
 <th>The screen says</th>
 <th>It means</th>
 </tr></thead><tbody>
+<tr>
+<td><strong>Printed name</strong></td>
+<td>The manufacturer name exactly as the document prints it</td>
+</tr>
+<tr>
+<td><strong>Waiting</strong></td>
+<td>How many documents on Review print this name</td>
+</tr>
 <tr>
 <td><strong>Kind</strong></td>
 <td>Which of the nine known oddities a row is</td>

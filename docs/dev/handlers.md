@@ -38,7 +38,7 @@ never clobber a real handler.
 
 **Running the register by hand.** `POST /scheduler/run/eudamed.certregister` (the **Run now** button on `/scheduler`) enqueues one pull with the cron's own empty payload and dedupe key, so a hand-run and the cron collapse into one job. This is currently the ONLY way the register refreshes: `eudamed_certregister_enabled` is off by default, so the `eudamed.certregister` cron tick fires and does nothing. (The reason used to be that the `scheduler` service sat behind compose profile `full`; that service was deleted 2026-09-02 and the crons run on the queue, so the flag is now the whole story.) Everything on `/expiry` that reads `certificate_drift`, `certificate_drift_candidate`, `certificate_status_alert` and `certificate_gap` is therefore as old as the last hand-run.
 | `eudamed.sweep` | `handlers/eudamed.py:730` | nothing, never self-emits | `test_eudamed_handler.py` |
-| `report.weekly` | `handlers/report.py:156` | nothing | `test_report_handler.py` |
+| `report.weekly` | `handlers/report.py:165` | nothing | `test_report_handler.py` |
 | `scheduler.tick` | `handlers/scheduler_tick.py:92` | itself, forever (`queue.defer`) | `test_scheduler_tick.py` |
 | `playbook.reonboard` | `handlers/playbook_probe.py:86` | **nothing** — the only `app.crawl` consumer that emits no `fetch.url` | `test_playbook_probe.py`, `test_playbook_probe_web.py` |
 | `bc.push` | `handlers/bc_push.py:106` | nothing — a leaf, like `report.weekly` | `test_bc_push.py`, `test_bc_fields.py` |
@@ -175,6 +175,7 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 - writes: nothing
 - emits: nothing
 - fails how: generic
+- note: the result carries `unmatched_names` (printed manufacturer names waiting for a playbook alias, from `app/unmatched_names.py`, the same grouping `/data-quality` shows); an envelope written before 2026-09-29 has no such key and still renders
 
 ### `scheduler.tick`
 - consumes: `cron` — one of seven keys, closed set (`CRONS` in the handler)

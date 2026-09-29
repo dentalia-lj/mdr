@@ -354,6 +354,17 @@ valid file; it is silently skipped by the template loader, not an error
 
 ## Gotchas
 
+- **Which legal names need an alias: read `/data-quality`, first card.** It
+  groups the documents waiting as `manufacturer-unresolved` by the name they
+  print and suggests the playbook, with evidence (`app/unmatched_names.py`).
+  Adding the alias is not the end: the waiting documents were validated
+  before it existed, so after `seed` + `sync` run `revalidate --name
+  "<printed>"` (runbook, "A printed name needs an alias"). Aliases stay in
+  the file on purpose: an alias also becomes a T0 identity string for every
+  future document, so it goes through git review (decided 2026-09-29, when a
+  UI alias editor was built and rejected).
+- **The brand guard folds accents** since 2026-09-29, as name matching does:
+  `Molnlycke …` now collides with `MÖLNLYCKE` like `Mölnlycke …` always did.
 - **`manufacturers seed` and `playbooks validate` read files even when
   everything else reads rows.** Both pass an explicit `dir_path` for exactly
   that reason — a bare `load_playbooks()` after `set_source` runs would

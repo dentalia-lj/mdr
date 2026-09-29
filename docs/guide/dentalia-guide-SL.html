@@ -3367,16 +3367,18 @@ tbody tr:last-child td{border-bottom:0}
 <li><a href="../glossary.html">Glossary</a> — vse besede na enem mestu</li>
 </ul></section>
 <section class="page" id="pages/data-quality"><h1 id="data-quality">Data quality</h1>
-<p><strong>V enem stavku:</strong> dve ločeni tabli — ena navaja nenavadnosti v vašem seznamu izdelkov, druga primerja razred pripomočka po Business Centralu s tem, kar dejansko navajajo vaši dokumenti.</p>
-<p><strong>Stanje:</strong> V živo. Preverjeno na delujoči strani 31. 8. 2026.</p>
+<p><strong>V enem stavku:</strong> tri ločene table — ena navaja imena proizvajalcev, natisnjena na čakajočih dokumentih, ki jih sistem še ne pozna, druga nenavadnosti v vašem seznamu izdelkov, tretja pa primerja razred pripomočka po Business Centralu s tem, kar dejansko navajajo vaši dokumenti.</p>
+<p><strong>Stanje:</strong> V živo. Preverjeno na delujoči strani 31. 8. 2026; prva tabla dodana 29. 9. 2026.</p>
 <hr>
 <h2 id="kaj-je-to">Kaj je to</h2>
 <p>Ta stran je samo za branje. Tu ne zapiše ničesar, niti kjerkoli drugje — Business Central ostaja edini verodostojni vir.</p>
-<p>Prva tabla je tekoč seznam stvari, ki jih sistem ni znal razumeti pri branju vašega seznama izdelkov iz Business Centrala. Večina tega je vprašanje za tistega, ki upravlja ta izvoz, ne za vas.</p>
-<p>Druga tabla je drugačna in je bolj pomembna za vas: postavi razred pripomočka po Business Centralu za posamezen izdelek ob razred, ki ga dejansko navajajo dokumenti, ki jih hranite, tako da ju je mogoče primerjati.</p>
+<p>Prva tabla, <strong>Printed names without a manufacturer</strong>, navaja dokumente, ki čakajo na pregledu, ker ime proizvajalca, ki ga natisnejo, sistemu ni znano. Dobavitelj pogosto natisne svoje polno pravno ime (na primer "botiss biomaterials GmbH"), Business Central pa ima kratko oznako ("BOTISS"). Dokler tega imena ne dodamo v dobaviteljev playbook, sistem ne ve, čigav je dokument, zato tudi številk artiklov ne more preveriti. Tabla dokumente združi po natisnjenem imenu in predlaga proizvajalca, skupaj z dokazom za predlog.</p>
+<p>Druga tabla je tekoč seznam stvari, ki jih sistem ni znal razumeti pri branju vašega seznama izdelkov iz Business Centrala. Večina tega je vprašanje za tistega, ki upravlja ta izvoz, ne za vas.</p>
+<p>Tretja tabla je drugačna in je bolj pomembna za vas: postavi razred pripomočka po Business Centralu za posamezen izdelek ob razred, ki ga dejansko navajajo dokumenti, ki jih hranite, tako da ju je mogoče primerjati.</p>
 <hr>
 <h2 id="kdaj-to-uporabite">Kdaj to uporabite</h2>
 <ul>
+<li>Tedensko, kadar tedensko poročilo pove, da imena čakajo: na prvi tabli vidite, katera in zakaj.</li>
 <li>Mesečno, ali kadar vas razvijalec ali vaš kontakt za Business Central prosi, da si tu nekaj ogledate.</li>
 <li>Kadar želite razred pripomočka izdelka izpolniti na podlagi dokumentacije, ki jo že imate, namesto da bi ugibali.</li>
 <li>Kadar želite preveriti, ali se zabeleženi razred izdelka dejansko ujema z njegovo izjavo o skladnosti.</li>
@@ -3388,19 +3390,49 @@ tbody tr:last-child td{border-bottom:0}
 <h2 id="kaj-storite">Kaj storite</h2>
 <ol>
 <li>Kliknite <strong>Data quality</strong> v bloku <strong>Operator</strong> na dnu menija.</li>
-<li>Na prvi tabli kliknite vrsto v razpredelnici <strong>By kind</strong>, da spodnji seznam filtrirate samo na to vrsto.</li>
-<li>Na drugi tabli preberite razpredelnico <strong>To look at</strong>. Vsaka vrstica je en izdelek, katerega razred po Business Centralu je treba pregledati.</li>
+<li>Na tabli <strong>Printed names without a manufacturer</strong> preberite vsako vrstico: ime, koliko dokumentov čaka nanj (kliknite število, da jih izpišete), predlaganega proizvajalca in <strong>What to do</strong>. Ime in predlog posredujte razvijalcu, ki ga doda v playbook. Nič na tej tabli samo ničesar ne spremeni.</li>
+<li>Na tabli <strong>By kind</strong> kliknite vrsto, da spodnji seznam filtrirate samo na to vrsto.</li>
+<li>Na tabli razreda pripomočka preberite razpredelnico <strong>To look at</strong>. Vsaka vrstica je en izdelek, katerega razred po Business Centralu je treba pregledati.</li>
 <li>Odprite izdelek ali dokument iz vrstice, odločite, kaj je pravilno, in popravek posredujte tistemu, ki vzdržuje Business Central. Ta stran spremembe ne more izvesti sama.</li>
 </ol>
 <hr>
 <h2 id="kaj-se-zgodi-nato">Kaj se zgodi nato</h2>
-<h3 id="tabla-1-nenavadnosti-v-vašem-seznamu-izdelkov">Tabla 1 — nenavadnosti v vašem seznamu izdelkov</h3>
+<h3 id="tabla-1-natisnjena-imena-brez-proizvajalca">Tabla 1 — natisnjena imena brez proizvajalca</h3>
+<p>Ko razvijalec ime doda v playbook in čakajoče dokumente ponovno preveri, se vsak znova ujema. Dokument, katerega številke artiklov se ujemajo z vašimi izdelki, se objavi sam, njegova naloga na pregledu pa se zapre. Dokument, katerega številke se ne ujemajo z ničemer, kar imate na zalogi, ostane na pregledu, zdaj z natančnejšim razlogom. Prihodnji dokumenti s tem imenom se ujemajo, ne da bi kdorkoli karkoli storil.</p>
+<h3 id="tabla-2-nenavadnosti-v-vašem-seznamu-izdelkov">Tabla 2 — nenavadnosti v vašem seznamu izdelkov</h3>
 <p>Vsaka vrstica je nekaj, kar je sistem prebral iz Business Centrala in ni znal razložiti. Ponovljena nenavadnost poveča števec, namesto da bi bila znova navedena, zato ostane ta seznam velik toliko kot problem sam, ne toliko kot vaš katalog.</p>
-<h3 id="tabla-2-razred-pripomočka-proti-business-centralu">Tabla 2 — razred pripomočka proti Business Centralu</h3>
+<h3 id="tabla-3-razred-pripomočka-proti-business-centralu">Tabla 3 — razred pripomočka proti Business Centralu</h3>
 <p>Vsaka vrstica primerja razred izdelka po Business Centralu s tem, kar dejansko navaja dokument, ki ga hranite za ta izdelek. Nič od tega ne spremeni Business Centrala. Samo pove vam, kje se oba ujemata, kje je eden prazen in kje se dejansko razhajata.</p>
 <hr>
 <h2 id="kaj-lahko-gre-narobe">Kaj lahko gre narobe</h2>
-<h3 id="tabla-1-kaj-pomeni-posamezna-vrsta">Tabla 1 — kaj pomeni posamezna vrsta</h3>
+<h3 id="tabla-1-kaj-pomeni-posamezen-predlog">Tabla 1 — kaj pomeni posamezen predlog</h3>
+<div class="tw"><table><thead><tr>
+<th>Kar vidite</th>
+<th>Kar to pomeni</th>
+<th>Kaj storiti</th>
+</tr></thead><tbody>
+<tr>
+<td><strong>Alias exists</strong></td>
+<td>Ime je že znano; ti dokumenti so bili preverjeni, preden je bilo dodano</td>
+<td>Prosite razvijalca, da jih ponovno preveri (en ukaz)</td>
+</tr>
+<tr>
+<td><strong>Article numbers</strong></td>
+<td>Večina številk artiklov na dokumentih pripada izdelkom enega proizvajalca: močan dokaz</td>
+<td>Ime in predlagani playbook posredujte razvijalcu</td>
+</tr>
+<tr>
+<td><strong>Name only</strong></td>
+<td>Ime vsebuje blagovno znamko iz Business Centrala, a nobena številka artikla tega ne potrdi</td>
+<td>Odprite en dokument in preverite proizvajalca, preden predlog posredujete</td>
+</tr>
+<tr>
+<td><strong>No match</strong></td>
+<td>Niti številke artiklov niti ime ne kažejo na nikogar</td>
+<td>Oglejte si dokumente. Morda gre za distributerja, čigar ime nikoli ne sme postati ime proizvajalca</td>
+</tr>
+</tbody></table></div>
+<h3 id="tabla-2-kaj-pomeni-posamezna-vrsta">Tabla 2 — kaj pomeni posamezna vrsta</h3>
 <p>Stolpec <strong>Kind</strong> prikaže eno od teh internih imen. To je edino mesto na tej strani, kjer se surovemu imenu ni mogoče izogniti — zanj ni oznake ali navadne besede, ki bi ga nadomestila.</p>
 <div class="tw"><table><thead><tr>
 <th>Kar vidite</th>
@@ -3463,7 +3495,7 @@ tbody tr:last-child td{border-bottom:0}
 <td>Razvijalčevo</td>
 </tr>
 </tbody></table></div>
-<h3 id="tabla-2-kaj-pomeni-posamezna-ocena">Tabla 2 — kaj pomeni posamezna ocena</h3>
+<h3 id="tabla-3-kaj-pomeni-posamezna-ocena">Tabla 3 — kaj pomeni posamezna ocena</h3>
 <div class="tw"><table><thead><tr>
 <th>Kar vidite</th>
 <th>Kar to pomeni</th>
@@ -3502,6 +3534,14 @@ tbody tr:last-child td{border-bottom:0}
 <th>Kar piše na strani</th>
 <th>Kar to pomeni</th>
 </tr></thead><tbody>
+<tr>
+<td><strong>Printed name</strong></td>
+<td>Ime proizvajalca natanko tako, kot ga natisne dokument</td>
+</tr>
+<tr>
+<td><strong>Waiting</strong></td>
+<td>Koliko dokumentov na pregledu natisne to ime</td>
+</tr>
 <tr>
 <td><strong>Kind</strong></td>
 <td>Katera od devetih znanih nenavadnosti je posamezna vrstica</td>

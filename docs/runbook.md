@@ -569,6 +569,21 @@ And `skip_backfill` is keyed on the folder name, so **NEODENT is refused from
 this source too** — the 2026-08-19 ruling stands until someone rules on the
 site's copy, which holds 5 files where SFTP held 34.
 
+### A printed name needs an alias (`revalidate --name`)
+
+Documents whose printed manufacturer name no alias knows wait on Review flagged `manufacturer-unresolved`. The first card on `/data-quality` (and a line in the weekly report) lists each such name, its documents, and a suggested manufacturer with evidence: **Alias exists**, **Article numbers**, **Name only** or **No match**. Nothing there writes. To clear one:
+
+1. Add the name to the suggested manufacturer's playbook `aliases` (or start a playbook for it), commit, and deploy (`git pull`, `./scripts/deploy.sh`).
+2. Load it: `manufacturers seed --apply`, then `playbooks sync` (the sync is what writes `manufacturer_alias`, which VALIDATE reads).
+3. Send the waiting documents round again:
+
+```bash
+docker compose exec worker python -m app.cli revalidate --name "botiss biomaterials GmbH"          # dry run
+docker compose exec worker python -m app.cli revalidate --name "botiss biomaterials GmbH" --apply
+```
+
+It refuses a name that does not resolve to exactly one manufacturer yet (step 2 not done). It sends only documents whose last validation flagged the name, that are staged or filed and that nobody touched: published, rejected, superseded, grouped, reviewer-edited, reopened and never-validated documents are left alone and counted. A document whose REFs match is published and its task closes; one whose REFs match nothing stays on Review as `no-ref-overlap`. **Row:** `app/revalidate_name.py`; the grouping is `app/unmatched_names.py`.
+
 ### Komet coverage map (`komet-coverage`)
 
 Komet's compliance bundle ships no parseable per-article REF list on its PDFs, but it ships two indexes of its own — a spreadsheet and a Word table — mapping article numbers to the declaration that covers them. `backfill.scan` archives both alongside every PDF; `komet-coverage` reads the archived copies and links items from them instead of paying an LLM to parse 186 PDFs. Run in order:

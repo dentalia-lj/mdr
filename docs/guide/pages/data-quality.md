@@ -1,10 +1,12 @@
 # Data quality
 
-**In one sentence:** two separate boards — one lists odd things in your product
-list, the other compares Business Central's device class against what your
-documents actually say.
+**In one sentence:** three separate boards — one lists the manufacturer names
+printed on waiting documents that the system does not know yet, one lists odd
+things in your product list, and one compares Business Central's device class
+against what your documents actually say.
 
-**Status:** Live. Checked against the running screen on 2026-08-31.
+**Status:** Live. Checked against the running screen on 2026-08-31; the first
+board added on 2026-09-29.
 
 ---
 
@@ -13,11 +15,20 @@ documents actually say.
 This screen is read-only. It writes nothing, here or anywhere else — Business
 Central always stays the record of truth.
 
-The first board is a running list of things the system could not make sense of
+The first board, **Printed names without a manufacturer**, lists documents
+waiting on Review because the manufacturer name they print is not one the
+system knows. A supplier often prints its full legal name (for example
+"botiss biomaterials GmbH") where Business Central has a short label
+("BOTISS"). Until that name is added to the supplier's playbook, the system
+cannot tell whose document it is, so it cannot check the article numbers
+either. The board groups the documents by the name they print and suggests
+the manufacturer, with the evidence for it.
+
+The second board is a running list of things the system could not make sense of
 while reading your product list out of Business Central. Most of it is a
 question for whoever manages that export, not for you.
 
-The second board is different, and matters more to you: it puts Business
+The third board is different, and matters more to you: it puts Business
 Central's device class for a product beside the class your held documents
 actually state, so the two can be checked against each other.
 
@@ -25,6 +36,8 @@ actually state, so the two can be checked against each other.
 
 ## When you use it
 
+- Weekly, when the weekly report says names are waiting: the first board is
+  where you find which ones and why.
 - Monthly, or when a developer or your Business Central contact asks you to
   look at something here.
 - When you want to fill in a product's device class using paperwork you
@@ -43,11 +56,16 @@ Nothing. Being logged in is enough.
 ## What you do
 
 1. Click **Data quality** in the **Operator** block at the bottom of the menu.
-2. On the first board, click a kind in the **By kind** table to filter the
-   list below it to just that kind.
-3. On the second board, read the **To look at** table. Each row is one
+2. On **Printed names without a manufacturer**, read each row: the name, how
+   many documents wait on it (click the count to list them), the suggested
+   manufacturer and **What to do**. Pass the name and the suggestion to your
+   developer, who adds it to the playbook. Nothing on this board changes
+   anything itself.
+3. On the **By kind** board, click a kind to filter the list below it to just
+   that kind.
+4. On the device-class board, read the **To look at** table. Each row is one
    product whose Business Central class needs a look.
-4. Open the product or the document from the row, decide what is right, and
+5. Open the product or the document from the row, decide what is right, and
    pass the correction to whoever maintains Business Central. This screen
    cannot make the change itself.
 
@@ -55,13 +73,22 @@ Nothing. Being logged in is enough.
 
 ## What happens then
 
-### Board 1 — oddities in your product list
+### Board 1 — printed names without a manufacturer
+
+Once your developer adds the name to the playbook and re-checks the waiting
+documents, each one is matched again. A document whose article numbers match
+your products is published on its own, and its Review task closes. One whose
+numbers match nothing you stock stays on Review, now with a more precise
+reason. Future documents printing that name are matched without anyone doing
+anything.
+
+### Board 2 — oddities in your product list
 
 Every row is something the system read from Business Central and could not
 interpret. A repeated oddity bumps a counter rather than being listed again,
 so this list stays the size of the problem, not the size of your catalogue.
 
-### Board 2 — device class vs Business Central
+### Board 3 — device class vs Business Central
 
 Every row compares one product's Business Central class against what a
 document you hold for that product actually states. Nothing here changes
@@ -72,7 +99,16 @@ and where they genuinely disagree.
 
 ## What can go wrong
 
-### Board 1 — what each kind means
+### Board 1 — what each suggestion means
+
+| You see | It means | What to do |
+|---|---|---|
+| **Alias exists** | The name is already known; these documents were checked before it was added | Ask your developer to re-check them (one command) |
+| **Article numbers** | Most of the documents' article numbers belong to one manufacturer's products: strong evidence | Pass the name and the suggested playbook to your developer |
+| **Name only** | The name contains a Business Central brand, but no article number confirms it | Open one document and check the manufacturer before passing it on |
+| **No match** | Neither the article numbers nor the name point to anyone | Look at the documents. It may be a distributor, whose name must never be added as a manufacturer's |
+
+### Board 2 — what each kind means
 
 The **Kind** column shows one of these internal names. This is the one place
 on this page where the raw name is unavoidable — there is no pill or plain
@@ -90,7 +126,7 @@ label standing in for it.
 | `basic_udi_check_failed` | A device-identifier code on a document failed its own internal check | A developer's | A developer's |
 | `t0_ref_template_miss` | The system's reading rules for one supplier's paperwork stopped working, because the supplier changed how their page looks | A developer's — nothing for you to fix here | A developer's |
 
-### Board 2 — what each verdict means
+### Board 3 — what each verdict means
 
 | You see | It means | What to do | Good or bad |
 |---|---|---|---|
@@ -109,6 +145,8 @@ in the summary above the list and nothing more.
 
 | The screen says | It means |
 |---|---|
+| **Printed name** | The manufacturer name exactly as the document prints it |
+| **Waiting** | How many documents on Review print this name |
 | **Kind** | Which of the nine known oddities a row is |
 | **Subjects** / **Observations** | How many distinct products or documents hit this oddity, and how many times it has been seen in total |
 | `data_anomaly`, `item_class_check`, migration numbers | Internal table and file names, visible if you open the small arrow next to the page's summary line. Ignore them |
