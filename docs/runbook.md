@@ -88,7 +88,9 @@ restore into a scratch database, stops the deploy before anything migrates. Meas
 `commit` is what was deployed, `dirty` how many tracked files differed from it,
 `previous` the commit that was running when the dump was taken. `--check`
 prints the last line. The dump is a rollback point on the same disk, not a
-backup: backup stays out of scope (`[no-registry-or-archive-backup]`).
+backup. Backups are [dev/backup.md](dev/backup.md): hourly dumps on the
+server and restic to the Storage Box, with the restore commands for each situation. A deploy waits for a running backup to finish
+(they share `backups/.lock`).
 
 ### Rolling back
 

@@ -427,6 +427,7 @@ placeholder. A manufacturer's own playbook `source_priority` supersedes it.
 - [handlers.md](handlers.md) — what consumes these at run time
 - [architecture.md](../architecture.md) — where each process reads config
 - [runbook.md](../runbook.md) — which variables the compose file sets
+- [backup.md](backup.md) § 7 — the `BACKUP_*` keys; `scripts/backup.sh` reads them from `.env`, `app/config.py` never does
 - PRD §11 — the normative list
 
 

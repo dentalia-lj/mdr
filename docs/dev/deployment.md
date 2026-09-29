@@ -334,10 +334,9 @@ docker compose config | grep -i archive
 Expect the host path twice and the string `archive_data` nowhere. The overlay does not
 restate the `/imports` mounts: those already follow `IMPORTS_HOST`.
 
-**Backup is not part of this system** and was ruled a separate order
-(2026-09-03, `[no-registry-or-archive-backup]`). Two directories now hold
-everything that is not re-derivable — `PGDATA_HOST` and `ARCHIVE_HOST` — so
-tell their IT exactly that, in writing, and let them decide.
+**Backup** was ordered separately (offer 2026092301, 2026-09-28) and has its
+own document: [backup.md](backup.md). It backs up the archive and imports
+from `ARCHIVE_HOST` and `IMPORTS_HOST` in `.env`, so nothing here changes for it.
 
 ## 5. First `up`
 

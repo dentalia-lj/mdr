@@ -176,3 +176,13 @@ Working as designed: never downgrade, never delete (Invariant 4). Older candidat
 
 **A DoC's certificate reference never resolves (`cert-unresolved` flag, document stuck at `staged`).**
 `app/handlers/validate.py`'s `_resolve_cited_certificate` is best-effort: it looks for a certificate we already hold (`document.type IN ('EC','ISO')`) whose `cert_number` matches the DoC's own extracted `cert_number` or `referenced_docs`. No match — because we haven't fetched/gated that certificate yet, or the DoC cites no number at all — appends `cert-unresolved` to the candidate's flags. It is not in `gate.py`'s `BLOCKING_FLAGS`, so it does not force `/manual`; it just rules out `production` (gate's two-level disposition requires *no* flags for a document to land on `production`) and caps it at `staged`. Check whether the cited certificate is in the registry yet (`/documents?type=EC` or `?type=ISO`, search by cert number). Once that certificate is gated at any status, `_backresolve_citing_docs` retroactively fills `cert_doc_id` on every DoC that cited it and was still NULL — automatic, no re-validation needed — after which `/expiry` and `/documents/{doc_id}` start showing the inherited `validity_to`.
+
+## Backup
+
+Every backup alert, and what to do about it, is in [dev/backup.md](dev/backup.md) § 6. Two that look like something else:
+
+**A database restore onto a new server fails on `GRANT ... TO dentalia_api`, or `psql` says "the database system is shutting down".**
+Roles live outside `pg_dump`, so `roles.sql` must go in first; and a fresh Postgres container first runs a temporary server on the socket only, so a socket `pg_isready` passes just before it shuts down. Wait with `pg_isready -h 127.0.0.1` (TCP) as [dev/backup.md](dev/backup.md) § 5.3 step 7 does, then roles, then the dump.
+
+**`backup.sh hourly` says ARCHIVE_HOST is not a directory.**
+L1 backs up the archive from the host path, so it needs the prod overlay's `ARCHIVE_HOST` (a bind mount). A dev checkout keeps the archive in a named volume, which restic on the host cannot read; L0 alone works without it.
