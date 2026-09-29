@@ -31,6 +31,9 @@ from app.config import Web
 from tests.conftest import TEST_API_URL as API_TEST_URL
 from web import registry
 from web.app import DOCUMENTS_PAGE_SIZE, create_app
+from tests.test_unmatched_names import (
+    _doc as _unmatched_doc, _items as _unmatched_items, _mfr as _unmatched_mfr,
+)
 
 
 @pytest.fixture
@@ -3151,6 +3154,31 @@ def test_data_quality_page_lists_anomalies_by_kind(client, conn):
     assert "md_class_blank" in resp.text
     assert "A1" in resp.text
 
+
+# --- the Data quality card: printed names without a manufacturer (app/unmatched_names.py) ---
+
+def test_data_quality_unmatched_card_lists_names_first_with_suggestion_and_action(client, conn):
+    _unmatched_mfr(conn, "BOTISS", ["10171"], slug="botiss")
+    _unmatched_items(conn, "BOTISS", "10171", ["BT1001", "BT1002", "BT1003"])
+    did = _unmatched_doc(conn, "botiss biomaterials GmbH", refs=["BT1001", "BT1002", "BT1003"])
+    _unmatched_doc(conn, "Henry Schein Inc.")
+    conn.commit()
+    html = client.get("/data-quality").text
+    assert html.index("Printed names without a manufacturer") < html.index("By kind")
+    assert "botiss biomaterials GmbH" in html and f"/documents/{did}" in html
+    assert "Article numbers" in html and 'href="/playbooks/botiss"' in html
+    assert "No match" in html and "must not become an alias" in html
+
+
+def test_data_quality_unmatched_card_says_so_when_nothing_waits(client):
+    assert "No document is waiting for a manufacturer name." in client.get("/data-quality").text
+
+
+def test_data_quality_unmatched_card_escapes_a_printed_name(client, conn):
+    _unmatched_doc(conn, "<b>Evil</b> & Co")
+    conn.commit()
+    html = client.get("/data-quality").text
+    assert "<b>Evil</b>" not in html and "&lt;b&gt;Evil&lt;/b&gt; &amp; Co" in html
 
 def test_data_quality_filters_by_kind(client, conn):
     conn.execute(

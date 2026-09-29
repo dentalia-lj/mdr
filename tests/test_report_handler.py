@@ -7,6 +7,7 @@ the scheduler's own expiry-scan tick (docs/specs/scheduler.md §3).
 from __future__ import annotations
 
 import datetime as dt
+import pathlib
 
 from app import queue
 
@@ -660,3 +661,25 @@ def test_document_names_from_pdfs_we_did_not_write_are_escaped(tmp_path):
     body = (tmp_path / "report-2026-W37.html").read_text()
     assert "<script>" not in body
     assert "&lt;script&gt;" in body
+
+
+def test_the_report_counts_printed_names_without_a_manufacturer(conn, tmp_path):
+    """Spec 2026-09-29: one summary line and one short table, from the same
+    grouping the /data-quality card shows."""
+    from tests.test_unmatched_names import _doc, _items, _mfr
+    _mfr(conn, "BOTISS", ["10171"], slug="botiss")
+    _items(conn, "BOTISS", "10171", ["BT1001", "BT1002", "BT1003"])
+    _doc(conn, "botiss biomaterials GmbH", refs=["BT1001", "BT1002", "BT1003"])
+    _doc(conn, "botiss biomaterials GmbH")
+    _doc(conn, "Henry <Schein> Inc.")
+    page = _run_report(conn, tmp_path)
+    assert ("Printed names without a manufacturer: 2 names,\n 3 documents waiting.\n"
+            " 1 have a suggested manufacturer from article numbers.") in page
+    assert "<td>botiss biomaterials GmbH</td><td>2</td><td>BOTISS (article numbers)</td>" in page
+    assert "<td>Henry &lt;Schein&gt; Inc.</td><td>1</td><td>none</td>" in page
+
+
+def test_an_old_envelope_without_unmatched_names_still_renders(tmp_path):
+    from app.handlers.report import _write_html
+    path = _write_html(str(tmp_path), {"period_key": "2026-W30", "expiring": [], "lapsed": []})
+    assert "Printed names without a manufacturer: 0 names" in pathlib.Path(path).read_text()

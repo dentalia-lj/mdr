@@ -293,3 +293,4 @@ def test_after_the_alias_validate_resolves_the_document_revalidate_sent(conn):
                                           "payload": job["payload"]})
     assert "manufacturer-unresolved" not in (after.get("flags") or [])
     assert after.get("emitted") is True
+

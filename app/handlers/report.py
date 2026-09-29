@@ -12,6 +12,7 @@ import html
 import logging
 import pathlib
 
+from app import unmatched_names
 from app.compliance import EXPIRY_HORIZON_DAYS
 from app.config import load_config
 from app.handlers import register
@@ -153,6 +154,14 @@ def failure_spikes(
     return spikes
 
 
+def _unmatched_names(conn, min_ref_len: int) -> dict:
+    found = unmatched_names.groups(conn, min_ref_len=min_ref_len)
+    return {**unmatched_names.summary(found),
+            "rows": [{"printed": g.printed, "waiting": g.waiting,
+                      "level": g.suggestion.level,
+                      "manufacturer": g.suggestion.manufacturer} for g in found]}
+
+
 def handle_report_weekly(conn, job: dict) -> dict:
     cfg = load_config()
     period_key = job["payload"]["period_key"]
@@ -187,6 +196,9 @@ def handle_report_weekly(conn, job: dict) -> dict:
         "review_due": review_due,
         "job_counts": job_counts_by_type_status(conn),
         "dead_jobs": dead_job_count(conn),
+        # Printed names no alias knows: the /data-quality card, counted here so
+        # a week's worth of them does not go unnoticed (spec 2026-09-29).
+        "unmatched_names": _unmatched_names(conn, cfg.validate.min_unscoped_ref_len),
     }
     written = _write_html(cfg.scheduler.report_dir, result)
     if written:
@@ -244,6 +256,9 @@ def _write_html(report_dir: str, result: dict) -> str | None:
     # F34 has no such key, and an older report must still open.
     review = len(result.get("review_due") or [])
     dead = result.get("dead_jobs") or 0
+    # `.get`: an envelope written before 2026-09-29 has no such key.
+    unmatched = result.get("unmatched_names") or {"names": 0, "documents": 0,
+                                                  "by_refs": 0, "rows": []}
 
     def rows(docs: list[dict]) -> str:
         if not docs:
@@ -259,6 +274,22 @@ def _write_html(report_dir: str, result: dict) -> str | None:
             for d in docs
         )
 
+    level_words = {"alias": "alias exists, re-validate", "refs": "article numbers",
+                   "name": "name only", "none": ""}
+
+    def unmatched_rows(rows: list[dict]) -> str:
+        if not rows:
+            return '<tr><td colspan="3">Nothing.</td></tr>'
+        return "".join(
+            "<tr><td>{}</td><td>{}</td><td>{}</td></tr>".format(
+                html.escape(str(r.get("printed") or "")),
+                html.escape(str(r.get("waiting") or 0)),
+                html.escape(f"{r['manufacturer']} ({level_words.get(r.get('level'), '')})"
+                            if r.get("manufacturer") else "none"),
+            )
+            for r in rows
+        )
+
     body = f"""<!doctype html>
 <meta charset="utf-8">
 <title>Weekly report {html.escape(result['period_key'])}</title>
@@ -272,6 +303,9 @@ def _write_html(report_dir: str, result: dict) -> str | None:
 <p class="meta">Generated {generated}.</p>
 <p>Expiring in the next {window} days: {expiring} · Already expired: {lapsed}
  · Due review: {review}</p>
+<p>Printed names without a manufacturer: {unmatched['names']} name{'' if unmatched['names'] == 1 else 's'},
+ {unmatched['documents']} document{'' if unmatched['documents'] == 1 else 's'} waiting.
+ {unmatched['by_refs']} have a suggested manufacturer from article numbers.</p>
 <p class="meta">The system has {dead} failed task{'' if dead == 1 else 's'}, listed
  under Failed tasks.</p>
 <h2>Already expired ({lapsed})</h2>
@@ -288,6 +322,11 @@ def _write_html(report_dir: str, result: dict) -> str | None:
  is still current, rather than to renew it.</p>
 <table><tr><th>Document</th><th>Type</th><th>Manufacturer</th><th>Due since</th></tr>
 {rows(result.get('review_due') or [])}</table>
+<h2>Printed names without a manufacturer ({unmatched['names']})</h2>
+<p class="meta">Each name needs a playbook alias before its documents can be matched.
+ Details and evidence on the Data quality page.</p>
+<table><tr><th>Printed name</th><th>Waiting</th><th>Suggested</th></tr>
+{unmatched_rows(unmatched.get('rows') or [])}</table>
 """
     path.write_text(body, encoding="utf-8")
     return str(path)

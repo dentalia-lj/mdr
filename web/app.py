@@ -116,7 +116,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 # footing on which this module already imports `app.queue` and `web/registry.py`
 # imports `app.playbooks`. It is emphatically not `app.handlers` — the review
 # UI resolves a name to offer a choice; only GATE acts on the choice.
-from app import db, heartbeat, manufacturers, playbooks, queue
+from app import db, heartbeat, manufacturers, playbooks, queue, unmatched_names
 # Export file types /import accepts. Mirrors the adapter's own set exactly, so
 # the form can never reject a file the worker would have read.
 # Imported as a symbol, not as `app.coverage`: this module already defines a
@@ -2729,6 +2729,9 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
     # emission flags the scheduler process runs on. Compose fills both
     # containers' SCHEDULER_* from one .env, so the two cannot disagree.
     scheduler_cfg = load_config().scheduler
+    # The REF length guard the unmatched-names suggestion shares with VALIDATE
+    # (`validate.min_unscoped_ref_len`), read once like the two above.
+    min_ref_len = load_config().validate.min_unscoped_ref_len
     # Global dependency, not middleware: middleware would force `async def`
     # and this codebase is sync by ruling. Runs for every matched route;
     # default-deny, so a route added later is staff-only until opened.
@@ -3867,6 +3870,10 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         writes nothing, here or anywhere else.
         """
         with _conn() as conn:
+            # First card: printed names no alias knows, the documents waiting
+            # on them, and which playbook needs the name. Suggests only; the
+            # alias is added in the playbook file (spec 2026-09-29).
+            unmatched = unmatched_names.groups(conn, min_ref_len=min_ref_len)
             summary = conn.execute(
                 "SELECT kind, count(*) AS subjects, sum(seen_count) AS observations "
                 "FROM data_anomaly GROUP BY kind ORDER BY subjects DESC"
@@ -3930,7 +3937,10 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             {"summary": summary, "rows": rows, "kind": kind,
              "pager": _pager(page, DATA_QUALITY_PAGE_SIZE, total),
              "class_summary": class_summary, "class_rows": class_rows,
-             "class_total": class_total, "class_shown": CLASS_CHECK_LIMIT},
+             "class_total": class_total, "class_shown": CLASS_CHECK_LIMIT,
+             "unmatched": unmatched, "unmatched_summary": unmatched_names.summary(unmatched),
+             "strong_min_refs": unmatched_names.STRONG_MIN_REFS,
+             "strong_share": int(unmatched_names.STRONG_SHARE * 100)},
         )
 
     @app.get("/expiry", response_class=HTMLResponse)
