@@ -92,7 +92,7 @@ listed because they are real, and because a reader needs to know who owns them.
 
 | # | What | Ruling |
 |---|---|---|
-| B1 | Nothing backs up the registry or the archive | **Someday, not today.** Not scheduled work; a disclosed operational risk, recorded so it is never mistaken for work in progress. F1 |
+| B1 | Nothing backs up the registry or the archive | **Ordered 2026-09-28** (offer 2026092301). Script built and rehearsed on dev; L0 on the server, L1 to the Storage Box and the restore test pending: `tasks/todo.md`, [docs/dev/backup.md](docs/dev/backup.md). F1 |
 | B2 | Nothing can report that the queue itself is dead | **Accepted.** The in-queue half shipped 2026-09-07. The out-of-body check is missing and stays missing: Dentalia will run another app on the same server and will notice an outage that way. F16 |
 | B3 | The catalogue is a 2026-08-10 snapshot | **Not a gap.** The CSV import is the first version and is how the snapshot and the SFTP corpus arrived. The monthly tick is built — it enqueues the newest file in `ingest_watch_dir` — and is inert only because that directory is unset, which is deployment config. OData is *kasneje*, item 4 |
 | B4 | Acceptance: eight of nine met | **Sufficient.** AC1 1.571 of 4.265 = 36,8% against a 33% target. AC8's third clause closes with F23's rule change; the register tracks it |
@@ -207,13 +207,14 @@ Compatibility on 2026-08-18 as `SPP` — the registry holds 5 of them.)*
 
 ## 5. Decisions
 
-**Every ruling is in [docs/decisions.md](docs/decisions.md) — 99 rows, and the
+**Every ruling is in [docs/decisions.md](docs/decisions.md) — 100 rows, and the
 first place to look before proposing anything that sounds already-decided.**
 Split out of this file 2026-09-04. The most recent, because they are the ones a
 current session collides with:
 
 | Date | Subject | Ruling |
 |---|---|---|
+| 2026-09-28 | Registry + archive backup | **Ordered** (offer 2026092301, fixed price). Standard design: L0 hourly verified dumps on the server, L1 restic (distribution package) to the Storage Box, L2 only if Dentalia wants it. Overrules 2026-09-03 |
 | 2026-09-16 | The eight documents behind AC8 (F23) | Repaired through `gate.apply`, not by hand — seeded test files rejected, real documents restored. AC1 1.460 → 1.571 |
 | 2026-09-16 | Confidence calibration (F33) | Keep the mechanism, ship every factor at 1,0, and **say on the page** that confidence is uncalibrated |
 | 2026-09-16 | What a supplier reply does to a chase (F31) | It **pauses** the chase and puts it in front of a person. It never closes one |
