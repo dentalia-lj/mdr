@@ -26,6 +26,7 @@ import logging
 import os
 import pathlib
 import re
+import unicodedata
 from dataclasses import dataclass, field
 
 from urllib.parse import urlsplit
@@ -1086,8 +1087,16 @@ def is_refused(host: str, refused: frozenset[str]) -> bool:
 def _name_words(text: str) -> tuple[str, ...]:
     """Casefolded alphanumeric words. Punctuation and legal-form commas drop
     out, so `Ustomed Instrumente Ulrich Storz GmbH & Co. KG` and the master's
-    `ULRICH STORZ GMBH & CO. KG` compare on the same tokens."""
-    return tuple(re.findall(r"[a-z0-9]+", (text or "").casefold()))
+    `ULRICH STORZ GMBH & CO. KG` compare on the same tokens.
+
+    Accents fold first (NFKD, combining marks dropped), as
+    `manufacturers.normalize` folds them for VALIDATE and GATE. Casefold alone
+    kept `ö` and the `[a-z0-9]` split then cut `MÖLNLYCKE` into `m`, `lnlycke`,
+    so `Molnlycke Health Care AB` passed the guard while resolution treats the
+    two spellings as one name (found 2026-09-29)."""
+    folded = unicodedata.normalize("NFKD", text or "")
+    folded = "".join(ch for ch in folded if not unicodedata.combining(ch))
+    return tuple(re.findall(r"[a-z0-9]+", folded.casefold()))
 
 
 def brand_collision(

@@ -21,6 +21,7 @@ from app import (
     repair_archive_urls, repair_document_manufacturer, repair_label_dates,
     repair_mfr_overbind,
     repair_mfr_task_reason, repair_ref_list, repair_stated_class,
+    revalidate_name,
     vendor_master, version,
 )
 from app.extract import t0_layout
@@ -949,6 +950,30 @@ def cmd_repair_label_dates(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_revalidate(args: argparse.Namespace) -> int:
+    """Send the documents that print one manufacturer name back through
+    VALIDATE, after its alias was added to a playbook and synced. Dry run by
+    default. Refuses a name that does not resolve to exactly one manufacturer,
+    so it cannot run before the alias exists."""
+    with db.connect() as conn:
+        plan = revalidate_name.plan(conn, args.name)
+        for line in revalidate_name.render(plan):
+            print(line)
+        if plan.refusal:
+            return 1
+        if not plan.send:
+            return 0
+        if not args.apply:
+            print(f"Dry run. Nothing queued. Add --apply to queue "
+                  f"{len(plan.send)} validate.doc job(s).")
+            return 0
+        stats = revalidate_name.apply(conn, plan)
+        conn.commit()
+    print(f"queued: {stats['queued']} validate.doc job(s); "
+          f"already queued: {stats['already_queued']}")
+    return 0
+
+
 def cmd_komet_coverage(args: argparse.Namespace) -> int:
     """Link items from a manufacturer's own document index. Dry run by default."""
     with db.connect() as conn:
@@ -1250,6 +1275,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     rld.add_argument("--apply", action="store_true", help="write; without it, dry run")
     rld.set_defaults(func=cmd_repair_label_dates)
+
+    rv = sub.add_parser(
+        "revalidate",
+        help="send the documents printing one manufacturer name back through "
+             "validation, after its alias is synced (dry run by default)",
+    )
+    rv.add_argument("--name", required=True, help="the printed manufacturer name")
+    rv.add_argument("--apply", action="store_true", help="queue; without it, dry run")
+    rv.set_defaults(func=cmd_revalidate)
 
     rmo = sub.add_parser(
         "repair-mfr-overbind",
