@@ -73,6 +73,9 @@ class SeedStats:
 
     codes_inserted: int = 0
     codes_unchanged: int = 0
+    #: `vendor-master` code rows a playbook authored later names on the same
+    #: manufacturer, re-marked `playbook` (see `_link_code`).
+    codes_claimed: int = 0
 
     names_inserted: int = 0
     names_unchanged: int = 0
@@ -188,6 +191,21 @@ def _link_code(conn, stats, code_source: str, code: str, mfr_id: int, source: st
              f"manufacturer_id={row['manufacturer_id']}",
              f"manufacturer_id={mfr_id}")
         )
+    elif source == "playbook" and row["source"] == "vendor-master":
+        # A playbook authored after the vendor master seeded this manufacturer
+        # names a code that is already its own. Mark it the playbook's: the
+        # DB-backed playbook claims only `source = 'playbook'` codes, so left
+        # derived, `playbooks sync`'s brand guard refused the playbook's own
+        # name and aborted (BOTISS, Dentalia server 2026-09-29). Only upward,
+        # and only on the same manufacturer -- a code on another one stays the
+        # conflict above.
+        conn.execute(
+            "UPDATE manufacturer_bc_code SET source = 'playbook' "
+            "WHERE code_source=%s AND code=%s",
+            (code_source, code),
+        )
+        stats.codes_claimed += 1
+        return
     stats.codes_unchanged += 1
 
 
@@ -516,7 +534,7 @@ def render(stats: SeedStats, *, dry_run: bool = False) -> list[str]:
         f"{head}: manufacturer {stats.manufacturers_inserted} new / "
         f"{stats.manufacturers_updated} slug attached / "
         f"{stats.manufacturers_unchanged} unchanged",
-        f"{head}: bc_code {stats.codes_inserted} new / {stats.codes_unchanged} unchanged",
+        f"{head}: bc_code {stats.codes_inserted} new / {stats.codes_claimed} claimed by a playbook / {stats.codes_unchanged} unchanged",
         f"{head}: name {stats.names_inserted} new / {stats.names_unchanged} unchanged",
         f"{head}: body {stats.bodies_inserted} new / "
         f"{stats.bodies_unchanged} unchanged",

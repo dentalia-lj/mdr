@@ -173,6 +173,30 @@ def test_a_playbook_authored_later_attaches_its_slug_to_the_existing_row(conn):
     assert conn.execute("SELECT slug FROM manufacturer").fetchone()["slug"] == "ivoclar"
 
 
+def test_a_playbook_authored_later_claims_the_code_it_names(conn):
+    """Found on the Dentalia server 2026-09-29. BOTISS existed from the vendor
+    master, so its code row was `vendor-master`; the playbook added later left
+    it that way, the DB-backed playbook then claimed no code, and `playbooks
+    sync`'s brand guard refused the playbook's own name ('BOTISS' contains the
+    BC brand BOTISS) -- aborting the whole sync. A code the playbook names, on
+    the manufacturer it already belongs to, becomes the playbook's."""
+    _vendor(conn, [("10171", "BOTISS"), ("10172", "BOTISS")])
+    _seed(conn)                                   # seeded before anyone authored
+
+    stats = _seed(conn, [_pb("botiss", "BOTISS", codes=["10171"],
+                             aliases=["botiss biomaterials GmbH"])])
+
+    rows = conn.execute(
+        "SELECT code, source FROM manufacturer_bc_code ORDER BY code"
+    ).fetchall()
+    assert [(r["code"], r["source"]) for r in rows] == [
+        ("10171", "playbook"),         # named by the playbook: claimed
+        ("10172", "vendor-master"),    # derived, not named: left alone
+    ]
+    assert stats.codes_claimed == 1
+    assert stats.clean
+
+
 # --------------------------------------------------------------------------- #
 # what it skips, and says so
 # --------------------------------------------------------------------------- #

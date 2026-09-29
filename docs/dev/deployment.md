@@ -502,6 +502,15 @@ absent; they degrade to "no rule". Scan a corpus before step 4 and NEODENT is no
 refused, Komet's coverage map is not read, and T0 falls back to generic
 extraction -- silently, and at full LLM price.
 
+**A playbook added later for a manufacturer the vendor master already
+created** (the normal case after install) goes through the same two commands,
+`manufacturers seed --apply` then `playbooks sync`. Before 2026-09-29 the seed
+left that manufacturer's code marked as derived, so the playbook claimed no
+code and `sync`'s brand guard refused its own name, aborting the whole sync
+(found adding BOTISS on the Dentalia server). The seed now marks a code the
+playbook names on the same manufacturer as the playbook's, and reports it as
+"claimed by a playbook".
+
 New manufacturers are authored in the browser afterwards (`/onboarding`, or
 *Start a playbook* on `/manufacturers/{name}`), not by editing files on the
 server. See [playbook-authoring.md](playbook-authoring.md).
