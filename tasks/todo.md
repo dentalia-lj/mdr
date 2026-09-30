@@ -52,9 +52,15 @@ script. The process and every restore command: `docs/dev/backup.md`.
       temporary server; measure time and loss against the offer; compare
       counts; write the test record; delete the server.
 
-## Open
+## Decided 2026-09-30 (Denis), docs/decisions.md
 
-- Heartbeat watcher (`BACKUP_HEARTBEAT_URL`): which service, whom it alerts.
-- Deletion protection beyond the box's 10 daily snapshots: L2 with object lock,
-  or accept and tell Dentalia at handover.
-- Handover docs in Slovene for Dentalia's IT?
+- Deletion protection: the box's 10 daily snapshots are accepted, no L2. Say
+  at handover: 10 days back, nothing survives losing the Hetzner account.
+- [ ] Box snapshots: switch on automatic daily snapshots (Hetzner Console).
+- [ ] Heartbeat watcher, **later**: pick a service (healthchecks.io recommended),
+      set `BACKUP_HEARTBEAT_URL`. Belongs in followups `[backup-heartbeat-watcher]`;
+      not written there yet because another session has followups.md emptied
+      in its working tree (2026-09-30).
+- [ ] Handover: **full Slovene translation** of `docs/dev/backup.md`, kept in
+      step with the English one. After the restore test, so the restore sections
+      are translated once, as they ran.
