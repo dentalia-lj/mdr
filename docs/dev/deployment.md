@@ -388,7 +388,14 @@ Two kinds of change it does not carry, because they live outside what it
 rebuilds and restarts:
 
 - **`Caddyfile` or `caddy/users/`.** `deploy.sh` restarts `worker` and `web`
-  only. After a pull that touched either, `docker compose up -d caddy`.
+  only. After a pull that touched either, `docker compose restart caddy`, then confirm the
+  container reads the new file (`docker compose exec caddy grep -c X-Robots-Tag
+  /etc/caddy/Caddyfile`). Measured 2026-09-30 on dev (Docker 20.10): plain
+  `up -d caddy` keeps the running container and its old config, and a running
+  container keeps reading the file as it was before `git pull` replaced it; a
+  restart re-mounts it and reads the new one. Not `up -d --force-recreate`
+  without `--no-deps`: that also starts the one-shot `migrate`, outside
+  `deploy.sh` and its dump.
 - **`playbooks/*.json`.** The running pipeline reads playbooks from the
   database, not the files (§ 6.3), so a pulled JSON change sits unused.
   `docker compose run --rm worker python -m app.cli playbooks drift` shows what
@@ -796,17 +803,43 @@ name to the machine paths (runbook § Web UI, "The API name"). The API name is
 hardcoded in our `Caddyfile`; renaming it means editing that rule and the test
 beside it.
 
-**Not yet done (2026-09-25).** The host Caddy block is not in place, by
-choice, so the UI is reachable only through an SSH tunnel from a workstation:
+**Live since 2026-09-30.** The host Caddy block from the
+[server audit](../2026-09-18-server-audit.md) § 6.1 is in place; both names
+carry Let's Encrypt certificates. Checked from outside the same day:
+`cw.dentalia.si/` 401, `api.cw.dentalia.si/` 404 `Not found`, `/healthz` 200 on
+both, a bogus `X-API-Key` or a forged `X-Forwarded-User` refused, and
+`team.dentalia.si` unchanged. The office UI is therefore on the public internet
+behind Basic auth, with no rate limit (`tasks/followups.md`
+`[public-surface-rate-limit]`). Their host Caddy: `systemctl reload caddy`,
+never `restart`; ours in compose is the § 5.1 `docker compose restart caddy`.
+
+The machine surface, checked the same day against `https://api.cw.dentalia.si`
+(keys read from `.env` on the server, never on a command line):
+
+| Caller | Request | Answer |
+|---|---|---|
+| none | every `/api/*` route, incl. the four `/api/manufacturers*`; `/documents/{id}/file` | 401 from Caddy |
+| none, or wrong `k` | `/item/{ref}`, `/item/{ref}/documents.zip` | 404 |
+| `X-API-Key` | `/api/items/{ref}/documents` (plain, `?view=customer`, batch), `/api/documents/{id}`, `/api/kpi`, all four `/api/manufacturers*` | 200 JSON, links absolute on the API name |
+| `X-API-Key` | `/documents/{id}/file` | 200 `application/pdf` |
+| `?k=` | `/item/{ref}` page, `/item/{ref}/documents.zip` | 200 HTML, 200 zip |
+| `X-API-Key` | `/archive/*`, `/api-reference` on the API name | 404 (the name rule) |
+
+The one thing a BC user will meet: **Open** on the item page asks for a staff
+login, and only **Download all** works on the link key alone
+([web.md](web.md) § Rules). Since 2026-09-30 the `Caddyfile` sends
+`X-Robots-Tag: noindex, nofollow` on every response and answers `/robots.txt`
+with `Disallow: /` on both names; on the server that takes a pull and `docker compose restart caddy`
+(§ 5.1), not `deploy.sh` alone.
+
+The SSH tunnel still works and needs no DNS or certificate:
 
 ```bash
 ssh -N -L 8100:127.0.0.1:8000 <user>@91.98.42.140
 # browser: http://127.0.0.1:8100   (127.0.0.1, not localhost: Windows tries ::1 first)
 ```
 
-Port 8100 locally because a dev checkout's own Caddy holds 8000. The steps for
-the host Caddy are in the [server audit](../2026-09-18-server-audit.md) § 6.1;
-`systemctl reload caddy`, never `restart`.
+Port 8100 locally because a dev checkout's own Caddy holds 8000.
 
 Set `WEB_PUBLIC_BASE_URL=https://api.cw.dentalia.si` **before the first BC
 push**. That base is written into the links `bc.push` stores in Business

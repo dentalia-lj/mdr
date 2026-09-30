@@ -83,6 +83,14 @@ Refusal codes differ by surface, deliberately (`web/access.py:125-133`):
 unauthenticated caller), `/api/*` returns 401 (a service caller can act on
 that), everything else 403.
 
+**The BC item page opens files through the staff login.** `item_card.html`
+links each document's **Open** to its `url`, `/documents/{id}/file`, which is
+`service` + `staff` only and does not read `?k=`. A BC user who clicks Open
+without an `X-API-Key` therefore gets Caddy's Basic prompt; only **Download
+all** (`/item/{ref}/documents.zip`, which carries the page's query string and
+so its `k`) works on the link key alone. That follows the access spec § 2
+route table; measured on the client server 2026-09-30.
+
 `require_authenticated_user=False` (no proxy in front — local dev, tests)
 makes every caller classify as `staff` (`web/access.py:112-113`); this is the
 existing contract of `_authenticated_user`, generalised across the whole app,

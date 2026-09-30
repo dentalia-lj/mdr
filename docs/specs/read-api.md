@@ -6,7 +6,7 @@ Normative sources (this spec adds only what they leave open — do not restate):
 - `migrations/034_item_document_production_expiry.sql` — the view's `expires`/`expiry_basis` columns this API selects.
 - `web/app.py` (`api_item_documents`, `api_document`, `api_kpi`) — the implementation.
 
-**Deliberately out of scope** (blocked on the `[serving-mechanism-and-doc-names]` ruling): consumer auth beyond the Caddy ingress, absolute/durable archive URLs, any stored title column. This spec documents the shape that survives that ruling either way.
+**Consumer access** was ruled and built 2026-08-25 (`docs/superpowers/specs/2026-08-25-item-document-access-design.md`, followup `[serving-mechanism-and-doc-names]` closed): every `/api/*` route takes a staff Basic login or a service `X-API-Key`, never anonymous; `/documents/{id}/file` the same; `/item/*` also takes the BC link key `?k=`. The policy is `web/access.py`, default-deny. Response URLs are absolute when `web.public_base_url` is set (`https://api.cw.dentalia.si` on the client server, live 2026-09-30). The display name is derived (`web/item_docs.py`), not a stored title. The caller-facing version of all this is the app's own `/api-reference` page.
 
 ## 1. Endpoints
 
@@ -16,7 +16,7 @@ Normative sources (this spec adds only what they leave open — do not restate):
 | GET | `/api/documents/{doc_id}` | One production or superseded document + its complete evidence |
 | GET | `/api/kpi` | The KPI board (same numbers as `GET /`) |
 
-All three are read-only, production-visibility only (Invariant 1: the web process holds zero write grants on `document`/`item_document`/`evidence`). Auth is the Caddy reverse proxy in front of the whole app (G3 v0) — none of these routes carry auth logic of their own.
+All three are read-only, production-visibility only (Invariant 1: the web process holds zero write grants on `document`/`item_document`/`evidence`). None of these routes carries auth logic of its own: the global dependency in `web/access.py` decides, `service` + `staff` for all three, and without a credential Caddy answers 401 before the app is reached. The catalogue and batch endpoints are in § 4b.
 
 ## 2. `GET /api/items/{item_ref}/documents`
 

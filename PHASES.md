@@ -36,9 +36,12 @@ reviewed anywhere near the rate it is produced.
 
 **Installed on the Dentalia server 2026-09-25** (`91.98.42.140`, compose project
 `compliance`): stack up and verified, manufacturer master, playbooks and the
-September catalogue loaded (15.968 items, 8.412 groups, 0 failed). No documents
-there yet, discovery held, reached by SSH tunnel until the host Caddy block goes
-in. Record and what is left: [deployment.md § 9](docs/dev/deployment.md).
+September catalogue loaded (15.968 items, 8.412 groups, 0 failed). Documents
+from the backfill waves, measured 2026-09-30: 216 production, 606 staged, 262
+filed, 4 superseded, 4.734 items with a published document; discovery held.
+Public since 2026-09-30: office UI at `cw.dentalia.si`, machine API at
+`api.cw.dentalia.si` ([deployment.md § 7](docs/dev/deployment.md)). Record and
+what is left: [deployment.md § 9](docs/dev/deployment.md).
 
 | Phase | Scope | Status |
 |---|---|---|

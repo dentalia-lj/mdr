@@ -166,7 +166,14 @@ callers). In order:
 2. Our stack up; on the server `curl -I http://127.0.0.1:8000/healthz` -> 200.
 3. `sudo cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak-$(date +%F)`
 4. Append the block.
-5. `sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile`
+5. `sudo -u caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile`.
+   **As `caddy`, not root** (corrected 2026-09-30): validate opens the site's
+   log file, so run as root it creates `/var/log/caddy/cw.log` owned by
+   `root:root` 0600, and the reload then fails because their Caddy runs as
+   `caddy` and cannot open it. `--force` kept their running config, so nothing
+   broke; `sudo chown caddy:caddy /var/log/caddy/cw.log` and a second reload
+   fixed it. The "not formatted" warning is our block's spaces against their
+   tabs; do not `caddy fmt --overwrite` their file.
 6. `sudo systemctl reload caddy`. **Never `restart`**: their unit reloads with
    `caddy reload --force`, which keeps the running config if the new one is
    refused, while a restart on a broken file takes their sites down.
