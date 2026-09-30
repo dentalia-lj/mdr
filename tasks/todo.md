@@ -52,8 +52,9 @@ script. The process and every restore command: `docs/dev/backup.md`.
       two keys, via `ProxyJump` through the server (the box answers only inside
       Hetzner): ~5 min to a restored database and archive; all table counts,
       the dump and all 1.572 archive files identical to production.
-      docs/dev/backup.md § 9 (and .sl.md). Denis ruled the container test
-      counts as the offer's restore test (2026-09-30).
+      docs/dev/backup.md § 9 (and .sl.md).
+- [ ] Decide: does this container test count as the offer's restore test
+      ("na nov, začasen strežnik"), or is a temporary Hetzner server still run?
 
 ## Decided 2026-09-30 (Denis), docs/decisions.md
 
