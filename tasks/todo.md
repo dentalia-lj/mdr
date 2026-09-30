@@ -46,11 +46,14 @@ script. The process and every restore command: `docs/dev/backup.md`.
 - [ ] Box snapshots on (Mitja); confirm the sub-account cannot delete under `/.zfs`.
 - [ ] Hand the restic password and SSH key to Dentalia's two custodians.
 
-## Restore test (offer), after the first documents backfill
+## Restore test (offer)
 
-- [ ] From a machine that is not the server, with only the keys: doc § 5.3 on a
-      temporary server; measure time and loss against the offer; compare
-      counts; write the test record; delete the server.
+- [x] 2026-09-30, in a throwaway `ubuntu:26.04` container on dev, with only the
+      two keys, via `ProxyJump` through the server (the box answers only inside
+      Hetzner): ~5 min to a restored database and archive; all table counts,
+      the dump and all 1.572 archive files identical to production.
+      docs/dev/backup.md § 9 (and .sl.md). Denis ruled the container test
+      counts as the offer's restore test (2026-09-30).
 
 ## Decided 2026-09-30 (Denis), docs/decisions.md
 

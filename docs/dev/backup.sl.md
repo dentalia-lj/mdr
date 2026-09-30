@@ -210,7 +210,10 @@ Console prekliči njegov ključ SSH za Storage Box in obnovi iz posnetka boxa
 (§ 5.4).
 
 Potrebno: geslo za restic in ključ SSH za Storage Box (§ 7); prostor na disku
-za dvakratni arhiv.
+za dvakratni arhiv. **Box odgovarja samo znotraj Hetznerjevega omrežja**
+(»External reachability« je izklopljen): nov strežnik pri Hetznerju ga doseže
+neposredno; katerikoli drug računalnik gre prek takega, ki ga doseže, s
+`ProxyJump` v vnosu `storagebox` v `~/.ssh/config` (§ 9, 2026-09-30).
 
 1. Docker, uporabnik v skupini `docker`, repozitorij v `/srv/compliance/app`,
    mape: [deployment.md § 1](deployment.md). Nato `sudo apt install restic`.
@@ -421,8 +424,31 @@ L1 9 s). `restic check --read-data-subset=5%`: brez napak. Izvoz, obnovljen z
 boxa, je imel enak SHA-256 kot tisti na strežniku. Cron L1 prevzame od
 naslednjega :07 brez spremembe crontaba.
 
-**Še ni izvedeno:** posnetki boxa in `--no-lock` iz `.zfs` (§ 5.4) ter § 5.3
-od začetka do konca na pravem novem strežniku, kar je test obnove iz ponudbe.
+### 2026-09-30, test obnove v začasnem kontejnerju (test iz ponudbe)
+
+Na razvojnem računalniku (WSL), v čistem kontejnerju `ubuntu:26.04`, ki je
+imel samo geslo za restic in ključ za Storage Box: `apt install restic`
+(0.18.1), nato `restic restore latest` s pravega boxa. Box je neposredno prijavo
+od zunaj Hetznerja zavrnil, zato je SSH šel prek strežnika (`ProxyJump`);
+strežnik je podatke le posredoval. Primerjava: kopija na strežniku ob 11:45:57
+UTC in števci produkcije, prebrani v isti sekundi.
+
+| Korak | Čas | Rezultat |
+|---|---|---|
+| Namestitev restica, SSH | 16 s | |
+| `restic restore latest` | 4 min 10 s | 4.815 datotek, 2,54 GiB |
+| Postgres 16 pripravljen, vloge, `pg_restore` (§ 5.3, korak 7) | 9 s | brez napak |
+| Baza | | `document` 1.088, `evidence` 8.099, `item_document` 11.840, `audit_log` 508, `fetch_log` 1.611, `item_mirror` 15.968, `job` 20.140, `schema_migrations` 70, vloge 2: **enako** kot produkcija |
+| Izvoz | | **enak** SHA-256 kot na strežniku |
+| Arhiv | | 1.572 datotek, **enak** SHA-256, vsaka |
+| Nastavitve | | `.env` in `caddy/users/` sta prisotna |
+
+Približno 5 minut od praznega kontejnerja do obnovljene baze in arhiva, prek
+domače povezave. Ni pokrito: zagon aplikacije na obnovljenih podatkih
+(obnovljeni `.env` ima produkcijske poverilnice, zato bi worker bral pravi
+nabiralnik in porabljal denar) in čas za pripravo novega strežnika.
+
+**Še ni izvedeno:** posnetki boxa in `--no-lock` iz `.zfs` (§ 5.4).
 
 Prejšnja različica te rešitve (restic v Dockerju, lokalni repozitorij,
 kopiran naprej, lasten skript za obnovo) je bila isti dan trikrat pregledana in

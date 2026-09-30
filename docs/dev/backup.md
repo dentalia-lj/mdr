@@ -206,7 +206,10 @@ its Storage Box SSH key in the Hetzner Console and restore from a box snapshot
 (§ 5.4).
 
 Needed: the restic password and the Storage Box SSH key (§ 7); disk for twice
-the archive.
+the archive. **The box only answers from inside Hetzner's network** (its
+"External reachability" is off): a new Hetzner server reaches it directly;
+any other machine goes through one that can, with `ProxyJump` in the
+`storagebox` entry of `~/.ssh/config` (§ 9, 2026-09-30).
 
 1. Docker, the user in the `docker` group, the checkout in
    `/srv/compliance/app`, the directories: [deployment.md § 1](deployment.md).
@@ -416,8 +419,31 @@ files, 2.54 GiB read, 1.34 GiB stored, **13 s** in total (L0 3 s, L1 9 s).
 had the same SHA-256 as the one on the server. Cron picks L1 up from the next
 :07 with no crontab change.
 
-**Not run yet:** box snapshots and `--no-lock` from `.zfs` (§ 5.4), and § 5.3
-end to end on a real new server, which is the offer's restore test.
+### 2026-09-30, restore test in a throwaway container (the offer's test)
+
+On dev (WSL), in a clean `ubuntu:26.04` container holding nothing but the
+restic password and the Storage Box key: `apt install restic` (0.18.1), then
+`restic restore latest` from the real box. The box refused a direct login from
+outside Hetzner, so SSH went through the server (`ProxyJump`); the server only
+passed the data on. Reference: a backup taken on the server at 11:45:57 UTC,
+with production counts read the same second.
+
+| Step | Time | Result |
+|---|---|---|
+| Install restic, SSH setup | 16 s | |
+| `restic restore latest` | 4 min 10 s | 4.815 files, 2.54 GiB |
+| Postgres 16 ready, roles, `pg_restore` (§ 5.3 step 7) | 9 s | no errors |
+| Database | | `document` 1.088, `evidence` 8.099, `item_document` 11.840, `audit_log` 508, `fetch_log` 1.611, `item_mirror` 15.968, `job` 20.140, `schema_migrations` 70, roles 2: **identical** to production |
+| The dump | | **identical** SHA-256 to the server's |
+| Archive | | 1.572 files, **identical** SHA-256, every one |
+| Config | | `.env` and `caddy/users/` present |
+
+About 5 minutes from an empty container to a restored database and archive,
+over a home connection. Not covered: starting the app on the restored data
+(the restored `.env` holds production credentials, so a worker would poll the
+real mailbox and spend money) and the time to get a new server.
+
+**Not run yet:** box snapshots and `--no-lock` from `.zfs` (§ 5.4).
 
 An earlier version of this setup (a Docker-wrapped restic, a local restic
 repository copied onward, a custom restore script) was reviewed three times the
