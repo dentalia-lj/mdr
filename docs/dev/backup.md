@@ -421,6 +421,8 @@ had the same SHA-256 as the one on the server. Cron picks L1 up from the next
 
 ### 2026-09-30, restore test in a throwaway container (the offer's test)
 
+Ruled by Denis the same day: this counts as the offer's restore test.
+
 On dev (WSL), in a clean `ubuntu:26.04` container holding nothing but the
 restic password and the Storage Box key: `apt install restic` (0.18.1), then
 `restic restore latest` from the real box. The box refused a direct login from

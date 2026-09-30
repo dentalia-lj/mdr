@@ -426,6 +426,8 @@ naslednjega :07 brez spremembe crontaba.
 
 ### 2026-09-30, test obnove v začasnem kontejnerju (test iz ponudbe)
 
+Denis je isti dan odločil: to šteje kot test obnove iz ponudbe.
+
 Na razvojnem računalniku (WSL), v čistem kontejnerju `ubuntu:26.04`, ki je
 imel samo geslo za restic in ključ za Storage Box: `apt install restic`
 (0.18.1), nato `restic restore latest` s pravega boxa. Box je neposredno prijavo
