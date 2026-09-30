@@ -119,7 +119,7 @@ Change code in the repository, never in the server's checkout: a local edit
 there makes the next `git pull` refuse or merge.
 
 It restarts `worker` and `web` only. A pull that touched `Caddyfile` needs
-`docker compose up -d caddy`, and one that touched `playbooks/` needs the
+`docker compose restart caddy` (plain `up -d` keeps the old config), and one that touched `playbooks/` needs the
 database updated too, since the pipeline reads playbooks from there
 ([deployment.md § 5.1](docs/dev/deployment.md)).
 

@@ -302,3 +302,30 @@ def test_api_host_refusal_is_written_before_the_login_handle():
     # The directive lines, not the words: the comments name both handles too.
     assert (text.index("\n\thandle @api_host_refused {")
             < text.index("\n\thandle @protected {"))
+
+
+# --------------------------------------------------------------------------- #
+# No indexing, on either name (Denis, 2026-09-30). Measured the same day
+# against a running caddy:2.8 with this file: the header came back on Caddy's
+# own 401 and 404, on the app's 404 and on proxied pages, and /robots.txt
+# answered 200 on both names without the login.
+# --------------------------------------------------------------------------- #
+
+def test_every_response_says_noindex():
+    """A site-level `header`, not one inside a handle: inside one it would
+    miss every response the other handles write, the login's 401 included."""
+    text = _CADDYFILE.read_text()
+    assert '\n\theader X-Robots-Tag "noindex, nofollow"\n' in text
+
+
+def test_robots_txt_disallows_everything_before_login_and_refusal():
+    """Written first, so it runs first whichever way Caddy sorts the handles:
+    after the API-name refusal it would 404 there, after the login it would
+    ask a crawler for a password."""
+    text = _CADDYFILE.read_text()
+    robots = text.index("\n\thandle /robots.txt {")
+    assert robots < text.index("\n\thandle @api_host_refused {")
+    assert robots < text.index("\n\thandle @protected {")
+    body = text[robots:].split("\n\t}", 1)[0]
+    assert "User-agent: *" in body
+    assert re.search(r"^\s*Disallow: /\s*$", body, re.M)

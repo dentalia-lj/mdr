@@ -155,7 +155,7 @@ At `http://127.0.0.1:8000` (host port `API_PORT`), behind the `caddy` reverse pr
 
 Two non-browser caller classes now also reach it, and Caddy does **not** demand Basic of them: `/item/*` (the BC item-card link, which authenticates with `?k=`) and any request carrying an `X-API-Key` header (the webshop backend). `basic_auth` cannot express "Basic **or** a key", so those two are excluded from the `@protected` matcher and **the app is the authority on their credentials** — a request with a bogus `X-API-Key` reaches the app and is rejected there. `/archive/*` is deliberately not excluded: it serves the archive by path, which is walkable, so it stays staff-only at both layers. The whole policy is one table in `web/access.py`, installed as a sync FastAPI dependency (not middleware, which would force `async def`) and **default-deny**, so a route added later is staff-only until someone opens it. See `/api-reference` in the UI, and `docs/superpowers/specs/2026-08-25-item-document-access-design.md`.
 
-**The API name.** On the client server two names reach this one proxy: `cw.dentalia.si` for the office and `api.cw.dentalia.si` for machines. On the API name the `Caddyfile`'s `@api_host_refused` rule answers a plain-text `Not found` (404) to every path except `/api/*`, `/documents/{id}/file`, `/item/*`, `/static/*` and `/healthz`, which are exactly the paths `web/access.py` opens to a non-staff caller; `tests/test_access.py` keeps the two lists equal. Those five then get the same auth as on any other name. The office name, and `127.0.0.1:8000` in dev, still serve everything. A JSON `{"detail": ...}` body means the app answered; plain `Not found` means the rule did.
+**The API name.** On the client server two names reach this one proxy: `cw.dentalia.si` for the office and `api.cw.dentalia.si` for machines. On the API name the `Caddyfile`'s `@api_host_refused` rule answers a plain-text `Not found` (404) to every path except `/api/*`, `/documents/{id}/file`, `/item/*`, `/static/*` and `/healthz`, which are exactly the paths `web/access.py` opens to a non-staff caller; `tests/test_access.py` keeps the two lists equal. Those five then get the same auth as on any other name. The office name, and `127.0.0.1:8000` in dev, still serve everything. A JSON `{"detail": ...}` body means the app answered; plain `Not found` means the rule did. On both names, and before either the rule or the login, Caddy answers `/robots.txt` itself (`Disallow: /`) and puts `X-Robots-Tag: noindex, nofollow` on every response (2026-09-30).
 
 First-time setup — set the fallback account in `.env`:
 
@@ -179,7 +179,7 @@ because the hashes are the credential.
 docker run --rm -it caddy:2.8 caddy hash-password    # they type it at the prompt
 # append one line to caddy/users/people.caddy (create it if it is not there):
 #   maja $2a$14$...
-docker compose up -d caddy          # picks up the new file
+docker compose restart caddy          # plain up -d keeps the old config
 ```
 
 Verified with the project's own image on 2026-09-15: `import` is spliced in at
@@ -202,7 +202,7 @@ keeps it from starting `web`. A genuinely malformed account line fails with the
 same message but names the file and line it came from, which is how you tell
 the two apart.
 
-Removing a person is deleting their line and `docker compose up -d caddy`.
+Removing a person is deleting their line and `docker compose restart caddy`.
 
 ### Making a person an operator
 

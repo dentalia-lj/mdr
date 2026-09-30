@@ -31,6 +31,26 @@
 		format console
 	}
 
+	# Nothing on either name may be indexed (Denis, 2026-09-30: "absolute
+	# must, in header and robots"). Every data route already needs a
+	# credential; what this covers is a leaked BC `?k=` link, which would
+	# otherwise let a crawler fetch that item page and its zip.
+	#
+	# The header goes on every response, this proxy's own 401s and 404s
+	# included, because `header` without `defer` sets it before any handler
+	# writes. The robots.txt is answered here, not by the app, and it is the
+	# first handle in the file: a single-path matcher sorts ahead of the named
+	# ones below, so neither the API-name refusal nor the login reaches it.
+	header X-Robots-Tag "noindex, nofollow"
+
+	handle /robots.txt {
+		header Content-Type "text/plain; charset=utf-8"
+		respond <<TXT
+			User-agent: *
+			Disallow: /
+			TXT 200
+	}
+
 	# Three caller classes now reach this app (spec §2), and only one of them
 	# has a browser:
 	#   - staff  -> Basic auth here, unchanged, X-Forwarded-User downstream

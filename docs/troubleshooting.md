@@ -119,10 +119,10 @@ docker compose logs caddy --since 2m 2>&1 | grep "handled request"
 Three outcomes, three different problems: `status=401` with an empty `user_id` means credentials arrived and were rejected (often a browser auto-filling a saved credential for `localhost:8000` from another dev app — try a private window, then clear saved localhost passwords); `status=200` means it is being served and the window is showing something stale; **no line at all** means the request never reached the proxy — check the address the client actually dialled (the IPv6 case above) and the scheme, since `https://localhost:8000` fails outright as Caddy serves plain HTTP here.
 
 **Editing `Caddyfile` appears to do nothing (`config is unchanged` on reload).**
-The file is a bind mount, and an editor that writes-and-renames replaces the inode, so the running container keeps reading the old one. `docker compose restart caddy` does not help and `caddy reload` reports `config is unchanged` — it is reading the stale file, truthfully. Recreate the container instead:
+The file is a bind mount, and an editor that writes-and-renames replaces the inode, as does `git pull`, so the running container keeps reading the old one: `caddy reload` reports `config is unchanged` because it is reading the stale file, truthfully, and `docker compose up -d caddy` leaves the running container alone. Restart it, which re-mounts the file (measured 2026-09-30, Docker 20.10: a file replaced by `git pull` read old in the running container and new after `docker restart`; this entry said until then that restart does not help):
 
 ```
-docker compose up -d --force-recreate caddy
+docker compose restart caddy
 docker compose exec caddy grep -c "output stdout" /etc/caddy/Caddyfile   # confirm it sees the edit
 ```
 
