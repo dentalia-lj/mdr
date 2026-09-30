@@ -1,17 +1,6 @@
 {
   "manufacturer": "SASU ACTEON DISTRIBUTION",
-  "aliases": [
-    "SATELEC, A Company of ACTEON Group",
-    "SATELEC, A Company of ACTEON® Group",
-    "SATELEC - A company of Acteon Group",
-    "SATELEC A Company of ACTEON Group",
-    "SATELEC A Company of ACTEON® Group",
-    "SATELEC, A Company of ACTEON GROUP SAS",
-    "SATELEC",
-    "SOPRO S.A",
-    "SOPRO a company of ACTEON Group",
-    "PRODONT HOLLIGER ACTEON GROUP"
-  ],
+  "aliases": [],
   "bc_codes": [
     {
       "catalogue": "LJ",
