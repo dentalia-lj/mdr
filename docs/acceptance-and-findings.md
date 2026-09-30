@@ -167,12 +167,14 @@ Targets and their rationale: [decisions.md](decisions.md), rows of 2026-09-11 an
       external account for a dead-man's switch.
 - [ ] **F4 — eight of ten crons have never put a job on the queue.** Six are off on
       purpose until the environment is real; this closes with F26 and F8.
-- [ ] **F1 — nothing backs up the registry or the archive.** Ruled **not scheduled
+- [x] **F1 — nothing backs up the registry or the archive.** Ruled **not scheduled
       work** (2026-09-03): a disclosed standing operational risk, recorded so it is
       never mistaken for work in progress. **Do not re-file it as engineering work.**
       **Overtaken 2026-09-28:** Dentalia ordered it separately (offer 2026092301).
       Running on the server 2026-09-30: hourly L0 dumps by cron, L1 to the Storage
-      Box; closes when the restore test from L1 passes ([backup.md](dev/backup.md)).
+      Box. **Closed 2026-09-30:** the restore test from L1 passed (clean container,
+      only the keys, ~5 min, every count and every archive file identical to
+      production; ruled the offer's restore test) ([backup.md](dev/backup.md) § 9).
 
 ### No viable fix known
 
