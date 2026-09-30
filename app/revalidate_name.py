@@ -108,8 +108,9 @@ def plan(conn, name: str) -> Plan:
         elif ctx["reopened"]:
             out.left_alone["reopened"] += 1
         elif not ctx["finished"]:
-            # Its latest validation is queued, running or failed: it will
-            # read the alias itself when it runs, and has no verdict yet.
+            # Its latest validation has no result: queued, running or failed
+            # (it will read the alias itself when it runs), or dead (look at
+            # Failed tasks first).
             out.left_alone["pending"] += 1
         elif not ctx["unresolved"]:
             # Its last validation already named a manufacturer: the alias
@@ -124,7 +125,7 @@ def plan(conn, name: str) -> Plan:
 _WORDS = {"production": "published", "rejected": "rejected", "superseded": "superseded",
           "no_validate_job": "never validated", "grouped": "in a catalogue group",
           "edited": "edited by a reviewer", "reopened": "reopened by a reviewer",
-          "pending": "validation not finished", "resolved": "manufacturer already found"}
+          "pending": "latest validation has no result", "resolved": "manufacturer already found"}
 
 
 def render(p: Plan) -> list[str]:

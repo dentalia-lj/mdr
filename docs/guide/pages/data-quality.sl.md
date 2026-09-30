@@ -78,8 +78,8 @@ Ko razvijalec ime doda v playbook in čakajoče dokumente ponovno preveri, se
 vsak znova ujema. Dokument, katerega številke artiklov se ujemajo z vašimi
 izdelki, se objavi, kadar je branje zanesljivo, in njegova naloga na pregledu
 se zapre; če je pri njem kaj drugega dvomljivo, ostane na pregledu. Dokument,
-katerega številke artiklov so vse izdelki, ki jih nimate na zalogi, se
-arhivira, kadar je branje sicer v redu; dokument, ki ne navaja nobene številke
+katerega številke artiklov so vse izdelki, ki jih nimate na zalogi, gre med
+**On file**, kadar je branje sicer v redu; dokument, ki ne navaja nobene številke
 artikla, ostane na pregledu. Dokument, ki ostane na pregledu, lahko tam še vedno kaže stari razlog.
 Vrstica izgine s te table, ko se dokument ujema. Prihodnji dokumenti s tem
 imenom se ujemajo, ne da bi kdorkoli karkoli storil.
@@ -106,7 +106,7 @@ prazen in kje se dejansko razhajata.
 
 | Kar vidite | Kar to pomeni | Kaj storiti |
 |---|---|---|
-| **Alias exists** | Ime je že znano; ti dokumenti so bili preverjeni, preden je bilo. Če proizvajalec v katalogu nima izdelkov, vrstica to pove in ponovno preverjanje ni potrebno | Prosite razvijalca, da jih ponovno preveri (en ukaz) |
+| **Alias exists** | Ime je že znano; ti dokumenti so bili preverjeni, preden je bilo dodano. Če proizvajalec v katalogu nima izdelkov, vrstica to pove in ponovno preverjanje ni potrebno | Prosite razvijalca, da jih ponovno preveri (en ukaz) |
 | **Article numbers** | Vsaj 3 številke artiklov na dokumentih pripadajo samo izdelkom enega proizvajalca in predstavljajo vsaj 80 % tistih, ki so v katalogu. Če večine navedenega v katalogu ni, vas vrstica opozori | Ime in predlagani playbook posredujte razvijalcu. Upoštevajte opozorilo: distributer navaja artikle več proizvajalcev |
 | **Name only** | Ime vsebuje blagovno znamko iz Business Centrala, a številke artiklov tega ne potrdijo. Znamka je lahko tudi distributer | Odprite en dokument in preverite proizvajalca, preden predlog posredujete |
 | **No match** | Niti številke artiklov niti ime ne kažejo na enega proizvajalca | Oglejte si dokumente. Morda gre za distributerja, čigar ime nikoli ne sme postati ime proizvajalca |

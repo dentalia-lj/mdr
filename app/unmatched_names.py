@@ -39,10 +39,9 @@ FEW_KNOWN_SHARE = 0.5
 # The waiting documents: on Review (an open gate-manual task), staged or filed,
 # whose LATEST validate.doc flagged the manufacturer unresolved, outside any
 # catalogue group. The task only says the document is on Review; the flag is
-# read from the latest validation. The latest job, not the
-# review task: GATE never refreshes an open task's payload (`gate._push_manual`
-# returns when one is open), so a task keeps saying `manufacturer-unresolved`
-# after a re-validation that resolved the name. The printed name and the REFs
+# read from the latest validation, because GATE never refreshes an open task's
+# payload (`gate._push_manual` returns when one is open): a task keeps saying
+# `manufacturer-unresolved` after a re-validation that resolved the name. The printed name and the REFs
 # come from the latest extraction, which is what that validation read.
 # One scan of validate.doc jobs (DISTINCT ON), not a lookup per document.
 _WAITING_SQL = """

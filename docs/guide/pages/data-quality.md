@@ -79,8 +79,8 @@ Once your developer adds the name to the playbook and re-checks the waiting
 documents, each one is matched again. A document whose article numbers match
 your products is published when the reading is confident, and its Review task
 closes; if something else about it is doubtful, it stays on Review. One whose
-article numbers are all products you do not stock is filed, when the reading
-is otherwise sound; one that lists no article numbers at all stays on Review. A
+article numbers are all products you do not stock goes to **On file**, when
+the reading is otherwise sound; one that lists no article numbers at all stays on Review. A
 document that stays on Review may still show its old reason there. The row
 leaves this board once the document is matched. Future documents printing
 that name are matched without anyone doing anything.
