@@ -243,7 +243,7 @@ za dvakratni arhiv.
    docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --exit-on-error' < $D/dentalia.dump
    ```
 8. `./scripts/deploy.sh` (zgradi, po potrebi migrira, zažene worker in web,
-   preveri), nato `docker compose up -d caddy` in dostop: spletno mesto v
+   preveri), nato `docker compose restart caddy` in dostop: spletno mesto v
    gostiteljevem Caddyju in DNS, če se je naslov spremenil
    ([deployment.md § 7](deployment.md)).
 9. Spet kopije: enkrat ročno `./scripts/backup.sh hourly`, nato crontab (§ 3).

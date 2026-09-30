@@ -137,9 +137,11 @@ Restoring loses everything written after the dump was taken.
 Three limits that are deliberate, so nobody discovers them at the wrong moment.
 The full list is [docs/dev/limits.md](docs/dev/limits.md).
 
-- **Nothing backs up the registry or the archive.** Two host directories hold
-  everything that cannot be regenerated: the Postgres data directory and the
-  archive. Backing them up is the operator's, and it is not built in.
+- **Backups run on the server's own cron, and only it watches them.** Hourly, a
+  verified database dump stays on the server and a restic copy of the dump,
+  the archive, the imports and the config goes to a Hetzner Storage Box
+  ([docs/dev/backup.md](docs/dev/backup.md)). A failed run alerts; a server
+  that stops altogether does not, until an outside heartbeat is chosen.
 - **No TLS of its own.** Caddy binds to loopback and holds HTTP Basic auth. TLS
   is expected from a reverse proxy in front of it.
 - **The review queue needs a person.** Documents the system cannot publish on

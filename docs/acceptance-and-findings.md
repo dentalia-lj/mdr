@@ -170,6 +170,9 @@ Targets and their rationale: [decisions.md](decisions.md), rows of 2026-09-11 an
 - [ ] **F1 — nothing backs up the registry or the archive.** Ruled **not scheduled
       work** (2026-09-03): a disclosed standing operational risk, recorded so it is
       never mistaken for work in progress. **Do not re-file it as engineering work.**
+      **Overtaken 2026-09-28:** Dentalia ordered it separately (offer 2026092301).
+      Running on the server 2026-09-30: hourly L0 dumps by cron, L1 to the Storage
+      Box; closes when the restore test from L1 passes ([backup.md](dev/backup.md)).
 
 ### No viable fix known
 

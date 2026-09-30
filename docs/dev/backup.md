@@ -241,7 +241,7 @@ the archive.
    docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --exit-on-error' < $D/dentalia.dump
    ```
 8. `./scripts/deploy.sh` (builds, migrates if needed, starts worker and web,
-   verifies), then `docker compose up -d caddy`, and the way in: the host
+   verifies), then `docker compose restart caddy`, and the way in: the host
    Caddy site and DNS if the address changed ([deployment.md § 7](deployment.md)).
 9. Backups again: `./scripts/backup.sh hourly` once by hand, then the crontab
    (§ 3). L1 continues in the same repository.
