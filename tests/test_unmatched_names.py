@@ -101,9 +101,10 @@ def test_spelling_variants_of_one_name_group_together(conn):
         ("botiss", 2), ("someone", 1)]
 
 
-def test_only_staged_or_filed_documents_whose_latest_validation_flags_count(conn):
+def test_only_documents_on_review_whose_latest_validation_flags_count(conn):
     _doc(conn, "Acme GmbH")
-    _doc(conn, "Acme GmbH", status="filed", task=False)
+    _doc(conn, "Acme GmbH", status="filed")
+    _doc(conn, "Acme GmbH", task=False)               # not on Review
     _doc(conn, "Acme GmbH", unresolved=False)
     _doc(conn, "Acme GmbH", status="production")
     _doc(conn, "Acme GmbH", group_id=7)
@@ -212,7 +213,10 @@ def test_a_name_that_already_resolves_needs_revalidating_not_an_alias(conn):
     assert (g.suggestion.level, g.suggestion.manufacturer) == ("alias", "NEODENT")
     assert g.suggestion.has_items is False          # NEODENT has no item_group here
     assert un.summary(un.find(conn, min_ref_len=6)) == {
-        "names": 1, "documents": 1, "by_refs": 0, "alias_exists": 1, "unnamed": 0}
+        "names": 1, "documents": 1, "by_refs": 0, "alias_exists": 0,
+        "alias_no_items": 1, "unnamed": 0}
+    text = "\n".join(revalidate_name.render(revalidate_name.plan(conn, "JJGC Indústria S/A")))
+    assert "NEODENT has no products in the catalogue" in text
 
 
 def test_an_alias_whose_manufacturer_has_products_says_revalidate(conn):

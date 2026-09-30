@@ -66,6 +66,7 @@ class Plan:
     resolves_to: list[str]
     send: list[dict] = field(default_factory=list)
     left_alone: dict[str, int] = field(default_factory=lambda: dict.fromkeys(LEFT_ALONE, 0))
+    no_items: bool = False          # the manufacturer has no catalogue groups
 
     @property
     def refusal(self) -> str | None:
@@ -84,6 +85,9 @@ def plan(conn, name: str) -> Plan:
     out = Plan(name, manufacturers.resolve_canonicals(conn, name))
     if out.refusal:
         return out
+    out.no_items = normalize(out.resolves_to[0]) not in {
+        normalize(r["canonical_manufacturer"]) for r in conn.execute(
+            "SELECT DISTINCT canonical_manufacturer FROM item_group").fetchall()}
     target = normalize(name)
     matched = [dict(r) for r in conn.execute(_ROWS_SQL).fetchall()
                if normalize(r["printed"]) == target]
@@ -127,6 +131,9 @@ def render(p: Plan) -> list[str]:
     lines = [f"Printed name: {p.name}  (resolves to: {', '.join(p.resolves_to) or 'nothing'})"]
     if p.refusal:
         return lines + [f"Refused: {p.refusal}."]
+    if p.no_items:
+        lines.append(f"Note: {p.resolves_to[0]} has no products in the catalogue, so validation "
+                     f"cannot match these documents however often it runs.")
     lines.append(f"Would send back through validation: {len(p.send)} document(s)")
     if p.send:
         shown = " · ".join(f"{r['doc_id']} {r['type']} {r['status']}" for r in p.send[:12])

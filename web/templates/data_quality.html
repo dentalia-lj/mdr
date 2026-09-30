@@ -58,8 +58,8 @@
           {% else %}
             <span class="badge badge-pending">No match</span>
             <br><span class="hint">
-              {%- if not s.listed %}The documents list no article numbers and no BC brand is in the name.
-              {%- elif not s.matched %}None of their {{ s.listed }} article numbers is in the catalogue and no BC brand is in the name.
+              {%- if not s.listed %}The documents list no article numbers and no BC brand in the name leads to a catalogue manufacturer.
+              {%- elif not s.matched %}None of their {{ s.listed }} article numbers is in the catalogue and no BC brand in the name leads to a catalogue manufacturer.
               {%- else %}{{ s.matched }} of their {{ s.listed }} article numbers are in the catalogue, but not enough of them belong to one manufacturer.{% endif %}
               Possibly a distributor, or a supplier Dentalia does not stock.</span>
           {% endif %}
@@ -95,7 +95,8 @@
   <p class="hint">After the alias is in the playbook file and synced, send the waiting documents
     through again: <code>dentalia revalidate --name "&lt;printed name&gt;"</code> (dry run), then add <code>--apply</code>.
     A document whose article numbers then match is published when the reading is confident, and stays on
-    Review otherwise; one that lists nothing Dentalia stocks is filed when the reading is otherwise sound.
+    Review otherwise; one whose article numbers are all outside the catalogue is filed when the reading is
+    otherwise sound, and one that lists no article numbers at all stays on Review.
     The reason shown on Review for a document that stays there may still be the old one.</p>
   {% else %}
   <p class="hint">No document is waiting for a manufacturer name.</p>

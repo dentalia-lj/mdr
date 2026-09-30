@@ -78,8 +78,9 @@ Ko razvijalec ime doda v playbook in čakajoče dokumente ponovno preveri, se
 vsak znova ujema. Dokument, katerega številke artiklov se ujemajo z vašimi
 izdelki, se objavi, kadar je branje zanesljivo, in njegova naloga na pregledu
 se zapre; če je pri njem kaj drugega dvomljivo, ostane na pregledu. Dokument,
-ki ne navaja ničesar, kar imate na zalogi, se arhivira, kadar je branje sicer
-v redu. Dokument, ki ostane na pregledu, lahko tam še vedno kaže stari razlog.
+katerega številke artiklov so vse izdelki, ki jih nimate na zalogi, se
+arhivira, kadar je branje sicer v redu; dokument, ki ne navaja nobene številke
+artikla, ostane na pregledu. Dokument, ki ostane na pregledu, lahko tam še vedno kaže stari razlog.
 Vrstica izgine s te table, ko se dokument ujema. Prihodnji dokumenti s tem
 imenom se ujemajo, ne da bi kdorkoli karkoli storil.
 

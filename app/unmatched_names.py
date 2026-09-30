@@ -36,8 +36,10 @@ STRONG_SHARE = 0.8
 #: Dentalia may stock only a few of one of them.
 FEW_KNOWN_SHARE = 0.5
 
-# The waiting documents: staged or filed, whose LATEST validate.doc flagged the
-# manufacturer unresolved, outside any catalogue group. The latest job, not the
+# The waiting documents: on Review (an open gate-manual task), staged or filed,
+# whose LATEST validate.doc flagged the manufacturer unresolved, outside any
+# catalogue group. The task only says the document is on Review; the flag is
+# read from the latest validation. The latest job, not the
 # review task: GATE never refreshes an open task's payload (`gate._push_manual`
 # returns when one is open), so a task keeps saying `manufacturer-unresolved`
 # after a re-validation that resolved the name. The printed name and the REFs
@@ -48,7 +50,7 @@ WITH lastv AS (
     SELECT DISTINCT ON (j.payload->>'content_hash')
            j.payload->>'content_hash' AS content_hash,
            j.payload->>'group_id'     AS group_id,
-           j.result
+           COALESCE(j.result->'flags' ? 'manufacturer-unresolved', false) AS unresolved
       FROM job j
      WHERE j.type = 'validate.doc'
      ORDER BY j.payload->>'content_hash', j.id DESC
@@ -63,7 +65,9 @@ SELECT d.doc_id, d.type, d.status,
                  ORDER BY x.extract_rev DESC, x.id DESC LIMIT 1) a ON true
  WHERE d.status IN ('staged', 'filed')
    AND v.group_id IS NULL
-   AND COALESCE(v.result->'flags' ? 'manufacturer-unresolved', false)
+   AND v.unresolved
+   AND EXISTS (SELECT 1 FROM manual_task t
+                WHERE t.doc_id = d.doc_id AND t.status = 'open' AND t.kind = 'gate-manual')
  ORDER BY d.doc_id
 """
 
@@ -246,6 +250,8 @@ def summary(found: Found) -> dict:
         "names": len(gs),
         "documents": sum(g.waiting for g in gs),
         "by_refs": sum(1 for g in gs if g.suggestion.level == "refs"),
-        "alias_exists": sum(1 for g in gs if g.suggestion.level == "alias"),
+        "alias_exists": sum(1 for g in gs if g.suggestion.level == "alias" and g.suggestion.has_items),
+        "alias_no_items": sum(1 for g in gs if g.suggestion.level == "alias"
+                              and not g.suggestion.has_items),
         "unnamed": found.unnamed,
     }
