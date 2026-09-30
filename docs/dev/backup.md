@@ -5,6 +5,10 @@ is protected, the levels, what runs by itself and when, what a person does,
 how to restore, what to do when something goes wrong, and what this does
 **not** protect against. Ordered under offer 2026092301.
 
+**Two languages, one content.** [backup.sl.md](backup.sl.md) is the Slovene
+version for Dentalia (ruled 2026-09-30). Change both in the same commit;
+`tests/test_backup_script.py` fails when their commands or sections differ.
+
 The design is the standard one: a verified `pg_dump` on the server, and
 [restic](https://restic.readthedocs.io/) from the distribution's package
 backing up to a Hetzner Storage Box over SFTP. One script,
@@ -97,7 +101,7 @@ itself.** That is what `BACKUP_HEARTBEAT_URL` is for: an outside watcher
 (healthchecks.io, Better Stack, Uptime Kuma, or similar) that the server pings
 after every good L1 backup and that alarms when the pings stop for 2 hours.
 **Until one is set, "more than 2 hours without a backup triggers an alert"
-holds only while the server, cron and ntfy all work.** Open decision, § 8.
+holds only while the server, cron and ntfy all work.** Deferred, § 8.
 
 To see where things stand: `./scripts/backup.sh status`.
 
@@ -111,7 +115,7 @@ To see where things stand: `./scripts/backup.sh status`.
 | Read backup alerts and heartbeat alarms | whoever receives them | when one arrives (§ 6) |
 | Back up before a risky operation | whoever runs it | before a repair tool with `--apply`, a big backfill, manual SQL: `./scripts/backup.sh hourly` |
 | Restore test | Denis | at handover; quarterly if ordered (§ 5.3) |
-| Turn on Storage Box snapshots | Mitja | once, Hetzner Console, automatic daily |
+| Turn on Storage Box snapshots | Mitja (only he has the Hetzner Console) | once, automatic daily |
 
 ### Operating it: on, off, status, run now
 
@@ -331,8 +335,8 @@ whatever their mode. `getent group deploy docker` shows who.
    ```
 6. `./scripts/backup.sh init`, then `./scripts/backup.sh hourly` (the first run
    reads everything), then `./scripts/backup.sh status`.
-7. Mitja turns on automatic daily snapshots. Confirm the sub-account cannot
-   delete anything under `/.zfs`.
+7. Mitja turns on automatic daily snapshots (Hetzner Console; nobody else has
+   access). Then confirm the box login cannot delete anything under `/.zfs`.
 
 The repository path is **relative**: `sftp:storagebox:dentalia` is
 `/home/dentalia` on the box, the login's home. The `.zfs` path (§ 5.4) is still
@@ -363,14 +367,20 @@ L2 survive a compromised server.
 
 ---
 
-## 8. Open decisions and limits
+## 8. Decisions and limits
 
-- **Heartbeat watcher** (§ 3): which service, and whom it alerts. Until then a
-  dead server is noticed by people.
-- **Deletion protection beyond 10 days** (§ 2): the Storage Box snapshots are
-  the only copy the server cannot touch. Longer needs L2 with object lock.
-- **Not backed up:** other applications on the server (PocketBase), the host
-  Caddy configuration, the crontab (it is in § 3), the keys (kept by people).
+Ruled by Denis 2026-09-30 (`docs/decisions.md`):
+
+- **Deletion protection: 10 days is accepted.** The Storage Box snapshots are
+  the only copy the server cannot touch, and they reach 10 days back. No L2.
+  Dentalia is told this at handover, together with the fact that nothing
+  survives losing the Hetzner account.
+- **Heartbeat watcher: later.** Until one is set, a dead server, a stopped cron
+  or a broken alert channel is noticed by people, not by the backup (§ 3).
+- **This document exists in Slovene too** and the two are kept in step.
+
+**Not backed up:** other applications on the server (PocketBase), the host
+Caddy configuration, the crontab (it is in § 3), the keys (kept by people).
 
 ---
 

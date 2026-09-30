@@ -70,3 +70,22 @@ def test_env_values_are_read_the_way_compose_reads_them(tmp_path):
     ).stdout.splitlines()
     assert out == ["/srv/compliance/backup-repo", "/srv/x y/pass", "sftp:storagebox:/dentalia", "",
                    "https://ntfy.sh/abc#not-a-comment"]
+
+
+def _structure(path: pathlib.Path) -> tuple[list[str], list[str]]:
+    """(heading levels with their § numbers, fenced code blocks) of a doc."""
+    import re
+    text = path.read_text()
+    heads = [m.group(1) + (m.group(2) or "") for m in
+             re.finditer(r"^(#{2,3}) (\d+(?:\.\d+)?\.?)?", text, re.M)]
+    blocks = re.findall(r"^ *```[a-z]*\n(.*?)^ *```", text, re.M | re.S)
+    return heads, [b.strip() for b in blocks]
+
+
+def test_backup_doc_english_and_slovene_stay_in_step():
+    # Ruled 2026-09-30: the backup doc exists in both languages and is kept in
+    # step. The prose is translated; the sections and every command are the same.
+    en = _structure(_ROOT / "docs" / "dev" / "backup.md")
+    sl = _structure(_ROOT / "docs" / "dev" / "backup.sl.md")
+    assert en[0] == sl[0], "the two docs have different sections"
+    assert en[1] == sl[1], "a command block differs between backup.md and backup.sl.md"
