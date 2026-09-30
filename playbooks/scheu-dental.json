@@ -1,0 +1,12 @@
+{
+  "manufacturer": "SCHEU-DENTAL",
+  "bc_codes": [
+    {
+      "code": "055"
+    }
+  ],
+  "aliases": [
+    "SCHEU-DENTAL GmbH"
+  ],
+  "note": "Authored 2026-09-30 from a text scan of the Dentalia server's not-yet-backfilled folders and the waiting documents' `manufacturer-unresolved` names: the documents print this legal entity, which no alias carried. Entity confirmed by web search; BC code from the vendor master."
+}

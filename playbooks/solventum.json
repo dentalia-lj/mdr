@@ -1,6 +1,9 @@
 {
   "manufacturer": "SOLVENTUM",
-  "aliases": [],
+  "aliases": [
+    "3M Deutschland GmbH",
+    "Solventum Germany GmbH"
+  ],
   "bc_codes": [
     {
       "catalogue": "LJ",

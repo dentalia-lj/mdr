@@ -1,6 +1,8 @@
 {
   "manufacturer": "VDW",
-  "aliases": [],
+  "aliases": [
+    "VDW GmbH"
+  ],
   "bc_codes": [
     {
       "catalogue": "LJ",
