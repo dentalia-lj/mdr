@@ -690,6 +690,56 @@ in sync and pays T1 again (about $0.01 a document). `BATCH_POLL_INTERVAL_S`
 (on `worker` since that day, default 900 s) only decides how often a waiting
 job asks; 60 is sensible if batch is used at all.
 
+After the switch the waves ran in sync with one worker: waves 1 and 2
+(1.274 PDFs, 2026-09-28/29) cost **$25.60** together, about $0.02 per PDF on
+Sonnet 5 then 5.5; wave 3 (230 PDFs, 2026-09-30) ran about 6 PDFs a minute at
+$0.027 per PDF. Folders full of scans cost more: on the server 185 of
+DENSTPLY's 405 PDFs, 62 of DURR DENTAL's 85 and 33 of DENTAURUM's 37 have no
+text layer, so every page goes to the image tiers.
+
+**Before a wave, find the legal names its folders print.** A document whose
+printed manufacturer no alias knows stops as `manufacturer-unresolved`, and its
+article numbers are never compared. Adding the alias afterwards and running
+`revalidate --name` costs nothing (no model call; runbook, "A printed name
+needs an alias"), so this step saves a loop, not money. A model-free count of
+the first two pages of every PDF, read-only, run inside the worker:
+
+```python
+# docker compose cp scan.py worker:/tmp/scan.py
+# docker compose exec -T worker python /tmp/scan.py "KERR" "EURONDA"
+import collections, pathlib, re, sys
+import pymupdf
+from app import db, manufacturers
+NAME = re.compile(r"([A-Z0-9][\w&.,'\- ]{1,60}?\b(?:GmbH(?: & Co\.? KG)?|S\.p\.A\.?|SpA|"
+                  r"S\.r\.l\.?|Srl|Inc\.?|Corporation|AG|SE|SAS|SA|Ltd\.?|LLC|A/S|B\.V\.|"
+                  r"N\.V\.|Oy|AB|d\.o\.o\.))(?=[\s,;)]|$)", re.I | re.M)
+with db.connect() as conn:
+    conn.execute("SET TRANSACTION READ ONLY")
+    for folder in sys.argv[1:]:
+        seen = collections.Counter()
+        for p in pathlib.Path("/imports/dentalia-web", folder).rglob("*"):
+            if p.suffix.lower() != ".pdf":
+                continue
+            try:
+                doc = pymupdf.open(p)
+                text = "\n".join(doc[i].get_text() for i in range(min(2, doc.page_count)))
+            except Exception:
+                continue
+            seen.update({manufacturers.normalize(m.group(1)) for m in NAME.finditer(text)})
+        print("==", folder)
+        for name, n in seen.most_common(8):
+            print(f"{n:4} {name[:60]:60} -> {manufacturers.resolve_canonicals(conn, name) or 'UNKNOWN'}")
+```
+
+Read the output with care: notified bodies (BSI, TÜV SÜD, DNV MEDCERT, IMQ)
+and distributors (Dentalia d.o.o. itself) print legal names too. Add a name
+only when it recurs in its own brand's folder and belongs to that
+manufacturer; confirm the entity (a web search is enough) and that its BC code
+is the one BC already assigns (`manufacturer_bc_code`), since an alias never
+moves an item. Measured 2026-09-30 before waves 3/4: 14 aliases and 4 new
+playbooks (commit `1d248bc`). After the wave, the first card on
+`/data-quality` lists whatever is still unresolved, with evidence.
+
 Keep the catalogue ahead of the corpus for a second reason beyond § 6.1:
 `backfill.scan` enqueues its `extract.doc` at the queue's bare `sweep` default
 while the documented ingest runs `interactive`, so ingest and its `resolve.group`
@@ -904,8 +954,10 @@ end.
 
 ## 11. Not covered here
 
-- **Backup and restore.** Not scheduled work (2026-09-03). § 4 names the two
-  directories that hold everything.
+- **Backup and restore.** Built as a separate order (decision row 2026-09-28):
+  hourly verified database dumps on the server, off-site copies once the
+  Storage Box exists. Everything, including every restore command, is in
+  [backup.md](backup.md). § 4 names the two directories that hold everything.
 - **TLS.** The v0 posture is Basic auth on loopback. § 7 lists the options; none
   is implemented in the repo.
 - **Real logins.** Decisions record `user:admin` unless a trusted proxy sets
