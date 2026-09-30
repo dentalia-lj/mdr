@@ -401,9 +401,8 @@ rebuilds and restarts:
   `docker compose run --rm worker python -m app.cli playbooks drift` shows what
   differs, and § 6.3 applies it.
 
-Not yet exercised on the Dentalia server: the clone exists since 2026-09-25,
-no update has run there yet. The loop is what the tooling is built for and is run daily in
-development.
+Exercised on the Dentalia server: updates have run there by this loop since the
+2026-09-25 install (at `1d248bc` on 2026-09-30), and it is run daily in development.
 
 ## 6. Bring-up order
 
