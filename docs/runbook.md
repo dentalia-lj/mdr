@@ -841,6 +841,12 @@ in a bare checkout.
 the script, commit both the markdown and the regenerated bundles. A page changed
 in one language only fails `tests/test_docs_sets.py`.
 
+In the single-file bundle every cross-link is resolved to an anchor inside that
+file (`review.md#what-this-is` becomes `#pages/review--what-this-is`), since it
+is emailed with nothing beside it. A link that would land nowhere -- a page
+outside the guide, a heading that was renamed -- is printed by the build and by
+`--check`, which then exit 1.
+
 | Output | Committed | What it is |
 |---|---|---|
 | `docs/guide/**/*.md` | yes | The source. English and Slovene side by side |

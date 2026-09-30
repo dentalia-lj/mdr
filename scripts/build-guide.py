@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import base64
 import html
+import posixpath
 import re
 import shutil
 import sys
@@ -168,7 +169,7 @@ def render(md: str, unsupported: list[str]) -> tuple[str, str]:
             continue
 
         if line.startswith("```"):
-            unsupported.append(f"fenced code block at line {i + 1}")
+            unsupported.append(f"unsupported fenced code block at line {i + 1}")
             i += 1
             while i < len(lines) and not lines[i].startswith("```"):
                 i += 1
@@ -224,6 +225,30 @@ def render(md: str, unsupported: list[str]) -> tuple[str, str]:
         block_start = False
 
     return "\n".join(out), title
+
+
+def bundle_body(stem: str, body: str, stems: set[str], problems: list[str]) -> str:
+    """One page's body as it sits in the single-file bundle.
+
+    `render` writes links for the per-page tree (`review.html#x`,
+    `../glossary.html`), which point at nothing in a file emailed on its own.
+    And every page shares one document there, so a heading like "What this is",
+    on 27 pages, would repeat its id. Each heading id is prefixed with its
+    page's stem and each link resolved to the same `stem--anchor` form."""
+    body = re.sub(r'<(h[1-6]) id="', lambda m: f'<{m.group(1)} id="{stem}--', body)
+    here = posixpath.dirname(stem)
+
+    def link(m: re.Match) -> str:
+        href = html.unescape(m.group(1))
+        path, _, anchor = href.partition("#")
+        target = posixpath.normpath(posixpath.join(here, path)).removesuffix(".html") \
+            if path else stem
+        if target not in stems:
+            problems.append(f"{stem}: link to {href} leaves the guide")
+            return m.group(0)
+        return f'href="#{target}--{anchor}"' if anchor else f'href="#{target}"'
+
+    return re.sub(r'href="([^"]*)"', link, body)
 
 
 def _wrapped(lines: list[str], i: int) -> tuple[str, int]:
@@ -385,7 +410,7 @@ def nav_html(lang: str, current: str, depth: int) -> str:
 
 
 def shell(*, lang: str, title: str, body: str, nav: str, css: str, logo: str,
-          fav: str, up: str) -> str:
+          fav: str, home: str) -> str:
     return f"""<!doctype html>
 <html lang="{lang}">
 <head>
@@ -398,7 +423,7 @@ def shell(*, lang: str, title: str, body: str, nav: str, css: str, logo: str,
 <body>
 <div class="layout">
   <aside class="sidebar">
-    <a class="brand" href="{up}glossary.html">
+    <a class="brand" href="{home}">
       <img class="logo" src="{logo}" alt="Dentalia">
       <span class="brand-word">{TITLES[lang]}</span>
     </a>
@@ -441,6 +466,15 @@ def build(lang: str, *, check: bool) -> tuple[int, list[str]]:
         body, title = render(f.read_text(), problems)
         rendered.append((stem_of(f), title or stem_of(f), body))
 
+    # The bundle's links resolve inside the bundle, so a dead one is known now,
+    # and `--check` reports it without writing anything.
+    stems = {s for s, _, _ in rendered}
+    bundled = [(s, t, bundle_body(s, b, stems, problems)) for s, t, b in rendered]
+    ids = stems | set(re.findall(r' id="([^"]*)"', "".join(b for _, _, b in bundled)))
+    for s, _, b in bundled:
+        problems += [f"{s}: link to #{a} lands on no heading"
+                     for a in re.findall(r'href="#([^"]*)"', b) if a not in ids]
+
     if check:
         return len(rendered), problems
 
@@ -464,13 +498,13 @@ def build(lang: str, *, check: bool) -> tuple[int, list[str]]:
             lang=lang, title=f"{title} — Dentalia", body=body,
             nav=nav_html(lang, stem, depth),
             css=f'<link rel="stylesheet" href="{up}../assets/guide.css">',
-            logo=f"{up}../assets/dentalia-logo.png", fav=fav, up=up,
+            logo=f"{up}../assets/dentalia-logo.png", fav=fav, home=f"{up}glossary.html",
         ))
 
     # single-file bundle: assets inlined, every page concatenated
     logo_uri = "data:image/png;base64," + b64(STATIC / "img" / "dentalia-logo.png")
     order = [s for _, items in NAV for _, s in items]
-    ranked = sorted(rendered, key=lambda r: order.index(r[0]) if r[0] in order else 99)
+    ranked = sorted(bundled, key=lambda r: order.index(r[0]) if r[0] in order else 99)
     joined = "\n".join(f'<section class="page" id="{s}">{b}</section>'
                        for s, _, b in ranked)
     bundle = GUIDE / f"dentalia-guide-{lang.upper()}.html"
@@ -478,7 +512,7 @@ def build(lang: str, *, check: bool) -> tuple[int, list[str]]:
         lang=lang, title=f"Dentalia {TITLES[lang]}", body=joined,
         nav="\n".join(f'<a href="#{s}">{t}</a>' for s, t, _ in ranked),
         css=f"<style>\n{font_css(True)}\n{CSS}\n</style>",
-        logo=logo_uri, fav=fav, up="",
+        logo=logo_uri, fav=fav, home="#glossary",
     ))
     return len(rendered), problems
 
@@ -502,7 +536,7 @@ def main() -> int:
         verb = "parsed" if args.check else "rendered"
         print(f"{lang}: {verb} {n} pages")
         for p in problems:
-            print(f"  unsupported: {p}", file=sys.stderr)
+            print(f"  {p}", file=sys.stderr)
             failed = True
     if not args.check and not failed:
         print(f"output: {OUT}/  and  {GUIDE}/dentalia-guide-*.html")

@@ -308,18 +308,18 @@ def test_the_committed_bundle_matches_the_markdown(lang):
     green: nothing here read `dentalia-guide-*.html` at all, so the sidebar
     said "Renewal emails" while the daily-round page said "Drafts out".
 
-    The bundle concatenates each page's rendered body verbatim, so every body
-    rendered from today's markdown must appear in it. This calls `render`
-    only -- it builds nothing and writes nothing."""
+    The bundle concatenates each page's rendered body, links resolved in place,
+    so every body rendered from today's markdown must appear in it. This calls
+    `render` and `bundle_body` only -- it builds nothing and writes nothing."""
     bundle = (GUIDE / f"dentalia-guide-{lang.upper()}.html").read_text(encoding="utf-8")
-    render = _build_guide_module().render
+    guide = _build_guide_module()
+    pages = guide.sources(lang)
+    stems = {guide.stem_of(p) for p in pages}
 
     stale = []
-    for page in sorted(GUIDE.rglob("*.md")):
-        is_sl = page.name.endswith(".sl.md")
-        if is_sl != (lang == "sl"):
-            continue
-        body, _ = render(page.read_text(encoding="utf-8"), [])
+    for page in pages:
+        body, _ = guide.render(page.read_text(encoding="utf-8"), [])
+        body = guide.bundle_body(guide.stem_of(page), body, stems, [])
         if body not in bundle:
             stale.append(str(page.relative_to(GUIDE)))
 
@@ -327,3 +327,20 @@ def test_the_committed_bundle_matches_the_markdown(lang):
         f"dentalia-guide-{lang.upper()}.html is older than these pages -- run "
         "`python3 scripts/build-guide.py` and commit the bundles: "
         + ", ".join(stale))
+
+
+@pytest.mark.parametrize("lang", ["en", "sl"])
+def test_every_link_in_the_bundle_lands_inside_it(lang):
+    """The bundle is one file, emailed, with nothing beside it. Until
+    2026-09-30 it kept each page's links to its sibling FILES (`review.html`,
+    `../glossary.html#document-status`): 243 dead links in the English bundle,
+    only the sidebar worked. And "What this is" heads 27 pages, so a heading id
+    repeated and an anchor could land on the wrong page."""
+    bundle = (GUIDE / f"dentalia-guide-{lang.upper()}.html").read_text(encoding="utf-8")
+    ids = re.findall(r' id="([^"]*)"', bundle)
+    repeated = sorted({i for i in ids if ids.count(i) > 1})
+    dead = sorted({h for h in re.findall(r' href="([^"]*)"', bundle)
+                   if not h.startswith("data:")  # the inlined favicon
+                   and not (h.startswith("#") and h[1:] in ids)})
+    assert repeated == [], f"ids that appear more than once: {repeated}"
+    assert dead == [], f"links that land nowhere in the bundle: {dead}"
