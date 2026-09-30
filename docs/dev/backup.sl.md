@@ -132,6 +132,7 @@ Vse na strežniku, kot `denis`, v `/srv/compliance/app`.
 | **Kopija takoj** | `./scripts/backup.sh hourly` | natanko to, kar zažene cron; počaka, če namestitev drži ključavnico |
 | **Tedenski opravek takoj** | `./scripts/backup.sh weekly` | čiščenje in preverjanje vseh nastavljenih ravni |
 | **Ročna uporaba restica** (`check`, `snapshots`, `find`, `restore`) | najprej `export RESTIC_REPOSITORY=sftp:storagebox:dentalia RESTIC_PASSWORD_FILE=/srv/compliance/secrets/restic-password`; brez tega se restic ustavi z »Please specify repository location« | navaden restic nad L1 |
+| **Preveri, da kopira prave stvari** | z obema `export`: `restic snapshots` (eden na uro); `restic diff <prejšnji> <zadnji>` (izvoz je vsako uro `M`, nove datoteke arhiva `+`, drugega nič); `restic ls -l --recursive latest /srv/compliance/archive \| grep -c '^-'` proti `find /srv/compliance/archive -type f \| wc -l` | števili se ujemata; 2026-09-30: 1.572 datotek arhiva in 2.773 uvozov, na obeh straneh |
 | **Vklop vsega** | `crontab -e`, dodaj vrstici iz § 3 | vsako uro od naslednjega :07 |
 | **Premor** | `crontab -e`, pred obe vrstici `#` | nič ne teče; obstoječi izvozi in posnetki ostanejo. **Nobeno opozorilo ne pove, da so se kopije ustavile** (le nadzornik bi, § 3) |
 | **Nadaljevanje** | odstrani `#` | naslednji :07 teče normalno; ničesar ni treba nadoknaditi |

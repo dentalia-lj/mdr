@@ -129,6 +129,7 @@ All on the server, as `denis`, in `/srv/compliance/app`.
 | **Run a backup now** | `./scripts/backup.sh hourly` | exactly what cron runs; waits if a deploy holds the lock |
 | **Run the weekly now** | `./scripts/backup.sh weekly` | prune and check every configured level |
 | **Use restic by hand** (`check`, `snapshots`, `find`, `restore`) | first `export RESTIC_REPOSITORY=sftp:storagebox:dentalia RESTIC_PASSWORD_FILE=/srv/compliance/secrets/restic-password`; without them restic stops with "Please specify repository location" | plain restic against L1 |
+| **Check it backs up the right things** | with the two `export`s: `restic snapshots` (one per hour); `restic diff <previous> <latest>` (the dump shows `M` every hour, new archive files `+`, nothing else); `restic ls -l --recursive latest /srv/compliance/archive \| grep -c '^-'` against `find /srv/compliance/archive -type f \| wc -l` | the counts match; 2026-09-30: 1.572 archive and 2.773 import files, both sides |
 | **Turn everything on** | `crontab -e`, add the two lines of § 3 | hourly from the next :07 |
 | **Pause everything** | `crontab -e`, put `#` in front of both lines | nothing runs; existing dumps and snapshots stay. **No alert says backups stopped** (only the heartbeat watcher would, § 3) |
 | **Resume** | remove the `#` again | the next :07 runs normally; nothing to catch up |
