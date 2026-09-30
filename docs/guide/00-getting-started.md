@@ -69,7 +69,8 @@ Neither can change anything.
 
 ### The menu on the left
 
-Three groups, in this order, and a fourth you can ignore.
+Three groups, in this order, a fourth you can ignore, and **Help** at the
+very bottom.
 
 | Group | What is in it |
 |---|---|
@@ -77,6 +78,7 @@ Three groups, in this order, and a fourth you can ignore.
 | **Records** | What is held, for looking things up: Items, Documents, Manufacturers, EUDAMED checks, Emails received |
 | **Add** | Upload a document, Import from Business Central |
 | **Operator** | A collapsed block at the bottom: System status, Failed tasks, Queues & health, Playbooks, Data quality, Decisions log, Scheduler, Business Central push, API. Running the machine, not doing the job. It is there only if your login runs the machine, so you may not see it at all |
+| **Help** | At the very bottom: **Guide** (English) and **Priročnik** (Slovenian). Each opens this guide in a new tab, so the screen you were on stays where it was |
 
 The short version: **the first three groups are your work. The Operator block
 is the machine's.** Most days you only need **Today** and what it sends you to.

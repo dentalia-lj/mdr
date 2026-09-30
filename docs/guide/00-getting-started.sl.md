@@ -70,7 +70,8 @@ Nobena od njiju ne more ničesar spremeniti.
 
 ### Meni na levi
 
-Tri skupine, v tem vrstnem redu, in četrta, ki jo lahko prezrete.
+Tri skupine, v tem vrstnem redu, četrta, ki jo lahko prezrete, in **Help** čisto
+na dnu.
 
 | Skupina | Kaj vsebuje |
 |---|---|
@@ -78,6 +79,7 @@ Tri skupine, v tem vrstnem redu, in četrta, ki jo lahko prezrete.
 | **Records** | Kar je shranjeno, za iskanje podatkov: Items, Documents, Manufacturers, EUDAMED checks, Emails received |
 | **Add** | Upload a document, Import from Business Central |
 | **Operator** | Zložen blok na dnu: System status, Failed tasks, Queues & health, Playbooks, Data quality, Decisions log, Scheduler, Business Central push, API. Poganjanje stroja, ne opravljanje dela. Je tam le, če vaša prijava poganja stroj, zato ga morda sploh ne vidite |
+| **Help** | Čisto na dnu: **Guide** (angleško) in **Priročnik** (slovensko). Vsak odpre ta priročnik v novem zavihku, zato zaslon, na katerem ste bili, ostane, kjer je bil |
 
 Na kratko: **prve tri skupine so vaše delo. Blok Operator je delo stroja.**
 Večino dni potrebujete le **Today** in tisto, kamor vas z njega pošlje.

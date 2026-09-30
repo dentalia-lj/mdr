@@ -6696,6 +6696,36 @@ def test_ingest_is_reachable_but_not_offered_in_the_nav(client):
     """
     assert client.get("/ingest").status_code == 200
     assert 'href="/ingest"' not in client.get("/items").text
+
+
+@pytest.mark.parametrize("lang,title", [("en", "Dentalia Compliance guide"),
+                                        ("sl", "Dentalia Priročnik")])
+def test_the_guide_is_served_from_the_file_that_gets_emailed(client, lang, title):
+    """The office reads the guide in the app, and it is the committed bundle
+    itself, not a second rendering of it, so the two cannot drift
+    (Denis, 2026-09-30). `no-cache` because a rebuilt image changes the file
+    under the same URL, which is the stale-stylesheet trap of 2026-08-17."""
+    resp = client.get(f"/guide/{lang}")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/html")
+    assert resp.headers["cache-control"] == "no-cache"
+    assert f"<title>{title}</title>" in resp.text
+
+
+def test_the_guide_has_only_its_two_languages(client):
+    assert client.get("/guide/de").status_code == 404
+
+
+def test_the_guide_is_in_the_menu_for_everyone(client):
+    """Bottom of the menu, outside the operator block: the office is who the
+    guide is for. A new tab, because the guide carries its own menu and the
+    page someone was working on should still be there when they come back."""
+    import re
+    sidebar = re.search(r"<aside\b.*?</aside>", client.get("/items").text, re.S).group(0)
+    outside_operator = re.sub(r"<details\b.*?</details>", "", sidebar, flags=re.S)
+    for lang in ("en", "sl"):
+        assert re.search(rf'<a href="/guide/{lang}"[^>]*target="_blank"',
+                         outside_operator), lang
 # /api-reference as real documentation (2026-08-25, Denis: "like the api
 # documentation that deserves to be read -- which endpoint, what it returns,
 # examples").

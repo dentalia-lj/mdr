@@ -17,6 +17,9 @@ WORKDIR /app
 COPY pyproject.toml constraints.txt ./
 COPY app/ ./app/
 COPY web/ ./web/
+# The client guide, served at /guide/{en,sl}: the committed bundles, the same
+# files that are emailed. The only docs/ files the build context lets in.
+COPY docs/guide/dentalia-guide-EN.html docs/guide/dentalia-guide-SL.html ./docs/guide/
 RUN pip install -c constraints.txt ".[web]"
 
 # Migrations are applied by the shared `migrate` compose service, not this

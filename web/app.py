@@ -18,6 +18,8 @@ status board). `/manufacturers` and `/playbooks` are registered from
       an htmx fragment (base.html renders the same template without counts)
     - `GET  /jobs/{id}` — single job detail (full payload, error, timestamps)
     - `GET  /healthz`   — liveness for compose/caddy
+    - `GET  /guide/{en,sl}` — the client guide, the committed single-file
+      bundle served as is (menu: Help)
   * producers (every one enqueues a job; none writes the registry)
     - `GET/POST /ingest` — BC import form -> `ingest.run`
     - `GET/POST /upload` — manual document upload -> `upload.ingest` (the file
@@ -5808,6 +5810,23 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                 ctx["example_full"] = json.dumps(full, indent=2, default=str)
                 ctx["example_customer"] = json.dumps(customer, indent=2, default=str)
         return templates.TemplateResponse(request, "api_reference.html", ctx)
+
+    @app.get("/guide/{lang}", include_in_schema=False)
+    def guide(lang: str):
+        """The client guide, served as the committed single-file bundle -- the
+        same file that is emailed, so the app and the email cannot disagree.
+        Dockerfile.web copies the two bundles in; nothing else under docs/
+        enters the image.
+
+        `no-cache`: a rebuilt image replaces the file under the same URL, and
+        without revalidation a browser keeps showing the old guide, as it did
+        the old stylesheet on 2026-08-17 (see `static_url`)."""
+        name = {"en": "dentalia-guide-EN.html", "sl": "dentalia-guide-SL.html"}.get(lang)
+        if name is None:
+            raise HTTPException(status_code=404)
+        return FileResponse(_HERE.parent / "docs" / "guide" / name,
+                            media_type="text/html; charset=utf-8",
+                            headers={"Cache-Control": "no-cache"})
 
 
     # ----------------------------------------------------------------------- #

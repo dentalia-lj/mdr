@@ -288,6 +288,7 @@ again** and **Search again for these N** on Failed, which Today also offers.
 | `/api/documents/{doc_id}` | JSON: a production **or superseded** document + its evidence. Superseded since 2026-09-16, so the `doc_id`s `?include_superseded` hands back are fetchable; staged, rejected and filed stay `404` |
 | `/api/kpi` | JSON: the same numbers as the `/status` KPI board |
 | `/healthz` | Liveness — the one route Caddy leaves unauthenticated |
+| `/guide/en`, `/guide/sl` (menu: **Help**, new tab) | The client guide: the committed `docs/guide/dentalia-guide-{EN,SL}.html`, served as is. `Dockerfile.web` copies those two files and no other `docs/` file (`.dockerignore` re-admits them), so a guide change reaches the app with the next web image build. `Cache-Control: no-cache`, so a rebuilt image is never shown stale |
 
 `docker compose up -d` does NOT rebuild a changed image. After editing `web/`
 or `app/`, use `docker compose up -d --build web`, or the container keeps
@@ -850,7 +851,7 @@ outside the guide, a heading that was renamed -- is printed by the build and by
 | Output | Committed | What it is |
 |---|---|---|
 | `docs/guide/**/*.md` | yes | The source. English and Slovene side by side |
-| `docs/guide/dentalia-guide-EN.html` · `-SL` | yes | The whole guide in one offline file. **This is what gets sent to the client** |
+| `docs/guide/dentalia-guide-EN.html` · `-SL` | yes | The whole guide in one offline file. **This is what gets sent to the client**, and what the app serves at `/guide/en` and `/guide/sl` (menu: **Help**) once the web image is rebuilt |
 | `docs/guide/html/{en,sl}/` | no, gitignored | One page per file sharing `assets/`. Copies the fonts out of `web/static`, so it is regenerated rather than stored |
 
 Styling is lifted from `web/static/css/style.css` — same palette, same fonts,

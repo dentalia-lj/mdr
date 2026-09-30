@@ -85,6 +85,13 @@
     <a href="/api-reference" class="{{ 'active' if path == '/api-reference' else '' }}">API</a>
   </details>
   {% endif %}
+
+  {#- The client guide, last and for everyone: the office is who it is for.
+      A new tab, because the guide carries its own menu and the page somebody
+      was working on should still be there when they come back. -#}
+  <p class="nav-label">Help</p>
+  <a href="/guide/en" target="_blank">Guide</a>
+  <a href="/guide/sl" target="_blank" lang="sl">Priročnik</a>
 </nav>
 
 {#- Machine health as one line (spec § 1, rule 8). Green dot and three words
