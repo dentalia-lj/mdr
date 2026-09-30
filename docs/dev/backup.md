@@ -146,7 +146,7 @@ enough. Rehearsed 2026-09-28 with Debian's restic 0.14.0 (§ 9).
 For every restic command below, first:
 
 ```bash
-export RESTIC_REPOSITORY='sftp:storagebox:/dentalia'     # L1; see § 7 for the SSH setup
+export RESTIC_REPOSITORY='sftp:storagebox:dentalia'     # L1; see § 7 for the SSH setup
 export RESTIC_PASSWORD_FILE=/srv/compliance/secrets/restic-password
 ```
 
@@ -248,7 +248,7 @@ Snapshots are read-only folders on the box. Point restic at the snapshot's copy
 of the repository and read without a lock:
 
 ```bash
-export RESTIC_REPOSITORY='sftp:storagebox:/.zfs/snapshot/<snapshot-name>/dentalia'
+export RESTIC_REPOSITORY='sftp:storagebox:.zfs/snapshot/<snapshot-name>/dentalia'   # /home/.zfs/snapshot on port 23
 restic snapshots --no-lock
 restic restore latest --no-lock --target /srv/compliance/restore
 ```
@@ -299,7 +299,9 @@ whatever their mode. `getent group deploy docker` shows who.
 ### L1 (when Mitja has ordered the box)
 
 1. `sudo apt install restic` (Ubuntu 26.04 ships 0.18.1).
-2. On the box: enable SSH, create a sub-account for one directory.
+2. On the box: enable SSH. (A sub-account limited to one directory is the
+   tidier option; the live setup uses the main account `u679983`, which works
+   the same and still cannot touch the box's snapshots.)
 3. Keys, on the server:
    ```bash
    mkdir -p /srv/compliance/secrets && chmod 700 /srv/compliance/secrets
@@ -307,20 +309,23 @@ whatever their mode. `getent group deploy docker` shows who.
    ssh-keygen -t ed25519 -N '' -f /srv/compliance/secrets/storagebox-key
    chmod 600 /srv/compliance/secrets/*
    ```
-   Install the public key for the sub-account (Hetzner docs, Storage Box "SSH keys").
+   Install the public key on the box (Hetzner Console, or
+   `cat storagebox-key.pub | ssh -p 23 <user>@<user>.your-storagebox.de install-ssh-key`
+   with a key the box already accepts).
 4. `~/.ssh/config`:
    ```
    Host storagebox
-       HostName <sub-account>.your-storagebox.de
-       User <sub-account>
+       HostName u679983.your-storagebox.de
+       User u679983
        Port 23
        IdentityFile /srv/compliance/secrets/storagebox-key
        IdentitiesOnly yes
    ```
-   Then `ssh storagebox ls` once, comparing the host key with the Hetzner Console.
+   Then `ssh storagebox ls` once, comparing the host key with the Hetzner Console
+   (ED25519 `SHA256:XqONwb1S0zuj5A1CDxpOSuD2hnAArV1A3wKY7Z3sdgM` on 2026-09-30).
 5. `.env`:
    ```
-   BACKUP_REPO=sftp:storagebox:/dentalia
+   BACKUP_REPO=sftp:storagebox:dentalia
    BACKUP_PASSWORD_FILE=/srv/compliance/secrets/restic-password
    ```
 6. `./scripts/backup.sh init`, then `./scripts/backup.sh hourly` (the first run
@@ -328,8 +333,9 @@ whatever their mode. `getent group deploy docker` shows who.
 7. Mitja turns on automatic daily snapshots. Confirm the sub-account cannot
    delete anything under `/.zfs`.
 
-The repository path (`/dentalia`) and the `.zfs` path are to be confirmed on
-the real box; § 9 lists what was not yet run against one.
+The repository path is **relative**: `sftp:storagebox:dentalia` is
+`/home/dentalia` on the box, the login's home. The `.zfs` path (§ 5.4) is still
+to be confirmed once snapshots exist.
 
 ### L2 (only if Dentalia wants it)
 
@@ -391,9 +397,16 @@ Caught by the rehearsal and fixed in § 5.3: the first database restore failed
 because `pg_isready` over the socket passed while the image's temporary init
 server was about to shut down; waiting over TCP fixed it.
 
-**Not run yet:** a real Storage Box (SSH on port 23, the repository path,
-snapshots and `--no-lock` from `.zfs`), and § 5.3 end to end on a real new
-server, which is the offer's restore test.
+### 2026-09-30, the server, L1 on the real Storage Box (restic 0.18.1)
+
+`init` on `sftp:storagebox:dentalia`, then the first `hourly` by hand: 4.351
+files, 2.54 GiB read, 1.34 GiB stored, **13 s** in total (L0 3 s, L1 9 s).
+`restic check --read-data-subset=5%`: no errors. The dump restored from the box
+had the same SHA-256 as the one on the server. Cron picks L1 up from the next
+:07 with no crontab change.
+
+**Not run yet:** box snapshots and `--no-lock` from `.zfs` (§ 5.4), and § 5.3
+end to end on a real new server, which is the offer's restore test.
 
 An earlier version of this setup (a Docker-wrapped restic, a local restic
 repository copied onward, a custom restore script) was reviewed three times the

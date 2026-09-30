@@ -30,15 +30,19 @@ script. The process and every restore command: `docs/dev/backup.md`.
 
 ## Server, L0 (needs Denis on the server; nothing from Dentalia)
 
-- [ ] `git pull`; `chmod 600 .env backups/*.dump`.
-- [ ] `./scripts/backup.sh hourly` by hand; `status`.
-- [ ] crontab (§ 3 of the doc); prove the alert (§ 7).
+- [x] `git pull`; `chmod 600 .env backups/*.dump`. **Live 2026-09-30** (read on the
+      server: `.env` 0600, crontab has both lines, hourly L0 ok at 08:07, 09:07,
+      10:07 UTC, dumps 4.9-5.6 MB, 3-4 s).
+- [x] `./scripts/backup.sh hourly` by hand; `status`.
+- [x] crontab (§ 3 of the doc). Alert proof from the server: not verified from here.
 
 ## Server, L1 (after Mitja orders the box)
 
-- [ ] `sudo apt install restic`; keys in `/srv/compliance/secrets/`; `~/.ssh/config`
-      `storagebox` entry; `.env` `BACKUP_REPO`, `BACKUP_PASSWORD_FILE`.
-- [ ] `init`, first `hourly`, `status`; confirm the repository path on the real box.
+- [x] `sudo apt install restic` (0.18.1); keys in `/srv/compliance/secrets/`;
+      `~/.ssh/config` `storagebox` entry; `.env` `BACKUP_REPO`, `BACKUP_PASSWORD_FILE`.
+      Main account `u679983`, not a sub-account. 2026-09-30.
+- [x] `init`, first `hourly` (13 s, 1.34 GiB stored), `status`, check, dump
+      restored from the box byte-identical. Path: `sftp:storagebox:dentalia`.
 - [ ] Box snapshots on (Mitja); confirm the sub-account cannot delete under `/.zfs`.
 - [ ] Hand the restic password and SSH key to Dentalia's two custodians.
 
