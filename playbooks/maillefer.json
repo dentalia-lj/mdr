@@ -1,0 +1,12 @@
+{
+  "manufacturer": "MAILLEFER",
+  "bc_codes": [
+    {
+      "code": "022"
+    }
+  ],
+  "aliases": [
+    "Maillefer Instruments Holding Sàrl"
+  ],
+  "note": "Authored 2026-10-01 from the Dentalia server's printed-names card: 86 waiting documents print this legal entity, and 42 of the article numbers they list that the catalogue knows belong to MAILLEFER (2 DENTSPLY, 3 SIRONA, 1 VDW, 7 HENRY SCHEIN). MAILLEFER is its own BC brand, code 022, not DENTSPLY: this name was aliased to DENTSPLY on 2026-08-10 and reverted the same day ([brand-parent-aliases]); a per-brand playbook is the fix that entry prescribes. BC code from the vendor master."
+}

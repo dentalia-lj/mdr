@@ -1,0 +1,13 @@
+{
+  "manufacturer": "ZHERMACK",
+  "bc_codes": [
+    {
+      "code": "040"
+    }
+  ],
+  "aliases": [
+    "ZHERMACK S.p.A.",
+    "ZHERMACK S.p.A"
+  ],
+  "note": "Authored 2026-10-01 from the Dentalia server's printed-names card: 10 waiting declarations and 4 whole-manufacturer certificates print these spellings, which no alias carried. ZHERMACK is its own BC brand, code 040. The declarations list no article numbers, so they stay on Review; the certificates get their manufacturer named for binding. BC code from the vendor master."
+}
