@@ -866,8 +866,8 @@ tbody tr:last-child td{border-bottom:0}
 <p>Almost nothing — with one exception, and it is reversible.</p>
 <ul>
 <li>Nothing here deletes a document, approves it, or publishes it. Approving happens on <a href="#pages/review">Review</a>.</li>
-<li><strong>The exception: Reopen this document.</strong> It appears only on a document somebody has already rejected (or on a replaced one, see the next point), and it puts that document back into <a href="#pages/review">Review</a> as waiting. It does <strong>not</strong> approve it and it does not bring back the products it was linked to — those stay rejected until each is reopened on its own. If you reopen one by mistake, reject it again on Review. You are asked for your name because undoing somebody else's decision is recorded.</li>
-<li><strong>Reopen for review on a replaced document.</strong> An older rule marked a document as replaced whenever a newer one shared a product family with it, even when the two covered different products. Such a document shows a note saying so and can be reopened from its page. Its product links stay as they are, so approving it again on Review makes it count for those products again. A document that shows only a note about the old rule, and is not marked replaced, needs nothing: the mark no longer applies.</li>
+<li><strong>The exception: Reopen this document.</strong> It appears only on a document somebody has already rejected (or on one the old rule replaced, see the next point), and it puts that document back into <a href="#pages/review">Review</a> as waiting. It does <strong>not</strong> approve it and it does not bring back the products it was linked to — those stay rejected until each is reopened on its own. If you reopen one by mistake, reject it again on Review. You are asked for your name because undoing somebody else's decision is recorded.</li>
+<li><strong>Reopen for review on a replaced document.</strong> An older rule retired a document whenever a newer one shared its product family, even when the two covered different products. A document that rule retired shows a <strong>Reopen this document</strong> card. Reopening puts it back into <a href="#pages/review">Review</a> and takes it off every product until it is approved again, so approve it in the same sitting. Approving makes it answer again for the products where nothing newer of its type is on file. A document the system filed as already replaced, because it was older than what every product it names already had, shows no card. A document that shows only a note about the old rule, and is not marked replaced, needs nothing: the mark no longer applies.</li>
 <li><strong>Look up in EUDAMED</strong> only asks a European database what it knows about this document's device. It does not change anything about the document itself.</li>
 <li>If a button gives you an error, nothing happened. Try again, or ask a developer.</li>
 </ul>
@@ -958,7 +958,7 @@ tbody tr:last-child td{border-bottom:0}
 </tr>
 <tr>
 <td><strong>Reopen this document</strong></td>
-<td>Put a rejected or replaced document back into Review. The only way to undo a rejection</td>
+<td>Put a rejected document, or one the old rule replaced, back into Review. The only way to undo a rejection</td>
 </tr>
 <tr>
 <td><strong>Coverage scope</strong>, shown as <em>group</em></td>
@@ -1872,7 +1872,7 @@ tbody tr:last-child td{border-bottom:0}
 </tr>
 <tr>
 <td><strong>Links waiting on documents that were never published</strong></td>
-<td>Nothing. This list is for your information only. There is no button and nothing to decide</td>
+<td>Nothing. This list is for your information only. There is no button and nothing to decide. If a replaced document is reopened and approved again, its links matched in a trusted way are published with it</td>
 </tr>
 </tbody></table></div>
 <p>Most days you will only touch the first kind.</p>
@@ -1892,7 +1892,7 @@ tbody tr:last-child td{border-bottom:0}
 <li>The list is grouped by manufacturer. Each group starts with a line such as <em>GC 12 documents</em>, and the groups with the oldest waiting document come first. Documents nobody could put a manufacturer to come last, under <strong>Manufacturer not known</strong>. Inside a group, the oldest document is at the top. The number beside the title, <em>N waiting in all</em>, counts everything waiting, whatever you have filtered. When a reason button or a search is in force, a line above the list says how many of those it left, and the group counts and the page counter under the list count only those.</li>
 <li>Each row names the document first, for example <em>GC · Declaration of Conformity (MDR)</em>. Under it: the file name, the date it was issued and the date it started waiting, then the grey sentence that says in one line why the system stopped. An expired document also says <em>expired</em> and the date. If some of the items linked to the document belong to a different supplier than the group it sits in, the row says so: <em>+1 other manufacturer among its items</em>.</li>
 <li>Press <strong>Open</strong> on the row (or click anywhere on it). The row opens in two halves. On the left is page 1 of the PDF itself; <strong>Open full size ↗</strong> opens the whole document in a new tab. On the right is what the system read from it: <strong>Manufacturer</strong> (as printed on the document), <strong>Rules</strong> (MDR or MDD), <strong>Issued</strong>, <strong>Valid until</strong> and the <strong>Basic UDI-DI</strong>. A date the document does not give reads <em>Not stated</em>.</li>
-<li>Above the buttons, the panel says what approving will do: <em>Approving makes it count for these N items</em>, followed by each item's number and name (the first ten; press <strong>+ K more</strong> for the rest) and how they were matched. For a document that covers a supplier's whole range it reads <em>…for all N ⟨supplier⟩ items</em>, or <em>…for the one ⟨supplier⟩ item</em> where the supplier has a single device item.</li>
+<li>Above the buttons, the panel says what approving will do: <em>Approving publishes it for these N items. It answers for an item only where nothing newer of its type is on file.</em>, followed by each item's number and name (the first ten; press <strong>+ K more</strong> for the rest) and how they were matched. An item that already has a newer document of the same type keeps that one; this document is kept as its history. For a document that covers a supplier's whole range it reads <em>Approving makes it count for all N ⟨supplier⟩ items</em>, or <em>…for the one ⟨supplier⟩ item</em> where the supplier has a single device item.</li>
 <li>Compare the PDF with the facts beside it: the type of document, the dates, the items.</li>
 <li>Press one button:</li>
 </ol>

@@ -5972,6 +5972,11 @@ def test_staged_links_on_a_terminal_document_are_listed_but_not_decidable(client
     text = client.get("/staging").text
     assert "Links waiting on documents that were never published" in text
     assert "Nothing to decide here" in text
+    # Not "never": reopening a replaced document and approving it publishes
+    # its trusted-basis staged links with it (`_promote_pending_links`).
+    flat = re.sub(r"\s+", " ", text)
+    assert ("A replaced document brings its links along only if someone reopens "
+            "it and approves it again") in flat
     assert f'href="/documents/{dead_doc}"' in text
     # and no form for it — the macro refuses a non-production document
     assert f'hx-post="/links/{dead_doc}/decide"' not in text
@@ -7527,13 +7532,45 @@ def test_a_page_lights_the_menu_entry_it_is_reached_from(client, path, entry, la
     assert active[0][1].strip().startswith(label)
 
 
-def test_a_superseded_document_page_offers_reopen(client, conn):
+def _superseded_with_audit(conn, event):
+    """A superseded document and the audit row that put it there: `supersede`
+    is the old document-wide rule's write (on the document it retired),
+    `auto-superseded` the fast path's."""
     doc_id = _seed_item_with_doc(conn, f"SUP-REOPEN-{uuid.uuid4().hex[:6]}")
     conn.execute("UPDATE document SET status='superseded' WHERE doc_id=%s", (doc_id,))
+    conn.execute(
+        "INSERT INTO audit_log (event, doc_id, decided_by, job_snapshot) "
+        "VALUES (%s, %s, 'gate', '{}'::jsonb)", (event, doc_id))
     conn.commit()
+    return doc_id
+
+
+def test_a_document_the_old_rule_retired_offers_reopen(client, conn):
+    """Ruling 8 (2026-10-02): the card is for what the old document-wide rule
+    did, and it says what reopening costs: the document stops answering for
+    every item until it is approved again."""
+    doc_id = _superseded_with_audit(conn, "supersede")
     resp = client.get(f"/documents/{doc_id}")
     assert resp.status_code == 200
-    assert 'value="reopen"' in resp.text
+    assert 'id="reopen-result-sup"' in resp.text
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", resp.text))
+    assert ("retired this document because a newer one shared its catalogue "
+            "group") in text
+    assert "takes it off every item until it is approved again" in text
+    assert "approve it in the same sitting" in text
+    assert ("Approving makes it answer again for the items where nothing newer "
+            "of its type is on file") in text
+
+
+def test_a_document_the_fast_path_filed_offers_no_reopen(client, conn):
+    """A document the auto-file path filed was never current anywhere: it was
+    older for every article it names. Nothing about it is the old rule's
+    mistake, so the page offers no card (the handler still accepts it)."""
+    doc_id = _superseded_with_audit(conn, "auto-superseded")
+    resp = client.get(f"/documents/{doc_id}")
+    assert resp.status_code == 200
+    assert "reopen-result-sup" not in resp.text
+    assert 'value="reopen"' not in resp.text
 
 
 def test_a_restored_document_shows_the_old_pointer_as_history(client, conn):
@@ -7544,3 +7581,24 @@ def test_a_restored_document_shows_the_old_pointer_as_history(client, conn):
     resp = client.get(f"/documents/{a}")
     assert "That mark no longer applies" in resp.text
     assert "Superseded by <a" not in resp.text
+
+
+def test_the_newer_side_shows_the_old_rules_pointer_as_history(client, conn):
+    """`document.supersedes` is written by nothing since migration 071; every
+    value in it is the old document-wide rule's record. On a production
+    document it is history, said as such; on any other status it is not
+    shown at all (ruling 10, 2026-10-02)."""
+    old = _seed_item_with_doc(conn, f"NWR-{uuid.uuid4().hex[:6]}")
+    new = _seed_item_with_doc(conn, f"NWR-{uuid.uuid4().hex[:6]}")
+    conn.execute("UPDATE document SET supersedes=%s WHERE doc_id=%s", (old, new))
+    conn.commit()
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", client.get(f"/documents/{new}").text))
+    assert (f"Recorded by the old document-wide rule as replacing #{old}. "
+            "That mark no longer applies.") in text
+    assert f"Supersedes #{old}" not in text
+
+    conn.execute("UPDATE document SET status='staged' WHERE doc_id=%s", (new,))
+    conn.commit()
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", client.get(f"/documents/{new}").text))
+    assert f"replacing #{old}" not in text
+    assert f"Supersedes #{old}" not in text

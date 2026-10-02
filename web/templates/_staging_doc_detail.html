@@ -98,8 +98,12 @@
          does for the one chosen; a count here could not follow the choice. #}
     {% elif row.approve_links %}
       {% set n = row.approve_links|length %}
-      <p class="approve-line">Approving makes it count for
-        {% if n == 1 %}this item{% else %}these {{ n | num }} items{% endif %}</p>
+      {# Ruling 9 (2026-10-02): approving publishes; which document answers
+         for an item is decided per item and per type, so "count" would
+         promise what a newer document on file can take away. #}
+      <p class="approve-line">Approving publishes it for
+        {% if n == 1 %}this item. It answers for the item{% else %}these {{ n | num }} items. It answers for an item{% endif %}
+        only where nothing newer of its type is on file.</p>
       {{ item_list(row.approve_links, items_shown) }}
       <p class="hint">Matched through {{ row.approve_basis }}.</p>
       {% if row.held_links %}

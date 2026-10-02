@@ -47,7 +47,7 @@ našel. Poln zaslon pomeni, da potrebuje vas.
 | **Dokument** z gumbom **Open**, pod imenom svojega proizvajalca | "Našel sem to. Naj šteje?" |
 | **Predlog za združitev v skupino** | "Mislim, da sta ta dva izdelka ista družina. Sem prav ugotovil?" |
 | **Links waiting for review on published documents**: artikel in dokument z gumboma **Covers this item** in **Does not** | "Ta objavljeni dokument je s tem artiklom povezan le po šibkem ujemanju. Ga pokriva?" |
-| **Links waiting on documents that were never published** | Nič. Ta seznam je zgolj v vednost. Ni gumba in ni ničesar za odločiti |
+| **Links waiting on documents that were never published** | Nič. Ta seznam je zgolj v vednost. Ni gumba in ni ničesar za odločiti. Če nadomeščen dokument nekdo ponovno odpre in znova odobri, se z njim objavijo njegove povezave, ujete na zanesljiv način |
 
 Večino dni se boste ukvarjali le s prvo vrsto.
 
@@ -93,12 +93,14 @@ Trikrat da: odobrite. Kakršenkoli ne: zavrnite ali vprašajte dobavitelja.
    prebral iz njega: **Manufacturer** (kot je natisnjen na dokumentu),
    **Rules** (MDR ali MDD), **Issued**, **Valid until** in **Basic UDI-DI**.
    Datum, ki ga dokument ne navaja, se glasi *Not stated*.
-5. Nad gumbi plošča pove, kaj bo odobritev naredila: *Approving makes it count
-   for these N items*, sledijo pa številka in ime vsakega artikla (prvih deset;
-   za ostale pritisnite **+ K more**) in kako so bili ujeti. Pri dokumentu, ki
-   pokriva celoten program dobavitelja, piše *…for all N ⟨dobavitelj⟩ items*,
-   oziroma *…for the one ⟨dobavitelj⟩ item*, kadar ima dobavitelj en sam
-   artikel s pripomočkom.
+5. Nad gumbi plošča pove, kaj bo odobritev naredila: *Approving publishes it
+   for these N items. It answers for an item only where nothing newer of its
+   type is on file.*, sledijo pa številka in ime vsakega artikla (prvih deset;
+   za ostale pritisnite **+ K more**) in kako so bili ujeti. Artikel, ki že ima
+   novejši dokument iste vrste, obdrži tega; ta dokument ostane kot njegova
+   zgodovina. Pri dokumentu, ki pokriva celoten program dobavitelja, piše
+   *Approving makes it count for all N ⟨dobavitelj⟩ items*, oziroma *…for the
+   one ⟨dobavitelj⟩ item*, kadar ima dobavitelj en sam artikel s pripomočkom.
 6. Primerjajte PDF z dejstvi ob njem: vrsto dokumenta, datume, artikle.
 7. Pritisnite en gumb:
 

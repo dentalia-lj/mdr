@@ -540,7 +540,10 @@ def test_the_panel_lists_each_item_by_number_and_name(client, conn):
 
     text = _text(client.get(f"/staging/{doc_id}/detail").text)
 
-    assert "Approving makes it count for these 3 items" in text
+    # Ruling 9 (2026-10-02): approving publishes; whether it answers for an
+    # item is per item and per type, so the panel no longer promises "count".
+    assert ("Approving publishes it for these 3 items. It answers for an item "
+            "only where nothing newer of its type is on file.") in text
     for i in range(3):
         assert f"lk-{i:02d} · Product lk {i:02d}" in text
     assert "Matched through the manufacturer's article numbers on the document" in text
@@ -611,7 +614,8 @@ def test_the_approve_button_names_one_item(client, conn):
     text = client.get(f"/staging/{doc_id}/detail").text
 
     assert _approve_label(text) == "Approve for this item"
-    assert "Approving makes it count for this item" in _text(text)
+    assert ("Approving publishes it for this item. It answers for the item "
+            "only where nothing newer of its type is on file.") in _text(text)
 
 
 def test_links_an_approval_does_not_publish_are_not_promised(client, conn):
@@ -625,7 +629,7 @@ def test_links_an_approval_does_not_publish_are_not_promised(client, conn):
     seen = _text(text)
 
     assert _approve_label(text) == "Approve"
-    assert "count for these" not in seen
+    assert "publishes it for these" not in seen
     assert "will not count for any item yet" in seen
     assert "fc-00 · Product fc 00" in seen and "fc-01 · Product fc 01" in seen
     assert "where the file was found" in seen

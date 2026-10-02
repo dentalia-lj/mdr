@@ -47,7 +47,7 @@ found. A full one means it needs you.
 | A **document** with an **Open** button, under its manufacturer's name | "I found this. Should it count?" |
 | A **grouping suggestion** | "I think these two products are the same family. Am I right?" |
 | **Links waiting for review on published documents**: an item and a document, with **Covers this item** and **Does not** | "This published document was matched to this item only weakly. Does it cover it?" |
-| **Links waiting on documents that were never published** | Nothing. This list is for your information only. There is no button and nothing to decide |
+| **Links waiting on documents that were never published** | Nothing. This list is for your information only. There is no button and nothing to decide. If a replaced document is reopened and approved again, its links matched in a trusted way are published with it |
 
 Most days you will only touch the first kind.
 
@@ -92,12 +92,15 @@ Three yeses: approve. Any no: reject, or ask the supplier.
    it: **Manufacturer** (as printed on the document), **Rules** (MDR or MDD),
    **Issued**, **Valid until** and the **Basic UDI-DI**. A date the document
    does not give reads *Not stated*.
-5. Above the buttons, the panel says what approving will do: *Approving makes it
-   count for these N items*, followed by each item's number and name (the first
-   ten; press **+ K more** for the rest) and how they were matched. For a
-   document that covers a supplier's whole range it reads *…for all N
-   ⟨supplier⟩ items*, or *…for the one ⟨supplier⟩ item* where the supplier has
-   a single device item.
+5. Above the buttons, the panel says what approving will do: *Approving
+   publishes it for these N items. It answers for an item only where nothing
+   newer of its type is on file.*, followed by each item's number and name (the
+   first ten; press **+ K more** for the rest) and how they were matched. An
+   item that already has a newer document of the same type keeps that one; this
+   document is kept as its history. For a document that covers a supplier's
+   whole range it reads *Approving makes it count for all N ⟨supplier⟩ items*,
+   or *…for the one ⟨supplier⟩ item* where the supplier has a single device
+   item.
 6. Compare the PDF with the facts beside it: the type of document, the dates,
    the items.
 7. Press one button:

@@ -396,7 +396,7 @@ REASON_CODE_CHIP = {
 # flags above, and held equal to gate's tuple by a test. The Review panel reads
 # it to promise only what an approval actually publishes: on dev on 2026-09-11,
 # 53 of 234 waiting documents carried only `fetch-context` links, so "approving
-# makes it count for these N items" would have been false for every one.
+# publishes it for these N items" would have been false for every one.
 PUBLISHING_BASES = ("ref-list", "ref-item", "udi", "basic-udi-di", "mfr-scope",
                     "manual", "map-supplier")
 # How a link was made, as the panel says it ("Matched through ..." for links an
@@ -1585,10 +1585,12 @@ def _staged_doc_detail(conn, doc_id: int) -> dict | None:
             (e["value"] for e in evidence
              if e["field"] == "manufacturer" and e["value"]), None),
     }
-    # What approving does to the links (spec § 6, "Approving makes it count for
-    # these N items"). A production link counts once the document does; a
-    # staged one follows the document only on a publishing basis
-    # (`PUBLISHING_BASES`, gate's `_promote_pending_links`). The rest stay
+    # What approving does to the links (spec § 6; reworded by ruling 9,
+    # 2026-10-02, to "Approving publishes it for these N items. It answers for
+    # an item only where nothing newer of its type is on file.", because
+    # currency is per item and per type). A production link is published once
+    # the document is; a staged one follows the document only on a publishing
+    # basis (`PUBLISHING_BASES`, gate's `_promote_pending_links`). The rest stay
     # staged and each needs its own decision afterwards, so they are listed
     # apart and never promised. Rejected links count for nothing either way.
     row["approve_links"] = [
@@ -1707,15 +1709,17 @@ def _staged_links_on_production(
 def _staged_links_on_unpublished(
     conn, *, limit: int = STAGED_LINKS_LIMIT
 ) -> tuple[list[dict], int]:
-    """C17: staged links whose document reached a TERMINAL state without ever
-    being published — `superseded` or `filed`. Read-only by ruling, not by
-    omission.
+    """C17: staged links whose document is `superseded` or `filed`. Read-only
+    by ruling, not by omission.
 
     These look like the `_staged_links_on_production` queue and are the exact
-    opposite of it. Nothing is waiting on a person: the document is not
-    production and never will be, so `gate.apply`'s link decisions refuse them
-    (C17 requires a production document) and no `approve` will ever run
-    `_promote_pending_links` over them.
+    opposite of it. The document is not production, so `gate.apply`'s link
+    decisions refuse them (C17 requires a production document) and this table
+    offers no form. A `filed` document stays where it is. A `superseded` one is
+    not necessarily final since 2026-10-02: `gate.apply reopen` accepts it, and
+    approving it afterwards runs `_promote_pending_links`, which publishes its
+    trusted-basis staged links with it. That is a decision about the document,
+    not about these links one by one.
 
     They were briefly reported as a defect (17 `map-supplier` links under docs
     375/379) and the finding was WITHDRAWN the same day. Both are older DoCs the
@@ -3510,6 +3514,16 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                 "WHERE doc_id IN (%s, %s) OR superseded_by = %s ORDER BY validity_from",
                 (doc["supersedes"], doc["superseded_by"], doc_id),
             ).fetchall()
+            # Ruling 8 (2026-10-02): the superseded reopen card is for what the
+            # old document-wide rule did, and its write is a `supersede` audit
+            # row on the document it retired. A document the auto-file fast
+            # path filed (`auto-superseded`) was older for every article it
+            # names, so nothing about it is that rule's mistake and it gets no
+            # card; `gate.apply reopen` still accepts it.
+            old_rule_superseded = conn.execute(
+                "SELECT EXISTS (SELECT 1 FROM audit_log "
+                "WHERE event = 'supersede' AND doc_id = %s) AS hit", (doc_id,),
+            ).fetchone()["hit"]
             # The other half of the /expiry cross-link: if a renewal mail is
             # already chasing this document, say so here. Otherwise a reviewer
             # looking at a lapsed document has no way to tell whether anyone has
@@ -3535,7 +3549,8 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             request, "document_detail.html",
             {"doc": doc, "items": items_covered,
              "evidence": evidence, "chain": chain, "chases": chases,
-             "eudamed": eudamed, "eudamed_rows": eudamed_rows},
+             "eudamed": eudamed, "eudamed_rows": eudamed_rows,
+             "old_rule_superseded": old_rule_superseded},
         )
 
     #: The three states a group can be in with respect to DISCOVER, and the

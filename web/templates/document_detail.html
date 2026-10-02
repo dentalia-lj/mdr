@@ -188,14 +188,18 @@
   <div id="reopen-result"></div>
 </div>
 {% endif %}
-{% if doc.status == 'superseded' %}
+{# Only for what the old document-wide rule did (ruling 8, 2026-10-02): the
+   route passes `old_rule_superseded` when a `supersede` audit row names this
+   document. A document the auto-file path filed gets no card. #}
+{% if doc.status == 'superseded' and old_rule_superseded %}
 <div class="card">
   <h2>Reopen this document</h2>
   <p class="hint">
-    This document was marked as replaced by an older rule that retired a whole
-    document when a newer one shared a catalogue group with it. Reopening puts it
-    back into <a href="/staging">review</a>. Its item links stay as they are, so
-    approving it makes it count again for those items.
+    An older rule retired this document because a newer one shared its catalogue
+    group, even where the two cover different items. Reopening puts it back into
+    <a href="/staging">review</a> and takes it off every item until it is approved
+    again, so approve it in the same sitting. Approving makes it answer again for
+    the items where nothing newer of its type is on file.
   </p>
   <form hx-post="/staging/{{ doc.doc_id }}/apply" hx-target="#reopen-result-sup"
         hx-swap="innerHTML">
@@ -211,9 +215,13 @@
 
 <div class="card">
   <h2>Supersession chain</h2>
-  {% if doc.supersedes or doc.superseded_by %}
+  {# Nothing writes `supersedes` since migration 071: every value is the old
+     document-wide rule's record, shown as history on a production document
+     and not at all otherwise (ruling 10, 2026-10-02). #}
+  {% set old_rule_replacing = doc.supersedes and doc.status == 'production' %}
+  {% if old_rule_replacing or doc.superseded_by %}
   <p class="hint">
-    {% if doc.supersedes %}Supersedes <a href="/documents/{{ doc.supersedes }}">#{{ doc.supersedes }}</a>.{% endif %}
+    {% if old_rule_replacing %}Recorded by the old document-wide rule as replacing <a href="/documents/{{ doc.supersedes }}">#{{ doc.supersedes }}</a>. That mark no longer applies.{% endif %}
     {% if doc.superseded_by and doc.status == 'superseded' %}Superseded by <a href="/documents/{{ doc.superseded_by }}">#{{ doc.superseded_by }}</a>.{% elif doc.superseded_by %}Earlier marked as replaced by <a href="/documents/{{ doc.superseded_by }}">#{{ doc.superseded_by }}</a> under the old document-wide rule. That mark no longer applies.{% endif %}
   </p>
   {% endif %}
@@ -232,7 +240,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="hint">No supersession relationships — this is a standalone document.</p>
+  <p class="hint">No supersession relationships. This is a standalone document.</p>
   {% endif %}
 </div>
 

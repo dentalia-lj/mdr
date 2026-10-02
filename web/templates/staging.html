@@ -60,20 +60,24 @@
 </div>
 
 {# Deliberately read-only, and deliberately NOT merged into the table above.
-   These look identical to the review queue and are its exact opposite: nothing
-   is waiting on a person, because the document reached a terminal state
-   without ever being published. `gate.apply`'s link decisions refuse them
-   (C17 requires a production document) and no approval will ever run over
-   them. They are here because invisible dead state is indistinguishable from
-   state nobody thought about — this table is the whole remedy. #}
+   These look identical to the review queue and are its exact opposite: the
+   document is `superseded` or `filed`, so `gate.apply`'s link decisions refuse
+   them (C17 requires a production document) and nothing here can decide one.
+   A `filed` document stays that way. A `superseded` one can be reopened
+   (`gate.apply reopen`, since 2026-10-02) and approved, and that approval runs
+   `_promote_pending_links`, which publishes its trusted-basis staged links with
+   it. They are here because invisible dead state is indistinguishable from
+   state nobody thought about; this table is the whole remedy. #}
 {% if dead_links_total %}
 <div class="card">
   <h2>Links waiting on documents that were never published
     <span class="badge">{{ dead_links_total | num }}</span></h2>
-  <p class="hint">Nothing to decide here. These links are waiting because their document was
-    replaced, or filed without ever being published, so the link is invisible for the same
-    reason the document is. Publishing them would claim coverage under paperwork the registry
-    never published. Listed so you can see the state, not because it is work.</p>
+  <p class="hint">Nothing to decide here. Each of these links is still waiting, and its document
+    was replaced or filed, so no review screen offers it. A filed document was never published,
+    and publishing its links would claim coverage under paperwork the registry never published.
+    A replaced document brings its links along only if someone reopens it and approves it
+    again: approving publishes with it every link matched in a way trusted enough to publish.
+    Listed so you can see the state, not because it is work.</p>
   <div class="table-wrap">
   <table>
     <thead><tr><th>Item ref</th><th>Doc #</th><th>Document status</th><th>Type</th><th>Regulation</th><th>{{ "match basis" | word }}</th><th>Replaced by</th></tr></thead>
