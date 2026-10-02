@@ -207,7 +207,7 @@ other screen says the word in the third column, and the
 | **Production** | Counts. Visible everywhere | **Published** |
 | **Staged** | Waiting for a person. Does not count yet | **Waiting for review** |
 | **Rejected** | Decided against. Kept on file, does not count | **Rejected** |
-| **Superseded** | Replaced by a newer document. Kept, no longer current | **Replaced** |
+| **Superseded** | Filed behind a newer document. Kept, and it counts for an item only where no newer document of the same type covers that item | **Replaced** |
 | **Filed** | A genuine document from a known supplier that covers none of the items you stock | **On file** |
 | **Match basis** (e.g. *name-family*) | How the system matched a document to an item. Some ways of matching are trusted enough to publish on their own; others always need a person | **How it was matched** |
 | **A link** | The connection between one document and one item. A document can have many | |
@@ -222,8 +222,11 @@ other screen says the word in the third column, and the
 - Every item listed above the button you pressed now shows it. Items linked
   only by a weak match wait under **Links waiting for review on published documents** for
   their own **Covers this item** or **Does not**.
-- If it replaces an older one, the older one is marked *replaced by a newer one*.
-  It is kept, not deleted — you can still see it, and an auditor can still be shown it.
+- Approving never retires another document. Each item shows the document that
+  answers for it: for each type of document, the newest one wins, and a
+  document under MDR comes before one under MDD. An older document stays
+  attached to the item as history. It is kept, not deleted — you can still see
+  it, and an auditor can still be shown it.
 - Every fact the system read off the page — the type, the dates, the certificate
   number, the product numbers — is stored together with the page it was read from.
   If an auditor asks where a date came from, you can show them.

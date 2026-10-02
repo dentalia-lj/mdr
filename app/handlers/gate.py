@@ -1099,27 +1099,22 @@ def handle_gate_candidate(conn, job: dict) -> dict:
                               cert_doc_id=p.get("cert_doc_id"),
                               canonical_manufacturer=_bound_here)
 
-    # task 5: the incoming candidate is OLDER than the current production doc
-    # (the INVERSE of C6 supersession, computed by VALIDATE) — write the chain
-    # pointer directly rather than through _apply_supersession, which re-checks
-    # C6 in the other direction (new doc supersedes old) and would not apply
-    # here. The existing production doc is untouched; only this doc's own
-    # superseded_by is set. Guarded on auto_supersede_ok, not just
-    # superseded_by_doc_id's presence — a failed guard means this candidate is
-    # `manual`, not `superseded`, and must not carry a chain pointer while
-    # awaiting review. Guarded + audited the same way _apply_supersession is:
-    # idempotent under at-least-once delivery, no duplicate audit event on
-    # redelivery.
+    # task 5: the incoming candidate is OLDER than the current document of
+    # every article it names (computed by VALIDATE against per-item currency,
+    # migration 071) — write the chain pointer on this document only. The
+    # existing production doc is untouched. Guarded on auto_supersede_ok, not
+    # just superseded_by_doc_id's presence — a failed guard means this
+    # candidate is `manual`, not `superseded`, and must not carry a chain
+    # pointer while awaiting review. Idempotent under at-least-once delivery,
+    # no duplicate audit event on redelivery.
     if auto_supersede_ok:
-        # Same live (type, regulation) re-read `_apply_supersession` performs, in
-        # the mirrored direction (here the TARGET is the newer document and this
-        # candidate is the older one). The payload's superseded_by_doc_id was
+        # Live (type, regulation) re-read of the pointer's target. The
+        # payload's superseded_by_doc_id was
         # computed by VALIDATE against the target as it stood then; the target can
         # be re-typed while this job waits in the queue (a re-extraction of its
         # content_hash, or a human edit through gate.apply — both rewrite
         # document.type/regulation), and a stale pointer would file an MDR
-        # document into an MDD chain. Both routes to a chain pointer are guarded
-        # identically, and both raise rather than skip.
+        # document into an MDD chain. The check raises rather than skips.
         _assert_chain_identity(conn, auto_superseded, doc_id)
         # `AND status='superseded'` is load-bearing, not belt-and-braces:
         # _upsert_document's status CASE is sticky, so a doc_id already sitting
@@ -1454,9 +1449,10 @@ def handle_gate_apply(conn, job: dict) -> dict:
                 priority="interactive",
             )
     elif decision == "reopen":
-        # The way back out of `rejected`, and the reason it had to exist:
-        # making `rejected` terminal in `_upsert_document` (2026-09-04) closed
-        # the hole where ANY re-delivery silently un-rejected a document, and
+        # The way back out of `rejected` (and, since 2026-10-02, `superseded`),
+        # and the reason it had to exist: making `rejected` terminal in
+        # `_upsert_document` (2026-09-04) closed the hole where ANY
+        # re-delivery silently un-rejected a document, and
         # that hole was also the only way back. An accident is not an escape
         # hatch, so this is the deliberate one, with a person's name on it.
         #

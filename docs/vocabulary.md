@@ -93,7 +93,7 @@ ranking rather than by promoting sweep jobs.
 | `production` | trusted and visible |
 | `filed` | correct and complete, but covers no item in the catalogue — archived, evidenced, and in nobody's queue (migration 025). A re-delivery may still promote it to `production` when a re-extraction finds items; it may not fall back to `staged` |
 | `rejected` | a human refused it. **Sticky against machines** since 2026-09-04, matching the link-level rule below: `_upsert_document` refuses every backward step (`staged < filed < production`, with `rejected` and `superseded` terminal), so no re-delivery can un-reject a document. It could before — measured live, a 67-document re-emission moved four, one of them out of a rejection a person had made, silently and with no audit row. `gate.apply reopen` is the only way back to `staged`, and it does **not** cascade the links back: each returns through `reopen-link` |
-| `superseded` | replaced by a newer document in the same chain; still archived, never deleted. Invisible to consumers by default; a read-API caller can ask for the chain with `?include_superseded` (migration 070) |
+| `superseded` | filed behind a newer document by the auto-file fast path (or marked so by the old document-wide rule); still archived, never deleted. The status is not currency: which document answers for an item is computed per item and type (migration 071), so a `superseded` document can still be current for an item nothing newer covers. A read-API caller sees every published document with `?include_superseded` and a `current` flag per row |
 
 **These are the STORED values, and they never change.** The UI shows a different
 word for each of them — Published, Waiting for review, On file, Rejected,
@@ -179,8 +179,8 @@ a *defect*.
 
 | flag | meaning |
 |---|---|
-| `older-than-current` | an older document than the one in production for the same subject |
-| `same-date-revision` | the same `validity_from` as the document in production for the same subject; no ordering exists, so a person picks the current one (ruled 2026-09-04) |
+| `older-than-current` | older than the current document of at least one article it names |
+| `same-date-revision` | the same `validity_from` as the current document of an article it names; no ordering exists, so a person picks the current one (ruled 2026-09-04) |
 | `no-item-identifier` | no REF list and no UDI: nothing can link it to the catalogue |
 | `evidence-page-missing` | a T1/T2 value with no page cite — invariant 2 |
 | `date-insane` | dates that cannot both be true, or a year outside the sane range |
@@ -205,7 +205,7 @@ a *defect*.
 | `no-ref-overlap` | the REF list matched no catalogue item. There is nothing to link, which is not a defect in the document |
 | `multi-group-match` | the REF list spans several of our groups. Since 2026-08-13 every matching member is linked, so nothing is arbitrary |
 | `cert-unresolved` | the cited certificate is not in the registry **yet**; self-corrects once it is ingested |
-| `auto-superseded` | fast-path signal that this candidate files itself into the supersession chain |
+| `auto-superseded` | fast-path signal that this candidate is older than the current document of every article it names and files itself behind it |
 | `ref-list-possibly-truncated` | a T1/T2 `ref_list` came back at exactly the prompt cap (`tiers.REF_LIST_PROMPT_CAP`), so it may be a partial reading of a longer list. It **reports**, it never prunes: the list is stored and linked in full, and a T0 or T3 list of the same length is not flagged because neither is subject to the prompt cap |
 | `iso-without-standard-number` | `type` is `ISO` but no ISO standard number (13485 or 9001) appears in any of the document's evidence verbatims. It **reports**, it never re-types: the document keeps the type it was given and a reviewer sees that nothing supports it. Extends the 2026-08-20 ruling that `iso 13485` is the ONLY ISO signal from T0, where it was enforced, to whatever tier produced the type — doc 967 is an MDR Annex IX quality-management certificate T1 typed `ISO`. Deliberately **not** a `type`-versus-`regulation` check: a real ISO 13485 certificate may cite MDR in its scope, so that rule would fire on correct documents |
 | `date-label-not-adjacent` | T0 found a date label, refused to pair it with the date that followed because real content sat between them, and then read no value for that field by any other route. It **reports**, it caps nothing and blocks nothing: it is a note about our parser, not about the document. Records that the page has a layout T0 cannot read — the signal that would justify authoring a `t0_layout` template, and the cost signal too, since the field either escalates to a paid tier or goes unread. A refusal a LATER LABEL then satisfied is never flagged (doc 317, bilingual, English label a bare heading and German label carrying the value): that is the fall-through working as designed, and a flag that fires on correct behaviour teaches people to ignore flags. Unlike every other flag here it cannot be computed from the stored fields — a refusal is a non-event — so `extract_dates` records it under `t0_templates.DATE_LABEL_REFUSED_KEY` and `tiers.integrity_flags` only reads it |

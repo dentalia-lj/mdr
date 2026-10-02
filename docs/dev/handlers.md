@@ -24,24 +24,24 @@ never clobber a real handler.
 | `discover.group` | `handlers/discover.py:908` | `fetch.url` ×k, `email.request`, `validate.doc` | `test_discover_handler.py` |
 | `fetch.url` | `handlers/fetch.py:145` | `extract.doc` or `validate.doc`, **or nothing** when the body is not a document | `test_fetch_handler.py` |
 | `extract.doc` | `handlers/extract.py:278` | `validate.doc`, **or nothing** when the doc-class call answers `not-a-compliance-document` | `test_extract_handler.py`, `test_extract_cost.py`, `test_doc_class_gate.py` |
-| `validate.doc` | `handlers/validate.py:780` | `gate.candidate` | `test_validate_handler.py` |
-| `gate.candidate` | `handlers/gate.py:1002` | nothing (terminal) | `test_gate_candidate_handler.py` |
-| `gate.apply` | `handlers/gate.py:1443` | `discover.group` on reject | `test_gate_apply_handler.py` |
+| `validate.doc` | `handlers/validate.py:782` | `gate.candidate` | `test_validate_handler.py` |
+| `gate.candidate` | `handlers/gate.py:985` | nothing (terminal) | `test_gate_candidate_handler.py` |
+| `gate.apply` | `handlers/gate.py:1415` | `discover.group` on reject | `test_gate_apply_handler.py` |
 | `backfill.scan` | `handlers/backfill.py:270` | `extract.doc` | `test_backfill_handler.py` |
 | `upload.ingest` | `handlers/upload.py:33` | `extract.doc` or `validate.doc` | `test_upload_handler.py` |
 | `vendor.import` | `handlers/vendor_import.py:40` | nothing, deliberately | `test_vendor_import_handler.py` |
 | `email.poll` | `handlers/email_poll.py:361` | `extract.doc` | `test_email_poll_handler.py` |
-| `email.request` | `handlers/email_request.py:858` | `email.reminder` | `test_email_request_handler.py` |
-| `email.reminder` | `handlers/email_request.py:1025` | nothing; defers its own job to the next rung | `test_email_request_handler.py` |
+| `email.request` | `handlers/email_request.py:860` | `email.reminder` | `test_email_request_handler.py` |
+| `email.reminder` | `handlers/email_request.py:1027` | nothing; defers its own job to the next rung | `test_email_request_handler.py` |
 | `eudamed.sync` | `handlers/eudamed.py:226` | nothing | `test_eudamed_handler.py` |
 | `eudamed.certregister` | `handlers/eudamed.py:424` | nothing | `test_eudamed_handler.py` |
 
 **Running the register by hand.** `POST /scheduler/run/eudamed.certregister` (the **Run now** button on `/scheduler`) enqueues one pull with the cron's own empty payload and dedupe key, so a hand-run and the cron collapse into one job. This is currently the ONLY way the register refreshes: `eudamed_certregister_enabled` is off by default, so the `eudamed.certregister` cron tick fires and does nothing. (The reason used to be that the `scheduler` service sat behind compose profile `full`; that service was deleted 2026-09-02 and the crons run on the queue, so the flag is now the whole story.) Everything on `/expiry` that reads `certificate_drift`, `certificate_drift_candidate`, `certificate_status_alert` and `certificate_gap` is therefore as old as the last hand-run.
 | `eudamed.sweep` | `handlers/eudamed.py:730` | nothing, never self-emits | `test_eudamed_handler.py` |
-| `report.weekly` | `handlers/report.py:165` | nothing | `test_report_handler.py` |
+| `report.weekly` | `handlers/report.py:166` | nothing | `test_report_handler.py` |
 | `scheduler.tick` | `handlers/scheduler_tick.py:92` | itself, forever (`queue.defer`) | `test_scheduler_tick.py` |
 | `playbook.reonboard` | `handlers/playbook_probe.py:86` | **nothing** — the only `app.crawl` consumer that emits no `fetch.url` | `test_playbook_probe.py`, `test_playbook_probe_web.py` |
-| `bc.push` | `handlers/bc_push.py:106` | nothing — a leaf, like `report.weekly` | `test_bc_push.py`, `test_bc_fields.py` |
+| `bc.push` | `handlers/bc_push.py:107` | nothing — a leaf, like `report.weekly` | `test_bc_push.py`, `test_bc_fields.py` |
 
 ## Per tag
 
@@ -102,6 +102,7 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 - emits: `gate.candidate` always, either `gate:{hash}:{rev}:mfr-binding` or `gate:{hash}:{rev}:{group_id}`
 - fails how: missing extraction row or incomplete required fields are suppressed and counted, job finishes `done` with no emit
 - note: every decision is an additive key on the emitted payload
+- note: the never-downgrade check (C7) is per article (migration 071, 2026-10-02): the candidate is compared with the current document, of the same type and regulation, of each article it names, not of its catalogue group. `older-than-current` (blocking) when older for any article; `superseded_by_doc_id` plus `auto-superseded` only when older for every article it names; `same-date-revision` when equal on any; `downgrade-uncomparable` when a date is missing. VALIDATE emits no `supersedes` (always null)
 - note: the extraction-shape flags (`ref-list-possibly-truncated`, `iso-without-standard-number`, both from `tiers.integrity_flags`) are computed BEFORE the C4 manufacturer-binding branch, so they ride BOTH routes. They sat after the binding return until 2026-09-09, which made `iso-without-standard-number` unreachable on exactly the population it exists for — a QMS certificate is manufacturer-scope by definition
 
 ### `gate.candidate`
@@ -109,6 +110,7 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 - writes: `document`, `item_document`, `evidence`, `manual_task`, `audit_log`
 - emits: nothing — terminal
 - fails how: a stale `extract_rev` is a counted no-op. Missing extraction raises. Unusable evidence raises. An UNATTRIBUTABLE manufacturer bind raises rather than promoting nothing ([gate-bind-zero-links], `gate.py:1223`) — that is a name resolving to no BC *codes*. A name that resolves fine but whose items carry no MD flag is **not** a fault and never was: since migration 053 it is a legitimate bind that records the manufacturer and links nothing
+- note: GATE no longer retires documents (2026-10-02, migration 071; `_apply_supersession` is deleted). Neither a production write nor `gate.apply approve` changes another document; the one chain pointer left is the task-5 fast path's `superseded_by` on the older candidate itself. Which document answers for an item is read from `item_document_production` / `document_current`
 - note: `TRUSTED_BASES` (`gate.py:47`) is what caps `name-family` / `fetch-context` / `ref-catalogue` at staged, backed structurally by the DB CHECK in migrations 005/021
 - note: both GATE handlers set `document.canonical_manufacturer` (migration 053). It is the CONFIRMED manufacturer, not the printed name in evidence; null means undecided, never "none". Sticky under re-upsert via `COALESCE(EXCLUDED..., document....)`
 
@@ -118,7 +120,7 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 - writes: `document`, `item_document`, `manual_task`, `audit_log`
 - emits: `discover.group` on reject with a `group_id`, interactive priority
 - fails how: every link-decision precondition raises rather than no-opping — a person put their name to it, so it dead-letters where somebody sees it. Idempotent re-delivery returns quietly
-- note: `reopen` (2026-09-04) is the only way back out of `rejected` and the only document decision whose precondition is a STATUS — it raises unless the document is currently rejected. It exists because making `rejected` sticky in `_upsert_document` closed the hole where any re-delivery silently un-rejected a document, and that hole was also the only escape. It deliberately does NOT cascade the links back: `reject` cascades them to `rejected` so none is left staged under a rejected document, and re-staging them would recreate exactly that state. Each returns through `reopen-link`
+- note: `reopen` (2026-09-04) is the only way back out of `rejected` and the only document decision whose precondition is a STATUS — it raises unless the document is currently `rejected` or `superseded` (`superseded` added 2026-10-02: the repair route for documents the old document-wide rule retired wrongly; their links were never touched, so they stay production). It exists because making `rejected` sticky in `_upsert_document` closed the hole where any re-delivery silently un-rejected a document, and that hole was also the only escape. It deliberately does NOT cascade the links back: `reject` cascades them to `rejected` so none is left staged under a rejected document, and re-staging them would recreate exactly that state. Each returns through `reopen-link`
 - note: human edits are written as T3 evidence, `tier='T3'`, `model_id=NULL`, `confidence=1.0`, pageless (`gate.py:1133`)
 - note: on `bind-manufacturer` the column is written BEFORE the links are derived, so a bind that links nothing still records the decision
 

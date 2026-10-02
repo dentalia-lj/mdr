@@ -84,17 +84,18 @@ def item_documents(
     relative, which is right for same-origin browser use and wrong for a
     webshop backend embedding our links in its own pages.
 
-    `include_superseded` additionally returns the documents this item's current
-    paperwork REPLACED, each carrying `status` and `superseded_by` so the chain
-    is walkable. A separate flag rather than a `view` value for the reason
-    `include_unlinked` is one on the manufacturer endpoint: `view` is the
-    PROJECTION, this is the ROW SET, and one knob answers one question. Each row also carries `current`: whether it
-    is the document that answers for this item (migration 071).
+    `include_superseded` returns every published document linked to this item,
+    not only the current ones, each carrying `status`, `superseded_by` and
+    `current` (whether it is the document that answers for this item, migration
+    071) so the history is readable. A separate flag rather than a `view` value
+    for the reason `include_unlinked` is one on the manufacturer endpoint:
+    `view` is the PROJECTION, this is the ROW SET, and one knob answers one
+    question.
 
-    Off by default, and the two extra fields appear only when it is on. For an
-    unflagged caller `status` is always "production" and `superseded_by` always
-    null -- constant fields that the batch endpoint would carry a hundred times
-    a call while telling nobody anything.
+    Off by default, and the three extra fields appear only when it is on. For
+    an unflagged caller `status` is always "production", `superseded_by` always
+    null and `current` always true -- constant fields that the batch endpoint
+    would carry a hundred times a call while telling nobody anything.
 
     Refused outright in the customer view: see `CUSTOMER_HISTORY_REFUSAL`.
     """
@@ -108,7 +109,7 @@ def item_documents(
         "WHERE m.item_ref = %s",
         (item_ref,),
     ).fetchone()
-    # Same projection either way bar the two history fields, so the flagged and
+    # Same projection either way bar the three history fields, so the flagged and
     # unflagged rows cannot drift apart about what a document looks like.
     extra = (", doc_status AS status, superseded_by, current "
              if include_superseded else "")

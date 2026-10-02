@@ -12,7 +12,7 @@ Normative sources (this spec adds only what they leave open — do not restate):
 
 | Method | Path | Returns |
 |---|---|---|
-| GET | `/api/items/{item_ref}/documents` | Production documents linked to one item (`?include_superseded` adds the chain) |
+| GET | `/api/items/{item_ref}/documents` | The current documents of one item, per type (`?include_superseded` returns every published document linked to it, with `current` per row) |
 | GET | `/api/documents/{doc_id}` | One production or superseded document + its complete evidence |
 | GET | `/api/kpi` | The KPI board (same numbers as `GET /`) |
 
@@ -92,34 +92,48 @@ invented.
 The same parameter applies to `GET /item/{item_ref}` (the BC item-card link),
 which shares this endpoint's implementation — `web/item_docs.py`.
 
-### `?include_superseded` (2026-09-16)
+### Which documents the default response returns (2026-10-02, migration 071)
 
-`include_superseded=true` widens the ROW SET to the documents this item's
-current paperwork **replaced** — the supersession chain a consumer reconciling
-older orders needs, and the one thing the registry knows about an item that a
-consumer previously could not reach at all. Off by default, so every existing
-response is unchanged.
+The default response returns the **current** documents per type for the item:
+one, or several when documents of that type carry the same issue date (all are
+current, no tiebreak). Among the item's published documents of a type, MDR is
+current over MDD whatever the dates, then the newest `validity_from`; undated
+documents rank below dated ones, and `n.a.` never outranks MDR. **The default
+response therefore shrinks for items that used to return several current
+documents of one type**: the older ones are history for that item now, and are
+reachable with `?include_superseded=true`.
+
+### `?include_superseded` (2026-09-16, widened 2026-10-02)
+
+`include_superseded=true` widens the ROW SET to **every published document
+linked to the item**, with `current` per row, so the history stays retrievable:
+the older and replaced paperwork a consumer reconciling older orders needs.
+Off by default, so a caller that never sets it gets the current documents only.
 
 A separate boolean rather than a `view` value, for the reason `include_unlinked`
 is one on `/api/manufacturers/{name}/documents` (§4b): `view` is the
 **projection**, this is the **row set**, and one knob answers one question.
 
-Flagged documents carry two extra fields, and only when the flag is on:
+Flagged documents carry three extra fields, and only when the flag is on:
 
-- **`status`** — `production` or `superseded`. Without it the caller cannot
-  tell which row is current.
-- **`superseded_by`** — the `doc_id` that replaced this one, `null` on a
-  current document. Chains are walkable: `document.superseded_by` is the same
-  pointer GATE writes (Invariant 5).
+- **`current`** — `true` when this is a document that answers for the item
+  (see above), `false` when it is history for this item. This, not `status`,
+  says which rows are current.
+- **`status`** — the document's own status, `production` or `superseded`. It is
+  not currency: a document the old document-wide rule marked `superseded` can
+  still be `current: true` for an item nothing newer covers.
+- **`superseded_by`** — the `doc_id` the auto-file fast path or the old rule
+  filed this document behind, `null` otherwise. `document.superseded_by` is the
+  pointer GATE writes.
 
 An unflagged response gains nothing. `status` would be the constant
-`"production"` and `superseded_by` the constant `null` for every row, and the
-batch endpoint would carry both up to a hundred times a call while telling
-nobody anything.
+`"production"`, `superseded_by` the constant `null` and `current` the constant
+`true` for every row, and the batch endpoint would carry them up to a hundred
+times a call while telling nobody anything.
 
 **Refused in the customer view.** `view=customer&include_superseded=true`
-returns `400`, not a silently dropped flag. A superseded document is by
-definition the paperwork we replaced; rendering it to a clinic as coverage is
+returns `400`, not a silently dropped flag. A history row is by
+definition paperwork that does not answer for the item; rendering it to a clinic as coverage is
 the exact harm the customer projection exists to prevent. The rule lives in
 `web/item_docs.py` (`CUSTOMER_HISTORY_REFUSAL`) and both routes translate its
 `ValueError`, so the single-item and batch endpoints cannot answer differently.
@@ -129,22 +143,22 @@ implementation but never passes the flag: the card is paperwork for a person
 handling one item today, and BC builds its links by string concatenation.
 
 **Expired is not superseded, and never needed a flag.** Neither view filters on
-expiry — `item_document_production` restricts on status alone — so an expired
-production document has always been returned, carrying `valid_to` and
+expiry, so an expired current document has always been returned, carrying `valid_to` and
 `expiry_basis` for the caller to act on. Measured 2026-09-16: 86 expired
 production documents reaching 1 115 items through 1 184 production links, all
 already visible.
 
 ### Visibility rule
 
-Verbatim from `migrations/005_registry.sql`: **a document is visible for an item only when both the document and that item's link are production.** Concretely, `item_document.status = 'production' AND document.status = 'production'` — encoded once, in `item_document_production`, and never reimplemented as an ad hoc join (K2's note in `docs/specs/kpi.md` explains why: reimplementing it is exactly the drift this invariant exists to prevent).
+Verbatim from `migrations/005_registry.sql`: **a document is visible for an item only when both the document and that item's link are production.** Since migration 071 the document half is the per-item currency rule: the item's published documents (`production` or `superseded`) on production links, narrowed to the current one per type. Encoded once, in `item_document_production`, and never reimplemented as an ad hoc join (K2's note in `docs/specs/kpi.md` explains why: reimplementing it is exactly the drift this invariant exists to prevent).
 
 `?include_superseded` moves exactly one half of that rule, in one view
-(`item_document_history`, migration 070), and the other half not at all:
+(`item_document_history`, migration 070, `current` added by 071), and the other
+half not at all:
 
 | | default | `?include_superseded=true` |
 |---|---|---|
-| document status | `production` | `production`, `superseded` |
+| documents | the current one(s) per type | every published document (`production`, `superseded`), `current` per row |
 | link status | `production` | `production` |
 
 `staged` documents stay invisible because they are ungated machine output;
@@ -153,11 +167,11 @@ coverage (C15). A non-production **link** is a human saying this document does
 not cover this item, so no flag may override it in either direction — a
 retracted link is unreachable through either view by construction.
 
-`item_document_history` is a second view rather than a widening of
-`item_document_production`, deliberately: `web/registry.py`, `web/catalogue.py`,
-the KPI board and `046_eudamed_gap_view` all read the production view, and
-relaxing its status filter would change what all four mean without a single
-call site being edited.
+`item_document_production` is the current rows of `item_document_history`
+(migration 071), so the two cannot drift apart about which document answers:
+`web/registry.py`, `web/catalogue.py`, the KPI board and `046_eudamed_gap_view`
+all read the production view and get the current documents without editing a
+call site.
 
 ## 3. `GET /api/documents/{doc_id}`
 

@@ -3,9 +3,11 @@ writers (inv. 1). Hand-crafted candidate payloads per the done-criterion.
 
 Tests don't commit (conn fixture rolls back). Score comes from the seeded
 extraction's (calibrated) confidences; ref_gate/flags/links come from the
-payload. C6 supersession persistence ([gate-c6] ruling, 2026-07-31) is covered
-near the bottom of this file — both the gate.candidate production path and the
-gate.apply approve (human) path.
+payload. The [gate-c6] persistence of 2026-07-31 (a newer document retiring an
+older one at production or approval) was removed by per-item currency
+(2026-10-02, migration 071); the tests near the bottom of this file now pin that
+neither the gate.candidate production path nor gate.apply approve retires
+anything.
 """
 
 from __future__ import annotations
@@ -1343,7 +1345,7 @@ def test_production_gate_is_idempotent(conn):
     assert conn.execute("SELECT count(*) c FROM audit_log WHERE doc_id=%s", (r1["doc_id"],)).fetchone()["c"] == 1
 
 
-# --- C6 supersession persistence ([gate-c6] ruling, 2026-07-31) ------------------
+# --- C6 supersession persistence, removed 2026-10-02 (per-item currency) --------
 
 def test_a_newer_production_candidate_retires_nothing(conn):
     """Per-item currency (migration 071): the view decides which document
@@ -1415,9 +1417,9 @@ def test_related_doc_id_persisted_regardless_of_disposition(conn):
 # "older-than-current" (back in BLOCKING_FLAGS) forces `manual` exactly as it
 # did before task 5 — never `production`, never a silent downgrade.
 #
-# This is the INVERSE of C6 (_apply_supersession): the incoming doc is OLDER,
-# not newer, so the chain pointer is written directly rather than through that
-# helper (which would re-check C6 in the wrong direction).
+# This is the only route to a chain pointer left (per-item currency removed
+# forward supersession): the incoming doc is OLDER than the current document of
+# every article it names, so its own `superseded_by` is written directly.
 
 def _older_fields(validity_from_conf=0.97, **overrides):
     """Fields for an auto-supersede candidate: type/regulation/coverage_scope at
@@ -1479,7 +1481,7 @@ def test_auto_superseded_redelivery_is_idempotent(conn):
         "SELECT count(*) AS n FROM audit_log WHERE doc_id=%s AND event='auto-superseded'",
         (out1["doc_id"],)
     ).fetchone()["n"]
-    assert n == 1, "redelivery is a no-op, same convention as _apply_supersession"
+    assert n == 1, "redelivery is a no-op, same convention as the other audited GATE writes"
     row = conn.execute(
         "SELECT superseded_by FROM document WHERE doc_id=%s", (out1["doc_id"],)
     ).fetchone()
@@ -1757,9 +1759,9 @@ def test_auto_supersede_rechecks_chain_identity_at_write_time(conn, target_type,
     longer the same (subject, type, regulation) -- an MDR document filed into an
     MDD chain, which invariant 5 forbids outright.
 
-    `_apply_supersession` re-reads BOTH documents live for exactly this reason
+    `_assert_chain_identity` re-reads BOTH documents live for exactly this reason
     and raises rather than skipping (a mismatch is an upstream bug, not a data
-    condition). Both routes to a chain pointer must be guarded identically."""
+    condition)."""
     newer = conn.execute(
         "INSERT INTO document (type, regulation, validity_from, status, content_hash, "
         "archive_url, coverage_scope) VALUES (%s,%s,'2025-01-01','production',%s,%s,'group') "

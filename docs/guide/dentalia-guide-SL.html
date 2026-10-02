@@ -869,7 +869,8 @@ tbody tr:last-child td{border-bottom:0}
 <p>Skoraj nič — z eno izjemo, in ta je povrnljiva.</p>
 <ul>
 <li>Nič tukaj ne izbriše dokumenta, ga ne odobri in ne objavi. Odobritev se zgodi na <a href="#pages/review">Review</a>.</li>
-<li><strong>Izjema: Reopen this document.</strong> Pojavi se le pri dokumentu, ki ga je nekdo že zavrnil, in ga vrne na <a href="#pages/review">Review</a> med čakajoče. Ga <strong>ne</strong> odobri in ne vrne izdelkov, na katere je bil vezan — ti ostanejo zavrnjeni, dokler ni vsak posebej ponovno odprt. Če ga po pomoti ponovno odprete, ga na Review preprosto znova zavrnite. Za ime vas vpraša zato, ker se razveljavitev tuje odločitve zabeleži.</li>
+<li><strong>Izjema: Reopen this document.</strong> Pojavi se le pri dokumentu, ki ga je nekdo že zavrnil (ali pri nadomeščenem, glejte naslednjo točko), in ga vrne na <a href="#pages/review">Review</a> med čakajoče. Ga <strong>ne</strong> odobri in ne vrne izdelkov, na katere je bil vezan — ti ostanejo zavrnjeni, dokler ni vsak posebej ponovno odprt. Če ga po pomoti ponovno odprete, ga na Review preprosto znova zavrnite. Za ime vas vpraša zato, ker se razveljavitev tuje odločitve zabeleži.</li>
+<li><strong>Reopen for review pri nadomeščenem dokumentu.</strong> Starejše pravilo je dokument označilo kot nadomeščen, kadar si je z novejšim delil družino izdelkov, tudi če sta pokrivala različne izdelke. Tak dokument pokaže opombo o tem in ga je mogoče znova odpreti z njegove strani. Povezave z izdelki ostanejo, kot so, zato ga z ponovno odobritvijo na Review spet štejete za te izdelke. Dokument, ki kaže le opombo o starem pravilu in ni označen kot nadomeščen, ne potrebuje ničesar: oznaka ne velja več.</li>
 <li><strong>Look up in EUDAMED</strong> le vpraša evropsko bazo podatkov, kaj ve o napravi tega dokumenta. Na dokumentu samem to nič ne spremeni.</li>
 <li>Če gumb vrne napako, se ni zgodilo nič. Poskusite znova ali vprašajte razvijalca.</li>
 </ul>
@@ -980,7 +981,7 @@ tbody tr:last-child td{border-bottom:0}
 </tr>
 <tr>
 <td><strong>Reopen this document</strong></td>
-<td>Vrne zavrnjen dokument na Review. Edini način, da se zavrnitev razveljavi</td>
+<td>Vrne zavrnjen ali nadomeščen dokument na Review. Edini način, da se zavrnitev razveljavi</td>
 </tr>
 </tbody></table></div>
 <hr>
@@ -2110,7 +2111,7 @@ tbody tr:last-child td{border-bottom:0}
 </tr>
 <tr>
 <td><strong>Superseded</strong></td>
-<td>Nadomeščeno z novejšim dokumentom. Ohranjeno, ni več aktualno</td>
+<td>Vloženo za novejši dokument. Ohranjeno, za izdelek pa šteje le tam, kjer ga ne pokriva noben novejši dokument iste vrste</td>
 <td><strong>Replaced</strong></td>
 </tr>
 <tr>
@@ -2144,7 +2145,7 @@ tbody tr:last-child td{border-bottom:0}
 <ul>
 <li>Dokument se pojavi pod <strong>Documents</strong> in šteje v vaše številke pokritosti.</li>
 <li>Vsak artikel, naveden nad gumbom, ki ste ga pritisnili, ga zdaj prikazuje. Artikli, povezani le po šibkem ujemanju, čakajo pod <strong>Links waiting for review on published documents</strong> na svoj <strong>Covers this item</strong> ali <strong>Does not</strong>.</li>
-<li>Če nadomešča starejšega, je ta označen kot <em>nadomeščen z novejšim</em>. Ohranjen je, ne izbrisan — še vedno si ga lahko ogledate, prav tako ga je še vedno mogoče pokazati revizorju.</li>
+<li>Odobritev nikoli ne umakne drugega dokumenta. Vsak izdelek prikaže dokument, ki velja zanj: pri vsaki vrsti dokumenta zmaga najnovejši, dokument po MDR pa ima prednost pred dokumentom po MDD. Starejši dokument ostane pri izdelku kot zgodovina. Ohranjen je, ne izbrisan — še vedno si ga lahko ogledate, prav tako ga je še vedno mogoče pokazati revizorju.</li>
 <li>Vsako dejstvo, ki ga je sistem prebral s strani — vrsto, datume, številko certifikata, številke artiklov — je shranjeno skupaj s stranjo, s katere je bilo prebrano. Če vas revizor vpraša, od kod izvira datum, mu lahko pokažete.</li>
 </ul>
 <hr>
@@ -2316,7 +2317,7 @@ tbody tr:last-child td{border-bottom:0}
 <p><strong>Ta stran je samo za branje.</strong> Ničesar na njej ni mogoče urediti ali odstraniti. V tem je njen smisel: zapis, ki bi ga lahko spremenili, ni zapis.</p>
 <hr>
 <h2 id="pages/decisions--kaj-je-to">Kaj je to</h2>
-<p>Vsakič, ko je dokument objavljen, vložen, zavrnjen, nadomeščen ali ko je povezava med dokumentom in izdelkom potrjena ali umaknjena, sistem zapiše vrstico o tem, kaj se je zgodilo, kdo je to storil in kdaj. Ta stran je ta seznam.</p>
+<p>Vsakič, ko je dokument objavljen, vložen, zavrnjen, vložen za novejši dokument ali ko je povezava med dokumentom in izdelkom potrjena ali umaknjena, sistem zapiše vrstico o tem, kaj se je zgodilo, kdo je to storil in kdaj. Ta stran je ta seznam.</p>
 <p>Odločitve, ki jih sprejme oseba, nosijo vašo prijavo. Odločitve, ki jih sistem sprejme sam, nosijo ime dela sistema, ki jih je sprejel.</p>
 <hr>
 <h2 id="pages/decisions--kako-brati-vrstico">Kako brati vrstico</h2>
@@ -4425,7 +4426,7 @@ tbody tr:last-child td{border-bottom:0}
 </tr>
 <tr>
 <td><strong>Replaced</strong></td>
-<td>Novejši dokument je zavzel njegovo mesto. Ohranjen, ni več veljaven</td>
+<td>Vložen za novejši dokument. Ohranjen. Za izdelek šteje le tam, kjer ga ne pokriva noben novejši dokument iste vrste</td>
 <td><code>superseded</code></td>
 </tr>
 <tr>

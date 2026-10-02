@@ -13,8 +13,8 @@ against deterministic rules, and either machine-approved or handed to a
 human. This is that document's journey: from the BC row that first implies
 it should exist, to a support rep or the webshop seeing it on
 `/item/{item_ref}`, to the day it lapses and a renewal request goes out —
-and, if a newer document arrives first, to the day it is quietly filed into
-a supersession chain instead.
+and, if an older document arrives after a newer one, to the day it is quietly
+filed behind the newer one instead.
 
 ## Where
 
@@ -137,9 +137,13 @@ the full evaluation order). Two outcomes matter most:
    - **The normal path** runs the REF gate (C1: the pair
      `(canonical_manufacturer, mfr_ref)`, never a bare number — see
      `00-orientation.md`'s invariant table), date sanity, the never-downgrade
-     check (C7 — an older candidate, both dates present, additively emits
+     check (C7, per article the candidate names: it is compared with the
+     current document of the same type and regulation of each of its own
+     articles; older for every article, both dates present, additively emits
      `superseded_by_doc_id` *and keeps* the blocking `older-than-current`
-     flag), and same-subject supersession (C6 — MDR never supersedes MDD).
+     flag; older for only some keeps the flag alone). It emits no
+     `supersedes`: which document answers for an item is the view's call
+     (migration 071), not a retirement VALIDATE proposes.
    Always emits `gate.candidate` — the mfr-binding route above, or
    `gate:{hash}:{rev}:{group_id}` otherwise.
 
@@ -189,26 +193,26 @@ run in parallel:
 
 **8. Visible on a product.** A `production` document is now servable:
 `/item/{item_ref}?k=` (the BC hyperlink target, `docs/runbook.md`'s Web UI
-table) and `/api/items/{item_ref}/documents` both read straight off
-`item_document`/`document` at `status='production'`. A `staged` or `manual`
+table) and `/api/items/{item_ref}/documents` both read the current documents
+per item and type from `item_document_production` (migration 071: MDR first,
+then the newest `validity_from`, same-date documents all current). A `staged` or `manual`
 document is not — it sits in `/staging` or `/manual` until a human acts.
 
 **9. `gate.apply` — a human decides.**
-Three decisions that matter here (C17 link-only decisions —
+Four decisions that matter here (C17 link-only decisions —
 `confirm-link`/`reject-link`/`reopen-link` — return before touching
 `document` at all, `app/handlers/gate.py:1320-1321`):
    - **`approve`**: promotes the document to `production`
      (`_promote`, `gate.py:1142-1143`), promotes any staged link whose basis
      is in `TRUSTED_BASES` alongside it (`_promote_pending_links`,
      `:1146-1152`) — `name-family`/`fetch-context` links stay staged even
-     now. **This is the human half of supersession (C6)**: a staged
-     candidate that carried a `supersedes` target (written sticky at
-     candidate time, inert while merely staged) only acts on it here, via
-     `_apply_supersession` (`gate.py:604`) —
-     `test_staged_candidate_does_not_supersede_until_gate_apply_approves`
-     (`tests/test_gate_candidate_handler.py:1370`) is the contrast case to
-     step 7's machine fast path
-     (`test_production_candidate_supersedes_prior_production_doc`, `:1348`).
+     now. **Approval retires nothing.** Since per-item currency (2026-10-02,
+     migration 071) neither `approve` nor a candidate landing on production
+     changes another document, and VALIDATE emits no `supersedes` to apply:
+     the view decides which document answers for each item
+     (`test_approving_a_newer_document_retires_nothing`,
+     `tests/test_gate_candidate_handler.py:1370`;
+     `test_a_newer_production_candidate_retires_nothing`, `:1350`).
    - **`reject`**: sets the document `rejected` and **cascades every one of
      its links to `rejected`** — un-binding is reject-plus-cascade, no link
      may stay `production` or `staged` under a rejected document
@@ -223,6 +227,10 @@ Three decisions that matter here (C17 link-only decisions —
      `tests/test_gate_apply_handler.py:88`). Human edits are written as T3
      evidence (`tier='T3'`, `model_id=NULL`, `confidence=1.0`, pageless —
      [evidence-page] ruling).
+   - **`reopen`**: the way back out of `rejected` or `superseded` (the
+     latter widened 2026-10-02, the repair route for documents the old
+     document-wide rule retired wrongly): sets the document `staged` for
+     review again and raises on any other status. Links are not cascaded.
    - **`bind-manufacturer`**: the person's version of step 7's mfr-binding
      route, for the `staged` case the machine declined to settle itself.
 
@@ -242,10 +250,11 @@ system never sends** — a person reviews the draft at `/drafts/{id}` and sends
 by hand from `mdr@dentalia.si`; `sent` is a human record-keeping state, not a
 side effect of any job. If a manufacturer responds with a newer document
 before or after that draft goes out, it re-enters this same walkthrough from
-step 3/4 and, once it validates as covering the *same* (coverage subject,
-type, regulation) as the current production document, step 7's C6/auto-file
-logic or step 9's human-approve path is what actually retires the old one
-into the superseded chain — there is no separate "renewal" write path.
+step 3/4 and, once it is approved it becomes the current document for the items it
+covers (step 8: the newest `validity_from` answers per item and type), and the
+old one stays attached as history; step 7's auto-file path files an
+older arrival behind the current one. There is no separate "renewal" write
+path.
 
 ## Rules
 
@@ -267,9 +276,9 @@ The invariants load-bearing for this specific journey (full 12 in
   narrow and guarded four ways (step 7); any guard failure is
   `older-than-current` forcing `manual`, exactly as if the exception didn't
   exist.
-- **Invariant 5** — supersession only within identical (coverage subject,
-  type, regulation); MDR never supersedes MDD; a staged candidate never
-  supersedes anything until a human approves it.
+- **Invariant 5** — currency is per item and per type (migration 071): MDR
+  first, then the newest `validity_from`, same-date documents all current;
+  nothing retires a whole document.
 - **Invariant 6** — unchanged content is never re-fetched or re-parsed (the
   fetch ledger + hash-dedupe in steps 3-4).
 
@@ -317,7 +326,7 @@ branch-crossing tests cited inline above (`test_hash_dedupe_emits_validate_no_ar
 `test_mfr_binding_auto_binds_when_the_name_resolves_to_one_manufacturer`,
 `test_reject_cascades_link_statuses_with_audit`,
 `test_auto_superseded_candidate_files_without_a_manual_task`,
-`test_staged_candidate_does_not_supersede_until_gate_apply_approves`) are the
+`test_approving_a_newer_document_retires_nothing`) are the
 ones that actually exercise the seams between stages, as opposed to one
 stage's internal rules — start there if a change touches how two stages hand
 off to each other. Run selection follows the same rule as everywhere else

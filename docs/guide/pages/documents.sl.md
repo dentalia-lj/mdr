@@ -14,11 +14,18 @@ Skoraj nič — z eno izjemo, in ta je povrnljiva.
 - Nič tukaj ne izbriše dokumenta, ga ne odobri in ne objavi. Odobritev se
   zgodi na [Review](review.sl.md).
 - **Izjema: Reopen this document.** Pojavi se le pri dokumentu, ki ga je
-  nekdo že zavrnil, in ga vrne na [Review](review.sl.md) med čakajoče. Ga
+  nekdo že zavrnil (ali pri nadomeščenem, glejte naslednjo točko), in ga vrne na [Review](review.sl.md) med čakajoče. Ga
   **ne** odobri in ne vrne izdelkov, na katere je bil vezan — ti ostanejo
   zavrnjeni, dokler ni vsak posebej ponovno odprt. Če ga po pomoti ponovno
   odprete, ga na Review preprosto znova zavrnite. Za ime vas vpraša zato, ker
   se razveljavitev tuje odločitve zabeleži.
+- **Reopen for review pri nadomeščenem dokumentu.** Starejše pravilo je dokument
+  označilo kot nadomeščen, kadar si je z novejšim delil družino izdelkov, tudi
+  če sta pokrivala različne izdelke. Tak dokument pokaže opombo o tem in ga je
+  mogoče znova odpreti z njegove strani. Povezave z izdelki ostanejo, kot so,
+  zato ga z ponovno odobritvijo na Review spet štejete za te izdelke. Dokument,
+  ki kaže le opombo o starem pravilu in ni označen kot nadomeščen, ne potrebuje
+  ničesar: oznaka ne velja več.
 - **Look up in EUDAMED** le vpraša evropsko bazo podatkov, kaj ve o napravi
   tega dokumenta. Na dokumentu samem to nič ne spremeni.
 - Če gumb vrne napako, se ni zgodilo nič. Poskusite znova ali vprašajte
@@ -112,7 +119,7 @@ prazno, če želite brskati po vsem.
 | **Cited certificate** | Certifikat priglašenega organa, na katerega se ta izjava sklicuje, če obstaja |
 | A date marked *(review)* or *(inherited)* | Ni resničen datum poteka, natisnjen na dokumentu — glejte [petletno pravilo](../glossary.sl.md) |
 | **Where every value came from** | Dokazi za vsako dejstvo, zloženi pod **Technical details** skupaj s prstnim odtisom datoteke in podlago, na kateri je bila narejena vsaka povezava do izdelka. Odprite, kadar vpraša presojevalec; pri vsakdanjem delu spreglejte |
-| **Reopen this document** | Vrne zavrnjen dokument na Review. Edini način, da se zavrnitev razveljavi |
+| **Reopen this document** | Vrne zavrnjen ali nadomeščen dokument na Review. Edini način, da se zavrnitev razveljavi |
 
 ---
 

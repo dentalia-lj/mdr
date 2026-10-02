@@ -14,12 +14,19 @@ Almost nothing — with one exception, and it is reversible.
 - Nothing here deletes a document, approves it, or publishes it. Approving
   happens on [Review](review.md).
 - **The exception: Reopen this document.** It appears only on a document
-  somebody has already rejected, and it puts that document back into
+  somebody has already rejected (or on a replaced one, see the next point), and it puts that document back into
   [Review](review.md) as waiting. It does **not** approve it and it does not
   bring back the products it was linked to — those stay rejected until each is
   reopened on its own. If you reopen one by mistake, reject it again on Review.
   You are asked for your name because undoing somebody else's decision is
   recorded.
+- **Reopen for review on a replaced document.** An older rule marked a document
+  as replaced whenever a newer one shared a product family with it, even when
+  the two covered different products. Such a document shows a note saying so
+  and can be reopened from its page. Its product links stay as they are, so
+  approving it again on Review makes it count for those products again. A
+  document that shows only a note about the old rule, and is not marked
+  replaced, needs nothing: the mark no longer applies.
 - **Look up in EUDAMED** only asks a European database what it knows about this
   document's device. It does not change anything about the document itself.
 - If a button gives you an error, nothing happened. Try again, or ask a
@@ -109,7 +116,7 @@ to browse everything.
 |---|---|
 | The small coloured label next to a document (*Published*, *Waiting for review*, *On file*, *Replaced*, *Rejected*) | See [document status](../glossary.md#document-status) |
 | **Type**, shown as *Declaration of Conformity*, *EC certificate*, *Instructions for use*, *ISO certificate* | What kind of document it is. The short codes the system stores are not shown |
-| **Reopen this document** | Put a rejected document back into Review. The only way to undo a rejection |
+| **Reopen this document** | Put a rejected or replaced document back into Review. The only way to undo a rejection |
 | **Coverage scope**, shown as *group* | This document covers one named family of products |
 | **Coverage scope**, shown as *manufacturer* | This document covers everything you stock from that supplier |
 | **Cited certificate** | The notified-body certificate this declaration refers to, if any |

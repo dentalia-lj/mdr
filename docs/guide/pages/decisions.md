@@ -12,7 +12,7 @@ point of it: a record you could change is not a record.
 
 ## What this is
 
-Every time a document is published, filed, rejected, superseded, or a link
+Every time a document is published, filed, rejected, filed behind a newer document, or a link
 between a document and a product is confirmed or withdrawn, the system writes a
 line saying what happened, who did it and when. This page is that list.
 

@@ -6,7 +6,7 @@ What the system is and how the pieces fit. Contracts (job types, payloads, table
 
 Compliance document registry for Dentalia's medical-device catalogue (Ljubljana ~16k items, Zagreb ~100k). The pipeline discovers, fetches, extracts, validates, and stores MDR/MDD documents (DoC, EC cert, IFU, ISO) with per-value evidence. Everything serves two outputs:
 
-1. A database linking BC `item_ref` -> N evidenced compliance documents (typed, dated, supersession-chained).
+1. A database linking BC `item_ref` -> N evidenced compliance documents (typed, dated, current per item and type).
 2. A deduplicated, hash-addressed file archive under our control (`archive_url`).
 
 Deterministic-by-default, AI-on-exception. Steady-state cost target EUR 10-40/month.
@@ -69,7 +69,7 @@ Thirty-two migration files (numbered through `031_extraction_playbook_rev.sql`),
 | `013_scheduler.sql` | `report.weekly` job type + `scheduler_run(name, period_key)` restart-safety ledger (PHASES.md GAP A/B) |
 | `014_evidence_rev.sql` | `evidence.extract_rev`: a re-extraction's evidence is scoped to the revision that produced it, never a stale rev (gap `gate-evidence`) |
 | `014_upload.sql` | `upload.ingest` job type + `upload_inbox` transient spool (web-document-upload slice) — `dentalia_api` gets INSERT + sequence USAGE only, worker keeps SELECT/DELETE |
-| `015_supersession.sql` | `document.supersedes`: persists VALIDATE's computed supersession target at production transition (gap `gate-c6`) |
+| `015_supersession.sql` | `document.supersedes`: persisted VALIDATE's computed supersession target at production transition (gap `gate-c6`); no longer written since 071 |
 | `016_vendor_master.sql` | `vendor_master`: mirror of BC's manufacturer code -> name master (390 rows); read only by `playbooks sync` |
 | `017_manufacturer_alias_source.sql` | `manufacturer_alias.source`: provenance tag (`self-seed` / `vendor-master` / `playbook`) for each alias row |
 | `018_document_text.sql` | `document_text`: parsed PDF text per content hash, written by `extract.doc` before the tier ladder runs (`app/extract/text_store.py`) |
@@ -86,6 +86,7 @@ Thirty-two migration files (numbered through `031_extraction_playbook_rev.sql`),
 | `029_email_outbound.sql` | S2.4 outbound: `renewal_request` extended, `renewal_request_document`, `email_draft`, and the cadence guard `renewal_request_cadence_key` — one renewal mail per manufacturer per period, enforced by a partial unique index rather than by handler logic. `dentalia_api` gets SELECT + UPDATE on `email_draft` and nothing else: a person edits and releases a draft, the system never sends it (client ruling, spec §7.1) |
 | `030_email_body_summary.sql` | `body_summary` + `summary_intent` / `summary_status` / `summary_model` / tokens / `summary_cost_usd` on `email_poll_log`: what an inbound message ASKED FOR, without keeping what it said. The body is read at poll time, compressed by the cheap tier and dropped — a compliance registry keeps documents for ten years, and supplier correspondence is not a document. UI context only, never joined, never re-read (invariant 12, widened + ratified 2026-08-20) |
 | `031_extraction_playbook_rev.sql` | `extraction_attempt.playbook_slug`/`playbook_rev`: which playbook, if any, steered this read, and at what revision. `model_id` already records which MODEL read the document, but from S1.7 onward a playbook's lexicons and hints shape the read too, and evidence that does not name the rules that shaped it is not reproducible; `extract_rev` does not cover this, since it is a per-`content_hash` attempt counter, not a record of which rules were in force. Both nullable — most documents are claimed by no playbook, and NULL is the honest answer for them |
+| `071_per_item_currency.sql` | per-item currency: `item_document_history` gains `current`, `item_document_production` becomes its current rows, new view `document_current` (rulings 2026-10-02) |
 
 Field-level shapes live in [dentalia-schema-sketch.md](dentalia-schema-sketch.md); the tag -> table access matrix there says which handler may touch which table.
 
@@ -109,6 +110,6 @@ Python 3.12+, synchronous throughout (no asyncio: the workload is polite-rate fe
 
 - Nothing downstream of INGEST/FETCH may know which adapter implementation is live (`app/adapters/`).
 - A stage may only emit the job types listed in its PRD Emits row.
-- Never downgrade, never delete: older candidates flag rather than overwrite; supersession is append-only within identical `(coverage subject, type, regulation)`; MDR never supersedes MDD.
+- Never downgrade, never delete: older candidates flag rather than overwrite; currency is per item and type (migration 071: MDR first, then the newest `validity_from`) and nothing retires a whole document.
 - Unchanged content is never re-fetched or re-parsed (fetch ledger).
 - Audit entries are self-contained (`job_snapshot` jsonb); deleting every `job` row must leave the audit trail interpretable.

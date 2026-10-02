@@ -97,7 +97,7 @@ and this one is a bug.
 |---|---|
 | [dev/README.md](dev/README.md) | The ownership table: which doc owns which topic, and what this folder deliberately does not cover |
 | [dev/00-orientation.md](dev/00-orientation.md) | First day: clone, stack up, migrate, tests green, first change. The migration ordering rule that bites (lexicographic, not numeric) and the test-selection rule reproduced from CLAUDE.md |
-| [dev/01-lifecycle.md](dev/01-lifecycle.md) | One document end to end **as built**, not as designed — including hash-dedupe re-entry, the manufacturer-binding short circuit, the human-reject cascade, and both supersession paths |
+| [dev/01-lifecycle.md](dev/01-lifecycle.md) | One document end to end **as built**, not as designed — including hash-dedupe re-entry, the manufacturer-binding short circuit, the human-reject cascade, and the auto-file fast path |
 | [dev/handlers.md](dev/handlers.md) | Index over all 19 queue tags: entry point, what it consumes, writes and emits, how it fails, which test pins it. The handbook owns the pseudo-code; this owns the map |
 | [dev/web.md](dev/web.md) | The web layer: module split, route registration, the four caller classes and default-deny policy, HTMX conventions, and the producer-only rule with its named exceptions |
 | [dev/extraction.md](dev/extraction.md) | The T0→T1→T2→T3 ladder as built. Where each evidence field is really constructed — several at GATE, not in `app/extract/` at all — and why the escalation threshold is **not** `cfg.gate.high` |

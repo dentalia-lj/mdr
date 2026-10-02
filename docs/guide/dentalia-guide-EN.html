@@ -866,7 +866,8 @@ tbody tr:last-child td{border-bottom:0}
 <p>Almost nothing — with one exception, and it is reversible.</p>
 <ul>
 <li>Nothing here deletes a document, approves it, or publishes it. Approving happens on <a href="#pages/review">Review</a>.</li>
-<li><strong>The exception: Reopen this document.</strong> It appears only on a document somebody has already rejected, and it puts that document back into <a href="#pages/review">Review</a> as waiting. It does <strong>not</strong> approve it and it does not bring back the products it was linked to — those stay rejected until each is reopened on its own. If you reopen one by mistake, reject it again on Review. You are asked for your name because undoing somebody else's decision is recorded.</li>
+<li><strong>The exception: Reopen this document.</strong> It appears only on a document somebody has already rejected (or on a replaced one, see the next point), and it puts that document back into <a href="#pages/review">Review</a> as waiting. It does <strong>not</strong> approve it and it does not bring back the products it was linked to — those stay rejected until each is reopened on its own. If you reopen one by mistake, reject it again on Review. You are asked for your name because undoing somebody else's decision is recorded.</li>
+<li><strong>Reopen for review on a replaced document.</strong> An older rule marked a document as replaced whenever a newer one shared a product family with it, even when the two covered different products. Such a document shows a note saying so and can be reopened from its page. Its product links stay as they are, so approving it again on Review makes it count for those products again. A document that shows only a note about the old rule, and is not marked replaced, needs nothing: the mark no longer applies.</li>
 <li><strong>Look up in EUDAMED</strong> only asks a European database what it knows about this document's device. It does not change anything about the document itself.</li>
 <li>If a button gives you an error, nothing happened. Try again, or ask a developer.</li>
 </ul>
@@ -957,7 +958,7 @@ tbody tr:last-child td{border-bottom:0}
 </tr>
 <tr>
 <td><strong>Reopen this document</strong></td>
-<td>Put a rejected document back into Review. The only way to undo a rejection</td>
+<td>Put a rejected or replaced document back into Review. The only way to undo a rejection</td>
 </tr>
 <tr>
 <td><strong>Coverage scope</strong>, shown as <em>group</em></td>
@@ -2108,7 +2109,7 @@ tbody tr:last-child td{border-bottom:0}
 </tr>
 <tr>
 <td><strong>Superseded</strong></td>
-<td>Replaced by a newer document. Kept, no longer current</td>
+<td>Filed behind a newer document. Kept, and it counts for an item only where no newer document of the same type covers that item</td>
 <td><strong>Replaced</strong></td>
 </tr>
 <tr>
@@ -2142,7 +2143,7 @@ tbody tr:last-child td{border-bottom:0}
 <ul>
 <li>The document appears under <strong>Documents</strong> and counts towards your coverage figures.</li>
 <li>Every item listed above the button you pressed now shows it. Items linked only by a weak match wait under <strong>Links waiting for review on published documents</strong> for their own <strong>Covers this item</strong> or <strong>Does not</strong>.</li>
-<li>If it replaces an older one, the older one is marked <em>replaced by a newer one</em>. It is kept, not deleted — you can still see it, and an auditor can still be shown it.</li>
+<li>Approving never retires another document. Each item shows the document that answers for it: for each type of document, the newest one wins, and a document under MDR comes before one under MDD. An older document stays attached to the item as history. It is kept, not deleted — you can still see it, and an auditor can still be shown it.</li>
 <li>Every fact the system read off the page — the type, the dates, the certificate number, the product numbers — is stored together with the page it was read from. If an auditor asks where a date came from, you can show them.</li>
 </ul>
 <hr>
@@ -2314,7 +2315,7 @@ tbody tr:last-child td{border-bottom:0}
 <p><strong>This page is read-only.</strong> Nothing here can be edited or removed. That is the point of it: a record you could change is not a record.</p>
 <hr>
 <h2 id="pages/decisions--what-this-is">What this is</h2>
-<p>Every time a document is published, filed, rejected, superseded, or a link between a document and a product is confirmed or withdrawn, the system writes a line saying what happened, who did it and when. This page is that list.</p>
+<p>Every time a document is published, filed, rejected, filed behind a newer document, or a link between a document and a product is confirmed or withdrawn, the system writes a line saying what happened, who did it and when. This page is that list.</p>
 <p>Decisions made by a person carry your login. Decisions the system made on its own carry the name of the part that made them.</p>
 <hr>
 <h2 id="pages/decisions--reading-a-row">Reading a row</h2>
@@ -4424,7 +4425,7 @@ tbody tr:last-child td{border-bottom:0}
 </tr>
 <tr>
 <td><strong>Replaced</strong></td>
-<td>A newer document has taken its place. Kept, no longer current</td>
+<td>Filed behind a newer document. Kept on file. It counts for an item only where no newer document of the same type covers that item</td>
 <td><code>superseded</code></td>
 </tr>
 <tr>

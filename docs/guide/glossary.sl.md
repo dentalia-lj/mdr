@@ -228,7 +228,7 @@ Videli jih boste kot barvne oznake.
 | **Published** | Šteje se. Vidno povsod | `production` |
 | **Waiting for review** | Čaka na osebo. Še se ne šteje | `staged` |
 | **Rejected** | Nekdo se je odločil proti njemu. Ostane v arhivu, se ne šteje | `rejected` |
-| **Replaced** | Novejši dokument je zavzel njegovo mesto. Ohranjen, ni več veljaven | `superseded` |
+| **Replaced** | Vložen za novejši dokument. Ohranjen. Za izdelek šteje le tam, kjer ga ne pokriva noben novejši dokument iste vrste | `superseded` |
 | **On file** | Pristen dokument znanega dobavitelja, ki ne pokriva nobenega artikla, ki ga imate na zalogi. Pravilen, popoln, v nikogaršnji čakalni vrsti | `filed` |
 
 Stolpec **Shranjeno kot** je tisto, kar hrani podatkovna baza in po čemer filtrira

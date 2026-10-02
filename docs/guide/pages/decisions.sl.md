@@ -12,7 +12,7 @@ V tem je njen smisel: zapis, ki bi ga lahko spremenili, ni zapis.
 
 ## Kaj je to
 
-Vsakič, ko je dokument objavljen, vložen, zavrnjen, nadomeščen ali ko je
+Vsakič, ko je dokument objavljen, vložen, zavrnjen, vložen za novejši dokument ali ko je
 povezava med dokumentom in izdelkom potrjena ali umaknjena, sistem zapiše
 vrstico o tem, kaj se je zgodilo, kdo je to storil in kdaj. Ta stran je ta
 seznam.

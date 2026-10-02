@@ -65,7 +65,8 @@ broken repair script.
 
 | Rule | Where it actually lives |
 |---|---|
-| **Invariant 5** — supersession only within identical `(coverage subject, type, regulation)`; MDR never supersedes MDD | The GATE handler only. `migrations/005_registry.sql:12,39` says so explicitly: it compares two rows and "cannot be expressed as a row CHECK". No trigger was added |
+| **C6 chain-pointer identity** — `superseded_by` only joins documents of identical `(type, regulation)` | The GATE handler only (`_assert_chain_identity`, the fast path being the one writer left). `migrations/005_registry.sql:12,39` says so explicitly: it compares two rows and "cannot be expressed as a row CHECK". No trigger was added |
+| **Invariant 5** — which document is current per item and type | The view `item_document_history` / `item_document_production` (migration 071), computed on every read; nothing stores it. A reader that selects on `document.status` instead of the view or `app/currency.py` reintroduces the old document-wide rule |
 | **Invariant 2** — complete evidence on every production value | `_require_complete_evidence`, `app/handlers/gate.py:237`. The always-required columns are `NOT NULL`, which is the only database-level part |
 | **The T1/T2-only page rule** | `evidence.page` is a plain nullable `int` (`migrations/005_registry.sql:70`) with no CHECK. The T0/T3-pageless carve-out is handler logic at `app/handlers/gate.py:262` |
 | **The `match_basis` vocabulary** | Documented in comments only. The database enforces just the production cap — `item_document_trusted_basis_ck`, rewritten by migration 021 — not the list of legal values |

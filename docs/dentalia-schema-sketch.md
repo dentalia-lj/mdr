@@ -516,26 +516,25 @@ CREATE TABLE document (
                                                   -- resolved by VALIDATE, sticky-persisted and
                                                   -- back-resolved by GATE (order-independent).
   superseded_by     bigint REFERENCES document,  -- append-only chain
-  supersedes        bigint REFERENCES document,  -- 015: forward pointer, sticky-staged by
-                                                  -- gate.candidate until a human/machine
-                                                  -- production write applies it (below)
+  supersedes        bigint REFERENCES document,  -- 015: forward pointer. VALIDATE emits none
+                                                  -- since 071 (per-item currency) and GATE
+                                                  -- applies none; kept for rows written before
   status            doc_status NOT NULL DEFAULT 'staged',
   created_at        timestamptz NOT NULL DEFAULT now()
 );
--- C6: superseded_by may only reference a document with identical (type, regulation)
--- and overlapping coverage subject. MDR never supersedes MDD — parallel chains.
--- Enforced in the GATE handler (gate._assert_chain_identity, closing [gate-c6]
--- 2026-07-31) rather than a row CHECK — comparing two rows needs a query, and
--- the check must run at the moment a doc reaches production, not at insert
--- time (a `supersedes` value can sit on a STAGED doc for a whole review cycle
--- before a human approve or a later gate.candidate call applies it).
--- BOTH writers of the chain pointer call it: _apply_supersession (forward, the
--- candidate supersedes the current doc) and the task-5 auto-file path (inverse,
--- an older candidate files itself under the current doc). Both re-read the two
--- rows LIVE — a payload's target is resolved by VALIDATE and can be re-typed
--- while the job waits in the queue, since type/regulation are overwritten
--- unconditionally on upsert (only `status` is sticky) and are human-editable
--- through gate.apply.
+-- C6: superseded_by may only reference a document with identical (type, regulation).
+-- Currency is per item and per type (migration 071, 2026-10-02): the views
+-- below decide which published document answers for an item, and no document
+-- is retired as a whole. MDR is current over MDD for an item whatever the
+-- dates; the MDD document stays attached as history.
+-- The chain pointer has ONE writer left: the task-5 auto-file path, where an
+-- older candidate files itself under the current document of every article it
+-- names. It is enforced in the GATE handler (gate._assert_chain_identity)
+-- rather than a row CHECK — comparing two rows needs a query. The check re-reads
+-- the two rows LIVE — a payload's target is resolved by VALIDATE and can be
+-- re-typed while the job waits in the queue, since type/regulation are
+-- overwritten unconditionally on upsert (only `status` is sticky) and are
+-- human-editable through gate.apply.
 
 CREATE TABLE item_document (
   item_ref    text   REFERENCES item_mirror,
@@ -577,41 +576,54 @@ CREATE TABLE item_document (
 -- `item_mirror`'s PK, so one value is one item is one manufacturer) against
 -- `mfr_ref`'s 34, and 7.082 of 15.958 rows carry no `mfr_ref` at all.
 
--- Visibility rule for ALL consumers (read API, expiry scan, reports):
+-- Visibility rule for ALL consumers (read API, expiry scan, reports). 071
+-- (per-item currency) redefined both views below: `item_document_history` is
+-- every published document (production or superseded) on a production link
+-- with a `current` boolean, and `item_document_production` is its current
+-- rows. Per item and type, MDR ranks first, then the newest validity_from;
+-- same-date documents are all current; undated rank below dated.
 -- 034 appended expires/expiry_basis (document_effective_expiry, below) so the
 -- view's own callers stop disagreeing with it over a document's real expiry;
 -- validity_to keeps its raw (stated) meaning, additive-only.
-CREATE OR REPLACE VIEW item_document_production AS
-  SELECT id.*, d.type, d.regulation, d.validity_from, d.validity_to, d.archive_url,
-         ee.expires       AS expires,
-         ee.basis         AS expiry_basis
-    FROM item_document id
-    JOIN document d USING (doc_id)
-    LEFT JOIN document_effective_expiry ee ON ee.doc_id = d.doc_id
-   WHERE d.status = 'production' AND id.status = 'production';
+CREATE OR REPLACE VIEW item_document_production AS   -- 071: the current rows
+  SELECT item_ref, doc_id, udi, match_basis, status, type, regulation,
+         validity_from, validity_to, archive_url, expires, expiry_basis
+    FROM item_document_history
+   WHERE current;
 
--- The supersession chain, for the one consumer that asks for it by name
--- (`/api/items/{ref}/documents?include_superseded=true`, 2026-09-16). Same
--- shape as the view above plus `doc_status` and `superseded_by`; the DOCUMENT
--- filter widens to production+superseded and the LINK filter does not move at
--- all, so a retracted or staged link is unreachable through either view.
--- A SECOND view rather than a widening of the first: web/registry.py,
--- web/catalogue.py, the KPI board and 046_eudamed_gap_view all read
--- `item_document_production`, and relaxing its status filter would change what
--- all four mean without a call site being edited. Nothing else was needed to
--- make the rows reachable -- supersession flips `document.status` and sets
--- `superseded_by`, never touching `item_document` (gate.py::_supersede).
+-- Every published document linked to the item, for the one consumer that asks
+-- for it by name (`/api/items/{ref}/documents?include_superseded=true`,
+-- 070 on 2026-09-16, `current` added by 071). The DOCUMENT filter is
+-- production+superseded and the LINK filter does not move, so a retracted or
+-- staged link is unreachable through either view. `document.status` is not
+-- consulted for currency: a document the old document-wide rule marked
+-- superseded answers again where nothing outranks it.
 CREATE OR REPLACE VIEW item_document_history AS
-  SELECT id.*, d.type, d.regulation, d.validity_from, d.validity_to, d.archive_url,
+  SELECT id.item_ref, id.doc_id, id.udi, id.match_basis, id.status,
+         d.type, d.regulation, d.validity_from, d.validity_to, d.archive_url,
          d.status         AS doc_status,
          d.superseded_by  AS superseded_by,
          ee.expires       AS expires,
-         ee.basis         AS expiry_basis
+         ee.basis         AS expiry_basis,
+         rank() OVER (PARTITION BY id.item_ref, d.type
+                      ORDER BY (d.regulation = 'MDR') DESC,
+                               d.validity_from DESC NULLS LAST) = 1 AS current
     FROM item_document id
     JOIN document d USING (doc_id)
     LEFT JOIN document_effective_expiry ee ON ee.doc_id = d.doc_id
    WHERE d.status IN ('production', 'superseded') AND id.status = 'production';
 GRANT SELECT ON item_document_history TO dentalia_api;   -- migration 070
+
+-- 071: documents current for at least one item, plus production documents with
+-- no production link. The expiry board, the weekly report and the renewal
+-- letters read this instead of `document.status = 'production'`.
+CREATE VIEW document_current AS
+  SELECT d.doc_id FROM document d
+   WHERE EXISTS (SELECT 1 FROM item_document_production p WHERE p.doc_id = d.doc_id)
+      OR (d.status = 'production'
+          AND NOT EXISTS (SELECT 1 FROM item_document l
+                           WHERE l.doc_id = d.doc_id AND l.status = 'production'));
+GRANT SELECT ON document_current TO dentalia_api;
 
 -- ONE definition of "when does this document lapse", for every consumer
 -- (report.expiring_documents, the items board's next_expiry, /expiry). Added

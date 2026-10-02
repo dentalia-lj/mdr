@@ -207,7 +207,7 @@ interno. Vsi drugi zasloni povedo besedo iz tretjega stolpca,
 | **Production** | Šteje. Vidno povsod | **Published** |
 | **Staged** | Čaka na človeka. Še ne šteje | **Waiting for review** |
 | **Rejected** | Zavrnjeno. Ostane na voljo, ne šteje | **Rejected** |
-| **Superseded** | Nadomeščeno z novejšim dokumentom. Ohranjeno, ni več aktualno | **Replaced** |
+| **Superseded** | Vloženo za novejši dokument. Ohranjeno, za izdelek pa šteje le tam, kjer ga ne pokriva noben novejši dokument iste vrste | **Replaced** |
 | **Filed** | Pravi dokument znanega dobavitelja, ki pa ne pokriva nobenega artikla, ki ga vodite | **On file** |
 | **Match basis** (npr. *name-family*) | Kako je sistem dokument ujel z artiklom. Nekateri načini ujemanja so dovolj zanesljivi za samodejno objavo, drugi vedno potrebujejo človeka | **How it was matched** |
 | **A link** | Povezava med enim dokumentom in enim artiklom. En dokument jih ima lahko več | |
@@ -222,9 +222,11 @@ interno. Vsi drugi zasloni povedo besedo iz tretjega stolpca,
 - Vsak artikel, naveden nad gumbom, ki ste ga pritisnili, ga zdaj prikazuje.
   Artikli, povezani le po šibkem ujemanju, čakajo pod **Links waiting for
   review on published documents** na svoj **Covers this item** ali **Does not**.
-- Če nadomešča starejšega, je ta označen kot *nadomeščen z novejšim*. Ohranjen
-  je, ne izbrisan — še vedno si ga lahko ogledate, prav tako ga je še vedno
-  mogoče pokazati revizorju.
+- Odobritev nikoli ne umakne drugega dokumenta. Vsak izdelek prikaže dokument,
+  ki velja zanj: pri vsaki vrsti dokumenta zmaga najnovejši, dokument po MDR pa
+  ima prednost pred dokumentom po MDD. Starejši dokument ostane pri izdelku kot
+  zgodovina. Ohranjen je, ne izbrisan — še vedno si ga lahko ogledate, prav tako
+  ga je še vedno mogoče pokazati revizorju.
 - Vsako dejstvo, ki ga je sistem prebral s strani — vrsto, datume, številko
   certifikata, številke artiklov — je shranjeno skupaj s stranjo, s katere je
   bilo prebrano. Če vas revizor vpraša, od kod izvira datum, mu lahko pokažete.

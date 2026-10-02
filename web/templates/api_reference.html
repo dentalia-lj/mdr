@@ -128,25 +128,28 @@ catalogue identity.</p>
 
 {# ---------------------------------------------------------------- #}
 <h3><code>?include_superseded=true</code></h3>
-<p>Adds the documents an item's current paperwork <strong>replaced</strong>
-  &mdash; the supersession chain. Off by default, so nothing you already call
-  changes. Works on
+<p>By default an item returns its <strong>current</strong> documents per type:
+  one, or several when they carry the same issue date. This flag returns
+  <strong>every published document</strong> linked to the item, including the
+  older ones that are history for it. Works on
   <code>/api/items/{item_ref}/documents</code> and on the batch endpoint,
   where it applies to every entry.</p>
-<p>Flagged documents carry two extra fields, and only when the flag is on:
-  <code>status</code> (<code>production</code> or <code>superseded</code>) and
-  <code>superseded_by</code> (the <code>doc_id</code> that replaced this one,
-  null on a current document). Those <code>doc_id</code>s are fetchable:
+<p>Flagged documents carry three extra fields, and only when the flag is on:
+  <code>current</code> (true when the document answers for this item),
+  <code>status</code> (<code>production</code> or <code>superseded</code>; not
+  the same thing as <code>current</code>) and
+  <code>superseded_by</code> (the <code>doc_id</code> this document was filed
+  behind, null otherwise). Those <code>doc_id</code>s are fetchable:
   <code>/api/documents/{doc_id}</code> serves superseded documents too.</p>
 <ul>
   <li><strong>Not available with <code>view=customer</code></strong> &mdash;
-    the combination returns <code>400</code>. A superseded document is the
-    paperwork we replaced; a clinic must never be shown it as coverage.</li>
+    the combination returns <code>400</code>. A history row is paperwork that
+    does not answer for the item; a clinic must never be shown it as coverage.</li>
   <li><strong>Not reachable from the BC card.</strong>
     <code>/item/{item_ref}</code> ignores it.</li>
   <li><strong>Staged, rejected and filed documents stay invisible</strong>, and
     so does any document whose <em>link</em> to the item is not production. The
-    flag widens the document status filter and nothing else.</li>
+    flag widens the set to older published documents and nothing else.</li>
 </ul>
 <p><strong>Expired is not superseded.</strong> An expired document was never
   hidden &mdash; nothing here filters on expiry. Read <code>valid_to</code> and

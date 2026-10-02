@@ -36,8 +36,10 @@ def seed_doc(conn, item_refs, *, doc_type="DoC", regulation="MDR",
 def newer_copy(conn, doc_id, *, days=365):
     """A newer production document of the same type and regulation, linked to
     every item `doc_id` holds a production link to; then `doc_id` is marked
-    superseded by it, the way the old document-wide rule wrote it. No expiry, no
-    certificate number, so it never shows on an expiry list itself."""
+    superseded by it, the way the old document-wide rule wrote it. It carries no
+    expiry and no certificate number, but a DoC copy still gets a staleness
+    expiry (validity_from + 5 years) through document_effective_expiry, so it can
+    show on an expiry list; other types never do."""
     new_id = conn.execute(
         "INSERT INTO document (type, regulation, validity_from, coverage_scope, "
         "content_hash, archive_url, status) "

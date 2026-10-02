@@ -5296,9 +5296,10 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         # handle_gate_apply contract) — "edit" is not a standalone decision;
         # edited fields ride along with "approve" as the optional `edits` dict.
         ctx = {"request": request}
-        # `reopen` is the way back out of `rejected` and the only decision here
-        # whose precondition is a status rather than a field. It is validated
-        # in the handler, which raises when the document is not rejected --
+        # `reopen` is the way back out of `rejected` or `superseded` and the
+        # only decision here whose precondition is a status rather than a
+        # field. It is validated in the handler, which raises when the
+        # document is neither rejected nor superseded --
         # a stale button must dead-letter visibly, not silently do nothing.
         if decision not in ("approve", "reject", "bind-manufacturer", "reopen"):
             ctx["error"] = f"unknown decision {decision!r}"

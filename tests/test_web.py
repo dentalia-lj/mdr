@@ -2395,8 +2395,10 @@ def test_api_document_404_for_unknown_doc(client):
 # ?include_superseded — the supersession chain (migration 070)
 # --------------------------------------------------------------------------- #
 def _seed_superseded_pair_web(conn, item_ref):
-    """As GATE writes it: supersession flips `document.status` and sets
-    `superseded_by`, never touching the link (gate.py::_supersede)."""
+    """A pair as the old document-wide rule wrote it (and the auto-file fast path
+    still does): `document.status` flipped and `superseded_by` set, the link
+    untouched. Under per-item currency (migration 071) the view, not the flag,
+    decides which of the two answers for the item."""
     old = _seed_item_with_doc(conn, item_ref, validity_to="2025-01-01",
                               validity_from="2020-01-01")
     new = _seed_item_with_doc(conn, item_ref, validity_to="2027-01-01")

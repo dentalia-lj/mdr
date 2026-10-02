@@ -7,6 +7,8 @@ Format per job type: input payload variants → handler pseudo-code → outputs 
 
 **Sync 2026-07-31 (audit):** dedupe conventions ratified into PRD §0 (all 16 live shapes; DISCOVER email key → `email.request:group:{group_id}`) · gate link provenance immutable at production (§7 upsert) · reject → link cascade + `link-rejected` audit (§8) · `production-write` audited on human promote paths (§8) · mfr-binding resolves through `manufacturer_alias` (§8) · DISCOVER email rung producer-gated (`discovery.email_rung_enabled`, §3).
 **Sync 2026-07-31 (Denis rulings — [gate-c6]/[gate-evidence]/[evidence-page]/[storage-default] closed):** C6 supersession persistence shipped — `document.supersedes` (015) sticky-staged, applied at production by either `gate.candidate` (machine) or `gate.apply approve` (human), C6 re-checked at write time (§7/§8) · evidence scoped per `extract_rev` (014), idempotency guard (doc_id, field, extract_rev) so a re-extraction never leaves a changed field pointing at stale evidence (§7) · evidence `page` required for T1/T2 only (§7) · `adapters.storage` default `local` (was `gdrive`, S1.4 note).
+
+**Sync 2026-10-02 (per-item currency, migration 071, rulings dated 2026-10-02 in `docs/decisions.md`):** the C6 supersession persistence above was removed. Currency is per item and per type, computed by `item_document_production`; VALIDATE compares a candidate with the current document of each article it names and emits no `supersedes`; GATE retires nothing on production or `approve`; `gate.apply reopen` accepts `rejected` or `superseded`. §6 and §7 below are corrected in place.
 **Sync 2026-07-24 (drift-check):** ingest report shape matched to S1.1 code (tri-state `md_flag` counters, `skipped` count + bounded sample) · `email.request` dual payload shapes + disjoint dedupe namespaces (§0 row 12) · `resolve.group` `force_new_group` (S1.6 start-new-group) · `singleton` membership basis ratified · fetch outcome table gains `lease-wait` + `recency-skip-linked` rows (S1.4) · C3 fetch-context fallback links now implemented in VALIDATE (was doc-only).
 **Sync 2026-08-26 (vendor.import, slice B):** new §1b — the BC manufacturer master upload, off the pipeline spine, writes `vendor_master` only and emits nothing (PRD §1b).
 **Sync 2026-08-27 (EUDAMED S2.3 stage 2):** new §9b/§9c — `eudamed.certregister` (whole-register pull, scheduler cron, monthly, config-gated) and `eudamed.sweep` (per-manufacturer device catalogue; no scheduler and no handler ever enqueues it, the operator's release button is its sole producer). §0 table gains rows 17-18. Both write side tables only (`eudamed_certificate`, `manufacturer_srn`, `eudamed_mirror`, `eudamed_sweep_state`) and emit nothing — leaves, per PRD §7b. EUDAMED holds zero declarations of conformity; nothing here is evidence.
@@ -651,25 +653,27 @@ def handle_validate_doc(job):
     # Date sanity (rule 3): from <= to AND each date in a plausible year band [1990, 2100].
     if not date_sane(ext): flags.append("date-insane")
 
-    # C7 (never-downgrade) / C6 (supersession) — keyed off the current PRODUCTION
-    # document for the identical (coverage subject, type, regulation).
+    # C7 (never-downgrade), per ARTICLE the candidate names (migration 071): the
+    # candidate is compared with the current document, of the same type and
+    # regulation, of each of its own articles -- not of its catalogue group.
+    # There is no `supersedes`: nothing retires a document, the view decides.
     supersedes = related_doc_id = superseded_by_doc_id = None
     if resolved_group and ext.type and ext.regulation:
-        current = current_production_doc(resolved_group, ext.type, ext.regulation)
-        if current:
-            if ext.validity_from is None or current.validity_from is None:
-                flags.append("downgrade-uncomparable")       # null never compared; caps at staging
-            elif ext.validity_from < current.validity_from:
-                # Both dates present + older (task 5, fix round 1): emit the
-                # fast-path signal AND keep the safety-net flag -- both, not
-                # either/or. GATE's own guard (blocking flags + validity_from
+        currents = current_docs_for_articles(link_item_refs, ext.type, ext.regulation)
+        rel = [relation(ext.validity_from, c.validity_from) for c in currents]  # older|newer|equal|uncomparable
+        if "uncomparable" in rel:
+            flags.append("downgrade-uncomparable")           # null never compared; caps at staging
+        if "older" in rel:
+            flags.append("older-than-current")               # blocking: the reviewer keeps or kills it
+            if len(currents) == len(link_item_refs) and all(r == "older" for r in rel):
+                # Older for EVERY article it names (task 5): emit the fast-path
+                # signal too. GATE's own guard (blocking flags + validity_from
                 # confidence) decides whether the fast path is actually taken;
                 # "older-than-current" is what forces manual when it isn't.
-                superseded_by_doc_id = current.doc_id
-                flags.append("older-than-current")
+                superseded_by_doc_id = newest(currents).doc_id
                 flags.append("auto-superseded")
-            elif ext.validity_from > current.validity_from:
-                supersedes = current.doc_id                  # C6 within identical subject/type/regulation
+        if "equal" in rel:
+            flags.append("same-date-revision")               # blocking, ruled 2026-09-04
         related = related_production_doc(resolved_group, ext.type, ext.regulation)
         if related:
             related_doc_id = related.doc_id                  # MDR/MDD parallel chains; VALIDATE writes NOTHING,
@@ -713,8 +717,8 @@ def handle_validate_doc(job):
 1. **REF gate (C1):** pair-scoped, always. Bare article numbers collide across manufacturers. A member has **two** article numbers and both are comparands (**amended 2026-08-13**, client answer to C12): its `mfr_ref` (the supplier's — basis `ref-list`) and its `item_ref` (Dentalia's own, the number printed on the physical article — basis `ref-item`). `mfr_ref` is tested first, so the 7.450 of 15.958 members holding the same value in both columns record the stronger claim; a member matching only on `item_ref` records `ref-item`, which reaches the 7.082 rows carrying no `mfr_ref` at all. Both are production-capable *because this rule is the scoped path* — the manufacturer is established before any number is compared, so the number only picks items within a known manufacturer. Backfill/email docs with `group_id = null` must scope the index lookup by the document's extracted/known manufacturer. When there is no manufacturer to scope by, a guarded **unscoped** match may still link at `match_basis = 'ref-catalogue'` (added 2026-08-11) — capped at staging by the `item_document` CHECK, because the manufacturer was inferred from the article number rather than verified; `ref_gate` stays False. Guards: minimum REF length (`cfg.validate.min_unscoped_ref_len`, default 6), prose exclusion, and `multi-manufacturer-ref` instead of a choice when the REFs span several manufacturers. A hit that fails a guard flags `ref-unscoped` as before, and a document whose REFs match nothing flags `no-ref-overlap`. Emits `links[]` — one entry per covered item, each carrying its own `match_basis` (GATE gates every link independently, §7). When a doc matches **more than one** group of its manufacturer it links **every** matching member of **all** of them (**amended 2026-08-13**): coverage follows the document's REF list, not our clustering, and every group scanned carries the same `canonical_manufacturer` so the invariant-3 pair still holds for each link. An item reachable through two groups is linked once at the strongest basis (`item_document` is keyed `(item_ref, doc_id)`). The lowest matching `group_id` stays the document's group for provenance only; `multi-group-match` is still flagged with its count on the job result, now reporting breadth rather than marking dropped groups. Before this, resolving to the lowest group and linking only its members lost 228 of 323 reachable items across 23 GC documents.
 2. **Manufacturer-scope pre-rule (C4):** REF gate not applicable → binding flow, not per-group gate failure. The candidate carries a `manufacturer` hint (group's canonical name, or `ext.manufacturer` for backfill) for the binding entry. **Device-enumeration guard (2026-08-25, Denis ruling 2026-08-24):** VALIDATE reads the stored `document_text` here; a QMS/QA certificate whose own text enumerates the devices it covers — model/code annex, repeated per-device risk-class lines, or the "valid only for the above mentioned Medical Devices" clause (sufficient alone; the others fire two-of-three) — adds flag `device-enumeration` to the binding candidate, and GATE's C16 machine bind refuses on it (staged + one review task; `gate.apply bind-manufacturer` unaffected). Designed from measured text: doc 310 (Kiwa Cermet MED 31385) enumerates three device types and was bound to 356 GC items; over all 809 stored texts the detector fires on exactly that document, while scope-only ISO 13485s (doc 816), device-family schedules (doc 138) and EMDN category lists (doc 420) stay bindable. Missing/scanned text (`source='none'`) is unmeasurable → no flag, today's behaviour.
 3. Date sanity: `from ≤ to` **and** each date within a plausible year band (`[1990, 2100]` — a hallucinated `9999` or OCR-garbled 3-digit year is not a real date and must never drive supersession) → `date-insane` otherwise. "valid N years from issue" arithmetic only on high-confidence rule text (not implemented — the schema does not carry that rule text).
-4. **Never-downgrade (C7):** null on either side → `downgrade-uncomparable`, no comparison, staging cap. Both present and equal → `same-date-revision` (blocking, ruled 2026-09-04): no ordering, neither supersedes, a person picks. Candidate older than current, **both dates present** → VALIDATE emits `superseded_by_doc_id = current.doc_id` and flag `auto-superseded` **in addition to** the existing blocking flag `older-than-current` (task 5, fix round 1 — both, not either/or). GATE (§7) only routes it straight to disposition `superseded` without a human when its own guard passes (no other blocking flag, `validity_from` confidence ≥ `cfg.gate.high`); otherwise `older-than-current` forces `manual` exactly as before task 5 — never onto production either way. Either outcome keeps the document archived and evidenced. This is the inverse of C6 (item 5 below): the incoming candidate is the *older* document, superseded by the existing production one, not the other way round.
-5. **Supersession (C6):** identical `(coverage subject, type, regulation)` only. Cross-regulation → `related`: VALIDATE **writes nothing**, it emits `related_doc_id` on the candidate for GATE to persist as the related-pair (MDR/MDD parallel chains, never `superseded_by`).
+4. **Never-downgrade (C7), per article (2026-10-02):** the candidate is compared with the current document, of the same type and regulation, of **each article it names**, not of its catalogue group. Null on either side → `downgrade-uncomparable`, no comparison, staging cap. Present and equal on any article → `same-date-revision` (blocking, ruled 2026-09-04): no ordering, a person picks. Candidate older than the current document of any article, **both dates present** → blocking flag `older-than-current`; older for **every** article it names → VALIDATE additionally emits `superseded_by_doc_id` (the newest of those current documents) and flag `auto-superseded` (task 5, fix round 1 — both, not either/or). GATE (§7) only routes it straight to disposition `superseded` without a human when its own guard passes (no other blocking flag, `validity_from` confidence ≥ `cfg.gate.high`); otherwise `older-than-current` forces `manual` exactly as before task 5 — never onto production either way. Either outcome keeps the document archived and evidenced. The incoming candidate is the *older* document, filed behind the existing current one; this is the only chain pointer left.
+5. **Currency (C6, replaced 2026-10-02):** VALIDATE emits no `supersedes`. Which document answers for an item is the view's call (`item_document_production`, migration 071): MDR first, then the newest `validity_from`, same-date documents all current, undated below dated, `n.a.` never above MDR. Cross-regulation → `related`: VALIDATE **writes nothing**, it emits `related_doc_id` on the candidate for GATE to persist as the related-pair (MDR/MDD parallel chains, never `superseded_by`).
 6. Stated expiry (a `DoC` whose `validity_to` is not named as an expiry in its own evidence verbatim → `expiry-on-certless-doc`; flag name historical, rule amended 2026-08-17 from a certificate-citation proxy). No numeric confidence factor is applied — VALIDATE is zero-discretion; the flag alone keeps GATE off `production` (scoring/calibration is GATE's role).
 7. **No-item-identifier ([validate-itemid]):** a non-manufacturer-scope doc yielding no `ref_list` and no `basic_udi_di` cannot be linked to the catalogue → flag `no-item-identifier` (blocking — GATE forces manual, never staged). The only legitimate no-item-id case is a manufacturer/catalogue-wide cert, already routed by C4 above.
 8. **Cited-certificate resolution (task 4, migration 020):** for a DoC, match `cert_number` and each entry of `referenced_docs[]` against `cert_number` on a held `EC`/`ISO` document (`production` or `superseded`) → emit `cert_doc_id`. No match → `cert_doc_id = null`, flag `cert-unresolved`. Best-effort by design: Class I devices cite no certificate at all, and the cited one may simply not be held yet — GATE back-resolves it when it later arrives (§7).
@@ -763,23 +767,20 @@ def handle_gate_candidate(job):
     with db.tx():                                 # single transaction: claim+write+audit
         doc = db.document.upsert_by_hash(ext, status=
                  {"production": "production", "superseded": "superseded"}.get(doc_status, "staged"),
-                 supersedes=p["supersedes"],             # 015: sticky-staged regardless of
-                 related_doc_id=p.get("related_doc_id"), # disposition (COALESCE on conflict —
+                 related_doc_id=p.get("related_doc_id"), # sticky regardless of disposition (COALESCE on conflict —
                  cert_doc_id=p.get("cert_doc_id"))        # never erased by a later write that
                                                           # doesn't recompute one — 020 follows
                                                           # the same sticky pattern
 
-        # task 5: candidate is OLDER than current production — the INVERSE of
-        # C6 below, so this writes the chain pointer directly rather than via
-        # apply_supersession (whose UPDATE targets the other document). Guarded
+        # task 5: candidate is OLDER than the current document of every article
+        # it names — this writes the chain pointer on this document only. Guarded
         # on auto_supersede_ok (not just superseded_by_doc_id's presence) — a
         # failed guard means `manual`, not `superseded`, and must not carry a
-        # chain pointer. Audited the same idempotent way _apply_supersession is,
-        # and C6-re-checked the same way too: the payload's target was resolved
-        # by VALIDATE and can be re-typed while this job waits in the queue
-        # (a re-extraction rewrites type/regulation on upsert; gate.apply
-        # approve accepts human edits to both), so the identity is re-read LIVE
-        # here in the writer, in the mirrored direction, and a mismatch raises.
+        # chain pointer. Audited idempotently, and C6-re-checked: the payload's
+        # target was resolved by VALIDATE and can be re-typed while this job
+        # waits in the queue (a re-extraction rewrites type/regulation on
+        # upsert; gate.apply approve accepts human edits to both), so the
+        # identity is re-read LIVE here in the writer, and a mismatch raises.
         if auto_supersede_ok:
             assert_chain_identity(newer=auto_superseded, older=doc.doc_id)   # C6 re-checked
             if db.document.set_superseded_by_if_unset(doc.doc_id, auto_superseded):
@@ -812,10 +813,7 @@ def handle_gate_candidate(job):
         db.evidence.insert_all(doc.doc_id, p["extract_rev"], ext.fields)  # 014: evidence
                                                                           # scoped per rev
         if doc_status == "production":
-            if p["supersedes"]:
-                apply_supersession(p["supersedes"], by=doc.doc_id, via_job=job)  # C6 re-checked
-                                                                                  # against a live
-                                                                                  # read, not trusted
+            # no supersession here (2026-10-02): a production write retires nothing
             db.audit_log.append("production-write", doc.doc_id,
                                 decided_by="gate", via_job=job.id,
                                 job_snapshot=snapshot(job))                 # C8
@@ -823,11 +821,11 @@ def handle_gate_candidate(job):
             push_manual_queue(doc, ext, p["flags"])
 ```
 
-**Implementation status:** shipped 2026-07-31 (`[gate-c6]` closed). VALIDATE emits `supersedes` and `related_doc_id` on the candidate (§6); `gate.candidate` persists `related_doc_id` to `document.referenced_doc_id` on every write regardless of disposition, and `supersedes` to `document.supersedes` the same way — but only *applies* a supersession (flips the OLD document to `superseded` + `superseded_by`) once the candidate itself reaches production. A candidate that lands as `staged` carries its `supersedes` value forward, inert, until a human `gate.apply approve` promotes it (§8) — a staged doc must never actually supersede anything (PRD §7: staged entities invisible to all consumers). `apply_supersession` re-reads both documents' `(type, regulation)` from the database before writing — it does not trust the payload — and raises rather than silently skipping on a mismatch (a hard error surfaces a real upstream bug instead of hiding it). The task-5 auto-file path shares that check (`assert_chain_identity`, mirrored direction), so **both** routes to a chain pointer are guarded identically: VALIDATE's scoping makes the payload correct when it is computed, but the job then waits in the queue, and either document's `type`/`regulation` can move underneath it — `document.upsert_by_hash` rewrites both columns unconditionally (only `status` is sticky), so a re-extraction re-types even a production document with no human involved, and `gate.apply approve` accepts human edits to both. Idempotent under at-least-once delivery (the UPDATE only fires, and only then is the `supersede` audit event appended, when it would actually change something).
+**Implementation status:** the `[gate-c6]` persistence shipped 2026-07-31 and was **removed 2026-10-02** (per-item currency, migration 071; `_apply_supersession` is deleted). VALIDATE emits `related_doc_id` (§6) and no `supersedes`; `gate.candidate` persists `related_doc_id` to `document.referenced_doc_id` on every write regardless of disposition, and nothing flips another document to `superseded` — neither a production write nor `gate.apply approve`. The one chain pointer left is the fast path's `superseded_by` on the older candidate itself. `apply_supersession` re-reads both documents' `(type, regulation)` from the database before writing — it does not trust the payload — and raises rather than silently skipping on a mismatch (a hard error surfaces a real upstream bug instead of hiding it). The task-5 auto-file path shares that check (`assert_chain_identity`, mirrored direction), so **both** routes to a chain pointer are guarded identically: VALIDATE's scoping makes the payload correct when it is computed, but the job then waits in the queue, and either document's `type`/`regulation` can move underneath it — `document.upsert_by_hash` rewrites both columns unconditionally (only `status` is sticky), so a re-extraction re-types even a production document with no human involved, and `gate.apply approve` accepts human edits to both. Idempotent under at-least-once delivery (the UPDATE only fires, and only then is the `supersede` audit event appended, when it would actually change something).
 
 **Cited-certificate persistence + back-resolution (task 4, migration 020):** `cert_doc_id` is persisted the same sticky way as `related_doc_id`/`supersedes` (`COALESCE(EXCLUDED.cert_doc_id, document.cert_doc_id)`) — a later re-delivery that doesn't recompute it never erases an already-resolved certificate. Independently, whenever the document GATE is writing is itself a certificate (`type ∈ {EC, ISO}`), GATE back-resolves: every held `DoC` with `cert_doc_id IS NULL` and a matching `cert_number` is updated to point at the newly-written certificate. This closes the fetch-order gap — declarations are frequently processed before the certificate they cite, and without back-resolution whether a DoC ever gets an expiry would depend on which arrived first.
 
-Consumers see a document *for an item* only when **both** document and link are production (view `item_document_production`). A production document may carry a mix of production links (REF-matched) and staged links (name-matched stragglers) — the "name similarity never auto-writes" invariant lives per-link, structurally.
+Consumers see a document *for an item* only when **both** document and link are production **and** it is current for that item (view `item_document_production`, per-item currency, migration 071). A production document may carry a mix of production links (REF-matched) and staged links (name-matched stragglers) — the "name similarity never auto-writes" invariant lives per-link, structurally.
 
 `blocking(flags)` — the flags that force `manual` (can never auto-write, not even to staging): **`older-than-current`, `no-item-identifier`, `evidence-page-missing`, `date-insane`, `manufacturer-unresolved`** (the last two added 2026-08-13), **`same-date-revision`** (added 2026-09-04). *Capping* flags (`ref-unscoped`, `ref-catalogue`, `multi-manufacturer-ref`, `downgrade-uncomparable`, `expiry-on-certless-doc`) cap the disposition at `staged` — a staged doc still writes, it is just invisible to consumers until reviewed. *Informational* flags (`no-ref-overlap`, `multi-group-match`, `cert-unresolved`, `auto-superseded`, `ref-list-possibly-truncated`) are recorded but do not gate at all, so a document carrying only these can reach `production` (`app/handlers/gate.py` `_gates_disposition`). `auto_supersede_ok` is checked *before* `blocking(flags)` — a candidate carrying `superseded_by_doc_id` routes straight to disposition `superseded` (task 5) **only when its own three-condition guard passes** (no blocking flag other than `older-than-current`, `validity_from` confidence ≥ `HIGH`); this is the only case where a candidate lands neither on production/staged/manual but is still fully archived and evidenced. The pointer it then writes is C6-re-checked against a live read of both documents, exactly as `apply_supersession` does on the forward route — a mismatch raises and the job dead-letters, it is never written and never skipped. Any guard failure falls through to `blocking(flags)` as normal, where `older-than-current` forces `manual` — the fix (round 1, 2026-08-07) that closes two holes the unconditional first draft had: an older doc with no catalogue link (`no-item-identifier`) auto-filing with zero links and no review, and a garbled OCR `validity_from` (a field outside `score`/`REQUIRED_FIELDS`) driving a permanent write with no confidence check at all. This split is set by VALIDATE's rule set (§6) and enforced here.
 
@@ -904,10 +902,10 @@ def handle_gate_apply(job):
                 apply_edits(job.payload)                     # edited values get tier=T3 evidence,
                 promote(doc_id, to="production")             # verbatim = human input, conf = 1.0
                 promote_pending_links(doc_id)                # trusted-basis links follow the doc
-                supersedes = db.document.get(doc_id).supersedes   # C6 human path: apply whatever
-                if supersedes:                                    # gate.candidate staged here,
-                    apply_supersession(supersedes, by=doc_id,      # inert until this approve
-                                       via_job=job, decided_by=decided_by)
+                # no supersession on approve (2026-10-02): the view decides which
+                # document answers for each item
+            case "reopen":                                   # rejected OR superseded -> staged;
+                reopen(doc_id)                               # raises on any other status
             case "reject":
                 db.document.set_status(doc_id, "rejected")
                 for link in cascade_links_to_rejected(doc_id):   # §7: no link stays production/
@@ -1183,7 +1181,7 @@ an idempotent UPSERT, so polling *is* its correctness model.
 
 **`email.request`** `{doc_id}` — expiry within horizon → look up manufacturer contact → draft renewal mail (send policy: `draft-for-approval`) → `renewal_request(state=requested)` → enqueue `email.reminder` with `run_after = now()+N days`.
 
-**`email.reminder`** `{request_id}` — state still `awaiting` → reminder or escalate to human. Loop closes when `email.poll` → `extract.doc` → gate promotes a superseding doc → request state `parsed`.
+**`email.reminder`** `{request_id}` — state still `awaiting` → reminder or escalate to human. Loop closes when `email.poll` → `extract.doc` → gate promotes the newer doc → request state `parsed`.
 
 **`playbook.reonboard`** `{manufacturer_id, reason:"discovery-failure-spike"}` — notification + onboarding-agent workflow; human approves new playbook version in git.
 
@@ -1198,13 +1196,13 @@ ingest.run(csv LJ export)                 mfr_ref "613289" mapped by adapter
             ├─ fetch.url(url_1)          new hash → archived
             │    └─ extract.doc          T0: type/regulation/REF list · T1: dates (Batch API,
             │         │                  batch_ref row, self-reschedule) · T2: basic_udi_di
-            │         └─ validate.doc    REF pair-overlap ✓, dates sane, supersedes 8801
-            │              │             (same subject, same type, same regulation — C6 ✓)
+            │         └─ validate.doc    REF pair-overlap ✓, dates sane, newer than 8801
+            │              │             (current doc of the same type and regulation for these articles)
             │              └─ gate.candidate  score .88 → doc STAGED, links staged
             │                   └─ gate.apply(approve, marta) → doc PRODUCTION,
-            │                        ref-list links → production; 8801 superseded; audit ×2
+            │                        ref-list links → production; 9912 now answers for those items, 8801 stays as history; audit ×2
             │                        (each with job_snapshot — C8)
             └─ fetch.url(url_2)          304 → done
 ```
 
-Result: 14 `item_document` rows → doc 9912 (ref-list links production), file at `/Ivoclar/DOC/3f9a1c2e0b77__DoC_Tetric_PowerFill_(MDR).pdf`, every field evidenced, chain 8801→9912 preserved. Next month: `discover:{4407}:{cycle+1}` enqueues normally (C2), recency window makes it free (AC5).
+Result: 14 `item_document` rows → doc 9912 (ref-list links production), file at `/Ivoclar/DOC/3f9a1c2e0b77__DoC_Tetric_PowerFill_(MDR).pdf`, every field evidenced, 8801 kept attached as history. Next month: `discover:{4407}:{cycle+1}` enqueues normally (C2), recency window makes it free (AC5).

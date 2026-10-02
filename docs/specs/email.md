@@ -267,7 +267,7 @@ email.request handler  -> look up manufacturer contact -> compose renewal draft
 [NO SEND HANDLER -- client ruling 2026-08-20, see 7.1: a ready draft is sent by
  a person from mdr@dentalia.si, never by this system]
 email.reminder {request_id}: state still awaiting -> reminder draft or escalate to human
-Loop closes: email.poll -> extract.doc -> GATE promotes a superseding doc
+Loop closes: email.poll -> extract.doc -> GATE promotes the newer doc
              -> renewal_request.state=parsed (reply matched back, §9)
 ```
 

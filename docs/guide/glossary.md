@@ -226,7 +226,7 @@ You will see these as coloured pills.
 | **Published** | It counts. Visible everywhere | `production` |
 | **Waiting for review** | Waiting for a person. Does not count yet | `staged` |
 | **Rejected** | Someone decided against it. Kept on file, does not count | `rejected` |
-| **Replaced** | A newer document has taken its place. Kept, no longer current | `superseded` |
+| **Replaced** | Filed behind a newer document. Kept on file. It counts for an item only where no newer document of the same type covers that item | `superseded` |
 | **On file** | A genuine document from a supplier we know, which covers none of the products you stock. Correct, complete, in nobody's queue | `filed` |
 
 The **Stored as** column is what the database holds and what a filter on

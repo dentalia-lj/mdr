@@ -117,7 +117,7 @@ All against real Postgres, `now` injected (no `datetime.now()` in the code under
 | 6 | Atomicity | force an exception after `queue.enqueue` succeeds inside `_tick_ingest_monthly` (monkeypatch `record_run` to raise) | transaction rolls back — neither the job nor the ledger row persists; next tick re-fires cleanly |
 | 7 | No watch dir configured | default config (`ingest_watch_dir=""`) | tick is a documented no-op every period, ledger still written (so nothing "catches up" retroactively if configured later mid-month) |
 | 8 | Expiry scan — production doc inside horizon | `document(status=production, validity_to=now+10d)` linked via a `production` `item_document` | appears in `expiring_documents(horizon=90)` |
-| 9 | Expiry scan — excluded states | same but `status=staged` / `status=superseded` / `status=rejected` | absent from the list (production-only, matches the PRD §9 visibility rule) |
+| 9 | Expiry scan — excluded states | same but `status=staged` / `status=rejected` (or `superseded` and current for no item) | absent from the list (documents that answer for an item only: `document_current`, migration 071, PRD §9 visibility rule) |
 | 10 | Expiry scan — null validity_to (C7 parity) | `document(validity_to=NULL)` | absent (never a false "expiring soon") |
 | 11 | Expiry scan — outside horizon | `validity_to=now+200d` | absent |
 | 12 | Expiry emit gated off | default config, doc inside horizon | 0 `email.request` jobs; doc still appears in the report |
