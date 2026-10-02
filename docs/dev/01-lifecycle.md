@@ -29,7 +29,7 @@ table exists only to anchor the walkthrough below.
 | `discover.group` | `app/handlers/discover.py:373` |
 | `fetch.url` | `app/handlers/fetch.py:114` |
 | `extract.doc` | `app/handlers/extract.py:258` |
-| `validate.doc` | `app/handlers/validate.py:759` |
+| `validate.doc` | `app/handlers/validate.py:798` |
 | `gate.candidate` | `app/handlers/gate.py:910` |
 | `gate.apply` | `app/handlers/gate.py:1311` |
 | `email.request` / `email.reminder` (renewal) | `app/handlers/email_request.py:407` / `:525` |
@@ -139,7 +139,9 @@ the full evaluation order). Two outcomes matter most:
      `00-orientation.md`'s invariant table), date sanity, the never-downgrade
      check (C7, per article the candidate names: it is compared with the
      current document of the same type and regulation of each of its own
-     articles; older for every article, both dates present, additively emits
+     articles, the ones it links on a basis that is not capped (`name-family`,
+     `fetch-context` and `ref-catalogue` links are never compared, ruling 7,
+     2026-10-02); older for every article, both dates present, additively emits
      `superseded_by_doc_id` *and keeps* the blocking `older-than-current`
      flag; older for only some keeps the flag alone). It emits no
      `supersedes`: which document answers for an item is the view's call

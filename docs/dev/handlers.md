@@ -24,7 +24,7 @@ never clobber a real handler.
 | `discover.group` | `handlers/discover.py:908` | `fetch.url` ×k, `email.request`, `validate.doc` | `test_discover_handler.py` |
 | `fetch.url` | `handlers/fetch.py:145` | `extract.doc` or `validate.doc`, **or nothing** when the body is not a document | `test_fetch_handler.py` |
 | `extract.doc` | `handlers/extract.py:278` | `validate.doc`, **or nothing** when the doc-class call answers `not-a-compliance-document` | `test_extract_handler.py`, `test_extract_cost.py`, `test_doc_class_gate.py` |
-| `validate.doc` | `handlers/validate.py:782` | `gate.candidate` | `test_validate_handler.py` |
+| `validate.doc` | `handlers/validate.py:798` | `gate.candidate` | `test_validate_handler.py` |
 | `gate.candidate` | `handlers/gate.py:985` | nothing (terminal) | `test_gate_candidate_handler.py` |
 | `gate.apply` | `handlers/gate.py:1415` | `discover.group` on reject | `test_gate_apply_handler.py` |
 | `backfill.scan` | `handlers/backfill.py:270` | `extract.doc` | `test_backfill_handler.py` |
@@ -102,7 +102,7 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 - emits: `gate.candidate` always, either `gate:{hash}:{rev}:mfr-binding` or `gate:{hash}:{rev}:{group_id}`
 - fails how: missing extraction row or incomplete required fields are suppressed and counted, job finishes `done` with no emit
 - note: every decision is an additive key on the emitted payload
-- note: the never-downgrade check (C7) is per article (migration 071, 2026-10-02): the candidate is compared with the current document, of the same type and regulation, of each article it names, not of its catalogue group. `older-than-current` (blocking) when older for any article; `superseded_by_doc_id` plus `auto-superseded` only when older for every article it names; `same-date-revision` when equal on any; `downgrade-uncomparable` when a date is missing. VALIDATE emits no `supersedes` (always null)
+- note: the never-downgrade check (C7) is per article (migration 071, 2026-10-02): the candidate is compared with the current document, of the same type and regulation, of each article it names, not of its catalogue group. Only articles linked on a basis that is not capped count: a `name-family`, `fetch-context` or `ref-catalogue` link names no article the document is known to cover (the C3 fallback links every group member at `fetch-context`), so it is never compared (ruling 7, 2026-10-02); a candidate with only such links is compared with nothing. `older-than-current` (blocking) when older for any article; `superseded_by_doc_id` plus `auto-superseded` only when older for every article it names; `same-date-revision` when equal on any; `downgrade-uncomparable` when a date is missing. VALIDATE emits no `supersedes` (always null)
 - note: the extraction-shape flags (`ref-list-possibly-truncated`, `iso-without-standard-number`, both from `tiers.integrity_flags`) are computed BEFORE the C4 manufacturer-binding branch, so they ride BOTH routes. They sat after the binding return until 2026-09-09, which made `iso-without-standard-number` unreachable on exactly the population it exists for — a QMS certificate is manufacturer-scope by definition
 
 ### `gate.candidate`

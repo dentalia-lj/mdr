@@ -2043,26 +2043,38 @@ def test_a_document_sharing_only_the_group_is_not_compared(conn):
     assert p["supersedes"] is None
 
 
-@pytest.mark.parametrize("currents, cand_from, flags, fast", [
+_BOTH_REFS = ["REF-1", "REF-2"]
+
+
+@pytest.mark.parametrize("currents, cand_from, flags, fast, refs", [
     # currents: {item_ref: validity_from of its current document}
     ({"PI-1": "2024-01-01", "PI-2": "2024-01-01"}, "2020-01-01",
-     {"older-than-current"}, True),                       # older for every article
+     {"older-than-current"}, True, _BOTH_REFS),           # older for every article
     ({"PI-1": "2024-01-01", "PI-2": "2018-01-01"}, "2020-01-01",
-     {"older-than-current"}, False),                      # older for one, newer for one
+     {"older-than-current"}, False, _BOTH_REFS),          # older for one, newer for one
     ({"PI-1": "2024-01-01"}, "2020-01-01",
-     {"older-than-current"}, False),                      # older for one, PI-2 holds nothing
+     {"older-than-current"}, False, _BOTH_REFS),          # older for one, PI-2 holds nothing
     ({"PI-1": "2018-01-01", "PI-2": "2018-01-01"}, "2020-01-01",
-     set(), False),                                        # newer everywhere: no flag, no supersedes
+     set(), False, _BOTH_REFS),                            # newer everywhere: no flag, no supersedes
     ({"PI-1": "2020-01-01", "PI-2": "2018-01-01"}, "2020-01-01",
-     {"same-date-revision"}, False),                      # a tie on one article
+     {"same-date-revision"}, False, _BOTH_REFS),          # a tie on one article
     ({"PI-1": None}, "2020-01-01",
-     {"downgrade-uncomparable"}, False),                  # the current one is undated
+     {"downgrade-uncomparable"}, False, _BOTH_REFS),      # the current one is undated
+    # The REFs match nothing, so C3 links every group member at
+    # `fetch-context`: the document names no article it is known to cover.
+    # Comparing over those links would be the catalogue-group comparison
+    # again, and the fast path would file it behind unrelated documents
+    # (ruling 7, 2026-10-02). Capped links are never compared.
+    ({"PI-1": "2024-01-01", "PI-2": "2024-01-01"}, "2020-01-01",
+     set(), False, ["ZZZ-NOWHERE"]),
 ])
-def test_relation_per_article(conn, currents, cand_from, flags, fast):
+def test_relation_per_article(conn, currents, cand_from, flags, fast, refs):
     group_id = _two_items_one_group(conn)
     for i, (item, vf) in enumerate(currents.items()):
         _seed_current_doc(conn, f"pi-cur-{i}-{item}", [item], validity_from=vf)
-    p = _validate(conn, "pi-cand", group_id, ["REF-1", "REF-2"], cand_from)
+    p = _validate(conn, "pi-cand", group_id, refs, cand_from)
+    if refs != _BOTH_REFS:
+        assert {lk["match_basis"] for lk in p["links"]} == {"fetch-context"}
     raised = {f for f in p["flags"] if f in {
         "older-than-current", "same-date-revision", "downgrade-uncomparable"}}
     assert raised == flags

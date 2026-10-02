@@ -43,7 +43,10 @@ Rule set (PRD v3 §6 / handbook §6, verbatim flag names win over this docstring
   4. Never-downgrade (C7), per article the candidate names (per-item currency,
      migration 071): the candidate is compared with the current document of
      the same type and regulation of EACH of its own articles, not of its
-     catalogue group. Older for EVERY article (both dates present) ->
+     catalogue group. Its own articles are the ones linked on a basis that is
+     not capped (`_UNCOMPARED_BASES`, ruling 7, 2026-10-02): the C3 fallback's
+     `fetch-context` links are the whole group again, so they are never
+     compared. Older for EVERY article (both dates present) ->
      superseded_by_doc_id=<newest of those docs> AND flags `auto-superseded`
      + `older-than-current` (task 5: both, not either/or). Older for only
      some -> `older-than-current` alone. GATE (§7) only takes the fast path —
@@ -157,6 +160,19 @@ from app.results import Result
 # or a 3-digit OCR of "2013"), not a real date, and must not drive supersession.
 _YEAR_MIN = 1990
 _YEAR_MAX = 2100
+
+# Link bases C7 never compares over (ruling 7, 2026-10-02). These are the
+# capped bases: GATE never writes them as production (invariant 3, the
+# item_document CHECK of migrations 005/021), because none of them says the
+# document covers that article. `fetch-context` is every member of the
+# requesting group (the C3 fallback), `name-family` a name resemblance,
+# `ref-catalogue` a number found with no manufacturer to scope it. Comparing a
+# candidate with the current documents of those articles is the catalogue-group
+# comparison per-item currency removed, and the fast path would file the
+# candidate behind documents it has nothing to do with. Restated here rather
+# than imported from gate: VALIDATE decides what it compares, GATE what it
+# writes.
+_UNCOMPARED_BASES = frozenset({"name-family", "fetch-context", "ref-catalogue"})
 
 # Must carry an extracted value for the doc to be gateable at all (inv. 2 pre-check).
 # Dates / refs / UDI are conditionally empty by doc type, so they are NOT required
@@ -1039,7 +1055,12 @@ def handle_validate_doc(conn, job: dict) -> dict:
     supersedes = None
     related_doc_id = None
     superseded_by_doc_id = None
-    item_refs = sorted({link["item_ref"] for link in links})
+    # Only the articles the document is known to cover: a capped link names
+    # none (see `_UNCOMPARED_BASES`). A candidate with only capped links is
+    # compared with nothing; `ref_gate` is False on every route that builds
+    # such links, so GATE does not publish it without a person either way.
+    item_refs = sorted({link["item_ref"] for link in links
+                        if link.get("match_basis") not in _UNCOMPARED_BASES})
     if item_refs and doc_type and regulation:
         currents = _current_docs_for_items(conn, item_refs, doc_type, regulation,
                                            exclude_content_hash=content_hash)
