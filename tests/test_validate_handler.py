@@ -1098,7 +1098,7 @@ def test_c7_null_date_is_uncomparable(conn, current_validity_from, candidate_val
 
 # --- Case 11: C6 supersedes --------------------------------------------------
 
-def test_c6_supersedes_same_subject_type_regulation(conn):
+def test_a_newer_candidate_supersedes_nothing(conn):
     group_id = _seed_group(conn)
     _seed_member(conn, group_id, "IT-1", mfr_ref="196.644.050")
     current_id = _seed_current_doc(conn, "vh-current-11", ["IT-1"], doc_type="DoC",
@@ -1110,7 +1110,7 @@ def test_c6_supersedes_same_subject_type_regulation(conn):
 
     assert res["emitted"] is True
     p = _payload(conn, "vh-c6super")
-    assert p["supersedes"] == current_id
+    assert p["supersedes"] is None
     assert "older-than-current" not in p["flags"]
 
 
@@ -2013,3 +2013,69 @@ def test_a_scanned_cert_with_no_text_layer_stays_unflagged(conn):
 
     assert res["route"] == "mfr-binding"
     assert "device-enumeration" not in _payload(conn, "vh-scan").get("flags", [])
+
+
+# --- per-item comparison (spec 2026-09-15 §3.3 item 3) ---------------------
+
+def _two_items_one_group(conn):
+    group_id = _seed_group(conn)
+    _seed_member(conn, group_id, "PI-1", mfr_ref="REF-1")
+    _seed_member(conn, group_id, "PI-2", mfr_ref="REF-2")
+    return group_id
+
+
+def _validate(conn, content_hash, group_id, refs, validity_from):
+    _seed(conn, content_hash, _fields(ref_list=_ev(refs),
+                                      validity_from=_ev(validity_from)))
+    vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": content_hash, "extract_rev": 1, "group_id": group_id}})
+    return _payload(conn, content_hash)
+
+
+def test_a_document_sharing_only_the_group_is_not_compared(conn):
+    """The defect: same group, no shared article. The old rule compared and
+    retired; the per-item rule sees nothing to compare."""
+    group_id = _two_items_one_group(conn)
+    _seed_current_doc(conn, "pi-other", ["PI-2"], validity_from="2026-01-01")
+    p = _validate(conn, "pi-cand-1", group_id, ["REF-1"], "2020-01-01")
+    assert "older-than-current" not in p["flags"]
+    assert "auto-superseded" not in p["flags"]
+    assert p["supersedes"] is None
+
+
+@pytest.mark.parametrize("currents, cand_from, flags, fast", [
+    # currents: {item_ref: validity_from of its current document}
+    ({"PI-1": "2024-01-01", "PI-2": "2024-01-01"}, "2020-01-01",
+     {"older-than-current"}, True),                       # older for every article
+    ({"PI-1": "2024-01-01", "PI-2": "2018-01-01"}, "2020-01-01",
+     {"older-than-current"}, False),                      # older for one, newer for one
+    ({"PI-1": "2024-01-01"}, "2020-01-01",
+     {"older-than-current"}, False),                      # older for one, PI-2 holds nothing
+    ({"PI-1": "2018-01-01", "PI-2": "2018-01-01"}, "2020-01-01",
+     set(), False),                                        # newer everywhere: no flag, no supersedes
+    ({"PI-1": "2020-01-01", "PI-2": "2018-01-01"}, "2020-01-01",
+     {"same-date-revision"}, False),                      # a tie on one article
+    ({"PI-1": None}, "2020-01-01",
+     {"downgrade-uncomparable"}, False),                  # the current one is undated
+])
+def test_relation_per_article(conn, currents, cand_from, flags, fast):
+    group_id = _two_items_one_group(conn)
+    for i, (item, vf) in enumerate(currents.items()):
+        _seed_current_doc(conn, f"pi-cur-{i}-{item}", [item], validity_from=vf)
+    p = _validate(conn, "pi-cand", group_id, ["REF-1", "REF-2"], cand_from)
+    raised = {f for f in p["flags"] if f in {
+        "older-than-current", "same-date-revision", "downgrade-uncomparable"}}
+    assert raised == flags
+    assert ("auto-superseded" in p["flags"]) is fast
+    assert (p.get("superseded_by_doc_id") is not None) is fast
+    assert p["supersedes"] is None
+
+
+def test_a_superseded_document_still_counts_as_current_for_the_comparison(conn):
+    """The view treats `superseded` as published (Task 1), so the downgrade
+    check must too: an older candidate behind doc 29 is still older."""
+    group_id = _two_items_one_group(conn)
+    _seed_current_doc(conn, "pi-sup", ["PI-1"], validity_from="2024-01-01",
+                      status="superseded")
+    p = _validate(conn, "pi-cand-sup", group_id, ["REF-1"], "2020-01-01")
+    assert "older-than-current" in p["flags"]

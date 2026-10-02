@@ -40,27 +40,27 @@ Rule set (PRD v3 §6 / handbook §6, verbatim flag names win over this docstring
      refuses on it and the document stages for a human instead.
   3. Date sanity: from <= to AND each date in a plausible year band -> flag
    `date-insane` otherwise (handbook vocab).
-  4. Never-downgrade (C7): candidate validity_from older than the current
-     production doc for the same (coverage subject, type, regulation), BOTH
-     dates present -> emit superseded_by_doc_id=<doc_id> AND keep flag
-     `older-than-current` (task 5 fix round 1: both, not either/or). GATE
-     (§7) only takes the fast path — straight to the superseded chain, no
-     human — when validity_from's own calibrated confidence is >= HIGH and
-     no OTHER blocking flag (e.g. `no-item-identifier`) is present; otherwise
-     `older-than-current` still forces `manual` exactly as before this task,
-     which is what prevents a bad guard result from ever reaching
+  4. Never-downgrade (C7), per article the candidate names (per-item currency,
+     migration 071): the candidate is compared with the current document of
+     the same type and regulation of EACH of its own articles, not of its
+     catalogue group. Older for EVERY article (both dates present) ->
+     superseded_by_doc_id=<newest of those docs> AND flags `auto-superseded`
+     + `older-than-current` (task 5: both, not either/or). Older for only
+     some -> `older-than-current` alone. GATE (§7) only takes the fast path —
+     straight to the superseded chain, no human — when validity_from's own
+     calibrated confidence is >= HIGH and no OTHER blocking flag (e.g.
+     `no-item-identifier`) is present; otherwise `older-than-current` forces
+     `manual`, which keeps a bad guard result from ever reaching
      `production`. Either date null -> no comparison -> flag
      `downgrade-uncomparable`, caps at staging. Null is never treated as
-     older or newer. Both present and EQUAL -> flag `same-date-revision`
+     older or newer. Equal on ANY article -> flag `same-date-revision`
      (blocking, Denis ruling 2026-09-04): no ordering exists between two
-     documents issued on one day, so neither supersedes and a person picks
-     the current one. Before the ruling the equal case matched no branch and
-     the second document landed as an unrelated production document; three
-     groups held three production DoCs on one date when it was measured.
-  5. Supersession (C6): only within identical (coverage subject, type,
-     regulation) -> supersedes=<doc_id>. MDR never supersedes MDD — parallel
-     chains; a same-type, different-regulation current doc is recorded via
-     the additive `related_doc_id` key, never as `supersedes`.
+     documents issued on one day, so a person picks the current one.
+  5. Supersession (C6) is gone: a newer candidate emits no `supersedes`
+     (always None; the views of migration 071 decide which document answers).
+     MDR-over-MDD is the view's rank, and a same-type, different-regulation
+     current doc is still recorded via the additive group-based
+     `related_doc_id` key.
   6. Type/regulation consistency: a DoC with an expiry but referencing no
      certificate -> flag `expiry-on-certless-doc` (handbook §6 pseudo-code).
 
@@ -679,35 +679,40 @@ def _resolve_group_unscoped(conn, ref_list: list, basic_udi_di) -> dict | None:
 
 # --- C6/C7 current-document lookups -----------------------------------------
 
-def _current_production_doc(conn, group_id, doc_type: str, regulation: str,
-                            exclude_content_hash: str | None = None) -> dict | None:
-    """The current production document for this coverage subject (any member
-    of `group_id` carries a production link to it) of the SAME type and
-    regulation — the identity C6/C7 both key off. Same-type/regulation scoping
-    is what makes "never downgrade" and "supersedes" comparisons meaningful;
-    an MDR candidate is never compared against an MDD current (they are
-    parallel chains, rule 5).
+    assert p["supersedes"] is None
+    assert "older-than-current" not in p["flags"]
 
-    `exclude_content_hash` is the candidate's own bytes. A production document
-    re-validated at a new `extract_rev` (a repair, a re-extract, a template
-    authored later) otherwise found ITSELF here, matched its own date and
-    flagged `same-date-revision` into manual (NEODENT doc 521, 2026-09-11:
-    241 new links held behind a manual task). The tie rule is for two
-    documents."""
-    return conn.execute(
+
+def _current_docs_for_items(conn, item_refs, doc_type: str, regulation: str,
+                            exclude_content_hash: str | None = None) -> dict:
+    """Per article the candidate names: the newest published document of the
+    same type AND regulation holding a production link to it. Keyed by
+    `item_ref`; an article with none is absent.
+
+    Per article, not per catalogue group (spec 2026-09-15 §1: the group is the
+    wrong subject 68% of the time). Same regulation only: MDR-over-MDD is the
+    view's rank (migration 071) and decides which document answers, not whether
+    this candidate is a downgrade of its own chain. `superseded` counts as
+    published, as in the view: the old flag no longer decides anything.
+
+    `exclude_content_hash` is the candidate's own bytes, so a re-validated
+    document never finds itself (NEODENT doc 521, 2026-09-11)."""
+    if not item_refs:
+        return {}
+    rows = conn.execute(
         """
-        SELECT DISTINCT d.doc_id, d.validity_from
-        FROM document d
-        JOIN item_document idoc ON idoc.doc_id = d.doc_id AND idoc.status = 'production'
-        JOIN item_group_member gm ON gm.item_ref = idoc.item_ref
-        WHERE gm.group_id = %s AND d.status = 'production'
-          AND d.type = %s AND d.regulation = %s
-          AND d.content_hash IS DISTINCT FROM %s
-        ORDER BY d.validity_from DESC NULLS LAST, d.doc_id DESC
-        LIMIT 1
+        SELECT DISTINCT ON (idoc.item_ref) idoc.item_ref, d.doc_id, d.validity_from
+          FROM item_document idoc
+          JOIN document d ON d.doc_id = idoc.doc_id
+         WHERE idoc.item_ref = ANY(%s) AND idoc.status = 'production'
+           AND d.status IN ('production', 'superseded')
+           AND d.type = %s AND d.regulation = %s
+           AND d.content_hash IS DISTINCT FROM %s
+         ORDER BY idoc.item_ref, d.validity_from DESC NULLS LAST, d.doc_id DESC
         """,
-        (group_id, doc_type, regulation, exclude_content_hash),
-    ).fetchone()
+        (list(item_refs), doc_type, regulation, exclude_content_hash),
+    ).fetchall()
+    return {r["item_ref"]: r for r in rows}
 
 
 def _related_production_doc(conn, group_id, doc_type: str, exclude_regulation: str) -> dict | None:
@@ -1030,42 +1035,46 @@ def handle_validate_doc(conn, job: dict) -> dict:
              for d in (validity_from, validity_to)):
         flags.append("date-insane")
 
-    # C7 (never-downgrade) / C6 (supersession) — both keyed off the current
-    # production document for the identical (coverage subject, type, regulation).
+    # C7 (never-downgrade), per article (spec 2026-09-15 §3.3 item 3). The
+    # candidate is compared with the current document of each article it names.
+    # C6 forward supersession is gone: nothing retires a document any more, the
+    # view decides which one answers (migration 071), so `supersedes` stays None.
     supersedes = None
     related_doc_id = None
     superseded_by_doc_id = None
-    if resolved_group_id is not None and doc_type and regulation:
-        current = _current_production_doc(conn, resolved_group_id, doc_type, regulation,
-                                          exclude_content_hash=content_hash)
-        if current is not None:
-            current_from = _to_date(current["validity_from"])
-            if validity_from is None or current_from is None:
-                flags.append("downgrade-uncomparable")
-            elif validity_from < current_from:
-                # Unambiguously older: both dates present, same coverage subject,
-                # type and regulation. Invariant 4 says never downgrade, not never
-                # keep: the document is still archived and evidenced, it just files
-                # straight into the superseded chain instead of costing a human a
-                # review — PROVIDED GATE's guard passes (no other blocking flag,
-                # validity_from confidence >= HIGH). superseded_by_doc_id is the
-                # fast-path signal; "older-than-current" stays too (kept, not
-                # replaced) so that when the guard fails the candidate falls
-                # through to GATE's normal BLOCKING_FLAGS handling exactly as it
-                # did before this task, instead of silently reaching production.
-                # The null-date cases above stay uncomparable and staged.
-                superseded_by_doc_id = current["doc_id"]
-                flags.append("older-than-current")
-                flags.append("auto-superseded")
-            elif validity_from > current_from:
-                supersedes = current["doc_id"]
+    item_refs = sorted({link["item_ref"] for link in links})
+    if item_refs and doc_type and regulation:
+        currents = _current_docs_for_items(conn, item_refs, doc_type, regulation,
+                                           exclude_content_hash=content_hash)
+        relations = []
+        for cur in currents.values():
+            cur_from = _to_date(cur["validity_from"])
+            if validity_from is None or cur_from is None:
+                relations.append("uncomparable")
+            elif validity_from < cur_from:
+                relations.append("older")
+            elif validity_from > cur_from:
+                relations.append("newer")
             else:
-                # Equal, both present. Neither direction of supersession is
-                # defensible (two revisions signed on one day carry no order
-                # the dates can express), so this is a blocking flag and GATE
-                # forces `manual` -- the person compares the two PDFs. Ruled
-                # 2026-09-04; until then this case fell through silently.
-                flags.append("same-date-revision")
+                relations.append("equal")
+        if "uncomparable" in relations:
+            flags.append("downgrade-uncomparable")
+        if "older" in relations:
+            # Blocking (ruling 4, 2026-10-02): the reviewer keeps or kills it.
+            flags.append("older-than-current")
+            if (len(currents) == len(item_refs)
+                    and all(r == "older" for r in relations)):
+                # Older for EVERY article it names: history everywhere, so the
+                # task-5 fast path may file it without a person, under GATE's
+                # guard. The pointer names the newest of those currents.
+                newest = max(currents.values(),
+                             key=lambda c: (_to_date(c["validity_from"]), c["doc_id"]))
+                superseded_by_doc_id = newest["doc_id"]
+                flags.append("auto-superseded")
+        if "equal" in relations:
+            # Ruled 2026-09-04 and kept: two revisions of one day go to a person.
+            flags.append("same-date-revision")
+    if resolved_group_id is not None and doc_type and regulation:
         related = _related_production_doc(conn, resolved_group_id, doc_type, regulation)
         if related is not None:
             related_doc_id = related["doc_id"]
