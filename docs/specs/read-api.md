@@ -169,9 +169,12 @@ retracted link is unreachable through either view by construction.
 
 `item_document_production` is the current rows of `item_document_history`
 (migration 071), so the two cannot drift apart about which document answers:
-`web/registry.py`, `web/catalogue.py`, the KPI board and `046_eudamed_gap_view`
-all read the production view and get the current documents without editing a
-call site.
+`web/registry.py`, `web/catalogue.py` and the KPI board all read the production
+view and get the current documents without editing a call site.
+`046_eudamed_gap_view` does not read it: `eudamed_article_status` joins
+`item_document` and `document` itself, and migration 072 aligned it, so a DoC
+counts there when it is published (`production` or `superseded`) on a
+production link, which is the same as the article having a current DoC.
 
 ## 3. `GET /api/documents/{doc_id}`
 

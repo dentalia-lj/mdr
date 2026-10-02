@@ -620,6 +620,73 @@ def test_staged_is_counted_separately_from_absent(conn):
     assert row["staged"] == 1
 
 
+def _seed_eudamed_article(conn, *, canonical, srn, item_ref, budi):
+    _sweepable_srn(conn, canonical, srn)
+    _seed_item_row(conn, item_ref=item_ref, canonical=canonical)
+    conn.execute(
+        "INSERT INTO eudamed_mirror (udi_di, basic_udi_di, reference, "
+        " manufacturer_srn, synced_at) VALUES (%s,%s,%s,%s, now())",
+        (f"D-{item_ref}", budi, item_ref, srn))
+
+
+def test_a_superseded_declaration_that_still_answers_is_coverage(conn):
+    """Per-item currency (migration 072, ruling 2026-10-02): the server's doc
+    29 shape. The old document-wide rule marked the DoC `superseded`, but
+    nothing newer of its type covers this article, so it is the article's
+    current declaration. Read by `document.status` it was "missing a
+    declaration": in the gap summary, in the request list, and in the gap
+    letter to the supplier."""
+    from tests.currency_helpers import seed_doc
+    _seed_eudamed_article(conn, canonical="SUPCO", srn="XX-MF-810",
+                          item_ref="SUP1", budi="BUDI-SUP")
+    seed_doc(conn, ["SUP1"], validity_from="2022-01-01", status="superseded")
+
+    row = conn.execute(
+        "SELECT has_production FROM eudamed_article_status "
+        "WHERE item_ref = 'SUP1'").fetchone()
+    assert row["has_production"] is True
+    summary = conn.execute(
+        "SELECT covered, missing FROM eudamed_gap_summary "
+        "WHERE canonical_name = 'SUPCO'").fetchone()
+    assert (summary["covered"], summary["missing"]) == (1, 0)
+    assert conn.execute(
+        "SELECT 1 FROM eudamed_declaration_gap "
+        "WHERE canonical_name = 'SUPCO'").fetchone() is None
+
+
+def test_declaration_coverage_is_having_a_current_declaration(conn):
+    """`has_production` and the per-item views agree, article by article: a
+    published DoC on a production link counts exactly when the article has a
+    current DoC. A history DoC adds nothing beyond the current one beside it,
+    and nothing unpublished, unlinked or of another type counts."""
+    from tests.currency_helpers import newer_copy, seed_doc
+    shapes = ("LONE-SUP", "HISTORY", "STAGED-LINK", "REJECTED", "NO-LINK",
+              "SUP-EC")
+    for i, ref in enumerate(shapes):
+        _seed_eudamed_article(conn, canonical="CURCO", srn="XX-MF-811",
+                              item_ref=ref, budi=f"BUDI-CUR-{i}")
+    seed_doc(conn, ["LONE-SUP"], validity_from="2022-01-01", status="superseded")
+    old = seed_doc(conn, ["HISTORY"], validity_from="2020-01-01")
+    newer_copy(conn, old)
+    seed_doc(conn, ["STAGED-LINK"], validity_from="2022-01-01",
+             status="superseded", link_status="staged")
+    seed_doc(conn, ["REJECTED"], validity_from="2022-01-01", status="rejected")
+    seed_doc(conn, ["SUP-EC"], doc_type="EC", validity_from="2022-01-01",
+             status="superseded")
+
+    rows = conn.execute(
+        "SELECT a.item_ref, a.has_production, "
+        "       EXISTS (SELECT 1 FROM item_document_production p "
+        "                WHERE p.item_ref = a.item_ref AND p.type = 'DoC') "
+        "         AS has_current "
+        "  FROM eudamed_article_status a WHERE a.canonical_name = 'CURCO'"
+    ).fetchall()
+    got = {r["item_ref"]: r["has_production"] for r in rows}
+    assert got == {"LONE-SUP": True, "HISTORY": True, "STAGED-LINK": False,
+                   "REJECTED": False, "NO-LINK": False, "SUP-EC": False}
+    assert all(r["has_production"] == r["has_current"] for r in rows), rows
+
+
 def test_articles_eudamed_does_not_know_are_their_own_bucket(conn):
     """178 of 2.567 Carl Martin articles did not resolve, cause unknown. If the
     gap list treats "not in EUDAMED" as "no gap", the report overstates
