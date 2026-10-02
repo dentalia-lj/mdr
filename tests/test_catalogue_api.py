@@ -274,7 +274,8 @@ def test_the_widened_view_does_not_duplicate_a_document_that_is_both(
 # ------------------------------------------------- batch: superseded chain #
 def test_batch_passes_include_superseded_through(client, conn):
     """An order page reconciling old paperwork asks once, not once per line."""
-    old = _seed_item_with_doc(conn, "BAT-SUP", validity_to="2025-01-01")
+    old = _seed_item_with_doc(conn, "BAT-SUP", validity_to="2025-01-01",
+                              validity_from="2020-01-01")
     new = _seed_item_with_doc(conn, "BAT-SUP", validity_to="2027-01-01")
     conn.execute(
         "UPDATE document SET status='superseded', superseded_by=%s WHERE doc_id=%s",

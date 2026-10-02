@@ -73,7 +73,8 @@ def _seed_superseded_pair(conn, item_ref):
     `item_document` row (app/handlers/gate.py::_supersede), so the old
     document's link stays `production` and it drops out of
     `item_document_production` purely on the document's status."""
-    old = _seed_item_with_doc(conn, item_ref, validity_to="2025-01-01")
+    old = _seed_item_with_doc(conn, item_ref, validity_to="2025-01-01",
+                              validity_from="2020-01-01")
     new = _seed_item_with_doc(conn, item_ref, validity_to="2027-01-01")
     conn.execute(
         "UPDATE document SET status='superseded', superseded_by=%s WHERE doc_id=%s",
@@ -144,3 +145,11 @@ def test_flag_does_not_relax_the_link_filter(conn):
     _seed_item_with_doc(conn, "ID-SUPER-STAGEDLINK", link_status="staged")
     assert item_documents(conn, "ID-SUPER-STAGEDLINK",
                           include_superseded=True)["documents"] == []
+
+
+def test_include_superseded_marks_which_document_is_current(conn):
+    old, new = _seed_superseded_pair(conn, "ID-CURRENT")
+    docs = {d["doc_id"]: d for d in
+            item_documents(conn, "ID-CURRENT", include_superseded=True)["documents"]}
+    assert docs[new]["current"] is True
+    assert docs[old]["current"] is False

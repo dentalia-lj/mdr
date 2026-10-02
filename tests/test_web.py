@@ -2397,7 +2397,8 @@ def test_api_document_404_for_unknown_doc(client):
 def _seed_superseded_pair_web(conn, item_ref):
     """As GATE writes it: supersession flips `document.status` and sets
     `superseded_by`, never touching the link (gate.py::_supersede)."""
-    old = _seed_item_with_doc(conn, item_ref, validity_to="2025-01-01")
+    old = _seed_item_with_doc(conn, item_ref, validity_to="2025-01-01",
+                              validity_from="2020-01-01")
     new = _seed_item_with_doc(conn, item_ref, validity_to="2027-01-01")
     conn.execute(
         "UPDATE document SET status='superseded', superseded_by=%s WHERE doc_id=%s",
@@ -3409,7 +3410,7 @@ def test_data_quality_pager_keeps_the_kind_filter(client, many_anomalies):
 # --------------------------------------------------------------------------- #
 def _seed_item_with_doc(conn, item_ref="X1", link_status="production",
                         doc_status="production", validity_to="2026-12-01",
-                        manufacturer_raw="077"):
+                        manufacturer_raw="077", validity_from="2024-01-01"):
     # Two deviations from the brief's snippet, both required to make the
     # insert succeed against the actual schema/fixtures rather than the
     # brief's assumptions:
@@ -3436,9 +3437,9 @@ def _seed_item_with_doc(conn, item_ref="X1", link_status="production",
     content_hash = f"h-{item_ref}-{uuid.uuid4().hex[:12]}"
     doc_id = conn.execute(
         "INSERT INTO document (type, regulation, validity_from, validity_to, status, "
-        "content_hash, archive_url, coverage_scope) VALUES ('DoC','MDR','2024-01-01',"
+        "content_hash, archive_url, coverage_scope) VALUES ('DoC','MDR',%s,"
         "%s,%s,%s,'/archive/x.pdf','group') RETURNING doc_id",
-        (validity_to, doc_status, content_hash),
+        (validity_from, validity_to, doc_status, content_hash),
     ).fetchone()["doc_id"]
     conn.execute(
         "INSERT INTO item_document (item_ref, doc_id, match_basis, status) "

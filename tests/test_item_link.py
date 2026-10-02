@@ -180,7 +180,8 @@ def test_bc_card_never_serves_the_supersession_chain(guarded, conn):
     """The card is paperwork for a person handling one item today. The history
     flag is an API affordance; BC must not reach it by appending a query
     parameter to the link it builds by string concatenation."""
-    old = _seed_item_with_doc(conn, "LNK-SUP", validity_to="2025-01-01")
+    old = _seed_item_with_doc(conn, "LNK-SUP", validity_to="2025-01-01",
+                              validity_from="2020-01-01")
     new = _seed_item_with_doc(conn, "LNK-SUP", validity_to="2027-01-01")
     conn.execute(
         "UPDATE document SET status='superseded', superseded_by=%s WHERE doc_id=%s",

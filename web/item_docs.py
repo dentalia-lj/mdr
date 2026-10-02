@@ -88,7 +88,8 @@ def item_documents(
     paperwork REPLACED, each carrying `status` and `superseded_by` so the chain
     is walkable. A separate flag rather than a `view` value for the reason
     `include_unlinked` is one on the manufacturer endpoint: `view` is the
-    PROJECTION, this is the ROW SET, and one knob answers one question.
+    PROJECTION, this is the ROW SET, and one knob answers one question. Each row also carries `current`: whether it
+    is the document that answers for this item (migration 071).
 
     Off by default, and the two extra fields appear only when it is on. For an
     unflagged caller `status` is always "production" and `superseded_by` always
@@ -109,7 +110,7 @@ def item_documents(
     ).fetchone()
     # Same projection either way bar the two history fields, so the flagged and
     # unflagged rows cannot drift apart about what a document looks like.
-    extra = (", doc_status AS status, superseded_by "
+    extra = (", doc_status AS status, superseded_by, current "
              if include_superseded else "")
     source = "item_document_history" if include_superseded else "item_document_production"
     docs = conn.execute(
