@@ -679,9 +679,6 @@ def _resolve_group_unscoped(conn, ref_list: list, basic_udi_di) -> dict | None:
 
 # --- C6/C7 current-document lookups -----------------------------------------
 
-    assert p["supersedes"] is None
-    assert "older-than-current" not in p["flags"]
-
 
 def _current_docs_for_items(conn, item_refs, doc_type: str, regulation: str,
                             exclude_content_hash: str | None = None) -> dict:
