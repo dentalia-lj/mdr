@@ -29,9 +29,19 @@ from urllib.parse import quote
 
 import httpx
 
-#: Long enough for a full page from an on-premises ERP over a VPN, short enough
-#: that a wedged endpoint fails a job rather than holding a worker forever.
-DEFAULT_TIMEOUT_S = 30.0
+#: Long enough for one page from an on-premises ERP, short enough that a wedged
+#: endpoint fails a job rather than holding a worker forever. Was 30 s until
+#: 2026-10-02, when the first full catalogue read (job 23718) timed out on all
+#: five attempts -- it asked for no page size, so BC built every item as one
+#: response. `PAGE_SIZE` is the fix; the longer wait is the margin for a slow
+#: page, not the remedy.
+DEFAULT_TIMEOUT_S = 120.0
+
+#: Records per page asked of BC on every read, through `Prefer:
+#: odata.maxpagesize` -- a preference, not a `$top`: BC still decides the split
+#: and hands back `@odata.nextLink`, which `BcApiAdapter._pages` follows, so a
+#: server that pages differently cannot make us skip or repeat items.
+PAGE_SIZE = 1000
 
 #: Credentials BC has refused in this process, as digests. The account is a
 #: Windows domain account, and a domain locks an account after a few failed
@@ -123,7 +133,7 @@ class BcClient:
         `value` key, which reads as an empty catalogue, which INGEST reports as
         "every item unchanged".
         """
-        resp = self._client.get(url)
+        resp = self._client.get(url, headers={"Prefer": f"odata.maxpagesize={PAGE_SIZE}"})
         resp.raise_for_status()
         return resp.json()
 

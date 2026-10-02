@@ -585,6 +585,21 @@ docker compose run --rm worker python -m app.cli enqueue ingest.run \
 > presence, not emptiness, so the old mapping would have mirrored the catalogue
 > with no manufacturer and reported success. No BC ingest had run.
 
+> **A full read pages.** Every GET asks BC for `Prefer: odata.maxpagesize=1000`
+> and follows `@odata.nextLink`; the read timeout is 120 s per page
+> (`app/adapters/bc_client.py`). Until 2026-10-02 it asked for no page size and
+> waited 30 s, and the first full read (dry run, job 23718) timed out on all five
+> attempts: BC was building the whole catalogue as one response. The 2026-09-24
+> and 09-25 checks read 1 and 200 items and never met it. Measured live the same
+> day from the server: BC applies the preference (`preference-applied`, a
+> `nextLink`) and costs **about 0.058 s per record whatever is asked for** --
+> `$select` of the six profile fields cuts a record from 6 KB to 0.26 KB but
+> not the time -- so a 1.000-record page takes ~58 s and a full read of ~19.000
+> items ~19 minutes of BC time, inside the 30-minute visibility timeout but not
+> by much. Content checked on one page: all 1.000 carry `no`, `description`
+> and `manufacturerCode`, 361 a device class; 758 are in the mirror and all 758
+> carry the same manufacturer as the 09-25 export. Full read not yet re-run.
+
 > **There is no delta.** Nothing builds an OData `$filter`; `delta_since` is read
 > by the web form and by nothing else. Every OData run is a full catalogue read.
 > When delta lands it must key on `systemModifiedAt`, not

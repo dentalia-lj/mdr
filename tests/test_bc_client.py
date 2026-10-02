@@ -19,7 +19,7 @@ import pytest
 import spnego
 
 from app.adapters import bc_client
-from app.adapters.bc_client import BcAuthRejected, BcClient
+from app.adapters.bc_client import PAGE_SIZE, BcAuthRejected, BcClient
 
 USER, PASSWORD = "DENTALIA3\\svc", "secret"
 
@@ -212,6 +212,34 @@ def test_an_error_status_raises_rather_than_returning_a_body():
 
     with pytest.raises(httpx.HTTPStatusError):
         _client(handler, username=USER, password=PASSWORD).get("http://bc/api/allitems")
+
+
+def test_a_read_asks_bc_for_pages():
+    """Without a page size BC builds the whole catalogue as one response: the
+    first full read (job 23718, 2026-10-02) timed out on all five attempts.
+    A preference, not a `$top`: BC still decides the split and says where the
+    next page is, which `BcApiAdapter._pages` follows."""
+    seen = {}
+
+    def handler(request):
+        seen["prefer"] = request.headers.get("prefer")
+        return httpx.Response(200, json={"value": []})
+
+    _client(handler).get("http://bc/api/allitems")
+
+    assert seen["prefer"] == f"odata.maxpagesize={PAGE_SIZE}"
+
+
+def test_a_patch_carries_no_page_preference():
+    seen = {}
+
+    def handler(request):
+        seen["prefer"] = request.headers.get("prefer")
+        return httpx.Response(204)
+
+    _client(handler).patch_item("A1", {"x": 1})
+
+    assert seen["prefer"] is None
 
 
 def test_it_asks_for_json():
