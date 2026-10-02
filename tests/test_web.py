@@ -3492,32 +3492,35 @@ def test_items_page_searches_by_item_ref(client, conn):
     assert "X1" not in resp.text
 
 
-def test_items_page_counts_superseded_documents_separately_from_no_coverage(client, conn):
-    # A link promoted to production keeps that link status forever;
-    # _apply_supersession (app/handlers/gate.py) only ever flips the
-    # document's own status to 'superseded'. The old two-bucket count
-    # (production: doc+link both production; staged: link staged) has no
-    # bucket for doc.status='superseded' with link.status still
-    # 'production' — that row used to collapse silently to 0/0, rendering
-    # as if the item had no coverage at all. This reproduces exactly that
-    # shape and checks the third, superseded, bucket now catches it.
-    old_id = _seed_item_with_doc(conn, "X8")
-    new_id = _seed_item_with_doc(conn, "X9")
-    conn.execute(
-        "UPDATE document SET superseded_by=%s, status='superseded' WHERE doc_id=%s",
-        (new_id, old_id),
-    )
-    conn.commit()
-    resp = client.get("/items?q=X8")
+def _items_row_cells(client, ref):
+    resp = client.get(f"/items?q={ref}")
     assert resp.status_code == 200
-    row = re.search(r"<tr>\s*<td><a href=\"/items/X8\">X8</a></td>.*?</tr>", resp.text, re.S)
+    row = re.search(
+        rf"<tr>\s*<td><a href=\"/items/{ref}\">{ref}</a></td>.*?</tr>", resp.text, re.S)
     assert row, resp.text
     cells = re.findall(r"<td>(.*?)</td>", row.group(0), re.S)
     # item_ref, name, manufacturer, md_class, production_docs, staged_docs, superseded_docs, next_expiry
     assert len(cells) == 8, cells
-    assert cells[4].strip() == "0"  # production_docs
-    assert cells[5].strip() == "0"  # staged_docs
-    assert cells[6].strip() == "1"  # superseded_docs — the row is not invisible
+    return [c.strip() for c in cells]
+
+
+def test_items_page_counts_history_separately_from_no_coverage(client, conn):
+    from tests.currency_helpers import newer_copy
+    ref = f"X8-{uuid.uuid4().hex[:6]}"
+    old_id = _seed_item_with_doc(conn, ref, validity_from="2020-01-01")
+    newer_copy(conn, old_id)
+    conn.commit()
+    cells = _items_row_cells(client, ref)
+    assert cells[4:7] == ["1", "0", "1"]  # production, staged, history
+
+
+def test_items_page_counts_a_lone_superseded_flag_as_production(client, conn):
+    """The server's doc 29: status 'superseded', nothing newer names the item.
+    The flag is not currency, so the item still has one current document."""
+    ref = f"X7-{uuid.uuid4().hex[:6]}"
+    _seed_item_with_doc(conn, ref, doc_status="superseded")
+    cells = _items_row_cells(client, ref)
+    assert cells[4:7] == ["1", "0", "0"]
 
 
 def test_item_detail_shows_the_linked_certificate_and_its_validity(client, conn):
@@ -7474,3 +7477,13 @@ def test_a_superseded_document_page_offers_reopen(client, conn):
     resp = client.get(f"/documents/{doc_id}")
     assert resp.status_code == 200
     assert 'value="reopen"' in resp.text
+
+
+def test_a_restored_document_shows_the_old_pointer_as_history(client, conn):
+    a = _seed_item_with_doc(conn, f"RST-{uuid.uuid4().hex[:6]}")
+    b = _seed_item_with_doc(conn, f"RST-{uuid.uuid4().hex[:6]}")
+    conn.execute("UPDATE document SET superseded_by=%s WHERE doc_id=%s", (b, a))
+    conn.commit()
+    resp = client.get(f"/documents/{a}")
+    assert "That mark no longer applies" in resp.text
+    assert "Superseded by <a" not in resp.text

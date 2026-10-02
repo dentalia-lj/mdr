@@ -47,6 +47,7 @@ from app.config import load_config
 from app.playbooks import DOC_TYPES as DOC_TYPES_FOR_FORM
 from app.urls import normalize_url
 from app import vendor_master
+from app.currency import DOC_STATUS_FOR_ITEM
 from app.vendor_master import DEFAULT_CODE_SOURCE
 
 # One row per canonical entity. LEFT JOINs so an entity with no items still
@@ -338,8 +339,8 @@ def _contacts(conn, canonical_name: str) -> dict:
 # and the ranking below ("article-level beats manufacturer-scope beats staged")
 # is a business rule that reads as a rule in Python and as a window function
 # nobody can review in SQL.
-_HOLDINGS_COLUMNS = """
-       d.doc_id, d.type, d.status::text AS doc_status, d.cert_number,
+_HOLDINGS_COLUMNS = f"""
+       d.doc_id, d.type, ({DOC_STATUS_FOR_ITEM}) AS doc_status, d.cert_number,
        l.status::text AS link_status, l.match_basis,
        ee.expires, ee.basis AS expiry_basis
 """
@@ -401,7 +402,8 @@ def _holding_rank(h: dict) -> int:
 
     Superseded ranks below staged deliberately: a staged document is a decision
     someone still owes, which is actionable, while a superseded one is settled
-    history and can never become current again.
+    history. "Superseded" here is per item (app/currency.py): a newer document
+    answers for this item, not the document's own status.
     """
     if h["doc_status"] == "superseded":
         return 0

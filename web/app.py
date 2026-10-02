@@ -3155,16 +3155,14 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
     def items(request: Request, q: str = "",
               page: int = Query(0, ge=0, le=MAX_PAGE)):
         """Browse the catalogue with its compliance coverage. Three buckets
-        that partition every linked document: production (live, consumer
-        visible), staged (found but not yet trusted enough to publish), and
-        superseded (was production, since replaced — still on file, not
-        "no coverage"). A link promoted to production keeps that link status
-        forever; supersession only ever flips the document's own status
-        (app/handlers/gate.py `_apply_supersession`), so a superseded
-        document can still carry a production-status link — bucketed here by
-        document status, not link status, so that row is never silently
-        dropped from every count. next_expiry inherits through cert_doc_id
-        the same way app/handlers/report.py's expiring_documents() does, so
+        per item, counted from the per-item currency views (migration 071),
+        not from document.status: production (documents that answer for the
+        item now, consumer visible), staged (found but not yet trusted enough
+        to publish), and superseded (published documents a newer one replaced
+        for this item: history, still on file, not "no coverage"). A document
+        whose own status reads `superseded` but which nothing newer names the
+        item under still counts as production here. next_expiry inherits through
+        cert_doc_id the same way app/handlers/report.py's expiring_documents() does, so
         the board and that scan cannot disagree about when something
         expires.
 
@@ -3194,19 +3192,19 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             ).fetchone()["n"]
             rows = conn.execute(
                 "SELECT m.item_ref, m.name, m.manufacturer_raw, a.canonical_name AS manufacturer_name, m.md_flag, "
-                "  count(*) FILTER (WHERE d.status='production' AND id.status='production') AS production_docs, "
-                "  count(*) FILTER (WHERE id.status='staged' AND d.status IN ('staged','production')) AS staged_docs, "
-                "  count(*) FILTER (WHERE d.status='superseded' AND id.status <> 'retracted') AS superseded_docs, "
-                "  min(e.expires) FILTER (WHERE d.status='production' AND id.status='production' "
-                "                          AND d.regulation IN ('MDR','MDD')) AS next_expiry "
+                "  (SELECT count(*) FROM item_document_production p "
+                "    WHERE p.item_ref = m.item_ref) AS production_docs, "
+                "  (SELECT count(*) FROM item_document id JOIN document d ON d.doc_id = id.doc_id "
+                "    WHERE id.item_ref = m.item_ref AND id.status = 'staged' "
+                "      AND d.status IN ('staged','production')) AS staged_docs, "
+                "  (SELECT count(*) FROM item_document_history h "
+                "    WHERE h.item_ref = m.item_ref AND NOT h.current) AS superseded_docs, "
+                "  (SELECT min(p.expires) FROM item_document_production p "
+                "    WHERE p.item_ref = m.item_ref AND p.regulation IN ('MDR','MDD')) AS next_expiry "
                 "FROM item_mirror m "
                 "LEFT JOIN manufacturer_alias a ON a.raw_name = m.manufacturer_raw "
-                "LEFT JOIN item_document id ON id.item_ref = m.item_ref "
-                "LEFT JOIN document d ON d.doc_id = id.doc_id "
-                "LEFT JOIN document_effective_expiry e ON e.doc_id = d.doc_id "
                 "WHERE (%s = '' OR m.item_ref ILIKE %s OR m.name ILIKE %s "
                 "       OR m.manufacturer_raw ILIKE %s OR a.canonical_name ILIKE %s) "
-                "GROUP BY m.item_ref, m.name, m.manufacturer_raw, a.canonical_name, m.md_flag "
                 "ORDER BY m.item_ref LIMIT %s OFFSET %s",
                 (q, like, like, like, like, ITEMS_PAGE_SIZE, page * ITEMS_PAGE_SIZE),
             ).fetchall()

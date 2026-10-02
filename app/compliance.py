@@ -228,9 +228,8 @@ def cell_state(
     doc_status = held.get("doc_status")
     link_status = held.get("link_status")
 
-    # Supersession flips the document and never the link, so a superseded
-    # document is still reachable through a production link. It is history,
-    # not current evidence.
+    # `superseded` here is per item (app/currency.py): another document
+    # answers for this item, so this one is history, not current evidence.
     if doc_status == "superseded":
         return {"state": "superseded", "severity": _cap("bad", requirement)}
 

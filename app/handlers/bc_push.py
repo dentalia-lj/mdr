@@ -17,6 +17,7 @@ from datetime import date
 
 from app import bc_fields
 from app.config import load_config
+from app.currency import DOC_STATUS_FOR_ITEM
 from app.handlers import register
 from app.results import Result
 
@@ -40,10 +41,10 @@ from app.results import Result
 #: FOREIGN actor on the bare number, touching 640 production-linked items. Two
 #: queries for one rule is how that happened; there is one now, and the WHERE
 #: clause is all a caller adds.
-_HOLDINGS_SELECT = r"""
+_HOLDINGS_SELECT = rf"""
 SELECT l.item_ref,
        d.type          AS doc_type,
-       d.status        AS doc_status,
+       ({DOC_STATUS_FOR_ITEM}) AS doc_status,
        l.status        AS link_status,
        d.coverage_scope,
        e.expires,

@@ -417,3 +417,23 @@ def test_a_refused_login_stops_the_batch(conn, seed_item):
         handle_bc_push(conn, _job([seed_item(), seed_item()]), client=bc)
 
     assert len(bc.calls) == 1
+
+
+def test_a_history_declaration_does_not_make_the_item_valid(conn):
+    """Only the declaration that answers for the item counts. An older one that
+    is still unexpired must not keep pteValidDeclarationOfConformity true when
+    the current one has lapsed."""
+    from datetime import date
+
+    from app.bc_fields import valid_doc
+    from app.handlers.bc_push import _HOLDINGS_SQL
+    from tests.currency_helpers import seed_doc
+
+    item = f"BC-HIST-{uuid.uuid4().hex[:8]}"
+    old = seed_doc(conn, [item], validity_from="2019-01-01")
+    conn.execute("UPDATE document SET validity_to='2031-01-01' WHERE doc_id=%s", (old,))
+    new = seed_doc(conn, [item], validity_from="2023-01-01")
+    conn.execute("UPDATE document SET validity_to='2024-01-01' WHERE doc_id=%s", (new,))
+
+    holdings = conn.execute(_HOLDINGS_SQL, (item,)).fetchall()
+    assert valid_doc(holdings, today=date(2026, 10, 2)) is False

@@ -728,18 +728,38 @@ def test_expired_declarations_are_not_counted_as_missing(conn):
     assert row["held"] == 0
 
 
-def test_superseded_declarations_land_with_the_lapsed_not_the_missing(conn):
+def test_a_superseded_declaration_nothing_newer_names_still_counts_as_held(conn):
+    """The server's doc 29: the old flag is not currency. Nothing newer names
+    the item, so the declaration still answers for it."""
     _alias(conn, "ACME", "ACME CORP")
     seed_item(conn, "B-SUP", manufacturer_raw="ACME", product_class="IIa")
     doc = seed_document(
         conn, content_hash="h-b-sup", archive_url="file:///bs.pdf",
         doc_type="DoC", status="superseded", cert_number="0999",
+        validity_to="2030-01-01",
     )
     seed_link(conn, "B-SUP", doc, match_basis="ref-item", status="production")
 
     row = _rows(manufacturer_completeness(conn, "ACME CORP", today=TODAY))[ROW_DOC]
-    assert row["lapsed"] == 1
-    assert row["none"] == 0
+    assert row["held"] == 1
+    assert row["lapsed"] == 0
+
+
+def test_an_older_declaration_does_not_drag_the_item_down(conn):
+    from tests.currency_helpers import newer_copy
+    _alias(conn, "ACME", "ACME CORP")
+    seed_item(conn, "B-HIST", manufacturer_raw="ACME", product_class="IIa")
+    old = seed_document(
+        conn, content_hash="h-b-hist", archive_url="file:///bh.pdf",
+        doc_type="DoC", status="production", cert_number="0998",
+        validity_to="2030-01-01",
+    )
+    seed_link(conn, "B-HIST", old, match_basis="ref-item", status="production")
+    newer_copy(conn, old)
+
+    row = _rows(manufacturer_completeness(conn, "ACME CORP", today=TODAY))[ROW_DOC]
+    assert row["held"] == 1
+    assert row["lapsed"] == 0
 
 
 def test_buckets_account_for_every_device_exactly_once(conn):
