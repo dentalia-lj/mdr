@@ -188,6 +188,26 @@
   <div id="reopen-result"></div>
 </div>
 {% endif %}
+{% if doc.status == 'superseded' %}
+<div class="card">
+  <h2>Reopen this document</h2>
+  <p class="hint">
+    This document was marked as replaced by an older rule that retired a whole
+    document when a newer one shared a catalogue group with it. Reopening puts it
+    back into <a href="/staging">review</a>. Its item links stay as they are, so
+    approving it makes it count again for those items.
+  </p>
+  <form hx-post="/staging/{{ doc.doc_id }}/apply" hx-target="#reopen-result-sup"
+        hx-swap="innerHTML">
+    <input type="hidden" name="decision" value="reopen">
+    <label for="reopen-by-sup">Your name</label>
+    <input type="text" id="reopen-by-sup" name="decided_by" required
+           placeholder="who is reopening this">
+    <button type="submit">Reopen for review</button>
+  </form>
+  <div id="reopen-result-sup"></div>
+</div>
+{% endif %}
 
 <div class="card">
   <h2>Supersession chain</h2>

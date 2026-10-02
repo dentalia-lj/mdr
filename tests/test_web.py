@@ -7465,3 +7465,12 @@ def test_a_page_lights_the_menu_entry_it_is_reached_from(client, path, entry, la
     assert len(active) == 1, f"{path} lights {active}"
     assert active[0][0] == entry
     assert active[0][1].strip().startswith(label)
+
+
+def test_a_superseded_document_page_offers_reopen(client, conn):
+    doc_id = _seed_item_with_doc(conn, f"SUP-REOPEN-{uuid.uuid4().hex[:6]}")
+    conn.execute("UPDATE document SET status='superseded' WHERE doc_id=%s", (doc_id,))
+    conn.commit()
+    resp = client.get(f"/documents/{doc_id}")
+    assert resp.status_code == 200
+    assert 'value="reopen"' in resp.text

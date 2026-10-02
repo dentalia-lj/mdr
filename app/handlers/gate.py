@@ -644,7 +644,8 @@ def _upsert_link(conn, item_ref, doc_id, udi, basis, status) -> None:
 def _assert_chain_identity(conn, newer_id, older_id) -> None:
     """C6 (inv. 5): a chain pointer may only join two documents with an identical
     (type, regulation), re-read LIVE from the registry rather than trusted from
-    the payload — and BOTH routes to a pointer go through here.
+    the payload. The task-5 fast path is the one route to a pointer left (per-item
+    currency, migration 071, removed forward supersession).
 
     The payload cannot be trusted because it is a snapshot. VALIDATE scopes its
     `_current_production_doc` lookup by (type, regulation) when it computes
@@ -674,24 +675,6 @@ def _assert_chain_identity(conn, newer_id, older_id) -> None:
             f"gate: C6 violation — doc {newer_id} ({new_doc['type']}/{new_doc['regulation']}) "
             f"cannot supersede {older_id} ({old_doc['type']}/{old_doc['regulation']})"
         )
-
-
-def _apply_supersession(conn, doc_id, supersedes_id, decided_by, job) -> None:
-    """C6 (inv. 5): a document may supersede only one with an identical
-    (type, regulation) — re-checked here in the writer (`_assert_chain_identity`).
-    Sets the OLD doc to 'superseded' + superseded_by; idempotent under
-    at-least-once delivery (an update that would set the same values is a no-op,
-    so no duplicate audit event) and append-only (a superseded doc is never
-    un-superseded — see _upsert_document's status CASE)."""
-    _assert_chain_identity(conn, doc_id, supersedes_id)
-    changed = conn.execute(
-        "UPDATE document SET status='superseded', superseded_by=%s "
-        "WHERE doc_id=%s AND (status <> 'superseded' OR superseded_by IS DISTINCT FROM %s) "
-        "RETURNING doc_id",
-        (doc_id, supersedes_id, doc_id),
-    ).fetchone()
-    if changed is not None:
-        _audit(conn, "supersede", supersedes_id, decided_by, job, detail={"superseded_by": doc_id})
 
 
 def _insert_evidence(conn, doc_id, extract_rev, fields, archive_url) -> None:
@@ -1198,12 +1181,6 @@ def handle_gate_candidate(conn, job: dict) -> dict:
     if disposition in SETTLED_DISPOSITIONS:
         _resolve_manual_tasks(conn, doc_id, "gate")
 
-    # C6: a candidate landing directly on production may act on its supersession
-    # target immediately — the STAGED case waits for gate.apply approve, since a
-    # staged doc must never actually supersede anything (§7).
-    if disposition == "production" and p.get("supersedes") is not None:
-        _apply_supersession(conn, doc_id, p["supersedes"], "gate", job)
-
     out = {"disposition": disposition, "doc_id": doc_id, "score": round(score, 4),
            "links": len(p.get("links", []))}
     # Report the flags that decided this disposition. GATE raises its own on top
@@ -1458,15 +1435,6 @@ def handle_gate_apply(conn, job: dict) -> dict:
         _apply_edits(conn, doc_id, p.get("edits"))
         _promote(conn, doc_id)
         _promote_pending_links(conn, doc_id)
-        # C6 human path: a STAGED candidate that carried a supersession target
-        # (document.supersedes, written sticky at candidate-write time — it must
-        # not act while merely staged, §7) acts on it now that a human promoted
-        # it to production.
-        supersedes = conn.execute(
-            "SELECT supersedes FROM document WHERE doc_id=%s", (doc_id,)
-        ).fetchone()["supersedes"]
-        if supersedes is not None:
-            _apply_supersession(conn, doc_id, supersedes, decided_by, job)
     elif decision == "reject":
         conn.execute("UPDATE document SET status='rejected' WHERE doc_id=%s", (doc_id,))
         # §7: un-bind = reject + link cascade — no link may stay production or
@@ -1496,10 +1464,14 @@ def handle_gate_apply(conn, job: dict) -> dict:
         # decision: a reopen that quietly did nothing would read to the
         # reviewer as their click being ignored, which is the exact failure
         # C17 was written to end.
-        if prev_status != "rejected":
+        # `superseded` joined 2026-10-02: the documents the old document-wide
+        # rule retired come back through Review, one approval each, rebuilt
+        # from their `supersede` audit entries. Their links were never touched
+        # by supersession, so they stay production and need no reopen-link.
+        if prev_status not in ("rejected", "superseded"):
             raise ValueError(
                 f"gate.apply reopen: document {doc_id} is {prev_status!r}, "
-                f"not 'rejected' — there is nothing to reopen")
+                f"neither 'rejected' nor 'superseded': nothing to reopen")
         conn.execute(
             "UPDATE document SET status='staged' WHERE doc_id=%s", (doc_id,))
         # Deliberately NO link cascade. `reject` cascades links to `rejected`

@@ -137,3 +137,45 @@ def test_a_second_drain_over_unchanged_content_moves_nothing(walked, conn):
         "extract.doc": functools.partial(eh.handle_extract_doc, llm=StubLlm()),
     })
     assert again.tags == []
+
+
+def test_a_newer_declaration_answers_only_for_its_own_articles_through_the_queue(conn):
+    """A newer declaration naming one of an older one's two articles goes
+    VALIDATE -> GATE through the real queue. The older one stays published and
+    answers for the article the newer one does not name."""
+    from app.extract.tiers import write_extraction_attempt
+    from tests.currency_helpers import seed_doc
+    from tests.test_gate_candidate_handler import _ev, _fields
+
+    group_id = conn.execute(
+        "INSERT INTO item_group (canonical_manufacturer) VALUES ('ACME') "
+        "RETURNING group_id").fetchone()["group_id"]
+    for ref, mfr_ref in (("CH-1", "CHAIN-REF-1"), ("CH-2", "CHAIN-REF-2")):
+        conn.execute(
+            "INSERT INTO item_mirror (item_ref, name, manufacturer_raw, md_flag, "
+            "catalogue, mirror_rev, updated_at) VALUES (%s,'n','ACME',TRUE,'LJ',1,now()) "
+            "ON CONFLICT (item_ref) DO NOTHING", (ref,))
+        conn.execute(
+            "INSERT INTO item_group_member (group_id, item_ref, mfr_ref, match_basis) "
+            "VALUES (%s,%s,%s,'manual')", (group_id, ref, mfr_ref))
+    old = seed_doc(conn, ["CH-1", "CH-2"], validity_from="2020-01-01")
+    write_extraction_attempt(conn, "chain-newer", ["T0", "T1"], _fields(
+        ref_list=_ev(["CHAIN-REF-1"]), validity_from=_ev("2024-01-01"),
+        cert_number=_ev(None), validity_to=_ev(None)), extract_rev=1)
+    queue.enqueue(conn, "validate.doc",
+                  {"content_hash": "chain-newer", "extract_rev": 1,
+                   "group_id": group_id, "archive_url": "file:///chain-newer.pdf"},
+                  "chain:validate-newer")
+    conn.commit()
+
+    chain.drain(conn)
+
+    new = conn.execute("SELECT doc_id, status FROM document WHERE content_hash='chain-newer'"
+                       ).fetchone()
+    assert new["status"] == "production"
+    picked = {r["item_ref"]: r["doc_id"] for r in conn.execute(
+        "SELECT item_ref, doc_id FROM item_document_production "
+        "WHERE item_ref IN ('CH-1','CH-2') AND type='DoC'").fetchall()}
+    assert picked == {"CH-1": new["doc_id"], "CH-2": old}
+    assert conn.execute("SELECT status FROM document WHERE doc_id=%s", (old,)
+                        ).fetchone()["status"] == "production"

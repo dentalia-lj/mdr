@@ -584,7 +584,7 @@ def test_reopen_refuses_a_document_that_is_not_rejected(conn, status):
     doc_id = _seed_staged_doc(conn, f"reopen-{status}".ljust(64, "0"))
     conn.execute("UPDATE document SET status=%s::doc_status WHERE doc_id=%s",
                  (status, doc_id))
-    with pytest.raises(ValueError, match="not 'rejected'"):
+    with pytest.raises(ValueError, match="nothing to reopen"):
         gh.handle_gate_apply(conn, _apply(doc_id, "reopen"))
 
 
@@ -595,6 +595,20 @@ def test_reopen_is_audited_under_the_name_that_asked_for_it(conn):
         "SELECT event, decided_by FROM audit_log WHERE doc_id=%s AND event='reopen'",
         (doc_id,)).fetchone()
     assert row is not None and row["decided_by"] == "denis"
+
+
+def test_reopen_returns_a_superseded_document_to_review_with_its_links(conn):
+    """Ruled 2026-10-02: the documents the old document-wide rule retired come
+    back through Review. Supersession never touched their links, so they stay
+    production and the panel lists them under what approving makes it count for."""
+    doc_id = _seed_staged_doc(conn, "reopen-sup".ljust(64, "0"))
+    conn.execute("UPDATE document SET status='superseded' WHERE doc_id=%s", (doc_id,))
+    _seed_link(conn, "IT-SUP", doc_id, "ref-list", status="production")
+
+    gh.handle_gate_apply(conn, _apply(doc_id, "reopen", decided_by="denis"))
+
+    assert _status(conn, doc_id) == "staged"
+    assert _link_status(conn, doc_id, "IT-SUP") == "production"
 
 
 # ---------------------------------------------------------------------------

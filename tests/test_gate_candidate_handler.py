@@ -1345,101 +1345,43 @@ def test_production_gate_is_idempotent(conn):
 
 # --- C6 supersession persistence ([gate-c6] ruling, 2026-07-31) ------------------
 
-def test_production_candidate_supersedes_prior_production_doc(conn):
+def test_a_newer_production_candidate_retires_nothing(conn):
+    """Per-item currency (migration 071): the view decides which document
+    answers for each item. GATE no longer flips the older one, even when the
+    payload still carries a stale `supersedes` from an old VALIDATE."""
     _seed_ext(conn, "gc-old", _fields(conf=0.97))
     r_old = gh.handle_gate_candidate(conn, _job("gc-old", ref_gate=True, flags=[], links=[]))
-
     _seed_ext(conn, "gc-new", _fields(conf=0.97))
-    job_new = _job("gc-new", ref_gate=True, flags=[], links=[], jid=42, supersedes=r_old["doc_id"])
-    r_new = gh.handle_gate_candidate(conn, job_new)
+    gh.handle_gate_candidate(conn, _job(
+        "gc-new", ref_gate=True, flags=[], links=[], jid=42, supersedes=r_old["doc_id"]))
 
     old_doc = conn.execute(
         "SELECT status, superseded_by FROM document WHERE doc_id=%s", (r_old["doc_id"],)
     ).fetchone()
-    assert old_doc["status"] == "superseded"
-    assert old_doc["superseded_by"] == r_new["doc_id"]
-    a = conn.execute(
-        "SELECT decided_by, via_job, detail FROM audit_log "
-        "WHERE doc_id=%s AND event='supersede'", (r_old["doc_id"],)
-    ).fetchone()
-    assert a["decided_by"] == "gate"
-    assert a["via_job"] == 42
-    assert a["detail"]["superseded_by"] == r_new["doc_id"]
+    assert old_doc["status"] == "production"
+    assert old_doc["superseded_by"] is None
+    assert conn.execute(
+        "SELECT count(*) AS n FROM audit_log WHERE doc_id=%s AND event='supersede'",
+        (r_old["doc_id"],)).fetchone()["n"] == 0
 
 
-def test_staged_candidate_does_not_supersede_until_gate_apply_approves(conn):
+def test_approving_a_newer_document_retires_nothing(conn):
     _seed_ext(conn, "gc-old2", _fields(conf=0.97))
     r_old = gh.handle_gate_candidate(conn, _job("gc-old2", ref_gate=True, flags=[], links=[]))
-
-    # score in [MED, HIGH) -> staged, not production
     _seed_ext(conn, "gc-new2", _fields(conf=0.80))
     r_new = gh.handle_gate_candidate(conn, _job(
         "gc-new2", ref_gate=True, flags=[], links=[], supersedes=r_old["doc_id"]))
     assert r_new["disposition"] == "staged"
 
-    old_status = conn.execute(
-        "SELECT status FROM document WHERE doc_id=%s", (r_old["doc_id"],)
-    ).fetchone()["status"]
-    assert old_status == "production"   # untouched while the new candidate is only staged
-    stored_supersedes = conn.execute(
-        "SELECT supersedes FROM document WHERE doc_id=%s", (r_new["doc_id"],)
-    ).fetchone()["supersedes"]
-    assert stored_supersedes == r_old["doc_id"]   # persisted, waiting for a human
+    gh.handle_gate_apply(conn, {"id": 99, "type": "gate.apply", "payload": {
+        "doc_id": r_new["doc_id"], "decision": "approve", "decided_by": "user:marta"}})
 
-    apply_job = {"id": 99, "type": "gate.apply", "payload": {
-        "doc_id": r_new["doc_id"], "decision": "approve", "decided_by": "user:marta"}}
-    gh.handle_gate_apply(conn, apply_job)
-
-    old_doc = conn.execute(
-        "SELECT status, superseded_by FROM document WHERE doc_id=%s", (r_old["doc_id"],)
-    ).fetchone()
-    assert old_doc["status"] == "superseded"
-    assert old_doc["superseded_by"] == r_new["doc_id"]
-    a = conn.execute(
-        "SELECT decided_by, via_job FROM audit_log "
-        "WHERE doc_id=%s AND event='supersede'", (r_old["doc_id"],)
-    ).fetchone()
-    assert a["decided_by"] == "user:marta"
-    assert a["via_job"] == 99
-
-
-def test_c6_mismatch_raises_and_leaves_old_doc_untouched(conn):
-    _seed_ext(conn, "gc-old3", _fields(conf=0.97, regulation=_ev("MDR")))
-    r_old = gh.handle_gate_candidate(conn, _job("gc-old3", ref_gate=True, flags=[], links=[]))
-
-    # a payload claiming to supersede gc-old3 but with a different regulation —
-    # should never happen from real VALIDATE output (it scopes its lookup by
-    # (type, regulation)); simulates an upstream bug this belt-and-braces check
-    # is meant to catch.
-    _seed_ext(conn, "gc-new3", _fields(conf=0.97, regulation=_ev("MDD")))
-    with pytest.raises(ValueError):
-        gh.handle_gate_candidate(conn, _job(
-            "gc-new3", ref_gate=True, flags=[], links=[], supersedes=r_old["doc_id"]))
-
-    old_doc = conn.execute(
-        "SELECT status, superseded_by FROM document WHERE doc_id=%s", (r_old["doc_id"],)
-    ).fetchone()
-    assert old_doc["status"] == "production"     # not corrupted
-    assert old_doc["superseded_by"] is None
     assert conn.execute(
-        "SELECT 1 FROM audit_log WHERE doc_id=%s AND event='supersede'", (r_old["doc_id"],)
-    ).fetchone() is None
-
-
-def test_supersession_redelivery_is_idempotent(conn):
-    _seed_ext(conn, "gc-old4", _fields(conf=0.97))
-    r_old = gh.handle_gate_candidate(conn, _job("gc-old4", ref_gate=True, flags=[], links=[]))
-    _seed_ext(conn, "gc-new4", _fields(conf=0.97))
-    job_new = _job("gc-new4", ref_gate=True, flags=[], links=[], supersedes=r_old["doc_id"])
-
-    gh.handle_gate_candidate(conn, job_new)
-    gh.handle_gate_candidate(conn, job_new)   # at-least-once re-delivery
-
-    n = conn.execute(
-        "SELECT count(*) c FROM audit_log WHERE doc_id=%s AND event='supersede'",
-        (r_old["doc_id"],)
-    ).fetchone()["c"]
-    assert n == 1
+        "SELECT status FROM document WHERE doc_id=%s", (r_old["doc_id"],)
+    ).fetchone()["status"] == "production"
+    assert conn.execute(
+        "SELECT status FROM document WHERE doc_id=%s", (r_new["doc_id"],)
+    ).fetchone()["status"] == "production"
 
 
 def test_related_doc_id_persisted_regardless_of_disposition(conn):
