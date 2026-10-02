@@ -4632,14 +4632,26 @@ def test_expiry_board_excludes_staged_documents(client, conn):
     assert cert_number not in resp.text
 
 
-def test_expiry_board_excludes_superseded_documents(client, conn):
+def test_expiry_board_excludes_a_document_that_is_history_everywhere(client, conn):
+    from tests.currency_helpers import newer_copy
     manufacturer = f"ExpSup-{uuid.uuid4().hex[:8]}"
     doc_id, cert_number = _seed_grouped_expiring_doc(conn, manufacturer=manufacturer, day_offset=10)
-    conn.execute("UPDATE document SET status='superseded' WHERE doc_id=%s", (doc_id,))
+    newer_copy(conn, doc_id)
     conn.commit()
     resp = client.get("/expiry?days=90")
     assert resp.status_code == 200
     assert cert_number not in resp.text
+
+
+def test_expiry_board_keeps_a_superseded_document_that_still_answers(client, conn):
+    """The server's doc 29: marked superseded by the old rule, current for its
+    items. Its expiry is still somebody's to chase."""
+    manufacturer = f"ExpCur-{uuid.uuid4().hex[:8]}"
+    doc_id, cert_number = _seed_grouped_expiring_doc(conn, manufacturer=manufacturer, day_offset=10)
+    conn.execute("UPDATE document SET status='superseded' WHERE doc_id=%s", (doc_id,))
+    conn.commit()
+    resp = client.get("/expiry?days=90")
+    assert cert_number in resp.text
 
 
 def _seed_doc_citing_cert(conn, *, cert_day_offset, cert_status="production"):

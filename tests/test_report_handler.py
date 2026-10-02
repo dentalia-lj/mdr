@@ -46,12 +46,41 @@ def test_expiring_documents_excludes_non_production_states(conn):
     from app.handlers.report import expiring_documents
 
     today = dt.date(2026, 7, 23)
-    for status in ("staged", "superseded", "rejected"):
+    for status in ("staged", "rejected"):
         _insert_document(conn, status=status, validity_to=today + dt.timedelta(days=10))
 
     result = expiring_documents(conn, horizon_days=90, today=today)
 
     assert result == []
+
+
+def test_expiring_documents_excludes_a_document_that_is_history_everywhere(conn):
+    from app.handlers.report import expiring_documents
+    from tests.currency_helpers import newer_copy, seed_doc
+
+    today = dt.date(2026, 7, 23)
+    doc_id = seed_doc(conn, ["RPT-HIST-1"])
+    conn.execute("UPDATE document SET validity_to=%s WHERE doc_id=%s",
+                 (today + dt.timedelta(days=10), doc_id))
+    newer_copy(conn, doc_id)
+
+    result = expiring_documents(conn, horizon_days=90, today=today)
+
+    assert doc_id not in [d["doc_id"] for d in result]
+
+
+def test_expiring_documents_lists_a_superseded_document_that_still_answers(conn):
+    from app.handlers.report import expiring_documents
+    from tests.currency_helpers import seed_doc
+
+    today = dt.date(2026, 7, 23)
+    doc_id = seed_doc(conn, ["RPT-CUR-1"], status="superseded")
+    conn.execute("UPDATE document SET validity_to=%s WHERE doc_id=%s",
+                 (today + dt.timedelta(days=10), doc_id))
+
+    result = expiring_documents(conn, horizon_days=90, today=today)
+
+    assert doc_id in [d["doc_id"] for d in result]
 
 
 def test_expiring_documents_null_validity_to_excluded(conn):

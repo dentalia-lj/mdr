@@ -388,7 +388,8 @@ def review_due_for_manufacturer(conn, manufacturer: str,
         "       d.regulation "
         "  FROM document d "
         "  JOIN document_effective_expiry e ON e.doc_id = d.doc_id "
-        " WHERE d.status = 'production' AND d.type = 'DoC' "
+        # Per-item currency (migration 071): a document that is history for every item it names draws no renewal, and one the old rule retired wrongly still does.
+        " WHERE d.doc_id IN (SELECT doc_id FROM document_current) AND d.type = 'DoC' "
         "   AND e.basis = 'staleness' AND e.expires IS NOT NULL "
         "   AND e.expires <= %s "
         "   AND EXISTS (SELECT 1 FROM item_document l "
@@ -639,7 +640,8 @@ def lapsing_for_manufacturer(conn, manufacturer: str, *, horizon_days: int,
             JOIN item_document id ON id.doc_id = d.doc_id AND id.status = 'production'
             JOIN item_group_member gm ON gm.item_ref = id.item_ref
             JOIN item_group g ON g.group_id = gm.group_id
-           WHERE d.status = 'production'
+           -- Per-item currency (migration 071): a document that is history for every item it names draws no renewal, and one the old rule retired wrongly still does.
+           WHERE d.doc_id IN (SELECT doc_id FROM document_current)
              AND e.expires IS NOT NULL
              AND e.expires <= %s
              AND g.canonical_manufacturer = %s

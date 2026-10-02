@@ -86,7 +86,8 @@ def expiring_documents(conn, *, horizon_days: int, today: dt.date | None = None)
                (e.expires < %s) AS lapsed
           FROM document d
           JOIN document_effective_expiry e USING (doc_id)
-         WHERE d.status = 'production'
+         -- Per-item currency (migration 071): a document that is history for every item it names draws no renewal, and one the old rule retired wrongly still does.
+         WHERE d.doc_id IN (SELECT doc_id FROM document_current)
            AND e.expires IS NOT NULL
            AND e.expires <= %s
          ORDER BY e.expires

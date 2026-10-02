@@ -372,8 +372,14 @@ def test_reminder_stops_at_the_escalation_cap(conn):
 
 def test_reminder_closes_when_nothing_is_outstanding(conn):
     rid = _make_request(conn)
-    # the chased document is replaced: it stops being production
-    conn.execute("UPDATE document SET status='superseded'")
+    # the chased document is replaced by a newer one for every item it named
+    from tests.currency_helpers import newer_copy
+    for row in conn.execute("SELECT doc_id FROM document WHERE status='production'").fetchall():
+        new_id = newer_copy(conn, row["doc_id"])
+        # a declaration with a start date is read for staleness (start + 5 y);
+        # the replacement is fresh, so nothing of it lapses
+        conn.execute("UPDATE document SET validity_from=current_date WHERE doc_id=%s",
+                     (new_id,))
     conn.commit()
     out = handle_email_reminder(conn, {"id": 2, "type": "email.reminder",
                                        "payload": {"request_id": rid}})

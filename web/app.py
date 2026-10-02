@@ -612,7 +612,8 @@ _LAPSING_CTE = """
                          ON id.doc_id = d.doc_id AND id.status='production'
                   LEFT JOIN item_group_member gm ON gm.item_ref = id.item_ref
                   LEFT JOIN item_group g ON g.group_id = gm.group_id
-                  WHERE d.status='production'
+                  -- Per-item currency (migration 071): a document that is history for every item it names draws no renewal, and one the old rule retired wrongly still does.
+                  WHERE d.doc_id IN (SELECT doc_id FROM document_current)
                     AND e.expires IS NOT NULL
                     -- the whole retention window, partitioned below rather
                     -- than filtered here: the board has to be able to say

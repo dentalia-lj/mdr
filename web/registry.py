@@ -392,7 +392,8 @@ JOIN item_mirror i        ON i.item_ref = l.item_ref
 JOIN manufacturer_alias a ON a.raw_name = i.manufacturer_raw
 WHERE a.canonical_name = %s
   AND d.coverage_scope = 'manufacturer'
-  AND d.status = 'production'
+  -- Per-item currency (migration 071): a document that is history for every item it names draws no renewal, and one the old rule retired wrongly still does.
+  AND d.doc_id IN (SELECT doc_id FROM document_current)
 ORDER BY d.type, d.doc_id
 """
 
