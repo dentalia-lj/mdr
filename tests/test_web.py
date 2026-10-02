@@ -7426,6 +7426,49 @@ def test_gap_request_button_refuses_when_there_is_no_gap(client, conn):
     ).fetchone()["n"] == 0
 
 
+def _seed_review_due_doc(conn, manufacturer):
+    """A DoC six years past issue with no expiry of its own: basis 'staleness'."""
+    doc_id, _ = _seed_grouped_expiring_doc(
+        conn, manufacturer=manufacturer, day_offset=10, doc_type="DoC")
+    conn.execute(
+        "UPDATE document SET validity_to=NULL, "
+        "validity_from = current_date - interval '6 years' WHERE doc_id=%s",
+        (doc_id,))
+    conn.commit()
+    return doc_id
+
+
+def test_review_confirm_button_refuses_a_declaration_that_is_history_everywhere(client, conn):
+    from tests.currency_helpers import newer_copy
+    name = f"RevHist-{uuid.uuid4().hex[:8]}"
+    doc_id = _seed_review_due_doc(conn, name)
+    new_id = newer_copy(conn, doc_id)
+    # the replacement is fresh, so only the superseded original is past review
+    conn.execute("UPDATE document SET validity_from=current_date WHERE doc_id=%s", (new_id,))
+    conn.commit()
+
+    resp = client.post(f"/manufacturers/{name}/review-confirm", follow_redirects=False)
+
+    assert resp.status_code == 400
+    assert conn.execute(
+        "SELECT count(*) AS n FROM job WHERE type::text='email.request'"
+    ).fetchone()["n"] == 0
+
+
+def test_review_confirm_button_accepts_a_superseded_declaration_that_still_answers(client, conn):
+    name = f"RevCur-{uuid.uuid4().hex[:8]}"
+    doc_id = _seed_review_due_doc(conn, name)
+    conn.execute("UPDATE document SET status='superseded' WHERE doc_id=%s", (doc_id,))
+    conn.commit()
+
+    resp = client.post(f"/manufacturers/{name}/review-confirm", follow_redirects=False)
+
+    assert resp.status_code == 303
+    job = conn.execute(
+        "SELECT payload FROM job WHERE type::text='email.request'").fetchone()
+    assert job["payload"]["reason"] == "review-due"
+
+
 def test_the_gap_request_button_renders_only_when_there_is_a_gap(client, conn):
     """The button is inside `{% if summary.gaps %}`, so it is absent for the
     manufacturers that have nothing to ask for -- which is most of them, and

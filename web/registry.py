@@ -2111,7 +2111,9 @@ def register_routes(app, templates, conn_factory, playbooks_dir: str | None,
             due = conn.execute(
                 "SELECT count(*) c FROM document d "
                 "  JOIN document_effective_expiry e ON e.doc_id = d.doc_id "
-                " WHERE d.status='production' AND d.type='DoC' "
+                # Per-item currency (migration 071): a document that is history for every item it names draws no renewal, and one the old rule retired wrongly still does.
+                " WHERE d.doc_id IN (SELECT doc_id FROM document_current) "
+                "   AND d.type='DoC' "
                 "   AND e.basis='staleness' AND e.expires <= current_date "
                 "   AND EXISTS (SELECT 1 FROM item_document l "
                 "                 JOIN item_group_member gm ON gm.item_ref=l.item_ref "
