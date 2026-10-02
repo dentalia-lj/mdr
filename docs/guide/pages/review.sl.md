@@ -168,7 +168,6 @@ trinajst. Razvrščena so v tri skupine.
 
 | Zaslon pravi | Kaj to pomeni | Kaj storiti |
 |---|---|---|
-| *This replaces an older document already on file.* | Sistem je že ugotovil, da je to novejši dokument | Odobrite. To je sistem, ki opravlja svoje delo |
 | *The document does not say which items it covers.* | Nič na strani ne navaja številke artikla | Zelo pogosto pri izjavah za celoten program. Uporabite **Approve for all N items** in izberite dobavitelja |
 | *This document names a certificate we do not have on file yet.* | Sklicuje se na certifikat, ki ga še nimamo | Če je dokument sicer v redu, ga odobrite. Manjkajoči certifikat poiščite ločeno |
 | *This does not look like a medical device document, so it was held back from automatic filing.* | Ni navedbe MDR ali MDD in ni certifikata kakovosti — lahko gre za izjavo o strojih, kozmetiki ali elektriki | Odprite PDF. Če dokument res govori o pripomočku, ga odobrite; sicer ga arhivirajte, da se tu ne pojavlja več |
@@ -192,6 +191,7 @@ trinajst. Razvrščena so v tri skupine.
 | Zaslon pravi | Kaj to pomeni | Kaj storiti |
 |---|---|---|
 | *This is older than the document already on file for these items.* | Njegov datum je starejši od tistega, ki ga za te izdelke že imate | Zavrnite z razlogom **Out of date**, razen če veste, da je tisti na voljo napačen. Če se to ponavlja, je vir, iz katerega črpamo, zastarel — povejte razvijalcu |
+| *Older than the document already on file for every item it names.* | Ta dokument je starejša različica tega, kar je že v evidenci. Odobritev ga ohrani kot zgodovino; za noben izdelek ne nadomesti veljavnega | Zavrnite ga, če je le star izvod |
 | *The dates on this document do not look right.* | Datum je nemogoč ali močno izven razumnega razpona | Običajno slabo skeniran dokument. Ne odobrite brez branja |
 
 ---
@@ -225,7 +225,7 @@ interno. Vsi drugi zasloni povedo besedo iz tretjega stolpca,
 - Odobritev nikoli ne umakne drugega dokumenta. Vsak izdelek prikaže dokument,
   ki velja zanj: pri vsaki vrsti dokumenta zmaga najnovejši, dokument po MDR pa
   ima prednost pred dokumentom po MDD. Starejši dokument ostane pri izdelku kot
-  zgodovina. Ohranjen je, ne izbrisan — še vedno si ga lahko ogledate, prav tako
+  zgodovina. Ohranjen je, ne izbrisan, zato si ga lahko ogledate, prav tako
   ga je še vedno mogoče pokazati revizorju.
 - Vsako dejstvo, ki ga je sistem prebral s strani — vrsto, datume, številko
   certifikata, številke artiklov — je shranjeno skupaj s stranjo, s katere je

@@ -1997,11 +1997,6 @@ tbody tr:last-child td{border-bottom:0}
 <th>Kaj storiti</th>
 </tr></thead><tbody>
 <tr>
-<td><em>This replaces an older document already on file.</em></td>
-<td>Sistem je že ugotovil, da je to novejši dokument</td>
-<td>Odobrite. To je sistem, ki opravlja svoje delo</td>
-</tr>
-<tr>
 <td><em>The document does not say which items it covers.</em></td>
 <td>Nič na strani ne navaja številke artikla</td>
 <td>Zelo pogosto pri izjavah za celoten program. Uporabite <strong>Approve for all N items</strong> in izberite dobavitelja</td>
@@ -2081,6 +2076,11 @@ tbody tr:last-child td{border-bottom:0}
 <td>Zavrnite z razlogom <strong>Out of date</strong>, razen če veste, da je tisti na voljo napačen. Če se to ponavlja, je vir, iz katerega črpamo, zastarel — povejte razvijalcu</td>
 </tr>
 <tr>
+<td><em>Older than the document already on file for every item it names.</em></td>
+<td>Ta dokument je starejša različica tega, kar je že v evidenci. Odobritev ga ohrani kot zgodovino; za noben izdelek ne nadomesti veljavnega</td>
+<td>Zavrnite ga, če je le star izvod</td>
+</tr>
+<tr>
 <td><em>The dates on this document do not look right.</em></td>
 <td>Datum je nemogoč ali močno izven razumnega razpona</td>
 <td>Običajno slabo skeniran dokument. Ne odobrite brez branja</td>
@@ -2145,7 +2145,7 @@ tbody tr:last-child td{border-bottom:0}
 <ul>
 <li>Dokument se pojavi pod <strong>Documents</strong> in šteje v vaše številke pokritosti.</li>
 <li>Vsak artikel, naveden nad gumbom, ki ste ga pritisnili, ga zdaj prikazuje. Artikli, povezani le po šibkem ujemanju, čakajo pod <strong>Links waiting for review on published documents</strong> na svoj <strong>Covers this item</strong> ali <strong>Does not</strong>.</li>
-<li>Odobritev nikoli ne umakne drugega dokumenta. Vsak izdelek prikaže dokument, ki velja zanj: pri vsaki vrsti dokumenta zmaga najnovejši, dokument po MDR pa ima prednost pred dokumentom po MDD. Starejši dokument ostane pri izdelku kot zgodovina. Ohranjen je, ne izbrisan — še vedno si ga lahko ogledate, prav tako ga je še vedno mogoče pokazati revizorju.</li>
+<li>Odobritev nikoli ne umakne drugega dokumenta. Vsak izdelek prikaže dokument, ki velja zanj: pri vsaki vrsti dokumenta zmaga najnovejši, dokument po MDR pa ima prednost pred dokumentom po MDD. Starejši dokument ostane pri izdelku kot zgodovina. Ohranjen je, ne izbrisan, zato si ga lahko ogledate, prav tako ga je še vedno mogoče pokazati revizorju.</li>
 <li>Vsako dejstvo, ki ga je sistem prebral s strani — vrsto, datume, številko certifikata, številke artiklov — je shranjeno skupaj s stranjo, s katere je bilo prebrano. Če vas revizor vpraša, od kod izvira datum, mu lahko pokažete.</li>
 </ul>
 <hr>

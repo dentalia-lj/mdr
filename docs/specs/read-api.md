@@ -58,7 +58,7 @@ All three are read-only, production-visibility only (Invariant 1: the web proces
 
 All four are `null` when `item_ref` is not in `item_mirror`. That is the one signal separating "no such item" from "no documents yet" — the distinction §2 above deliberately declines to make with a `404`, now observable without changing the status code.
 
-- **`doc_id`** — the registry's own id. Stable; the same document keeps this id across supersession (a NEW document gets a new id; `document.superseded_by` chains them).
+- **`doc_id`** — the registry's own id. Stable; the same document keeps this id across supersession (a NEW document gets a new id). `document.superseded_by` is written only by the auto-file fast path, on an older copy filed behind the current document; which document answers for an item is decided per item (migration 071).
 - **`name`** — derived, not stored. `"{manufacturer} {type} ({regulation}), valid to {valid_to}"`, built from:
   - the **latest-revision** `manufacturer` evidence (`evidence.field = 'manufacturer'`, highest `extract_rev` — a re-extraction must not leave the name stuck on a stale or wrong earlier revision);
   - `type` (`DoC|EC|IFU|ISO|other`);

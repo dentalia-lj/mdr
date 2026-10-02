@@ -329,7 +329,7 @@ FLAG_EXPLANATIONS = {
     "downgrade-uncomparable": "We cannot tell whether this is newer or older than the document on file.",
     "expiry-on-certless-doc": "The expiry date is not written as an expiry anywhere on the page, "
                               "so it may be a signing or issue date read as one.",
-    "auto-superseded": "This replaces an older document already on file.",
+    "auto-superseded": "Older than the document already on file for every item it names.",
 }
 # The Review list's reason filter (office UI redesign, spec § 6). One chip per
 # question a reviewer answers, applied on the server; "" is the unfiltered list.

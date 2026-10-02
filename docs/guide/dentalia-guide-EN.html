@@ -1995,11 +1995,6 @@ tbody tr:last-child td{border-bottom:0}
 <th>What to do</th>
 </tr></thead><tbody>
 <tr>
-<td><em>This replaces an older document already on file.</em></td>
-<td>The system has already worked out that this is the newer one</td>
-<td>Approve. This is the system doing its job</td>
-</tr>
-<tr>
 <td><em>The document does not say which items it covers.</em></td>
 <td>Nothing on the page names a product number</td>
 <td>Very common for range-wide declarations. Use <strong>Approve for all N items</strong> and pick the supplier</td>
@@ -2079,6 +2074,11 @@ tbody tr:last-child td{border-bottom:0}
 <td>Reject with the reason <strong>Out of date</strong>, unless you know the one on file is wrong. If this keeps happening, the source we are pulling from is stale — tell a developer</td>
 </tr>
 <tr>
+<td><em>Older than the document already on file for every item it names.</em></td>
+<td>This document is an older version of what is already on file. Approving keeps it as history; it does not replace the current one for any item</td>
+<td>Reject it if it is only an old copy</td>
+</tr>
+<tr>
 <td><em>The dates on this document do not look right.</em></td>
 <td>A date is impossible, or wildly out of range</td>
 <td>Usually a badly scanned page. Do not approve without reading it</td>
@@ -2143,7 +2143,7 @@ tbody tr:last-child td{border-bottom:0}
 <ul>
 <li>The document appears under <strong>Documents</strong> and counts towards your coverage figures.</li>
 <li>Every item listed above the button you pressed now shows it. Items linked only by a weak match wait under <strong>Links waiting for review on published documents</strong> for their own <strong>Covers this item</strong> or <strong>Does not</strong>.</li>
-<li>Approving never retires another document. Each item shows the document that answers for it: for each type of document, the newest one wins, and a document under MDR comes before one under MDD. An older document stays attached to the item as history. It is kept, not deleted — you can still see it, and an auditor can still be shown it.</li>
+<li>Approving never retires another document. Each item shows the document that answers for it: for each type of document, the newest one wins, and a document under MDR comes before one under MDD. An older document stays attached to the item as history. It is kept, not deleted, so you can still see it, and an auditor can still be shown it.</li>
 <li>Every fact the system read off the page — the type, the dates, the certificate number, the product numbers — is stored together with the page it was read from. If an auditor asks where a date came from, you can show them.</li>
 </ul>
 <hr>

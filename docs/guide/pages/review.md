@@ -168,7 +168,6 @@ thirteen of them. They fall into three groups.
 
 | The screen says | What that means | What to do |
 |---|---|---|
-| *This replaces an older document already on file.* | The system has already worked out that this is the newer one | Approve. This is the system doing its job |
 | *The document does not say which items it covers.* | Nothing on the page names a product number | Very common for range-wide declarations. Use **Approve for all N items** and pick the supplier |
 | *This document names a certificate we do not have on file yet.* | It refers to a certificate we are not holding | Approve the document if it is sound. Chase the missing certificate separately |
 | *This does not look like a medical device document, so it was held back from automatic filing.* | No MDR or MDD citation, and not a quality certificate — it may be a machinery, cosmetics or electrical declaration | Open the PDF. If it really is about a device, approve it; if not, file it so it stops appearing here |
@@ -192,6 +191,7 @@ thirteen of them. They fall into three groups.
 | The screen says | What that means | What to do |
 |---|---|---|
 | *This is older than the document already on file for these items.* | Its date is earlier than the one you already hold | Reject with the reason **Out of date**, unless you know the one on file is wrong. If this keeps happening, the source we are pulling from is stale — tell a developer |
+| *Older than the document already on file for every item it names.* | This document is an older version of what is already on file. Approving keeps it as history; it does not replace the current one for any item | Reject it if it is only an old copy |
 | *The dates on this document do not look right.* | A date is impossible, or wildly out of range | Usually a badly scanned page. Do not approve without reading it |
 
 ---
@@ -225,7 +225,7 @@ other screen says the word in the third column, and the
 - Approving never retires another document. Each item shows the document that
   answers for it: for each type of document, the newest one wins, and a
   document under MDR comes before one under MDD. An older document stays
-  attached to the item as history. It is kept, not deleted — you can still see
+  attached to the item as history. It is kept, not deleted, so you can still see
   it, and an auditor can still be shown it.
 - Every fact the system read off the page — the type, the dates, the certificate
   number, the product numbers — is stored together with the page it was read from.
