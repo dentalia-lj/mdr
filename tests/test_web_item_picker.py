@@ -272,3 +272,23 @@ def test_a_manufacturer_gate_would_refuse_is_not_offered_or_accepted(client, con
     r = client.post(f"/staging/{doc_id}/apply",
                     data={"decision": "approve", "items": ["B1"], "manufacturer": "BARECODE"})
     assert r.status_code == 422 and _jobs(conn) == []
+
+
+def test_approve_is_refused_until_a_date_is_entered(client, conn):
+    _mfr(conn)
+    doc_id = _doc(conn, "web-nodate", issued=None)
+    conn.commit()
+    r = client.post(f"/staging/{doc_id}/apply", data={"decision": "approve"})
+    assert r.status_code == 422 and "Nothing was changed." in _text(r.text)
+    assert _jobs(conn) == []
+    ok = client.post(f"/staging/{doc_id}/apply", data={
+        "decision": "approve", "edit_validity_from": "2026-04-01",
+        "edit_baseline": '{"validity_from": ""}'})
+    assert ok.status_code == 200 and len(_jobs(conn)) == 1
+
+
+def test_the_panel_says_the_date_is_needed(client, conn):
+    _mfr(conn)
+    doc_id = _doc(conn, "web-fact", issued=None)
+    conn.commit()
+    assert "Not stated. Enter it before approving." in _text(client.get(f"/staging/{doc_id}/detail").text)

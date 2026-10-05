@@ -16,8 +16,10 @@ from app.handlers import gate as gh
 
 def _seed_staged_doc(conn, content_hash, archive="file:///a.pdf"):
     return conn.execute(
-        "INSERT INTO document (type, regulation, coverage_scope, content_hash, archive_url, status) "
-        "VALUES ('DoC','MDR','group',%s,%s,'staged') RETURNING doc_id",
+        # Dated: every approval needs an issue date (picker spec §7).
+        "INSERT INTO document (type, regulation, coverage_scope, content_hash, archive_url, "
+        "status, validity_from) VALUES ('DoC','MDR','group',%s,%s,'staged','2024-01-01') "
+        "RETURNING doc_id",
         (content_hash, archive),
     ).fetchone()["doc_id"]
 

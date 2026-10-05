@@ -238,3 +238,34 @@ def test_add_items_leaves_open_review_tasks_alone(conn):
     gh.handle_gate_apply(conn, _job(doc_id, decision="add-items", items=["A1"]))
     assert conn.execute("SELECT status FROM manual_task WHERE doc_id=%s",
                         (doc_id,)).fetchone()["status"] == "open"
+
+
+def _undated(conn, key, scope="group"):
+    doc_id = _doc(conn, key, scope=scope)
+    conn.execute("UPDATE document SET validity_from = NULL WHERE doc_id=%s", (doc_id,))
+    return doc_id
+
+
+def test_approve_refuses_a_document_without_an_issue_date(conn):
+    doc_id = _undated(conn, "nodate")
+    with pytest.raises(ValueError, match="no issue date"):
+        gh.handle_gate_apply(conn, _job(doc_id))
+
+
+def test_an_entered_date_lets_approve_through(conn):
+    doc_id = _undated(conn, "dated")
+    gh.handle_gate_apply(conn, _job(doc_id, edits={"validity_from": "2026-04-01"}))
+    assert _doc_status(conn, doc_id) == "production"
+
+
+def test_bind_takes_the_date_and_only_the_date(conn):
+    doc_id = _undated(conn, "bind", scope="manufacturer")
+    _item(conn, "A1")   # a name with BC codes; GATE refuses a bind that reaches none
+    with pytest.raises(ValueError, match="only the issue date"):
+        gh.handle_gate_apply(conn, _job(doc_id, decision="bind-manufacturer", manufacturer=MFR,
+                                        edits={"validity_from": "2026-04-01", "type": "EC"}))
+    with pytest.raises(ValueError, match="no issue date"):
+        gh.handle_gate_apply(conn, _job(doc_id, decision="bind-manufacturer", manufacturer=MFR))
+    gh.handle_gate_apply(conn, _job(doc_id, decision="bind-manufacturer", manufacturer=MFR,
+                                    edits={"validity_from": "2026-04-01"}))
+    assert _doc_status(conn, doc_id) == "production"

@@ -1483,6 +1483,16 @@ def _picked_items(conn, doc_id, p) -> tuple[str, list[str]] | None:
     return manufacturer, refs
 
 
+def _require_issue_date(conn, doc_id, decision) -> None:
+    """Every approval needs an issue date (ruled 2026-10-02, picker spec §7):
+    the reviewer enters one for a document that states none. A person's rule,
+    so `gate.candidate` is not subject to it. Raises, never skips."""
+    row = conn.execute("SELECT validity_from FROM document WHERE doc_id=%s", (doc_id,)).fetchone()
+    if row is None or row["validity_from"] is None:
+        raise ValueError(f"gate.apply {decision}: document {doc_id} states no issue date; "
+                         f"the reviewer enters one before approving")
+
+
 def _write_items(conn, doc_id, manufacturer, refs, decided_by, job, via) -> None:
     """Picker spec §5.3 steps 1, 3, 4: record the manufacturer on a document
     that had none, then link each ticked item the way `confirm-link` does.
@@ -1537,6 +1547,7 @@ def handle_gate_apply(conn, job: dict) -> dict:
 
     if decision == "approve":
         _apply_edits(conn, doc_id, p.get("edits"))
+        _require_issue_date(conn, doc_id, decision)
         _promote(conn, doc_id)
         _promote_pending_links(conn, doc_id)
         if picked:
@@ -1599,6 +1610,14 @@ def handle_gate_apply(conn, job: dict) -> dict:
         # nothing today ([mfr-bind-empty-class], which stands) and the decision
         # must still be stored, or the reviewer's answer is discarded the moment
         # they give it -- which is exactly what happened before this line.
+        # A whole-range approval takes one correction, the issue date, and
+        # needs one like every approval (picker spec §7, ruled 2026-10-02).
+        edits = p.get("edits") or {}
+        if set(edits) - {"validity_from"}:
+            raise ValueError("gate.apply bind-manufacturer: only the issue date may be "
+                             "corrected on a whole-range approval")
+        _apply_edits(conn, doc_id, edits or None)
+        _require_issue_date(conn, doc_id, decision)
         bound = _bindable_manufacturer(conn, p.get("manufacturer"))
         if bound:
             conn.execute(

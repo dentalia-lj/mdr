@@ -741,15 +741,17 @@ def test_a_whole_range_approval_reaching_no_item_has_its_own_sentence(
     assert "Every NILCO item Business Central marks as a medical device" not in seen
 
 
-def test_a_whole_range_document_offers_no_corrections(client, conn):
-    """Controller ruling (2026-09-11): `gate.apply`'s bind path drops edits, so
-    a correction offered next to a whole-range approval would be silently lost."""
+def test_a_whole_range_document_offers_only_the_issue_date(client, conn):
+    """Controller ruling (2026-09-11): `gate.apply`'s bind path took no edits, so
+    a whole-range approval offered no corrections. Since every approval needs an
+    issue date (ruled 2026-10-02, picker spec §7) it offers that one, and the
+    bind path takes that one and no other."""
     doc_id = _seed_whole_range(conn)
 
     text = client.get(f"/staging/{doc_id}/detail").text
 
-    assert "Correct a fact first" not in text
-    assert 'name="edit_' not in text
+    assert "Correct a fact first" in text
+    assert set(re.findall(r'name="(edit_[a-z_]+)"', text)) == {"edit_validity_from", "edit_baseline"}
 
 
 def test_an_ordinary_document_offers_correct_a_fact_first_collapsed(client, conn):

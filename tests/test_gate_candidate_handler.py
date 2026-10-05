@@ -1386,8 +1386,11 @@ def test_staged_candidate_does_not_supersede_until_gate_apply_approves(conn):
     ).fetchone()["supersedes"]
     assert stored_supersedes == r_old["doc_id"]   # persisted, waiting for a human
 
+    # The candidate states no issue date, so the reviewer enters one: every
+    # approval needs it (picker spec §7, ruled 2026-10-02).
     apply_job = {"id": 99, "type": "gate.apply", "payload": {
-        "doc_id": r_new["doc_id"], "decision": "approve", "decided_by": "user:marta"}}
+        "doc_id": r_new["doc_id"], "decision": "approve", "decided_by": "user:marta",
+        "edits": {"validity_from": "2026-01-01"}}}
     gh.handle_gate_apply(conn, apply_job)
 
     old_doc = conn.execute(

@@ -14,10 +14,11 @@
    opened below the fold. #}
 {% import "_staging_decide.html" as dec %}
 {% set doc_id = row.doc.doc_id %}
-{# `gate.apply`'s bind path drops edits (controller ruling, 2026-09-11), so a
-   whole-range approval offers no corrections at all rather than taking one and
-   losing it. Every other approval keeps them. #}
-{% set offer_corrections = not row.is_mfr_binding %}
+{# Every approval offers corrections. A whole-range approval offers one, the
+   issue date: `gate.apply`'s bind path took no edits (controller ruling,
+   2026-09-11) until every approval needed a date (ruled 2026-10-02, picker
+   spec §7), and it still takes no other. #}
+{% set offer_corrections = true %}
 {% set expired = row.doc.validity_to and row.doc.validity_to < today %}
 
 
@@ -41,7 +42,7 @@
           <span class="hint">as printed on the document</span>
           {%- else %}Not stated{% endif %}</dd>
       <dt>Rules</dt><dd>{{ row.regulation_words }}</dd>
-      <dt>Issued</dt><dd>{{ row.doc.validity_from | day if row.doc.validity_from else "Not stated" }}</dd>
+      <dt>Issued</dt><dd>{{ row.doc.validity_from | day if row.doc.validity_from else "Not stated. Enter it before approving." }}</dd>
       <dt>Valid until</dt>
       <dd>{% if row.doc.validity_to %}{{ row.doc.validity_to | day }}
           {%- if expired %} <span class="badge badge-rejected">expired</span>{% endif %}
@@ -87,12 +88,18 @@
       {# Baseline of what this form was rendered with. The route compares against
          it and sends only genuinely changed fields, so approving without touching
          anything never writes human (T3) evidence over a machine extraction. #}
+      {% if row.is_mfr_binding %}
+      <input type="hidden" name="edit_baseline" value='{{ {
+        "validity_from": row.doc.validity_from|string if row.doc.validity_from else ""
+      }|tojson }}'>
+      {% else %}
       <input type="hidden" name="edit_baseline" value='{{ {
         "type": row.doc.type, "regulation": row.doc.regulation,
         "validity_from": row.doc.validity_from|string if row.doc.validity_from else "",
         "validity_to": row.doc.validity_to|string if row.doc.validity_to else "",
         "cert_number": row.doc.cert_number or ""
       }|tojson }}'>
+      {% endif %}
       {% endif %}
 
       {# `group_id` is the reject's retry hint, so it rides in the reject form
@@ -163,6 +170,7 @@
           when you approve; anything you leave alone stays as it was read.</p>
         <div class="field-grid">
           {% set owner = "corrections-" ~ doc_id %}
+          {% if not row.is_mfr_binding %}
           <div class="field">
             <label>Document type</label>
             <select name="edit_type" form="{{ owner }}">
@@ -179,10 +187,12 @@
               {% endfor %}
             </select>
           </div>
+          {% endif %}
           <div class="field">
             <label>Issued</label>
             <input type="date" name="edit_validity_from" form="{{ owner }}" value="{{ row.doc.validity_from or '' }}">
           </div>
+          {% if not row.is_mfr_binding %}
           <div class="field">
             <label>Valid until</label>
             <input type="date" name="edit_validity_to" form="{{ owner }}" value="{{ row.doc.validity_to or '' }}">
@@ -191,6 +201,7 @@
             <label>Certificate no.</label>
             <input type="text" name="edit_cert_number" form="{{ owner }}" value="{{ row.doc.cert_number or '' }}">
           </div>
+          {% endif %}
         </div>
       </details>
       {% endif %}

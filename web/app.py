@@ -5566,6 +5566,24 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         if note is not None:
             payload["note"] = note
 
+        # Every approval needs an issue date (picker spec §7, ruled 2026-10-02).
+        # A whole-range approval carries that one correction and no other.
+        if decision in ("approve", "bind-manufacturer"):
+            if decision == "bind-manufacturer" and "edits" in payload:
+                kept = {k: v for k, v in payload["edits"].items() if k == "validity_from"}
+                if kept:
+                    payload["edits"] = kept
+                else:
+                    del payload["edits"]
+            if not (payload.get("edits") or {}).get("validity_from"):
+                with _conn() as conn:
+                    stored = conn.execute("SELECT validity_from FROM document WHERE doc_id=%s",
+                                          (doc_id,)).fetchone()
+                if stored is None or stored["validity_from"] is None:
+                    ctx["error"] = ('This document states no issue date. Enter it under '
+                                    '"Correct a fact first" before approving. Nothing was changed.')
+                    return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
+
         if decision == "bind-manufacturer":
             manufacturer = manufacturer.strip()
             if not manufacturer:

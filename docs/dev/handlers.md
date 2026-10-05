@@ -26,7 +26,7 @@ never clobber a real handler.
 | `extract.doc` | `handlers/extract.py:278` | `validate.doc`, **or nothing** when the doc-class call answers `not-a-compliance-document` | `test_extract_handler.py`, `test_extract_cost.py`, `test_doc_class_gate.py` |
 | `validate.doc` | `handlers/validate.py:780` | `gate.candidate` | `test_validate_handler.py` |
 | `gate.candidate` | `handlers/gate.py:1002` | nothing (terminal) | `test_gate_candidate_handler.py` |
-| `gate.apply` | `handlers/gate.py:1515` | `discover.group` on reject | `test_gate_apply_handler.py` |
+| `gate.apply` | `handlers/gate.py:1525` | `discover.group` on reject | `test_gate_apply_handler.py` |
 | `backfill.scan` | `handlers/backfill.py:270` | `extract.doc` | `test_backfill_handler.py` |
 | `upload.ingest` | `handlers/upload.py:33` | `extract.doc` or `validate.doc` | `test_upload_handler.py` |
 | `vendor.import` | `handlers/vendor_import.py:40` | nothing, deliberately | `test_vendor_import_handler.py` |
@@ -113,7 +113,7 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 - note: both GATE handlers set `document.canonical_manufacturer` (migration 053). It is the CONFIRMED manufacturer, not the printed name in evidence; null means undecided, never "none". Sticky under re-upsert via `COALESCE(EXCLUDED..., document....)`
 
 ### `gate.apply`
-- consumes: `doc_id`, `decision`, `decided_by` required; `edits?`, `manufacturer?`, `group_id?`, `note?`, `items?` (approve / add-items: the item refs a reviewer ticked, written as `manual` production links), `item_ref` (required for the three link decisions). Document decisions: `approve`, `reject`, `bind-manufacturer`, `reopen`, `add-items` (published documents only). Link decisions: `confirm-link`, `reject-link`, `reopen-link`
+- consumes: `doc_id`, `decision`, `decided_by` required; `edits?`, `manufacturer?`, `group_id?`, `note?`, `items?` (approve / add-items: the item refs a reviewer ticked, written as `manual` production links), `item_ref` (required for the three link decisions). Document decisions: `approve`, `reject`, `bind-manufacturer`, `reopen`, `add-items` (published documents only). `approve` and `bind-manufacturer` raise on a document with no `validity_from` after edits (every approval needs an issue date, 2026-10-02); `bind-manufacturer` accepts `edits` with `validity_from` only. Link decisions: `confirm-link`, `reject-link`, `reopen-link`
 - note: `note` (2026-09-11, office UI redesign P1a) is the reviewer's reason, `"<reason>"` or `"<reason>: <free text>"`. It goes into the decision's own `audit_log.detail` (`_note_detail`, merged into a link decision's detail) and never onto the cascaded `link-rejected` rows. Optional: without it the audit row is what it always was. The review UI sends it on `reject` only, where one of `REJECT_REASONS` is required and the free text is capped at `REJECT_NOTE_MAX` (500)
 - writes: `document`, `item_document`, `manual_task`, `audit_log`
 - emits: `discover.group` on reject with a `group_id`, interactive priority
