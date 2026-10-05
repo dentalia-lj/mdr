@@ -23,12 +23,13 @@ _TARGET = re.compile(r'hx-target="#([^"]+)"')
 _ID = re.compile(r'id="([^"]+)"')
 
 #: Interpolated targets are fine when the value cannot contain a dot. Object ids
-#: and loop counters are integers; `confirm_target` is only ever a literal id
+#: (`x.id`, and `doc.doc_id`, a bigserial like the rest) and loop counters are
+#: integers; `confirm_target` is only ever a literal id
 #: ("rename-result", "code-result", "bc-push-result") or "bind-confirm-" plus an
 #: integer doc id, never user text: `_result.html` also puts it in a JS string.
 _SAFE_INTERPOLATION = re.compile(
     r"""\{\{\s*(
-        [a-z_]+\.id            # job.id, task.id, s.id
+        [a-z_]+\.(?:doc_)?id   # job.id, task.id, s.id, doc.doc_id
       | loop\.index
       | confirm_target
       | [a-z_.]+\s*\|\s*replace\(\s*['"]\.['"]\s*,\s*['"]-['"]\s*\)

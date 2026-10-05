@@ -1439,14 +1439,14 @@ dialog.item-picker::backdrop { background: rgba(30, 36, 34, .35); }
 .linkbtn { background: none; border: 0; padding: 0; color: var(--dentalia-action); cursor: pointer;
   font: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .dchips { display: inline-flex; gap: 3px; white-space: nowrap; }
-.dchip { font-size: 10.5px; font-weight: 600; border-radius: 4px; padding: 0 4px;
+.dchip { font-size: var(--fs-micro); font-weight: 600; border-radius: 4px; padding: 0 4px;
   border: 1px solid var(--dentalia-border); color: var(--dentalia-muted); }
 .dchip.on { background: var(--dentalia-action); color: #fff; border-color: var(--dentalia-action); }
 .pill { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: var(--fs-micro);
   font-weight: 600; white-space: nowrap; background: var(--dentalia-surface-2); }
 .pill-refused { background: #fdecea; color: var(--dentalia-danger-ink); }
 .picker-tray { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; max-height: 64px; overflow: auto; }
-.tchip { display: inline-flex; gap: 4px; align-items: center; font-size: 11.5px;
+.tchip { display: inline-flex; gap: 4px; align-items: center; font-size: var(--fs-micro);
   border: 1px solid var(--dentalia-border); border-radius: 999px; padding: 1px 4px 1px 8px; }
 .tchip button { background: none; border: 0; cursor: pointer; color: var(--dentalia-muted); }
 .item-picker .foot-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
