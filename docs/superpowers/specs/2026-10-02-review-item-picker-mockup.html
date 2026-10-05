@@ -1,0 +1,523 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Review Item Picker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600&family=Work+Sans:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+/* Layout: one column of labelled browser frames, the app's own look (web/static/css/style.css tokens). */
+:root {
+  --primary: #89c8ac;
+  --action: #2F7A58;
+  --ink: #33312b;
+  --muted: #5b5a55;
+  --border: #d8ddda;
+  --page: #ffffff;
+  --surface: #f2f9f6;
+  --surface-2: #e9f5f0;
+  --ghost: #eef1ef;
+  --ghost-ink: #8a918e;
+  --amber: #ffb354;
+  --amber-ink: #33312b;
+  --warn-bg: #fff6e8;
+  --warn-border: #f1d3a4;
+  --chip-on-bg: #2F7A58;
+  --chip-on-ink: #ffffff;
+  --chip-off-ink: #9aa5a1;
+  --danger: #b03a3a;
+  --danger-bg: #fdecea;
+  --scrim: rgba(30, 36, 34, .35);
+  --font-heading: "Sora", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-body: "Work Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --primary: #6fb293; --action: #7fd1a9; --ink: #e6e9e7; --muted: #aab3af;
+    --border: #3a4541; --page: #151a18; --surface: #1c2421; --surface-2: #22302b;
+    --ghost: #1f2623; --ghost-ink: #6f7a76; --amber: #e9a44c; --amber-ink: #1b1b18;
+    --warn-bg: #2b2518; --warn-border: #5a4a2c; --chip-on-bg: #3e9a70; --chip-on-ink: #0f1512;
+    --chip-off-ink: #6f7a76; --danger: #f08a8a; --danger-bg: #3a2222; --scrim: rgba(0,0,0,.5);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --primary: #6fb293; --action: #7fd1a9; --ink: #e6e9e7; --muted: #aab3af;
+  --border: #3a4541; --page: #151a18; --surface: #1c2421; --surface-2: #22302b;
+  --ghost: #1f2623; --ghost-ink: #6f7a76; --amber: #e9a44c; --amber-ink: #1b1b18;
+  --warn-bg: #2b2518; --warn-border: #5a4a2c; --chip-on-bg: #3e9a70; --chip-on-ink: #0f1512;
+  --chip-off-ink: #6f7a76; --danger: #f08a8a; --danger-bg: #3a2222; --scrim: rgba(0,0,0,.5);
+}
+body { background: var(--page); color: var(--ink); font-family: var(--font-body); font-size: 13px; line-height: 1.45; }
+.wrap { max-width: 1100px; margin: 0 auto; padding-inline: 16px; padding-block: 24px 48px; }
+h1, h2, h3 { font-family: var(--font-heading); font-weight: 600; text-wrap: balance; }
+.doc-head h1 { font-size: 20px; margin: 0 0 6px; }
+.doc-head p { margin: 0 0 6px; max-width: 75ch; color: var(--muted); }
+.example-tag { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--amber-ink); background: var(--amber); border-radius: 4px; padding: 1px 6px; }
+.real-tag { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--chip-on-ink); background: var(--chip-on-bg); border-radius: 4px; padding: 1px 6px; }
+.mock-label { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin: 34px 0 10px; }
+.mock-label .n { font-family: var(--font-heading); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--action); font-weight: 600; }
+.mock-label h2 { font-size: 16px; margin: 0; }
+.mock-label .where { color: var(--muted); font-size: 12px; }
+.frame { border: 1px solid var(--border); border-radius: 8px; background: var(--page); overflow: hidden; }
+.frame-bar { display: flex; gap: 6px; align-items: center; padding: 7px 12px; background: var(--surface-2); border-bottom: 1px solid var(--border); font-size: 11px; color: var(--muted); }
+.frame-bar .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
+.frame-bar .url { margin-left: 8px; font-family: var(--font-mono); }
+.frame-body { padding: 14px; }
+.new { outline: 2px dashed var(--primary); outline-offset: 3px; border-radius: 4px; }
+a { color: var(--action); }
+code { font-family: var(--font-mono); font-size: 12px; }
+.hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+
+/* Review row */
+.stage-sum { display: grid; grid-template-columns: 60px 1fr auto; gap: 10px; align-items: baseline; padding: 8px 10px; background: var(--surface-2); border-radius: 6px 6px 0 0; border: 1px solid var(--border); border-bottom: 0; }
+.stage-sum .c-title { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.stage-sum .c-sub { color: var(--muted); font-size: 12px; }
+.review-panel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 16px; border: 1px solid var(--border); border-radius: 0 0 6px 6px; padding: 12px; }
+@media (max-width: 760px) { .review-panel { grid-template-columns: 1fr; } }
+.pdf-ghost { background: var(--ghost); border-radius: 4px; min-height: 260px; display: grid; place-items: center; color: var(--ghost-ink); font-size: 12px; text-align: center; padding: 12px; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; margin: 0 0 10px; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.why { margin: 0 0 10px; }
+.approve-scope { border-top: 1px solid var(--border); padding-top: 10px; }
+.approve-line { font-weight: 600; margin: 0 0 6px; }
+.approve-items { margin: 4px 0 0; padding-left: 18px; }
+.approve-items li { overflow-wrap: anywhere; }
+.btn { font: inherit; font-weight: 600; border-radius: 6px; padding: 6px 12px; cursor: pointer; border: 1px solid transparent; }
+.btn:focus-visible, .linkbtn:focus-visible, input:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+.btn-approve { background: var(--action); color: var(--page); }
+.btn-reject { background: transparent; color: var(--danger); border-color: var(--danger); }
+.btn-plain { background: var(--surface); color: var(--action); border-color: var(--primary); }
+.btn-find { background: var(--surface); color: var(--action); border: 1px solid var(--primary); margin-top: 8px; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
+details.corrections summary { color: var(--action); cursor: pointer; margin-top: 10px; }
+.chosen-by { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+.ok-line { margin: 8px 0 0; font-size: 12px; }
+.warn { background: var(--warn-bg); border: 1px solid var(--warn-border); border-radius: 6px; padding: 7px 10px; margin: 8px 0 0; font-size: 12px; }
+
+/* Modal */
+.modal-stage { background: var(--scrim); padding: 18px; }
+.modal { background: var(--page); border-radius: 10px; border: 1px solid var(--border); max-width: 980px; margin: 0 auto; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; max-height: 820px; overflow: hidden; }
+.m-head { padding: 12px 14px 10px; border-bottom: 1px solid var(--border); display: grid; gap: 4px; }
+.m-head h3 { margin: 0; font-size: 16px; }
+.m-head .doc { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.lock { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; }
+.lock b { font-weight: 600; }
+.m-tools { padding: 10px 14px; border-bottom: 1px solid var(--border); display: grid; gap: 8px; background: var(--surface); }
+.searchrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.searchrow input { font: inherit; padding: 6px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--page); color: var(--ink); flex: 1 1 260px; min-width: 0; }
+.seed { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--muted); }
+.seed .linkbtn { font-size: 12px; }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--action); cursor: pointer; font: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.example-chip { display: inline-flex; gap: 6px; align-items: center; background: var(--surface-2); border: 1px solid var(--primary); border-radius: 999px; padding: 2px 4px 2px 10px; font-size: 12px; max-width: 100%; }
+.example-chip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-body { overflow: auto; padding: 4px 14px 10px; min-height: 0; }
+.count-line { color: var(--muted); font-size: 12px; margin: 8px 0 4px; }
+.grp { margin-top: 10px; }
+.grp-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.grp-head .g-label { font-weight: 600; font-size: 12px; min-width: 0; overflow-wrap: anywhere; }
+.grp-head .g-n { color: var(--muted); font-size: 12px; }
+.grp-head .linkbtn { font-size: 12px; margin-left: auto; }
+.table-scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; white-space: nowrap; }
+td.ref { font-family: var(--font-mono); font-size: 12px; white-space: nowrap; }
+td.nm { min-width: 220px; }
+tr.picked td { background: var(--surface-2); }
+tr.refused td { color: var(--ghost-ink); }
+.dchips { display: inline-flex; gap: 3px; white-space: nowrap; }
+.dchip { font-size: 10.5px; font-weight: 600; border-radius: 4px; padding: 0 4px; border: 1px solid var(--chip-off-ink); color: var(--chip-off-ink); }
+.dchip.on { background: var(--chip-on-bg); color: var(--chip-on-ink); border-color: var(--chip-on-bg); }
+.cur { font-size: 12px; white-space: nowrap; }
+.cur.none { color: var(--muted); }
+.pill { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.pill-warn { background: var(--amber); color: var(--amber-ink); }
+.pill-ok { background: var(--surface-2); color: var(--action); border: 1px solid var(--primary); }
+.pill-refused { background: var(--danger-bg); color: var(--danger); }
+.muted { color: var(--muted); }
+.m-foot { border-top: 1px solid var(--border); padding: 10px 14px; display: grid; gap: 8px; background: var(--surface); }
+.tray { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; max-height: 64px; overflow: auto; }
+.tray .t-n { font-weight: 600; margin-right: 4px; }
+.tchip { display: inline-flex; gap: 4px; align-items: center; font-family: var(--font-mono); font-size: 11.5px; background: var(--page); border: 1px solid var(--border); border-radius: 999px; padding: 1px 4px 1px 8px; }
+.tchip button { background: none; border: 0; color: var(--muted); cursor: pointer; font: inherit; padding: 0 3px; }
+.foot-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+.foot-actions .hint { margin: 0 auto 0 0; }
+
+.notes { margin-top: 36px; border-top: 1px solid var(--border); padding-top: 16px; display: grid; gap: 14px; }
+.notes h2 { font-size: 15px; margin: 0 0 6px; }
+.notes ul { margin: 0; padding-left: 18px; max-width: 85ch; display: grid; gap: 4px; }
+</style>
+
+<div class="wrap">
+  <header class="doc-head">
+    <h1>Choosing items on Review</h1>
+    <p>Mockups for review before any change to the web app. A reviewer opens a document that names no article numbers, finds the items it covers, ticks them, and approves. Nothing is linked until Approve, and only what the reviewer ticked.</p>
+    <p><span class="real-tag">REAL DATA</span> Document 8 and the 54 Straumann items with "Variobase" in the name, read from the server on 2026-10-02, with their groups and current documents. <span class="example-tag">EXAMPLE</span> Mockup 4 only.</p>
+    <p>Mockups 2 and 3 work: tick items, tick a group, type in the search, press <b>Similar</b> on a row, then <b>Done</b>. Mockup 3 follows your choice.</p>
+  </header>
+
+  <!-- 1 -->
+  <div class="mock-label">
+    <span class="n">Mockup 1</span>
+    <h2>Review, the document opened</h2>
+    <span class="where">/staging · expanded row. One new button under "Approving makes it count for" (dashed). Everything else as today.</span>
+  </div>
+  <div class="frame">
+    <div class="frame-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">/staging</span></div>
+    <div class="frame-body">
+      <div class="stage-sum">
+        <span class="muted">#8</span>
+        <span class="c-title">navodila za uporabo varibase Straumann novo.pdf<br><span class="c-sub">Instructions for use · INSTITUT STRAUMANN AG</span></span>
+        <span class="c-sub">The document does not say which items it covers.</span>
+      </div>
+      <div class="review-panel">
+        <div class="pdf-ghost">PDF, page 1<br>(the browser's own viewer, as today)</div>
+        <div>
+          <dl class="facts">
+            <dt>Manufacturer</dt><dd>Institut Straumann AG <span class="hint">as printed on the document</span></dd>
+            <dt>Rules</dt><dd>MDR (EU 2017/745)</dd>
+            <dt>Issued</dt><dd>Not stated</dd>
+            <dt>Valid until</dt><dd>Not stated</dd>
+            <dt>Basic UDI-DI</dt><dd>Not stated</dd>
+          </dl>
+          <p class="why"><strong>Why it needs you:</strong> The document does not say which items it covers.</p>
+          <section class="approve-scope">
+            <p class="approve-line">Nothing links it to an item yet, so approving it makes it count for no items.</p>
+            <div class="new" style="padding:4px 2px">
+              <button class="btn btn-find" type="button">Find items this document covers…</button>
+              <p class="hint">Search INSTITUT STRAUMANN AG items and tick the ones it covers. Nothing is linked until you approve.</p>
+            </div>
+          </section>
+          <details class="corrections"><summary>Correct a fact first</summary><p class="hint">Unchanged.</p></details>
+          <div class="actions">
+            <button class="btn btn-approve" type="button">Approve</button>
+            <button class="btn btn-reject" type="button">Reject…</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2 -->
+  <div class="mock-label">
+    <span class="n">Mockup 2</span>
+    <h2>The item picker</h2>
+    <span class="where">Opens over the Review page from the button in Mockup 1. Closes with Done or Cancel.</span>
+  </div>
+  <div class="frame">
+    <div class="frame-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">/staging · item picker for document 8</span></div>
+    <div class="modal-stage">
+      <div class="modal" role="dialog" aria-labelledby="m-title">
+        <div class="m-head">
+          <h3 id="m-title">Items this document covers</h3>
+          <span class="doc">Instructions for use · navodila za uporabo varibase Straumann novo.pdf · Issued: not stated</span>
+          <span class="lock">Manufacturer: <b>INSTITUT STRAUMANN AG</b> <span class="muted">· locked, from the document. Only its items can be found.</span></span>
+        </div>
+        <div class="m-tools">
+          <div class="searchrow">
+            <label for="q" class="muted">Search</label>
+            <input id="q" type="search" value="varibase" autocomplete="off" placeholder="Item number or name">
+          </div>
+          <div class="seed">
+            <span>Suggested from the file name:</span> <button class="linkbtn" type="button" data-seed="varibase">varibase</button>
+            <span>· Published Straumann documents with that word:</span>
+            <button class="linkbtn" type="button" data-doc="1">Izjava o skladnosti za variobase NC in RC (doc 1)</button>
+            <button class="linkbtn" type="button" data-doc="6">izjava o skladnosti za varibase XC novo (doc 6)</button>
+          </div>
+          <div id="example-slot" hidden></div>
+        </div>
+        <div class="m-body">
+          <p class="count-line" id="count-line"></p>
+          <div id="results"></div>
+        </div>
+        <div class="m-foot">
+          <div class="tray" id="tray"></div>
+          <div class="foot-actions">
+            <p class="hint">Nothing is ticked for you. Close with Done, then approve.</p>
+            <button class="btn btn-plain" type="button" id="cancel">Cancel</button>
+            <button class="btn btn-approve" type="button" id="done">Done</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3 -->
+  <div class="mock-label">
+    <span class="n">Mockup 3</span>
+    <h2>Review, after Done</h2>
+    <span class="where">Same panel. The scope text, the list and the Approve label follow the ticks. Approve sends them with the decision.</span>
+  </div>
+  <div class="frame">
+    <div class="frame-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">/staging</span></div>
+    <div class="frame-body">
+      <div class="review-panel" style="border-radius:6px">
+        <div class="pdf-ghost">PDF, page 1</div>
+        <div>
+          <p class="why"><strong>Why it needs you:</strong> The document does not say which items it covers.</p>
+          <section class="approve-scope new" id="after-scope"></section>
+          <div class="actions">
+            <button class="btn btn-approve" type="button" id="after-approve">Approve</button>
+            <button class="btn btn-reject" type="button">Reject…</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4 -->
+  <div class="mock-label">
+    <span class="n">Mockup 4</span>
+    <h2>Row states in the picker</h2>
+    <span class="where"><span class="example-tag">EXAMPLE</span> Illustrative rows. None of the 54 Variobase items is in these states today: none has a current IFU, none was refused.</span>
+  </div>
+  <div class="frame">
+    <div class="frame-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">picker rows</span></div>
+    <div class="frame-body">
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th></th><th>Item</th><th>Name</th><th>Documents now</th><th>Current IFU</th><th>What ticking means</th></tr></thead>
+          <tbody>
+            <tr><td><input type="checkbox" aria-label="tick"></td><td class="ref">000.000A</td><td>Example item, no IFU yet</td><td><span class="dchips"><span class="dchip on">DoC</span><span class="dchip">CE</span><span class="dchip">IFU</span><span class="dchip">ISO</span></span></td><td class="cur none">none</td><td>This IFU becomes its instructions for use.</td></tr>
+            <tr><td><input type="checkbox" aria-label="tick"></td><td class="ref">000.000B</td><td>Example item, older IFU</td><td><span class="dchips"><span class="dchip on">DoC</span><span class="dchip">CE</span><span class="dchip on">IFU</span><span class="dchip">ISO</span></span></td><td class="cur">2021-03-02 <span class="pill pill-ok">older than this one</span></td><td>This one replaces it for this item. <span class="muted">(Needs the per-item replacement ruling.)</span></td></tr>
+            <tr><td><input type="checkbox" aria-label="tick"></td><td class="ref">000.000C</td><td>Example item, newer IFU</td><td><span class="dchips"><span class="dchip on">DoC</span><span class="dchip">CE</span><span class="dchip on">IFU</span><span class="dchip">ISO</span></span></td><td class="cur">2025-07-14 <span class="pill pill-warn">newer than this one</span></td><td>An older IFU would count next to a newer one. The panel warns before Approve.</td></tr>
+            <tr><td><input type="checkbox" aria-label="tick"></td><td class="ref">000.000D</td><td>Example item, this document has no date</td><td><span class="dchips"><span class="dchip on">DoC</span><span class="dchip">CE</span><span class="dchip on">IFU</span><span class="dchip">ISO</span></span></td><td class="cur">2023-05-01 <span class="pill pill-warn">can't compare</span></td><td>This document states no issue date. Set it under "Correct a fact first", or decide knowing that.</td></tr>
+            <tr class="refused"><td><input type="checkbox" disabled aria-label="cannot tick"></td><td class="ref">000.000E</td><td>Example item, refused before</td><td><span class="dchips"><span class="dchip">DoC</span><span class="dchip">CE</span><span class="dchip">IFU</span><span class="dchip">ISO</span></span></td><td class="cur none">none</td><td><span class="pill pill-refused">Refused earlier</span> A reviewer refused this item for this document. It cannot be ticked here.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="hint">"Documents now" are the item's current published documents by type: filled = has one. "Current IFU" names the column after the type of the document on Review (Current DoC, Current CE certificate…).</p>
+    </div>
+  </div>
+
+  <section class="notes">
+    <div>
+      <h2>What these mockups decide</h2>
+      <ul>
+        <li>One new button in the open Review panel. The picker opens over the page; Done closes it and the panel shows the choice; Approve sends it. Reject is unchanged.</li>
+        <li>The manufacturer is locked. Where the document has none confirmed, the picker first asks for one with the existing manufacturer list.</li>
+        <li>The search starts from the file name. Two ways in besides typing: the items of a published document from the same manufacturer with that word in its file name, and <b>Similar</b> on any row, which lists items with names like it.</li>
+        <li>Fuzzy, but capped: only close matches are listed, at most 200, grouped by catalogue group. "Tick all" works per group.</li>
+        <li>Each row shows the item number, name, whether Business Central marks it as a medical device, the item's current documents by type, and its current document of the same type with its date.</li>
+        <li>Nothing is ticked for you. Every ticked item becomes a confirmed link under the reviewer's name when the document is approved.</li>
+      </ul>
+    </div>
+    <div>
+      <h2>Still open</h2>
+      <ul>
+        <li>What Approve does when a ticked item already has a current document of the same type (Mockup 4, rows B to D) depends on the per-item replacement spec and its four rulings.</li>
+        <li>The Variobase items show "not set" for medical device: Business Central has no device class on these 54 today.</li>
+      </ul>
+    </div>
+  </section>
+</div>
+
+<script>
+/* 54 real rows: [group, group label, item, name, current DoC "date:doc" or ""] */
+const DATA = [
+[192,"NC VARIOBASE FOR CROWN AS","010.6042","NC VARIOBASE FOR CROWN AS","2024-01-18:1"],
+[192,"NC VARIOBASE FOR CROWN AS","023.0025","NC BO COPING, 25°, VARIOBASE F. CROWN AS",""],
+[192,"NC VARIOBASE FOR CROWN AS","448.877V5","RN VARIOBASE FOR CROWN AS",""],
+[193,"RC VARIOBASE FOR CROWN AS, AH 5.5MM, GH 1MM, TAN","010.6054","RC VARIOBASE FOR CROWN AS, AH 5.5MM, GH 1MM, TAN","2024-01-18:1"],
+[196,"RB/WB VARIOBASE CROWN AS,4.5MM,AH5.5MM,GH1.5MM TAN","010.6135","RB/WB VARIOBASE CROWN AS,4.5MM,AH5.5MM,GH1.5MM TAN","2024-01-18:1"],
+[276,"NC VARIOBASE, FOR BRIDGE/BAR","022.0000","NC VARIOBASE, FOR BRIDGE/BAR",""],
+[276,"NC VARIOBASE, FOR BRIDGE/BAR","022.0001","RC VARIOBASE, FOR BRIDGE/BAR",""],
+[276,"NC VARIOBASE, FOR BRIDGE/BAR","448.378V5","RN VARIOBASE FOR BRIDGE/BAR",""],
+[276,"NC VARIOBASE, FOR BRIDGE/BAR","448.379V5","WN VARIOBASE FOR BRIDGE/BAR",""],
+[278,"RN VARIOBASE, FOR CROWN, 5.05, H6MM","022.0022","RN VARIOBASE, FOR CROWN, 5.05, H6MM","2024-01-18:1"],
+[279,"RC STRAUMANN® VARIOBASE® FOR CEREC®, TAN","022.0024","RC STRAUMANN® VARIOBASE® FOR CEREC®, TAN",""],
+[280,"RC VARIOBASE®, FOR CROWN, WITH SCREW,4.5MM, H 5.5, GH 1MM","022.0026","RC VARIOBASE®, FOR CROWN, WITH SCREW,4.5MM, H 5.5, GH 1MM","2024-01-18:1"],
+[280,"RC VARIOBASE®, FOR CROWN, WITH SCREW,4.5MM, H 5.5, GH 1MM","022.0027","NC VARIOBASE®, FOR CROWN, WITH SCREW,3.8MM, H 5.5, GH 1MM","2024-01-18:1"],
+[282,"SC VARIOBASE FOR CROWN, OVAL, GH1, TAN","022.0038","SC VARIOBASE FOR CROWN, OVAL, GH1, TAN","2024-01-18:1"],
+[282,"SC VARIOBASE FOR CROWN, OVAL, GH1, TAN","022.0039","SC VARIOBASE FOR CROWN, OVAL, GH2, TAN","2024-01-18:1"],
+[282,"SC VARIOBASE FOR CROWN, OVAL, GH1, TAN","022.0040","SC VARIOBASE FOR CROWN, OVAL, GH3, TAN","2024-01-18:1"],
+[306,"VARIOBASE® COPING,F.SCR.-RET.ABT.3.5MM, WITH SCREW,4.2MM, GH3.5MM, TAN","023.0000","VARIOBASE® COPING,F.SCR.-RET.ABT.3.5MM, WITH SCREW,4.2MM, GH3.5MM, TAN",""],
+[307,"VARIOBASE® COP.,F.SCR.-RET.ABT.4.6MM, WITH SCREW,5.1MM,GH3.5MM, TAN","023.0001","VARIOBASE® COP.,F.SCR.-RET.ABT.4.6MM, WITH SCREW,5.1MM,GH3.5MM, TAN",""],
+[308,"BURN-OUT COPING FOR VARIOBASE® COPING, FOR SCREW-RETAINED ABUTMENT4.6MM, POM","023.0005","BURN-OUT COPING FOR VARIOBASE® COPING, FOR SCREW-RETAINED ABUTMENT4.6MM, POM",""],
+[309,"NC BURN-OUT COPING, FOR VARIOBASE® FOR BRIDGE/BAR, POM","023.0006V4","NC BURN-OUT COPING, FOR VARIOBASE® FOR BRIDGE/BAR, POM",""],
+[310,"BO COP. FOR VARIOBASE,CROWN, NC AH 5.5","023.0018","BO COP. FOR VARIOBASE,CROWN, NC AH 5.5",""],
+[311,"VARIOBASE® FOR BRIDGE/BAR CYLINDRICAL COPING H 4MM, F.3.5MM SCREW-RET. ABUT.","023.0027","VARIOBASE® FOR BRIDGE/BAR CYLINDRICAL COPING H 4MM, F.3.5MM SCREW-RET. ABUT.",""],
+[311,"VARIOBASE® FOR BRIDGE/BAR CYLINDRICAL COPING H 4MM, F.3.5MM SCREW-RET. ABUT.","023.0028","VARIOBASE® FOR BRIDGE/BAR CYLINDRICAL COPING H 4MM, F.4.6MM SCREW-RET. ABUT.",""],
+[311,"VARIOBASE® FOR BRIDGE/BAR CYLINDRICAL COPING H 4MM, F.3.5MM SCREW-RET. ABUT.","023.0040","VARIOBASE® FOR BRIDGE/BAR CYLINDRICAL COPING H 7MM, F.4.6MM SCREW-RET. ABUT.",""],
+[311,"VARIOBASE® FOR BRIDGE/BAR CYLINDRICAL COPING H 4MM, F.3.5MM SCREW-RET. ABUT.","023.0041","VARIOBASE® FOR BRIDGE/BAR AS CYLINDRICAL COPING H 7MM, F.4.6MM SCREW-RET. ABUT.",""],
+[311,"VARIOBASE® FOR BRIDGE/BAR CYLINDRICAL COPING H 4MM, F.3.5MM SCREW-RET. ABUT.","048.378","RN VARIOBASE® FOR BRIDGE/BAR CYLINDRICAL",""],
+[314,"NC BURN-OUT COPING, FOR VARIOBASE™ ABUTMENT, POM","023.2756","NC BURN-OUT COPING, FOR VARIOBASE™ ABUTMENT, POM",""],
+[611,"RN VARIOBASE ABUTMENT, WITH SCREW","048.710","RN VARIOBASE ABUTMENT, WITH SCREW","2024-01-18:1"],
+[657,"RB/WB VARIOBASE FOR CROWN Φ3.8, GH 1.5, AH 5.5","062.4934","RB/WB VARIOBASE FOR CROWN Φ3.8, GH 1.5, AH 5.5","2024-01-18:1"],
+[657,"RB/WB VARIOBASE FOR CROWN Φ3.8, GH 1.5, AH 5.5","062.4936","RB/WB VARIOBASE FOR CROWN Φ3.8, GH 3.5, AH 5.5","2024-01-18:1"],
+[657,"RB/WB VARIOBASE FOR CROWN Φ3.8, GH 1.5, AH 5.5","062.4946","RB/WB VARIOBASE FOR CROWN Φ4.5, GH 3.5, AH 5.5","2024-01-18:1"],
+[657,"RB/WB VARIOBASE FOR CROWN Φ3.8, GH 1.5, AH 5.5","062.4972","RB/WB VARIOBASE FOR CROWN AS Φ4.5, GH 1.5, AH 5.5","2024-01-18:1"],
+[660,"RB/WB VARIOBASE FOR BAR7BRIDGE Φ4.5, GH 1.5, AH 3.5","062.4961","RB/WB VARIOBASE FOR BAR7BRIDGE Φ4.5, GH 1.5, AH 3.5","2024-01-18:1"],
+[661,"RB/WB VARIOBASE C - Ø 3.8MM, GH 1.5MM, TAN","062.4981","RB/WB VARIOBASE C - Ø 3.8MM, GH 1.5MM, TAN",""],
+[662,"RB/WB VARIOBASE XC FOR CROWN AS, Ø 4.5 MM, GH 1.5 MM, AH 7 MM","062.5009","RB/WB VARIOBASE XC FOR CROWN AS, Ø 4.5 MM, GH 1.5 MM, AH 7 MM","2025-07-14:6"],
+[662,"RB/WB VARIOBASE XC FOR CROWN AS, Ø 4.5 MM, GH 1.5 MM, AH 7 MM","062.5010","RB/WB VARIOBASE XC FOR CROWN AS, Ø 4.5 MM, GH 2.5 MM, AH 7 MM","2025-07-14:6"],
+[662,"RB/WB VARIOBASE XC FOR CROWN AS, Ø 4.5 MM, GH 1.5 MM, AH 7 MM","062.5017","RB/WB VARIOBASE XC FOR CROWN, Ø 3.8 MM, GH 1.5 MM, AH 7 MM","2025-07-14:6"],
+[662,"RB/WB VARIOBASE XC FOR CROWN AS, Ø 4.5 MM, GH 1.5 MM, AH 7 MM","062.5018","RB/WB VARIOBASE XC FOR CROWN, Ø 3.8 MM, GH 2.5 MM, AH 7 MM","2025-07-14:6"],
+[662,"RB/WB VARIOBASE XC FOR CROWN AS, Ø 4.5 MM, GH 1.5 MM, AH 7 MM","062.5019","RB/WB VARIOBASE XC FOR CROWN, Ø 3.8 MM, GH 3.5 MM, AH 7 MM","2025-07-14:6"],
+[662,"RB/WB VARIOBASE XC FOR CROWN AS, Ø 4.5 MM, GH 1.5 MM, AH 7 MM","062.5020","RB/WB VARIOBASE XC FOR CROWN, Ø 4.5 MM, GH 1.5 MM, AH 7 MM","2025-07-14:6"],
+[662,"RB/WB VARIOBASE XC FOR CROWN AS, Ø 4.5 MM, GH 1.5 MM, AH 7 MM","062.5021","RB/WB VARIOBASE XC FOR CROWN, Ø 4.5 MM, GH 2.5 MM, AH 7 MM","2025-07-14:6"],
+[662,"RB/WB VARIOBASE XC FOR CROWN AS, Ø 4.5 MM, GH 1.5 MM, AH 7 MM","062.5022","RB/WB VARIOBASE XC FOR CROWN, Ø 4.5 MM, GH 3.5 MM, AH 7 MM","2025-07-14:6"],
+[662,"RB/WB VARIOBASE XC FOR CROWN AS, Ø 4.5 MM, GH 1.5 MM, AH 7 MM","062.5065","RB/WB VARIOBASE XC FOR BRIDGE/BAR, Ø 3.8 MM, GH 1.5 MM, AH 7 MM","2025-07-14:6"],
+[662,"RB/WB VARIOBASE XC FOR CROWN AS, Ø 4.5 MM, GH 1.5 MM, AH 7 MM","062.5066","RB/WB VARIOBASE XC FOR BRIDGE/BAR, Ø 3.8 MM, GH 2.5 MM, AH 7 MM","2025-07-14:6"],
+[662,"RB/WB VARIOBASE XC FOR CROWN AS, Ø 4.5 MM, GH 1.5 MM, AH 7 MM","062.5067","RB/WB VARIOBASE XC FOR BRIDGE/BAR, Ø 3.8 MM, GH 3.5 MM, AH 7 MM","2025-07-14:6"],
+[662,"RB/WB VARIOBASE XC FOR CROWN AS, Ø 4.5 MM, GH 1.5 MM, AH 7 MM","062.5068","RB/WB VARIOBASE XC FOR BRIDGE/BAR, Ø 4.5 MM, GH 1.5 MM, AH 7 MM","2025-07-14:6"],
+[662,"RB/WB VARIOBASE XC FOR CROWN AS, Ø 4.5 MM, GH 1.5 MM, AH 7 MM","062.5069","RB/WB VARIOBASE XC FOR BRIDGE/BAR, Ø 4.5 MM, GH 2.5 MM, AH 7 MM","2025-07-14:6"],
+[662,"RB/WB VARIOBASE XC FOR CROWN AS, Ø 4.5 MM, GH 1.5 MM, AH 7 MM","062.5070","RB/WB VARIOBASE XC FOR BRIDGE/BAR, Ø 4.5 MM, GH 3.5 MM, AH 7 MM","2025-07-14:6"],
+[663,"WB VARIOBASE XC 5.5 GH 1.5, AH 7MM","062.5024","WB VARIOBASE XC 5.5 GH 1.5, AH 7MM","2025-07-14:6"],
+[663,"WB VARIOBASE XC 5.5 GH 1.5, AH 7MM","062.5059","WB VARIOBASE XC 5.5 GH 2.5, AH 7MM","2025-07-14:6"],
+[664,"RB/WB Variobase® C, incl. screw, Ø 3.8mm, GH 2.5mm, TAN","062.5028","RB/WB Variobase® C, incl. screw, Ø 3.8mm, GH 2.5mm, TAN",""],
+[664,"RB/WB Variobase® C, incl. screw, Ø 3.8mm, GH 2.5mm, TAN","062.5029","RB/WB Variobase® C, incl. screw, Ø 3.8mm, GH 3.5mm, TAN",""],
+[3178,"RC VARIOBASE FOR CROWN, COURSE MATERIAL","422.0026V5","RC VARIOBASE FOR CROWN, COURSE MATERIAL",""],
+[3184,"ST VARIOBASE NC/RC VARIOBASE FOR ABUTMENT ON THE SCREW COURSE MATERIAL","423.0028V5","ST VARIOBASE NC/RC VARIOBASE FOR ABUTMENT ON THE SCREW COURSE MATERIAL",""]
+].map(r => ({ g: r[0], gl: r[1], ref: r[2], name: r[3], doc: r[4] }));
+
+const CAP = 200;
+const chosen = new Set();
+let committed = new Set();
+let example = null;
+let docFilter = null;
+
+const norm = s => s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, " ").trim();
+function trigrams(w) { const p = "  " + w + " "; const t = new Set(); for (let i = 0; i < p.length - 2; i++) t.add(p.slice(i, i + 3)); return t; }
+function sim(a, b) { const A = trigrams(a), B = trigrams(b); let n = 0; A.forEach(x => { if (B.has(x)) n++; }); return n / (A.size + B.size - n); }
+/* like pg_trgm word_similarity: the query against the best-matching word of the name */
+function wordSim(q, name) {
+  const qs = norm(q).split(" ").filter(Boolean); if (!qs.length) return 0;
+  const ws = norm(name).split(" ").filter(Boolean);
+  let total = 0;
+  for (const qw of qs) { let best = 0; for (const w of ws) best = Math.max(best, sim(qw, w)); total += best; }
+  return total / qs.length;
+}
+function nameSim(a, b) {
+  const A = new Set(norm(a).split(" ")), B = new Set(norm(b).split(" "));
+  let n = 0; A.forEach(x => { if (B.has(x)) n++; });
+  return n / (A.size + B.size - n);
+}
+
+function rows() {
+  if (docFilter) return DATA.filter(r => r.doc.endsWith(":" + docFilter)).map(r => ({ r, s: 1 }));
+  if (example) {
+    return DATA.filter(r => r.ref !== example.ref).map(r => ({ r, s: nameSim(example.name, r.name) }))
+      .filter(x => x.s >= 0.35).sort((a, b) => b.s - a.s);
+  }
+  const q = document.getElementById("q").value.trim();
+  if (!q) return [];
+  return DATA.map(r => ({ r, s: r.ref.toLowerCase().includes(q.toLowerCase()) ? 1 : wordSim(q, r.name) }))
+    .filter(x => x.s >= 0.5).sort((a, b) => b.s - a.s);
+}
+
+function el(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const k in attrs || {}) { if (k === "class") e.className = attrs[k]; else if (k.startsWith("on")) e.addEventListener(k.slice(2), attrs[k]); else e.setAttribute(k, attrs[k]); }
+  kids.flat().forEach(k => e.append(k instanceof Node ? k : document.createTextNode(k)));
+  return e;
+}
+
+function docChips(r) {
+  const has = { DoC: !!r.doc, CE: false, IFU: false, ISO: false };
+  return el("span", { class: "dchips" }, ...Object.keys(has).map(t => el("span", { class: "dchip" + (has[t] ? " on" : ""), title: has[t] ? (t + " " + r.doc.split(":")[0] + ", doc " + r.doc.split(":")[1]) : "no current " + t }, t)));
+}
+
+function render() {
+  const list = rows().slice(0, CAP);
+  const res = document.getElementById("results");
+  res.textContent = "";
+  const groups = new Map();
+  list.forEach(({ r }) => { if (!groups.has(r.g)) groups.set(r.g, { label: r.gl, items: [] }); groups.get(r.g).items.push(r); });
+  let lead;
+  if (docFilter) lead = "Items doc " + docFilter + " covers among these Variobase rows: " + list.length + ", in " + groups.size + " groups.";
+  else if (example) lead = list.length + " items with names like " + example.ref + ", in " + groups.size + " groups. Closest first.";
+  else lead = list.length + " items match, in " + groups.size + " groups. Closest first, at most " + CAP + ".";
+  document.getElementById("count-line").textContent = lead + (list.length ? "" : " Try another word or an item number.");
+  groups.forEach((g, gid) => {
+    const allOn = g.items.every(r => chosen.has(r.ref));
+    const head = el("div", { class: "grp-head" },
+      el("span", { class: "g-label" }, "Group: " + g.label),
+      el("span", { class: "g-n" }, g.items.length + (g.items.length === 1 ? " item" : " items")),
+      el("button", { class: "linkbtn", type: "button", onclick: () => { g.items.forEach(r => allOn ? chosen.delete(r.ref) : chosen.add(r.ref)); render(); } },
+        allOn ? "Untick all " + g.items.length : "Tick all " + g.items.length));
+    const tb = el("tbody", {});
+    g.items.forEach(r => {
+      const on = chosen.has(r.ref);
+      const cb = el("input", { type: "checkbox", "aria-label": "Tick " + r.ref, onchange: e => { e.target.checked ? chosen.add(r.ref) : chosen.delete(r.ref); render(); } });
+      cb.checked = on;
+      tb.append(el("tr", { class: on ? "picked" : "" },
+        el("td", {}, cb),
+        el("td", { class: "ref" }, r.ref),
+        el("td", { class: "nm" }, r.name),
+        el("td", { class: "muted" }, "not set"),
+        el("td", {}, docChips(r)),
+        el("td", { class: "cur none" }, "none"),
+        el("td", {}, el("button", { class: "linkbtn", type: "button", onclick: () => { example = r; docFilter = null; showExample(); render(); } }, "Similar"))));
+    });
+    const table = el("table", {},
+      el("thead", {}, el("tr", {}, el("th", {}, ""), el("th", {}, "Item"), el("th", {}, "Name"), el("th", {}, "Device"), el("th", {}, "Documents now"), el("th", {}, "Current IFU"), el("th", {}, ""))),
+      tb);
+    res.append(el("div", { class: "grp" }, head, el("div", { class: "table-scroll" }, table)));
+  });
+  renderTray();
+}
+
+function showExample() {
+  const slot = document.getElementById("example-slot");
+  slot.textContent = "";
+  if (!example && !docFilter) { slot.hidden = true; return; }
+  slot.hidden = false;
+  const label = example ? "Similar to " + example.ref + " · " + example.name : "Items of published doc " + docFilter;
+  slot.append(el("span", { class: "example-chip" }, el("span", {}, label),
+    el("button", { class: "linkbtn", type: "button", "aria-label": "Back to the search", onclick: () => { example = null; docFilter = null; showExample(); render(); } }, "back to search")));
+}
+
+function renderTray() {
+  const t = document.getElementById("tray");
+  t.textContent = "";
+  t.append(el("span", { class: "t-n" }, chosen.size === 1 ? "1 item ticked" : chosen.size + " items ticked"));
+  if (!chosen.size) { t.append(el("span", { class: "muted" }, "Tick items or a whole group.")); return; }
+  [...chosen].forEach(ref => t.append(el("span", { class: "tchip" }, ref, el("button", { type: "button", "aria-label": "Remove " + ref, onclick: () => { chosen.delete(ref); render(); } }, "×"))));
+  t.append(el("button", { class: "linkbtn", type: "button", onclick: () => { chosen.clear(); render(); } }, "Clear all"));
+}
+
+function renderAfter() {
+  const s = document.getElementById("after-scope");
+  const btn = document.getElementById("after-approve");
+  s.textContent = "";
+  const items = DATA.filter(r => committed.has(r.ref));
+  const n = items.length;
+  if (!n) {
+    s.append(el("p", { class: "approve-line" }, "Nothing links it to an item yet, so approving it makes it count for no items."),
+      el("button", { class: "btn btn-find", type: "button" }, "Find items this document covers…"),
+      el("p", { class: "hint" }, "Tick items in Mockup 2 and press Done to see this change."));
+    btn.textContent = "Approve";
+    return;
+  }
+  s.append(el("p", { class: "approve-line" }, n === 1 ? "Approving makes it count for this item" : "Approving makes it count for these " + n + " items"));
+  const ul = el("ul", { class: "approve-items" });
+  items.slice(0, 5).forEach(r => ul.append(el("li", {}, el("a", { href: "#" }, r.ref), " · " + r.name)));
+  s.append(ul);
+  if (n > 5) {
+    const more = el("ul", { class: "approve-items" });
+    items.slice(5).forEach(r => more.append(el("li", {}, el("a", { href: "#" }, r.ref), " · " + r.name)));
+    s.append(el("details", {}, el("summary", {}, "+ " + (n - 5) + " more"), more));
+  }
+  s.append(el("p", { class: "chosen-by" }, "Chosen by you. Each becomes a confirmed link under your name when you approve."),
+    el("p", { class: "ok-line" }, "None of them has a current instructions for use, so this replaces nothing."),
+    el("button", { class: "btn btn-find", type: "button" }, "Change items…"));
+  btn.textContent = n === 1 ? "Approve for this item" : "Approve for these " + n + " items";
+}
+
+document.getElementById("q").addEventListener("input", () => { example = null; docFilter = null; showExample(); render(); });
+document.querySelectorAll("[data-seed]").forEach(b => b.addEventListener("click", () => { document.getElementById("q").value = b.dataset.seed; example = null; docFilter = null; showExample(); render(); }));
+document.querySelectorAll("[data-doc]").forEach(b => b.addEventListener("click", () => { docFilter = b.dataset.doc; example = null; showExample(); render(); }));
+document.getElementById("done").addEventListener("click", () => { committed = new Set(chosen); renderAfter(); document.getElementById("after-scope").scrollIntoView({ behavior: "smooth", block: "center" }); });
+document.getElementById("cancel").addEventListener("click", () => { chosen.clear(); committed.forEach(r => chosen.add(r)); render(); });
+
+/* Opens with group 662 ticked so every frame shows a working state. */
+DATA.filter(r => r.g === 662).forEach(r => chosen.add(r.ref));
+committed = new Set(chosen);
+render();
+renderAfter();
+</script>
+
+</body></html>
