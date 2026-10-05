@@ -124,6 +124,36 @@ Po odobritvi vsak od teh artiklov čaka pod **Links waiting for review on publis
 documents**, niže na zaslonu Review: za vsakega pritisnite **Covers this item**
 ali **Does not**.
 
+### Izbira artiklov, ki jih dokument pokriva
+
+Nekateri dokumenti, pogosto navodila za uporabo, ne navajajo kataloških številk,
+zato jih nič ne poveže z artiklom. Odprite vrstico in pritisnite **Find items
+this document covers…**.
+
+- Proizvajalec je zaklenjen na proizvajalca dokumenta. Če ta ni potrjen, ga
+  najprej izberite; najti je mogoče samo njegove artikle.
+- Iskanje se začne z besedo iz imena datoteke. Vpišite številko artikla ali
+  besedo iz imena. Številka prikaže artikle, katerih številka jo vsebuje, pod
+  njimi pa 10 številk pred njo in 10 za njo, ki so pogosto iz iste družine:
+  preverite vsako. Beseda najde tudi podobno zapisane ("varibase", "emax" za
+  E.MAX). Prikaže največ 200 artiklov; če jih ustreza več, uporabite ožjo
+  besedo.
+- **Similar** v katerikoli vrstici prikaže artikle istega proizvajalca s
+  podobnim imenom. Objavljen dokument istega proizvajalca, ponujen pod iskalnim
+  poljem, prikaže artikle, ki jih pokriva.
+- Artikle označite enega za drugim ali z **Tick all** v katalogni skupini.
+  Ničesar ne označimo namesto vas. Artikla, ki je bil za ta dokument že
+  zavrnjen, ni mogoče označiti.
+- Vsaka vrstica pokaže, ali ga Business Central vodi kot medicinski pripomoček,
+  katere dokumente že ima (DoC, CE, IFU, ISO) in njegov najnovejši dokument te
+  vrste z datumom.
+- **Done** zapre izbirnik, plošča pa pokaže, za katere artikle bo dokument
+  veljal po odobritvi. **Cancel** ohrani prejšnjo izbiro.
+
+Dokler ne odobrite, ni povezano nič. Nato vsak označeni artikel postane potrjena
+povezava pod vašim imenom. Artikel, ki že ima dokument iste vrste, ga obdrži;
+novi se doda zraven.
+
 ### Prikaz ene vrste razloga naenkrat
 
 Gumbi nad seznamom pokažejo dokumente, ki čakajo zaradi ene vrste razloga.

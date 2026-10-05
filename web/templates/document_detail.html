@@ -241,6 +241,15 @@
   {% else %}
   <p class="hint">No item links (manufacturer-scope document, or not yet grouped).</p>
   {% endif %}
+{% if offer_picker %}
+<button type="button" class="btn-find" data-picker-open="picker-{{ doc.doc_id }}"
+        data-picker-url="/picker/{{ doc.doc_id }}">Add items this document covers…</button>
+<p class="hint">Find this manufacturer's items and tick the ones the document covers. Each becomes a
+  confirmed link under your name.</p>
+<dialog class="item-picker" id="picker-{{ doc.doc_id }}" aria-label="Items this document covers">
+  <div class="picker-body"></div>
+</dialog>
+{% endif %}
 </div>
 
 <div class="card">

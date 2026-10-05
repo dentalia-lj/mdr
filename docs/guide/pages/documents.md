@@ -78,6 +78,11 @@ to browse everything.
    **review this document** to go straight to it on [Review](review.md).
 8. If the document names a Basic UDI-DI and you want a quick cross-check, press
    **Look up in EUDAMED**.
+9. On a published document that covers specific items, **Add items this
+   document covers…** opens the same picker as on [Review](review.md): find and
+   tick the items, then **Add these N items**. Each becomes a confirmed link
+   under your name within a minute. Use it when a new item arrives that an
+   existing document covers.
 
 ---
 

@@ -1415,3 +1415,44 @@ tr.completeness-evidence td { color: var(--dentalia-muted); }
    display:block and would drop the button onto its own row. */
 .inline-form { display: inline; margin-left: 0.6rem; }
 .inline-form button { font-size: var(--fs-micro); padding: var(--pad-chip); }
+
+/* Item picker (picker spec §3, mockup 2) */
+dialog.item-picker { width: min(980px, calc(100vw - 32px)); max-height: calc(100vh - 48px);
+  padding: 0; border: 1px solid var(--dentalia-border); border-radius: 10px; }
+dialog.item-picker::backdrop { background: rgba(30, 36, 34, .35); }
+.item-picker .picker-body { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto;
+  max-height: calc(100vh - 50px); }
+.item-picker .m-head, .item-picker .m-tools, .item-picker .m-foot { padding: 10px 14px; }
+.item-picker .m-head { border-bottom: 1px solid var(--dentalia-border); }
+.item-picker .m-tools { border-bottom: 1px solid var(--dentalia-border); display: grid; gap: 8px; }
+.item-picker .m-body { overflow: auto; padding: 4px 14px 10px; min-height: 0; }
+.item-picker .m-foot { border-top: 1px solid var(--dentalia-border); display: grid; gap: 8px; }
+.item-picker .searchrow { display: flex; gap: 8px; align-items: center; }
+.item-picker .searchrow input { flex: 1 1 260px; min-width: 0; }
+.item-picker .seed { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: var(--fs-meta); }
+.item-picker .grp-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
+  padding: 5px 0; border-bottom: 1px solid var(--dentalia-border); }
+.item-picker .grp-head [data-picker-tick-all] { margin-left: auto; }
+.item-picker td.ref { font-family: ui-monospace, Menlo, Consolas, monospace; white-space: nowrap; }
+.item-picker tr.picked td { background: var(--dentalia-surface-2); }
+.item-picker tr.refused td { color: var(--dentalia-muted); }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--dentalia-action); cursor: pointer;
+  font: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.dchips { display: inline-flex; gap: 3px; white-space: nowrap; }
+.dchip { font-size: 10.5px; font-weight: 600; border-radius: 4px; padding: 0 4px;
+  border: 1px solid var(--dentalia-border); color: var(--dentalia-muted); }
+.dchip.on { background: var(--dentalia-action); color: #fff; border-color: var(--dentalia-action); }
+.pill { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: var(--fs-micro);
+  font-weight: 600; white-space: nowrap; background: var(--dentalia-surface-2); }
+.pill-refused { background: #fdecea; color: var(--dentalia-danger-ink); }
+.picker-tray { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; max-height: 64px; overflow: auto; }
+.tchip { display: inline-flex; gap: 4px; align-items: center; font-size: 11.5px;
+  border: 1px solid var(--dentalia-border); border-radius: 999px; padding: 1px 4px 1px 8px; }
+.tchip button { background: none; border: 0; cursor: pointer; color: var(--dentalia-muted); }
+.item-picker .foot-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+.item-picker .foot-actions .hint { margin: 0 auto 0 0; }
+.btn-find { margin-top: 8px; }
+/* `button:hover` (above) fills every button; the picker's link-style buttons and
+   the tray's × stay text, as `button.btn-clear:hover` does. */
+button.linkbtn:hover { background: none; color: var(--dentalia-action-strong); }
+.tchip button:hover { background: none; color: var(--dentalia-ink); }

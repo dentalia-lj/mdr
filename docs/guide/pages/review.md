@@ -124,6 +124,35 @@ count). After you approve, each of those items waits under **Links waiting for r
 published documents**, further down the Review screen: press **Covers this
 item** or **Does not** for each one.
 
+### Choosing the items a document covers
+
+Some documents, often instructions for use, name no article numbers, so nothing
+links them to an item. Open the row and press **Find items this document
+covers…**.
+
+- The manufacturer is locked to the document's. If the document has none
+  confirmed, choose it first; only its items can be found.
+- The search starts with a word from the file name. Type an item number or a
+  word from the name. A number lists the items whose number contains it, and
+  below them the 10 numbers before and after it, which are often the same
+  family: check each one. A word finds close spellings too ("varibase",
+  "emax" for E.MAX). At most 200 items are listed; if more match, use a
+  narrower word.
+- **Similar** on any row lists the manufacturer's items with names like it. A
+  published document of the same manufacturer, offered under the search box,
+  lists the items it covers.
+- Tick items one by one, or **Tick all** in a catalogue group. Nothing is ticked
+  for you. An item refused earlier for this document cannot be ticked.
+- Each row shows whether Business Central marks the item as a medical device,
+  which documents it already has (DoC, CE, IFU, ISO), and its newest document of
+  this type with its date.
+- **Done** closes the picker and the panel lists what approving will make the
+  document count for. **Cancel** keeps what you had before.
+
+Nothing is linked until you approve. Each ticked item then becomes a confirmed
+link under your name. An item that already has a document of the same type
+keeps it; the new one is added beside it.
+
 ### Showing one kind of reason at a time
 
 The buttons above the list show the documents waiting for one kind of reason.

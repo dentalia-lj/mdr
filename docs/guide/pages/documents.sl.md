@@ -77,6 +77,11 @@ prazno, če želite brskati po vsem.
    greste neposredno nanjo na [Review](review.sl.md).
 8. Če dokument navaja Basic UDI-DI in želite hiter navzkrižni pregled,
    pritisnite **Look up in EUDAMED**.
+9. Na objavljenem dokumentu, ki pokriva določene artikle, **Add items this
+   document covers…** odpre isti izbirnik kot na [Review](review.sl.md):
+   poiščite in označite artikle, nato pritisnite **Add these N items**. Vsak
+   postane potrjena povezava pod vašim imenom v minuti. Uporabite ga, ko pride
+   nov artikel, ki ga obstoječi dokument pokriva.
 
 ---
 

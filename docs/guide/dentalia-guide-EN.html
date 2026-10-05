@@ -895,6 +895,7 @@ tbody tr:last-child td{border-bottom:0}
 <li>Look at <strong>Covered items</strong> for which products it applies to, and open <strong>Technical details</strong> under <em>Where every value came from</em> for every fact the system extracted, with the exact page and wording it came from.</li>
 <li>If the document is still waiting for a decision, click <strong>review this document</strong> to go straight to it on <a href="#pages/review">Review</a>.</li>
 <li>If the document names a Basic UDI-DI and you want a quick cross-check, press <strong>Look up in EUDAMED</strong>.</li>
+<li>On a published document that covers specific items, <strong>Add items this document covers…</strong> opens the same picker as on <a href="#pages/review">Review</a>: find and tick the items, then <strong>Add these N items</strong>. Each becomes a confirmed link under your name within a minute. Use it when a new item arrives that an existing document covers.</li>
 </ol>
 <hr>
 <h2 id="pages/documents--what-happens-then">What happens then</h2>
@@ -1925,6 +1926,17 @@ tbody tr:last-child td{border-bottom:0}
 </ol>
 <h3 id="pages/review--when-the-panel-says-the-items-will-not-count-yet">When the panel says the items will not count yet</h3>
 <p>Some items are linked to a document only by a weak match: where the file was found, a similar product name, or an article number with no manufacturer confirmed. Approving the document does not make it count for those items. The panel lists them apart and says <em>Approving publishes it, but it will not count for any item yet</em> (or <em>It is also linked to N more items…</em> when some items do count). After you approve, each of those items waits under <strong>Links waiting for review on published documents</strong>, further down the Review screen: press <strong>Covers this item</strong> or <strong>Does not</strong> for each one.</p>
+<h3 id="pages/review--choosing-the-items-a-document-covers">Choosing the items a document covers</h3>
+<p>Some documents, often instructions for use, name no article numbers, so nothing links them to an item. Open the row and press <strong>Find items this document covers…</strong>.</p>
+<ul>
+<li>The manufacturer is locked to the document's. If the document has none confirmed, choose it first; only its items can be found.</li>
+<li>The search starts with a word from the file name. Type an item number or a word from the name. A number lists the items whose number contains it, and below them the 10 numbers before and after it, which are often the same family: check each one. A word finds close spellings too ("varibase", "emax" for E.MAX). At most 200 items are listed; if more match, use a narrower word.</li>
+<li><strong>Similar</strong> on any row lists the manufacturer's items with names like it. A published document of the same manufacturer, offered under the search box, lists the items it covers.</li>
+<li>Tick items one by one, or <strong>Tick all</strong> in a catalogue group. Nothing is ticked for you. An item refused earlier for this document cannot be ticked.</li>
+<li>Each row shows whether Business Central marks the item as a medical device, which documents it already has (DoC, CE, IFU, ISO), and its newest document of this type with its date.</li>
+<li><strong>Done</strong> closes the picker and the panel lists what approving will make the document count for. <strong>Cancel</strong> keeps what you had before.</li>
+</ul>
+<p>Nothing is linked until you approve. Each ticked item then becomes a confirmed link under your name. An item that already has a document of the same type keeps it; the new one is added beside it.</p>
 <h3 id="pages/review--showing-one-kind-of-reason-at-a-time">Showing one kind of reason at a time</h3>
 <p>The buttons above the list show the documents waiting for one kind of reason. <strong>All reasons</strong> shows everything again.</p>
 <div class="tw"><table><thead><tr>

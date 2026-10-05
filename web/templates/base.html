@@ -12,6 +12,7 @@
      stale stylesheet across a deploy and a shipped fix reads as a broken one. #}
   <link rel="stylesheet" href="{{ static_url('css/style.css') }}">
   <script src="{{ static_url('htmx.min.js') }}"></script>
+  <script src="{{ static_url('item_picker.js') }}" defer></script>
   <script>
     // 400/422 responses carry a real error fragment we want swapped in, not
     // just an htmx:responseError event — verified against htmx 2.x docs

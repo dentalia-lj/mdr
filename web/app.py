@@ -3617,6 +3617,9 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         return templates.TemplateResponse(
             request, "document_detail.html",
             {"doc": doc, "items": items_covered,
+             # Picker spec §3.1: items can be added to a published document
+             # that covers specific items.
+             "offer_picker": doc["status"] == "production" and doc["coverage_scope"] == "group",
              "evidence": evidence, "chain": chain, "chases": chases,
              "eudamed": eudamed, "eudamed_rows": eudamed_rows},
         )

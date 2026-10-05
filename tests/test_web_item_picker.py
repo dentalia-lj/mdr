@@ -237,3 +237,20 @@ def test_the_review_panel_offers_the_picker_only_for_specific_items(client, conn
     assert "Find items this document covers" in _text(g)
     assert f'id="picker-items-{group_doc}"' in g and f'id="approve-{group_doc}"' in g
     assert "Find items this document covers" not in _text(client.get(f"/staging/{range_doc}/detail").text)
+
+
+def test_the_page_loads_the_picker_script(client, conn):
+    assert "item_picker.js" in client.get("/staging").text
+
+
+def test_a_published_document_offers_add_items(client, conn):
+    _mfr(conn)
+    pub = _doc(conn, "page-pub", status="production")
+    rng = _doc(conn, "page-rng", status="production", scope="manufacturer")
+    conn.commit()
+    page = client.get(f"/documents/{pub}").text
+    assert "Add items this document covers" in _text(page)
+    assert f'data-picker-url="/picker/{pub}"' in page
+    assert "Add items this document covers" not in _text(client.get(f"/documents/{rng}").text)
+    body = _text(client.get(f"/picker/{pub}").text)
+    assert "Add these 0 items" in body and "Done" not in body
