@@ -499,8 +499,9 @@ class Connection:
     anthropic_api_key: str = ""
     brave_api_key: str = ""
     serper_api_key: str = ""   # Serper fallback SearchAdapter (adapters.search="serper")
-    imap_user: str = ""        # S2.4 email.poll mailbox login (GAP G8 — empty until wired)
+    imap_user: str = ""        # S2.4 email.poll mailbox address; also the sign-in name unless imap_login is set
     imap_password: str = ""    # S2.4 email.poll mailbox password (secret, env-only)
+    imap_login: str = ""       # sign-in name when it is not IMAP_USER, e.g. DOMAIN\user
 
 
 @dataclass(frozen=True)
@@ -1069,6 +1070,7 @@ def load_config() -> Config:
         imap_password=_str(
             "IMAP_PASSWORD", _dig(t, "connection", "imap_password"), ""
         ),
+        imap_login=_str("IMAP_LOGIN", _dig(t, "connection", "imap_login"), ""),
     )
 
     web = Web(

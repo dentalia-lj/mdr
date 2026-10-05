@@ -54,6 +54,14 @@ def test_make_email_adapter_carries_the_start_date(monkeypatch):
     assert make_email_adapter(load_config()).since == "2026-09-24"
 
 
+def test_make_email_adapter_carries_the_login_beside_the_address(monkeypatch):
+    monkeypatch.delenv("EMAIL_ADAPTER", raising=False)
+    monkeypatch.setenv("IMAP_USER", "mdr@x.test")
+    monkeypatch.setenv("IMAP_LOGIN", "DOMAIN\\svc.mdr")
+    adapter = make_email_adapter(load_config())
+    assert (adapter.user, adapter.login) == ("mdr@x.test", "DOMAIN\\svc.mdr")
+
+
 def test_make_email_adapter_unknown_raises(monkeypatch):
     monkeypatch.setenv("EMAIL_ADAPTER", "graph")
     with pytest.raises(ValueError):
@@ -105,9 +113,13 @@ _RAW = (b"From: a@manu.example\r\nSubject: s\r\nMessage-ID: <m%d@x>\r\n"
 class RecordingImap:
     """UIDs 1..n; `arrived[uid]` is the INTERNALDATE the server compares SINCE with."""
 
-    def __init__(self, arrived: dict[int, date], uidvalidity: str = "7"):
+    def __init__(self, arrived: dict[int, date], uidvalidity: str = "7",
+                 capabilities: tuple = ("IMAP4REV1", "AUTH=PLAIN", "AUTH=NTLM")):
         self.arrived = arrived
         self.uidvalidity = uidvalidity
+        # imaplib reads these from the greeting, before sign-in. The default is
+        # what Dentalia's Exchange advertised on 2026-10-05.
+        self.capabilities = capabilities
         self.commands: list[tuple] = []
 
     def __call__(self, host, port):          # the factory
@@ -117,6 +129,12 @@ class RecordingImap:
     def login(self, user, password):
         self.commands.append(("LOGIN", user))
         return "OK", [b"logged in"]
+
+    def authenticate(self, mechanism, authobject):
+        # imaplib calls authobject with the decoded server challenge; for
+        # PLAIN, Exchange's challenge is empty.
+        self.commands.append(("AUTHENTICATE", mechanism, authobject(b"")))
+        return "OK", [b"AUTHENTICATE completed."]
 
     def select(self, mailbox, readonly=False):
         self.commands.append(("EXAMINE" if readonly else "SELECT", mailbox))
@@ -290,6 +308,41 @@ def test_imap_date_is_rfc3501_and_locale_free(d, expected):
 def test_imap_mailbox_id_shape():
     adapter = ImapEmailAdapter(host="mail.example.test", user="rep@x.test", folder="INBOX")
     assert adapter.mailbox_id == "mail.example.test/rep@x.test/INBOX"
+
+
+def test_imap_signs_in_with_the_domain_login_when_one_is_set():
+    """Dentalia's Exchange refuses the address and accepts the domain user
+    (2026-10-05). The backslash is not legal in an unquoted IMAP atom, and
+    imaplib's LOGIN quotes only the password, so the login goes as SASL PLAIN.
+    The address stays the mailbox's name: the ledger key and the own-domain
+    guard both read it."""
+    server = RecordingImap(SEP)
+    adapter = ImapEmailAdapter(host="mail.example.test", user="mdr@x.test",
+                               login="DOMAIN\\svc.mdr", password="gešlo",
+                               since="2026-09-24", imap_factory=server)
+    adapter.fetch_new(processed=_none_logged)
+
+    assert ("AUTHENTICATE", "PLAIN",
+            b"\x00DOMAIN\\svc.mdr\x00ge\xc5\xa1lo") in server.commands
+    assert "LOGIN" not in server.verbs()
+    assert adapter.mailbox_id == "mail.example.test/mdr@x.test/INBOX"
+
+
+def test_imap_signs_in_as_the_address_when_no_login_is_set():
+    server = RecordingImap(SEP)
+    _adapter(server).fetch_new(processed=_none_logged)
+
+    assert ("AUTHENTICATE", "PLAIN", b"\x00mdr@x.test\x00p") in server.commands
+
+
+def test_imap_signs_in_with_login_when_the_server_offers_no_plain():
+    """GreenMail 2.1.12, the dev mailbox, advertises only AUTH=XOAUTH2 and
+    answers AUTHENTICATE PLAIN with 'Unsupported authentication mechanism'."""
+    server = RecordingImap(SEP, capabilities=("IMAP4REV1", "SASL-IR", "AUTH=XOAUTH2"))
+    _adapter(server).fetch_new(processed=_none_logged)
+
+    assert ("LOGIN", "mdr@x.test") in server.commands
+    assert "AUTHENTICATE" not in server.verbs()
 
 
 # --- FakeEmailAdapter ------------------------------------------------------

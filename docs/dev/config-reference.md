@@ -299,6 +299,7 @@ Keep them apart: an alert must never become a channel for supplier mail.
 | `connection.serper_api_key` | str | `""` | `SERPER_API_KEY` |
 | `connection.imap_user` | str | `""` | `IMAP_USER` |
 | `connection.imap_password` | str | `""` | `IMAP_PASSWORD` |
+| `connection.imap_login` | str | `""` | `IMAP_LOGIN` — the sign-in name when the server refuses the address; empty signs in as `IMAP_USER`. Dentalia's Exchange needs the domain account, `DOMAIN\user`, single-quoted in `.env` (verified 2026-10-05). **Never fold it into `IMAP_USER`**: `IMAP_USER` is part of `mailbox_id`, the `email_poll_log` key, so changing it makes every processed message look new, and its `@domain` is the own-domain guard in reply matching. Blast radius of a wrong value: every poll fails at sign-in, and on Exchange each failure counts toward the domain account's lockout policy, if it has one; that account is the BC account too |
 
 ### `web`
 

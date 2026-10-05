@@ -59,6 +59,11 @@ It needs its own switch too: `SCHEDULER_BC_PUSH_DRIFT_ENABLED=true` on `worker` 
 **A boolean is `false` and the review card shows amber.**
 Not a contradiction. `app/bc_fields.py` is deliberately not `compliance.cell_state`: the card's `expiring` and `review-due` are a person's "look at this", while BC gets a boolean an ERP acts on — a document inside its stated validity is `true` however soon it lapses. And a passed date falsifies only when `document_effective_expiry.basis` is `stated` or `inherited`; `staleness` is our own review horizon and never falsifies.
 
+## Email
+
+**`email.poll` fails with `LOGIN failed` or `AUTHENTICATE failed`.**
+On Dentalia's Exchange, check the sign-in name before the password: the server refuses the address `mdr@dentalia.si` and takes the domain account. Set `IMAP_LOGIN='DOMAIN\user'`, single-quoted, and leave `IMAP_USER` as the address (2026-10-05: eight failures on 09-28/29 came from this, with the right password). Unlike BC, the poll does not remember a refusal: the error fails the job and the queue retries it with backoff until its `max_attempts` (5 by default) run out, then the next 6-hour band starts again. If the domain has a lockout policy, every failure counts toward it, and the account is the BC account too. Stop the poll (`SCHEDULER_EMAIL_POLL_ENABLED=false`) before trying passwords.
+
 ## Web UI
 
 **Permission denied on INSERT/UPDATE from the web process.**

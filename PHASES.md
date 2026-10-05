@@ -143,7 +143,7 @@ here, so citations elsewhere stay valid.
 | Waiting on | What | Gap |
 |---|---|---|
 | **Client** | Manufacturer contacts. **7 of 384** carry one (Carl Martin added 09-14); **IVOCLAR alone holds 60 of the 88 expired production documents (68,2%)** and has no address anywhere in the corpus. Mining the documents was built and measured: it proposes zero (F42) | — |
-| **Us** | Mailbox read access for `mdr@dentalia.si`: **received 2026-09-25** (IMAP on `mail.dentalia.si`, in the server's `.env`). Left: one poll run by hand and a check in Outlook that nothing turned read, then `SCHEDULER_EMAIL_POLL_ENABLED`. Drafts-only means send-as rights are not needed | **G8** |
+| **Us** | Mailbox read access for `mdr@dentalia.si`: **received 2026-09-25** (IMAP on `mail.dentalia.si`, in the server's `.env`). Sign-in fixed 2026-10-05: Exchange takes the domain account, not the address; verified by hand, and the adapter now carries `IMAP_LOGIN`, not yet set on the server. Left: one poll run by hand and a check in Outlook that nothing turned read, then `SCHEDULER_EMAIL_POLL_ENABLED`. Drafts-only means send-as rights are not needed | **G8** |
 | **Client / BC** | `mfr_ref` source-field confirmation, then the per-supplier map. `missing_mfr_ref` is 7.082/15.958 ≈ 44,4%, which bounds AC1 | **G4** |
 | **Denis / client** | Drive auth mechanics + root folder. `GoogleDriveStore.put()` raises; `LocalFsStore` is live | **G7** |
 | **Client** | External-AI-API policy, before any cheap-model tier swap | **G12** |

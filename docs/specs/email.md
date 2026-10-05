@@ -222,7 +222,9 @@ ledger, same as every other tick. With the flag off the tick is a logged no-op.
   `IMAP_HOST` / `IMAP_PORT` / `IMAP_SSL` / `IMAP_FOLDER` / `EMAIL_POLL_MAX_MESSAGES`.
 - **`Connection`** secrets (empty default, env-only, **not** tuning keys —
   SERPER_API_KEY precedent): `imap_user`, `imap_password` (`IMAP_USER` /
-  `IMAP_PASSWORD`).
+  `IMAP_PASSWORD`), and since 2026-10-05 `imap_login` (`IMAP_LOGIN`), the
+  sign-in name when the server refuses the address. `imap_user` stays the
+  mailbox's name.
 - **`Adapters.email`** = `imap` (default) | `fake`. Default `imap` is safe: the
   poll is flag-gated off and `fetch_unseen` raises `EmailNotConfigured` while
   host/creds are empty, so nothing connects until Denis wires G8.

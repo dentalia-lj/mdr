@@ -220,6 +220,9 @@ services:
       IMAP_FOLDER: ${IMAP_FOLDER:-INBOX}
       IMAP_USER: ${IMAP_USER:-}
       IMAP_PASSWORD: ${IMAP_PASSWORD:-}
+      # Sign-in name when the server refuses the address (Dentalia's Exchange
+      # takes DOMAIN\user). Empty signs in as IMAP_USER.
+      IMAP_LOGIN: ${IMAP_LOGIN:-}
       # First day to read, YYYY-MM-DD. Required once the mailbox is set: the poll
       # dead-letters without it rather than read the whole mailbox's history.
       EMAIL_POLL_SINCE: ${EMAIL_POLL_SINCE:-}
@@ -441,7 +444,8 @@ services:
   # address, so the mailbox is `dokumentacija@dentalia.si` here and at the
   # client, and `adapter.mailbox_id` ("{host}/{user}/{folder}") keeps the same
   # shape. Auth stays ON (the image default -Dgreenmail.auth.disabled is
-  # dropped) so conn.login() is genuinely tested rather than waved through.
+  # dropped) so sign-in is genuinely tested rather than waved through. It offers
+  # no AUTH=PLAIN, so this is the adapter's LOGIN path; Exchange takes PLAIN.
   #
   # Storage is IN-MEMORY: every message is lost on restart, and the mailbox is
   # rebuilt by tools/seed_fake_mailbox.py, which is the source of truth.
