@@ -1,0 +1,9 @@
+{# The panel's scope section after the item picker's Done (picker spec §3 step
+   3), and the Approve button relabelled to match, swapped out of band. #}
+{% include "_approve_scope.html" %}
+<button type="submit" name="decision" value="approve" class="btn-approve"
+        id="approve-{{ doc_id }}" hx-swap-oob="true">
+  {%- if approve_count == 1 %}Approve for this item
+  {%- elif approve_count %}Approve for these {{ approve_count | num }} items
+  {%- else %}Approve{% endif -%}
+</button>

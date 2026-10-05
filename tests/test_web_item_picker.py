@@ -122,3 +122,118 @@ def test_the_manufacturer_param_cannot_unlock_a_locked_picker(client, conn):
     r = client.get(f"/picker/{doc_id}/results", params={"manufacturer": "OTHER", "q": "variobase"})
     assert r.status_code == 200
     assert "X1" not in r.text
+
+
+def test_approve_with_items_enqueues_them(client, conn):
+    _mfr(conn)
+    _item(conn, "A1", "VARIOBASE A")
+    _item(conn, "A2", "VARIOBASE B")
+    doc_id = _doc(conn, "appr")
+    conn.commit()
+    r = client.post(f"/staging/{doc_id}/apply",
+                    data={"decision": "approve", "items": ["A2", "A1", "A2"]})
+    assert r.status_code == 200
+    (job,) = _jobs(conn)
+    assert job["payload"]["items"] == ["A1", "A2"]
+    assert "manufacturer" not in job["payload"]           # the document's own is locked
+
+
+def test_approve_with_items_sends_the_chosen_manufacturer_when_the_document_has_none(client, conn):
+    _mfr(conn)
+    _item(conn, "A1", "VARIOBASE A")
+    doc_id = _doc(conn, "chosen", canonical=None)
+    conn.commit()
+    client.post(f"/staging/{doc_id}/apply",
+                data={"decision": "approve", "items": ["A1"], "manufacturer": M})
+    (job,) = _jobs(conn)
+    assert job["payload"]["manufacturer"] == M
+
+
+@pytest.mark.parametrize("case", ["other", "refused", "range", "nomfr", "conflict", "unknown"])
+def test_a_bad_tick_set_is_refused_and_nothing_is_enqueued(client, conn, case):
+    _mfr(conn)
+    _mfr(conn, "OTHER")
+    _item(conn, "A1", "VARIOBASE A")
+    _item(conn, "X1", "VARIOBASE X", raw="OTHER")
+    doc_id = _doc(conn, f"bad-{case}",
+                  scope="manufacturer" if case == "range" else "group",
+                  canonical=None if case == "nomfr" else M)
+    data = {"decision": "approve", "items": ["A1"]}
+    if case == "other":
+        data["items"] = ["X1"]
+    if case == "unknown":
+        data["items"] = ["GONE"]
+    if case == "refused":
+        conn.execute("INSERT INTO item_document (item_ref, doc_id, match_basis, status) "
+                     "VALUES ('A1', %s, 'name-family', 'rejected')", (doc_id,))
+    if case == "conflict":
+        data["manufacturer"] = "OTHER"
+    conn.commit()
+    r = client.post(f"/staging/{doc_id}/apply", data=data)
+    assert r.status_code == 422
+    assert "Nothing was changed." in _text(r.text)
+    assert _jobs(conn) == []
+
+
+def test_reject_carries_no_items(client, conn):
+    _mfr(conn)
+    _item(conn, "A1", "VARIOBASE A")
+    doc_id = _doc(conn, "rej")
+    conn.commit()
+    client.post(f"/staging/{doc_id}/apply",
+                data={"decision": "reject", "reason": "Other", "items": ["A1"]})
+    (job,) = _jobs(conn)
+    assert "items" not in job["payload"]
+
+
+def test_the_summary_follows_the_ticks_and_relabels_approve(client, conn):
+    _mfr(conn)
+    _item(conn, "A1", "VARIOBASE A")
+    _item(conn, "A2", "VARIOBASE B")
+    doc_id = _doc(conn, "sum")
+    old = _doc(conn, "older-ifu", status="production", issued="2021-03-02")
+    conn.execute("INSERT INTO item_document (item_ref, doc_id, match_basis, status) "
+                 "VALUES ('A1', %s, 'ref-list', 'production')", (old,))
+    conn.commit()
+    body = client.get(f"/picker/{doc_id}/summary",
+                      params={"manufacturer": M, "items": ["A1", "A2"]}).text
+    text = _text(body)
+    assert "Approving makes it count for these 2 items" in text
+    assert "1 of them already holds an IFU (1 older); this one is added beside it." in text
+    assert re.search(rf'<button[^>]*id="approve-{doc_id}"[^>]*hx-swap-oob="true"', body)
+    assert "Approve for these 2 items" in text
+
+
+def test_add_items_enqueues_with_a_key_per_item_set(client, conn):
+    _mfr(conn)
+    for ref in ("A1", "A2"):
+        _item(conn, ref, f"VARIOBASE {ref}")
+    doc_id = _doc(conn, "add", status="production")
+    conn.commit()
+    client.post(f"/documents/{doc_id}/items", data={"items": ["A1"]})
+    client.post(f"/documents/{doc_id}/items", data={"items": ["A2"]})   # a second batch, still queued
+    client.post(f"/documents/{doc_id}/items", data={"items": ["A1"]})   # the same batch again
+    jobs = _jobs(conn)
+    assert [j["payload"]["items"] for j in jobs] == [["A1"], ["A2"]]
+    assert all(j["payload"]["decision"] == "add-items" for j in jobs)
+    assert len({j["dedupe_key"] for j in jobs}) == 2
+
+
+def test_add_items_refuses_a_document_on_review(client, conn):
+    _mfr(conn)
+    _item(conn, "A1", "VARIOBASE A")
+    doc_id = _doc(conn, "addstaged")
+    conn.commit()
+    r = client.post(f"/documents/{doc_id}/items", data={"items": ["A1"]})
+    assert r.status_code == 422 and _jobs(conn) == []
+
+
+def test_the_review_panel_offers_the_picker_only_for_specific_items(client, conn):
+    _mfr(conn)
+    group_doc = _doc(conn, "panel-g")
+    range_doc = _doc(conn, "panel-r", scope="manufacturer")
+    conn.commit()
+    g = client.get(f"/staging/{group_doc}/detail").text
+    assert "Find items this document covers" in _text(g)
+    assert f'id="picker-items-{group_doc}"' in g and f'id="approve-{group_doc}"' in g
+    assert "Find items this document covers" not in _text(client.get(f"/staging/{range_doc}/detail").text)

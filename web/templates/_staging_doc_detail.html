@@ -20,25 +20,6 @@
 {% set offer_corrections = not row.is_mfr_binding %}
 {% set expired = row.doc.validity_to and row.doc.validity_to < today %}
 
-{# The first `shown` items by number and name, then the rest folded under
-   "+ K more" (spec § 6). Plain disclosure, no JS. #}
-{% macro item_list(links, shown) %}
-<ul class="approve-items">
-  {% for lnk in links[:shown] %}
-  <li><a href="/items/{{ lnk.item_ref }}">{{ lnk.item_ref }}</a> · {{ lnk.name or "no name in Business Central" }}</li>
-  {% endfor %}
-</ul>
-{%- if links|length > shown %}
-<details class="more-items">
-  <summary>+ {{ (links|length - shown) | num }} more</summary>
-  <ul class="approve-items">
-    {% for lnk in links[shown:] %}
-    <li><a href="/items/{{ lnk.item_ref }}">{{ lnk.item_ref }}</a> · {{ lnk.name or "no name in Business Central" }}</li>
-    {% endfor %}
-  </ul>
-</details>
-{%- endif %}
-{% endmacro %}
 
 <div class="review-panel">
   <div class="review-pdf">
@@ -74,53 +55,17 @@
     {# Above the buttons: what approving makes the document count for. Only
        what an approval actually publishes is promised (`row.approve_links`);
        a link it leaves staged is listed apart, with what happens to it. #}
-    <section class="approve-scope">
-    {% if row.is_mfr_binding %}
-      {% if row.manufacturer_confirmed and row.bind_items is defined and row.bind_items is not none %}
-      {# Three counts, three sentences. A count of 0 cannot reach here today --
-         `_mfr_bind_target` answers None on it and the picker takes over -- but
-         the branch exists so this can never read "for all 0 X items" over a
-         hint about every X device item if that guard ever moves. #}
-      {% if row.bind_items == 0 %}
-      <p class="approve-line">Approving records the supplier, but it counts for no
-        items yet.</p>
-      <p class="hint">Business Central marks no {{ row.manufacturer_confirmed }} item as a
-        medical device. They start counting it once someone fills that in.</p>
-      {% else %}
-      <p class="approve-line">Approving makes it count for
-        {% if row.bind_items == 1 %}the one {{ row.manufacturer_confirmed }} item
-        {%- else %}all {{ row.bind_items | num }} {{ row.manufacturer_confirmed }} items{% endif %}</p>
-      <p class="hint">Every {{ row.manufacturer_confirmed }} item Business Central marks as a
-        medical device.</p>
-      {% endif %}
-      {% endif %}
-      {# Without a confirmed manufacturer the picker below says what approving
-         does for the one chosen; a count here could not follow the choice. #}
-    {% elif row.approve_links %}
-      {% set n = row.approve_links|length %}
-      <p class="approve-line">Approving makes it count for
-        {% if n == 1 %}this item{% else %}these {{ n | num }} items{% endif %}</p>
-      {{ item_list(row.approve_links, items_shown) }}
-      <p class="hint">Matched through {{ row.approve_basis }}.</p>
-      {% if row.held_links %}
-      {% set c = row.held_links|length %}
-      <p>It is also linked to {{ c | num }} more item{{ "" if c == 1 else "s" }} only by
-        {{ row.held_basis }}. Approving does not make it count for
-        {{ "that one" if c == 1 else "those" }}: confirm each one afterwards under
-        <a href="#staged-links">Links waiting for review on published documents</a>.</p>
-      {{ item_list(row.held_links, items_shown) }}
-      {% endif %}
-    {% elif row.held_links %}
-      {% set c = row.held_links|length %}
-      <p class="approve-line">Approving publishes it, but it will not count for any item yet.</p>
-      <p>It is linked to {% if c == 1 %}this item{% else %}these {{ c | num }} items{% endif %}
-        only by {{ row.held_basis }}, which is not enough on its own. After you approve,
-        confirm each one under <a href="#staged-links">Links waiting for review on published documents</a>.</p>
-      {{ item_list(row.held_links, items_shown) }}
-    {% else %}
-      <p class="approve-line">Nothing links it to an item yet, so approving it makes it count for no items.</p>
+    <section class="approve-scope" id="approve-scope-{{ doc_id }}">{% include "_approve_scope.html" %}</section>
+    {% if not row.is_mfr_binding and row.coverage_scope == "group" %}
+    {# The item picker (picker spec §3). Its body is loaded when it opens; the
+       ticks go into `#picker-items-{id}` inside the decision form on Done. #}
+    <dialog class="item-picker" id="picker-{{ doc_id }}" aria-label="Items this document covers"
+            data-items-into="picker-items-{{ doc_id }}"
+            data-summary-url="/picker/{{ doc_id }}/summary"
+            data-summary-into="approve-scope-{{ doc_id }}">
+      <div class="picker-body"></div>
+    </dialog>
     {% endif %}
-    </section>
 
     {# The correction fields' own form (fix round 1, F2, 2026-09-11). They are
        drawn inside the decision form below but belong to this one through their
@@ -155,6 +100,9 @@
       {% if row.is_mfr_binding and row.manufacturer_confirmed %}
       <input type="hidden" name="manufacturer" value="{{ row.manufacturer_confirmed }}">
       {% endif %}
+      {# The items ticked in the picker, written here by static/item_picker.js
+         on Done and sent with Approve (picker spec §3.2). #}
+      <div id="picker-items-{{ doc_id }}" hidden></div>
 
       {# The binding candidate the catalogue could not name. The document covers a
          manufacturer's whole range, so there are no item links to derive the name

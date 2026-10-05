@@ -1,0 +1,88 @@
+{# What approving makes the document count for (spec § 6), and, on a document
+   covering specific items, the item picker's button (picker spec §3). Rendered
+   in the open Review panel, and again by `/picker/{id}/summary` after Done with
+   `picked` set to the ticked rows. #}
+{# The first `shown` items by number and name, then the rest folded under
+   "+ K more" (spec § 6). Plain disclosure, no JS. #}
+{% macro item_list(links, shown) %}
+<ul class="approve-items">
+  {% for lnk in links[:shown] %}
+  <li><a href="/items/{{ lnk.item_ref }}">{{ lnk.item_ref }}</a> · {{ lnk.name or "no name in Business Central" }}</li>
+  {% endfor %}
+</ul>
+{%- if links|length > shown %}
+<details class="more-items">
+  <summary>+ {{ (links|length - shown) | num }} more</summary>
+  <ul class="approve-items">
+    {% for lnk in links[shown:] %}
+    <li><a href="/items/{{ lnk.item_ref }}">{{ lnk.item_ref }}</a> · {{ lnk.name or "no name in Business Central" }}</li>
+    {% endfor %}
+  </ul>
+</details>
+{%- endif %}
+{% endmacro %}
+{% set offer_picker = not row.is_mfr_binding and row.coverage_scope == "group" %}
+{% if picked %}
+  {% set already = row.approve_links | map(attribute="item_ref") | list %}
+  {% set extra = picked | rejectattr("item_ref", "in", already) | list %}
+  {% set n = already|length + extra|length %}
+  <p class="approve-line">Approving makes it count for
+    {% if n == 1 %}this item{% else %}these {{ n | num }} items{% endif %}</p>
+  {{ item_list(row.approve_links + extra, items_shown) }}
+  <p class="hint">You chose {{ picked|length | num }} of them. Each becomes a confirmed link
+    under your name when you approve.</p>
+  {% if held_line %}<p>{{ held_line }}</p>{% endif %}
+{% else %}
+    {% if row.is_mfr_binding %}
+      {% if row.manufacturer_confirmed and row.bind_items is defined and row.bind_items is not none %}
+      {# Three counts, three sentences. A count of 0 cannot reach here today --
+         `_mfr_bind_target` answers None on it and the picker takes over -- but
+         the branch exists so this can never read "for all 0 X items" over a
+         hint about every X device item if that guard ever moves. #}
+      {% if row.bind_items == 0 %}
+      <p class="approve-line">Approving records the supplier, but it counts for no
+        items yet.</p>
+      <p class="hint">Business Central marks no {{ row.manufacturer_confirmed }} item as a
+        medical device. They start counting it once someone fills that in.</p>
+      {% else %}
+      <p class="approve-line">Approving makes it count for
+        {% if row.bind_items == 1 %}the one {{ row.manufacturer_confirmed }} item
+        {%- else %}all {{ row.bind_items | num }} {{ row.manufacturer_confirmed }} items{% endif %}</p>
+      <p class="hint">Every {{ row.manufacturer_confirmed }} item Business Central marks as a
+        medical device.</p>
+      {% endif %}
+      {% endif %}
+      {# Without a confirmed manufacturer the picker below says what approving
+         does for the one chosen; a count here could not follow the choice. #}
+    {% elif row.approve_links %}
+      {% set n = row.approve_links|length %}
+      <p class="approve-line">Approving makes it count for
+        {% if n == 1 %}this item{% else %}these {{ n | num }} items{% endif %}</p>
+      {{ item_list(row.approve_links, items_shown) }}
+      <p class="hint">Matched through {{ row.approve_basis }}.</p>
+      {% if row.held_links %}
+      {% set c = row.held_links|length %}
+      <p>It is also linked to {{ c | num }} more item{{ "" if c == 1 else "s" }} only by
+        {{ row.held_basis }}. Approving does not make it count for
+        {{ "that one" if c == 1 else "those" }}: confirm each one afterwards under
+        <a href="#staged-links">Links waiting for review on published documents</a>.</p>
+      {{ item_list(row.held_links, items_shown) }}
+      {% endif %}
+    {% elif row.held_links %}
+      {% set c = row.held_links|length %}
+      <p class="approve-line">Approving publishes it, but it will not count for any item yet.</p>
+      <p>It is linked to {% if c == 1 %}this item{% else %}these {{ c | num }} items{% endif %}
+        only by {{ row.held_basis }}, which is not enough on its own. After you approve,
+        confirm each one under <a href="#staged-links">Links waiting for review on published documents</a>.</p>
+      {{ item_list(row.held_links, items_shown) }}
+    {% else %}
+      <p class="approve-line">Nothing links it to an item yet, so approving it makes it count for no items.</p>
+    {% endif %}
+{% endif %}
+{% if offer_picker %}
+<button type="button" class="btn-find" data-picker-open="picker-{{ row.doc.doc_id }}"
+        data-picker-url="/picker/{{ row.doc.doc_id }}">
+  {{- "Change items…" if picked else "Find items this document covers…" }}</button>
+<p class="hint">Search {{ row.manufacturer_confirmed or row.doc.canonical_manufacturer or "the manufacturer's" }}
+  items and tick the ones it covers. Nothing is linked until you approve.</p>
+{% endif %}

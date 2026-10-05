@@ -118,7 +118,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 # footing on which this module already imports `app.queue` and `web/registry.py`
 # imports `app.playbooks`. It is emphatically not `app.handlers` — the review
 # UI resolves a name to offer a choice; only GATE acts on the choice.
-from app import db, heartbeat, manufacturers, playbooks, queue, unmatched_names
+from app import db, heartbeat, item_picks, manufacturers, playbooks, queue, unmatched_names
 # Export file types /import accepts. Mirrors the adapter's own set exactly, so
 # the form can never reject a file the worker would have read.
 # Imported as a symbol, not as `app.coverage`: this module already defines a
@@ -505,6 +505,7 @@ DECISION_RECEIPTS = {
                           "minute."),
     "reopen": ("Reopened. It comes back to Review within a minute so it can be "
                "decided again."),
+    "add-items": "Items recorded. They show this document within a minute.",
 }
 
 #: The same, for a C17 link-level ruling: one item's link to one document.
@@ -1533,6 +1534,14 @@ def _picker_manufacturer(conn, doc: dict, asked: str) -> tuple[str | None, bool]
     if asked and asked in {o["canonical_name"] for o in _mfr_binding_options(conn)}:
         return asked, False
     return None, False
+
+
+def _picker_refusal(problems: dict[str, list[str]]) -> str:
+    """`check_items`'s findings as one sentence per kind, naming the items."""
+    said = {"unknown": "not in the catalogue",
+            "other-manufacturer": "made by another manufacturer",
+            "refused": "refused earlier for this document"}
+    return " ".join(f"{', '.join(refs)}: {said[kind]}." for kind, refs in problems.items())
 
 
 def _staged_doc_detail(conn, doc_id: int) -> dict | None:
@@ -3473,6 +3482,49 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
              "pager": _pager(page, DOCUMENTS_PAGE_SIZE, total)},
         )
 
+    @app.post("/documents/{doc_id:int}/items", response_class=HTMLResponse)
+    def document_add_items(request: Request, doc_id: int,
+                           items: list[str] = Form([]), manufacturer: str = Form("")):
+        """Picker spec §3.1: add ticked items to a published document."""
+        ctx = {"request": request}
+        picked = sorted({i.strip() for i in items if i.strip()})
+        with _conn() as conn:
+            doc = _picker_doc(conn, doc_id)
+            refusal = mfr = None
+            if doc is None or doc["status"] != "production":
+                refusal = ("Items can be added only to a published document that covers "
+                           "specific items.")
+            elif not picked:
+                refusal = "Tick at least one item."
+            else:
+                confirmed = doc["canonical_manufacturer"]
+                asked = manufacturer.strip()
+                mfr, _ = _picker_manufacturer(conn, doc, asked)
+                if confirmed and asked and asked != confirmed:
+                    refusal = f"This document is {confirmed}'s, not {asked}'s."
+                elif mfr is None:
+                    refusal = "Choose the manufacturer before ticking items."
+                elif (problems := item_picks.check_items(conn, doc_id, mfr, picked)):
+                    refusal = _picker_refusal(problems)
+            if refusal:
+                ctx["error"] = f"{refusal} Nothing was changed."
+                return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
+            decided_by = _authenticated_user(request) or DEFAULT_DECIDED_BY
+            payload = {"doc_id": doc_id, "decision": "add-items", "decided_by": decided_by,
+                       "items": picked}
+            if not doc["canonical_manufacturer"]:
+                payload["manufacturer"] = mfr
+            # The usual `apply:{doc}:{decision}` would drop a second batch sent
+            # while the first is still queued (picker spec §5.2).
+            digest = hashlib.sha1(",".join(picked).encode()).hexdigest()[:12]
+            dedupe_key = f"apply:{doc_id}:add-items:{digest}"
+            jid = queue.enqueue(conn, "gate.apply", payload, dedupe_key, priority="interactive")
+            conn.commit()
+        ctx["job_id"] = jid
+        ctx["dedupe_key"] = dedupe_key
+        ctx["receipt"] = words.receipt(DECISION_RECEIPTS["add-items"], jid)
+        return templates.TemplateResponse(request, "_result.html", ctx)
+
     @app.get("/documents/{doc_id:int}", response_class=HTMLResponse)
     def document_detail(request: Request, doc_id: int, eudamed: str = ""):
         """One document: the items it covers, its evidence, and both
@@ -5227,7 +5279,7 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             {"request": request, "row": row,
              "type_choices": TYPE_CHOICES, "regulation_choices": REGULATION_CHOICES,
              "reject_reasons": REJECT_REASONS, "reject_note_max": REJECT_NOTE_MAX,
-             "items_shown": REVIEW_ITEMS_SHOWN,
+             "items_shown": REVIEW_ITEMS_SHOWN, "picked": None,
              "today": datetime.now(timezone.utc).date()},
         )
 
@@ -5291,6 +5343,40 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             ctx = _picker_ctx(request, doc, mfr, locked)
             ctx["result"] = result
         return templates.TemplateResponse(request, "_item_picker_results.html", ctx)
+
+    @app.get("/picker/{doc_id:int}/summary", response_class=HTMLResponse)
+    def picker_summary(request: Request, doc_id: int, manufacturer: str = "",
+                       items: list[str] = Query([])):
+        """The panel's scope section after Done (picker spec §3 step 3, §6), and
+        the Approve label to match, swapped out of band."""
+        with _conn() as conn:
+            row = _staged_doc_detail(conn, doc_id)
+            doc = _picker_doc(conn, doc_id)
+            if row is None or doc is None:
+                return templates.TemplateResponse(
+                    request, "_result.html",
+                    {"request": request, "error": f"document #{doc_id} is no longer on Review"},
+                    status_code=404)
+            mfr, _ = _picker_manufacturer(conn, doc, manufacturer)
+            picked = item_picker.selected(conn, doc, mfr, items)
+        held = [r for r in picked if r.same_type]
+        held_line = None
+        if held:
+            counts: dict[str, int] = {}
+            for r in held:
+                counts[r.same_type["compare"]] = counts.get(r.same_type["compare"], 0) + 1
+            parts = ", ".join(f"{counts[k]} {k}" for k in ("older", "newer", "same date", "no date")
+                              if k in counts)
+            word = PICKER_TYPE_SHORT.get(doc["type"], doc["type"])
+            article = "an" if word in ("IFU", "ISO") else "a"
+            verb = "holds" if len(held) == 1 else "hold"
+            held_line = (f"{len(held)} of them already {verb} {article} {word} ({parts}); "
+                         f"this one is added beside it.")
+        n = len({lk["item_ref"] for lk in row["approve_links"]} | {r.item_ref for r in picked})
+        return templates.TemplateResponse(
+            request, "_picker_summary.html",
+            {"request": request, "row": row, "picked": picked, "held_line": held_line,
+             "items_shown": REVIEW_ITEMS_SHOWN, "doc_id": doc_id, "approve_count": n})
 
     @app.get("/staging/suggestion/{suggestion_id:int}/detail", response_class=HTMLResponse)
     def staging_suggestion_detail(request: Request, suggestion_id: int):
@@ -5383,6 +5469,8 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         reason: str = Form(""),
         reason_note: str = Form(""),
         confirm: str = Form(""),
+        # Picker spec §5.1: the items a reviewer ticked, sent with Approve.
+        items: list[str] = Form([]),
     ):
         # Decisions per docs/dentalia-s0.3-ui-proposal.md (the real
         # handle_gate_apply contract) — "edit" is not a standalone decision;
@@ -5519,6 +5607,37 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                                    f"{'item' if n == 1 else 'items'}"),
                 )
                 return templates.TemplateResponse(request, "_result.html", ctx)
+
+        # Picker spec §5.1: the items a reviewer ticked, on Approve only. The
+        # route refuses what GATE would refuse, so a bad set never reaches the
+        # queue; GATE checks again (`item_picks.check_items`) as the last word.
+        if decision == "approve" and any(i.strip() for i in items):
+            picked = sorted({i.strip() for i in items if i.strip()})
+            refusal = None
+            with _conn() as conn:
+                doc = _picker_doc(conn, doc_id)
+                if doc is None or doc["status"] != "staged":
+                    refusal = ("Items can be chosen only for a document on Review that "
+                               "covers specific items.")
+                else:
+                    asked = manufacturer.strip()
+                    confirmed = doc["canonical_manufacturer"]
+                    if confirmed and asked and asked != confirmed:
+                        refusal = f"This document is {confirmed}'s, not {asked}'s."
+                    else:
+                        mfr, _ = _picker_manufacturer(conn, doc, asked)
+                        if mfr is None:
+                            refusal = "Choose the manufacturer before ticking items."
+                        else:
+                            problems = item_picks.check_items(conn, doc_id, mfr, picked)
+                            if problems:
+                                refusal = _picker_refusal(problems)
+                            elif not confirmed:
+                                payload["manufacturer"] = mfr
+            if refusal:
+                ctx["error"] = f"{refusal} Nothing was changed."
+                return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
+            payload["items"] = picked
 
         # Per the proposal's suggested key: one active gate.apply per (doc, decision)
         # regardless of who submits it — a second reviewer clicking the same
