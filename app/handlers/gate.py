@@ -28,7 +28,7 @@ import json
 
 from psycopg.types.json import Json
 
-from app import manufacturers, queue
+from app import item_picks, manufacturers, queue
 from app.config import load_config
 from app.extract import tiers
 from app.handlers import register
@@ -1407,7 +1407,10 @@ def _apply_link_decision(conn, job, decision) -> dict:
 
     was = link["match_basis"]
     if decision == "confirm-link":
-        # Sole writer of match_basis='manual' in the codebase. The basis asserts
+        # One of the two writers of match_basis='manual': this and `_write_items`
+        # (the picker's ticks on approve / add-items, PRD C17 as amended
+        # 2026-10-05), which write the same link-confirmed + production-write
+        # pair. The basis asserts
         # "a named person said so", and it is what lifts the link past the C5
         # CHECK — so it and the production status must be written together, in
         # this one statement, or the CHECK correctly rejects the row.
@@ -1440,6 +1443,75 @@ def _apply_link_decision(conn, job, decision) -> dict:
             "link_status": new_status, "match_basis_before": was}
 
 
+def _picked_items(conn, doc_id, p) -> tuple[str, list[str]] | None:
+    """The reviewer's ticks on `approve` / `add-items` (picker spec §5.3 steps
+    1-2): (manufacturer, sorted unique item refs), or None when there are none.
+
+    Runs BEFORE any write, so a refused payload leaves the registry as it was
+    even outside the runner's rollback. Every failure raises and names what
+    failed: these are a person's ticks, and a partial link would read to them
+    as the decision being ignored (C17).
+    """
+    items = p.get("items")
+    if not items:
+        return None
+    decision = p["decision"]
+    if not isinstance(items, list) or not all(isinstance(i, str) and i.strip() for i in items):
+        raise ValueError(f"gate.apply {decision}: items must be a list of item numbers")
+    doc = conn.execute(
+        "SELECT coverage_scope, canonical_manufacturer FROM document WHERE doc_id=%s",
+        (doc_id,)).fetchone()
+    if doc is None:
+        raise LookupError(f"gate.apply {decision}: no document {doc_id}")
+    if doc["coverage_scope"] != "group":
+        raise ValueError(f"gate.apply {decision}: document {doc_id} covers a whole range; "
+                         f"items cannot be chosen for it")
+    confirmed = doc["canonical_manufacturer"]
+    asked = (p.get("manufacturer") or "").strip() or None
+    if confirmed and asked and asked != confirmed:
+        raise ValueError(f"gate.apply {decision}: document {doc_id} is {confirmed}'s; "
+                         f"the payload names {asked}")
+    manufacturer = confirmed or _bindable_manufacturer(conn, asked)
+    if manufacturer is None:
+        raise ValueError(f"gate.apply {decision}: document {doc_id} has no manufacturer "
+                         f"and the payload names none we hold")
+    refs = sorted(set(items))
+    problems = item_picks.check_items(conn, doc_id, manufacturer, refs)
+    if problems:
+        raise ValueError(f"gate.apply {decision}: document {doc_id}: " + "; ".join(
+            f"{kind}: {', '.join(found)}" for kind, found in problems.items()))
+    return manufacturer, refs
+
+
+def _write_items(conn, doc_id, manufacturer, refs, decided_by, job, via) -> None:
+    """Picker spec §5.3 steps 1, 3, 4: record the manufacturer on a document
+    that had none, then link each ticked item the way `confirm-link` does.
+
+    The link rows are read HERE, after `_promote_pending_links`, not when the
+    ticks were checked: a staged trusted-basis link has just followed the
+    document to production, and must be skipped rather than re-based and
+    audited a second time. `_upsert_link` keeps `production` and `rejected`
+    sticky; `rejected` was refused before any write. The existing `udi` is
+    passed back because the upsert overwrites a non-sticky row's `udi`.
+    """
+    conn.execute(
+        "UPDATE document SET canonical_manufacturer=%s "
+        "WHERE doc_id=%s AND canonical_manufacturer IS NULL", (manufacturer, doc_id))
+    current = {r["item_ref"]: r for r in conn.execute(
+        "SELECT item_ref, status, match_basis, udi FROM item_document "
+        "WHERE doc_id=%s AND item_ref = ANY(%s)", (doc_id, refs)).fetchall()}
+    for ref in refs:
+        link = current.get(ref)
+        if link and link["status"] == "production":
+            continue  # already trusted: basis kept, nothing to audit, re-delivery is quiet
+        _upsert_link(conn, ref, doc_id, link["udi"] if link else None, "manual", "production")
+        _audit(conn, "link-confirmed", doc_id, decided_by, job, item_ref=ref,
+               detail={"match_basis_before": link["match_basis"] if link else None,
+                       "link_status_before": link["status"] if link else None,
+                       "via": via})
+        _audit(conn, "production-write", doc_id, decided_by, job, item_ref=ref)
+
+
 def handle_gate_apply(conn, job: dict) -> dict:
     p = job["payload"]
     doc_id = p["doc_id"]
@@ -1454,10 +1526,22 @@ def handle_gate_apply(conn, job: dict) -> dict:
 
     prev_status = _doc_status(conn, doc_id)
 
+    # Picker spec §5: the reviewer's ticks, checked before anything is written.
+    if decision == "add-items" and prev_status != "production":
+        raise ValueError(f"gate.apply add-items: document {doc_id} is {prev_status!r}, "
+                         f"not 'production' -- items are added to a published document")
+    picked = _picked_items(conn, doc_id, p) if decision in ("approve", "add-items") else None
+    if decision == "add-items" and picked is None:
+        raise ValueError("gate.apply add-items: items is required")
+    items_detail = None
+
     if decision == "approve":
         _apply_edits(conn, doc_id, p.get("edits"))
         _promote(conn, doc_id)
         _promote_pending_links(conn, doc_id)
+        if picked:
+            _write_items(conn, doc_id, *picked, decided_by, job, via="approve")
+            items_detail = {"items": len(picked[1]), "manufacturer": picked[0]}
         # C6 human path: a STAGED candidate that carried a supersession target
         # (document.supersedes, written sticky at candidate-write time — it must
         # not act while merely staged, §7) acts on it now that a human promoted
@@ -1522,6 +1606,11 @@ def handle_gate_apply(conn, job: dict) -> dict:
                 (bound, doc_id))
         _promote(conn, doc_id)
         _derive_mfr_scope_links(conn, doc_id, p.get("manufacturer"))
+    elif decision == "add-items":
+        # Picker spec §3.1: the approve link steps on a published document,
+        # without the promote. Ticks were checked above.
+        _write_items(conn, doc_id, *picked, decided_by, job, via="add-items")
+        items_detail = {"items": len(picked[1]), "manufacturer": picked[0]}
     else:
         raise ValueError(f"gate.apply: unknown decision '{decision}'")
 
@@ -1530,7 +1619,10 @@ def handle_gate_apply(conn, job: dict) -> dict:
     # optional and additive. It lands on the decision's own row and nowhere
     # else -- the cascaded `link-rejected` rows above are consequences, not
     # decisions -- and a payload without it writes the NULL detail it always did.
-    _audit(conn, decision, doc_id, decided_by, job, detail=_note_detail(p))
+    detail = _note_detail(p)
+    if items_detail:
+        detail = {**(detail or {}), **items_detail}
+    _audit(conn, decision, doc_id, decided_by, job, detail=detail)
     # §9: every production write is audited — the human promote paths log it
     # alongside the decision, once per staged->production transition (same
     # prev_status guard as gate.candidate, idempotent under re-delivery).

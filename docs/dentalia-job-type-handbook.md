@@ -891,6 +891,24 @@ sends it on no other decision. The handler copies it into
 the decision's own audit row, `detail.note`, and nowhere else; a payload
 without it writes the audit row it always did. The dedupe key is unchanged.
 
+```json
+{ "doc_id": 8, "decision": "approve", "decided_by": "user:natasa",
+  "items": ["010.6042", "022.0026"] }
+```
+
+`items` (optional, 2026-10-05, Review item picker,
+`docs/superpowers/specs/2026-10-02-review-item-picker-design.md` §5) are the
+items a reviewer ticked for a document that names no article numbers. They are
+checked before any write: the document covers specific items, has a manufacturer
+(its `canonical_manufacturer`, or the payload's `manufacturer` when it has none,
+which is then written), and every item exists, belongs to that manufacturer's BC
+codes and has no `rejected` link to the document (`app/item_picks.py`). Any
+failure raises and nothing is written. Each item then becomes a `manual`
+production link exactly as `confirm-link` records one (`link-confirmed` with
+`via`, then `production-write`); a link already in production is left alone. The
+decision's audit row gains `{"items": N, "manufacturer": ...}`. The decision
+`add-items` does the same on a `production` document, without the promote.
+
 ```python
 def handle_gate_apply(job):
     with db.tx():

@@ -138,8 +138,9 @@ def word(value: str | None) -> str:
 #: value and reads under Technical details on each row. A machine-side name
 #: is what somebody greps for, and this is what they READ.
 AUDIT_EVENT_WORDS: dict[str, str] = {
-    # a person's four decisions (`gate.apply`)
+    # a person's decisions (`gate.apply`)
     "approve": "Approved",
+    "add-items": "Items added",
     "reject": "Rejected",
     "reopen": "Reopened for review",
     "bind-manufacturer": "Manufacturer confirmed",
