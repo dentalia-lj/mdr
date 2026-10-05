@@ -26,7 +26,7 @@ never clobber a real handler.
 | `extract.doc` | `handlers/extract.py:278` | `validate.doc`, **or nothing** when the doc-class call answers `not-a-compliance-document` | `test_extract_handler.py`, `test_extract_cost.py`, `test_doc_class_gate.py` |
 | `validate.doc` | `handlers/validate.py:780` | `gate.candidate` | `test_validate_handler.py` |
 | `gate.candidate` | `handlers/gate.py:1002` | nothing (terminal) | `test_gate_candidate_handler.py` |
-| `gate.apply` | `handlers/gate.py:1443` | `discover.group` on reject | `test_gate_apply_handler.py` |
+| `gate.apply` | `handlers/gate.py:1515` | `discover.group` on reject | `test_gate_apply_handler.py` |
 | `backfill.scan` | `handlers/backfill.py:270` | `extract.doc` | `test_backfill_handler.py` |
 | `upload.ingest` | `handlers/upload.py:33` | `extract.doc` or `validate.doc` | `test_upload_handler.py` |
 | `vendor.import` | `handlers/vendor_import.py:40` | nothing, deliberately | `test_vendor_import_handler.py` |
