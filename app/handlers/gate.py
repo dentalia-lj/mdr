@@ -1614,7 +1614,10 @@ def handle_gate_apply(conn, job: dict) -> dict:
     else:
         raise ValueError(f"gate.apply: unknown decision '{decision}'")
 
-    _resolve_manual_tasks(conn, doc_id, decided_by)
+    # `add-items` is the link steps only (picker spec §5.2): a task still open
+    # on the published document is somebody else's question, not settled here.
+    if decision != "add-items":
+        _resolve_manual_tasks(conn, doc_id, decided_by)
     # `note` (office UI redesign P1a, 2026-09-11): the reviewer's reason,
     # optional and additive. It lands on the decision's own row and nowhere
     # else -- the cascaded `link-rejected` rows above are consequences, not

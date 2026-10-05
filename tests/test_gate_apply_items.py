@@ -225,3 +225,16 @@ def test_add_items_without_items_raises(conn):
     doc_id = _doc(conn, "empty", status="production")
     with pytest.raises(ValueError, match="items is required"):
         gh.handle_gate_apply(conn, _job(doc_id, decision="add-items"))
+
+
+def test_add_items_leaves_open_review_tasks_alone(conn):
+    """Final review: add-items is the link steps without the promote (spec
+    §5.2); it must not resolve an open task on the published document under
+    the reviewer's name."""
+    doc_id = _doc(conn, "task", status="production")
+    _item(conn, "A1")
+    conn.execute("INSERT INTO manual_task (kind, doc_id, payload) VALUES ('gate-manual', %s, '{}')",
+                 (doc_id,))
+    gh.handle_gate_apply(conn, _job(doc_id, decision="add-items", items=["A1"]))
+    assert conn.execute("SELECT status FROM manual_task WHERE doc_id=%s",
+                        (doc_id,)).fetchone()["status"] == "open"

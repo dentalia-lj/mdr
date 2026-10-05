@@ -8,6 +8,9 @@
 (function () {
   "use strict";
   var sets = new WeakMap();
+  // The manufacturer the tick set belongs to. Ticks of one manufacturer mean
+  // nothing under another (the server refuses them), so changing it clears them.
+  var owners = new WeakMap();
 
   function dialogOf(el) { return el && el.closest ? el.closest("dialog.item-picker") : null; }
   function ticks(d) { if (!sets.has(d)) { sets.set(d, new Map()); } return sets.get(d); }
@@ -69,9 +72,17 @@
     var d = document.getElementById(btn.dataset.pickerOpen);
     if (!d) { return; }
     var t = ticks(d), into = document.getElementById(d.dataset.itemsInto || "");
+    var kept = into ? into.querySelector("input[name=manufacturer]") : null;
+    var url = btn.dataset.pickerUrl;
     t.clear();
     if (into) {
       into.querySelectorAll("input[name=items]").forEach(function (i) { t.set(i.value, i.dataset.name || ""); });
+    }
+    // Reopen on the manufacturer Done kept, so a document without a confirmed
+    // one does not ask again (the server ignores it where one is locked).
+    owners.set(d, kept ? kept.value : "");
+    if (kept && kept.value) {
+      url += (url.indexOf("?") < 0 ? "?" : "&") + "manufacturer=" + encodeURIComponent(kept.value);
     }
     // The last opening's body would otherwise show, tray included, until the
     // server answers: stale ticks the reviewer did not keep.
@@ -79,7 +90,7 @@
     body.textContent = "";
     body.append(el("p", "hint", "Loading\u2026"));
     d.showModal();
-    htmx.ajax("GET", btn.dataset.pickerUrl, { target: body, swap: "innerHTML" });
+    htmx.ajax("GET", url, { target: body, swap: "innerHTML" });
   }
 
   function hidden(name, value, label) {
@@ -146,6 +157,11 @@
 
   document.addEventListener("htmx:afterSwap", function (e) {
     var d = dialogOf(e.target);
-    if (d) { sync(d); }
+    if (!d) { return; }
+    var field = d.querySelector("[data-picker-manufacturer]");
+    var now = field ? field.value : "", was = owners.get(d) || "";
+    if (now && was && now !== was) { ticks(d).clear(); }
+    if (now) { owners.set(d, now); }
+    sync(d);
   });
 })();

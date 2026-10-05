@@ -254,3 +254,21 @@ def test_a_published_document_offers_add_items(client, conn):
     assert "Add items this document covers" not in _text(client.get(f"/documents/{rng}").text)
     body = _text(client.get(f"/picker/{pub}").text)
     assert "Add these 0 items" in body and "Done" not in body
+
+
+def test_a_manufacturer_gate_would_refuse_is_not_offered_or_accepted(client, conn):
+    """Final review: `_mfr_binding_options` lists a bare BC code that has no
+    `manufacturer` row; GATE (`_bindable_manufacturer`) refuses it, so the
+    picker must neither offer nor accept it."""
+    _mfr(conn)
+    _item(conn, "A1", "VARIOBASE A")
+    _item(conn, "B1", "VARIOBASE B", raw="BARECODE")       # no manufacturer row, no alias
+    doc_id = _doc(conn, "bare", canonical=None)
+    conn.commit()
+    body = client.get(f"/picker/{doc_id}").text
+    assert 'value="BARECODE"' not in body and f'value="{M}"' in body
+    assert "Which manufacturer made these items?" in _text(
+        client.get(f"/picker/{doc_id}", params={"manufacturer": "BARECODE"}).text)
+    r = client.post(f"/staging/{doc_id}/apply",
+                    data={"decision": "approve", "items": ["B1"], "manufacturer": "BARECODE"})
+    assert r.status_code == 422 and _jobs(conn) == []

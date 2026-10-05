@@ -1525,13 +1525,23 @@ def _picker_doc(conn, doc_id: int) -> dict | None:
     return doc
 
 
+def _picker_mfr_options(conn) -> list[dict]:
+    """The manufacturers the item picker may offer: `_mfr_binding_options`
+    narrowed to those with a `manufacturer` row. The binding list also carries
+    a bare BC code with no row (`COALESCE(alias, raw)`), which GATE's
+    `_bindable_manufacturer` refuses, so offering it would turn an Approve into
+    a dead job behind a receipt that said it was recorded."""
+    held = {r["canonical_name"] for r in conn.execute("SELECT canonical_name FROM manufacturer")}
+    return [o for o in _mfr_binding_options(conn) if o["canonical_name"] in held]
+
+
 def _picker_manufacturer(conn, doc: dict, asked: str) -> tuple[str | None, bool]:
     """(manufacturer, locked). The document's confirmed one always wins and is
-    locked; otherwise a chosen name counts only if it is a catalogue entity."""
+    locked; otherwise a chosen name counts only if the picker offers it."""
     if doc["canonical_manufacturer"]:
         return doc["canonical_manufacturer"], True
     asked = (asked or "").strip()
-    if asked and asked in {o["canonical_name"] for o in _mfr_binding_options(conn)}:
+    if asked and asked in {o["canonical_name"] for o in _picker_mfr_options(conn)}:
         return asked, False
     return None, False
 
@@ -5313,7 +5323,7 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             if mfr is None:
                 evidence = conn.execute(
                     "SELECT field, value FROM evidence WHERE doc_id=%s", (doc_id,)).fetchall()
-                ctx.update(mfr_options=_mfr_binding_options(conn),
+                ctx.update(mfr_options=_picker_mfr_options(conn),
                            mfr_suggestion=_mfr_binding_suggestion(conn, evidence))
             else:
                 sugg = item_picker.suggestions(
