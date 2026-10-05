@@ -720,6 +720,129 @@ zero:
 
 `anomalies` in the same envelope feed the standing ledger on `/data-quality`.
 
+### Business Central: weekly sync and the first write
+
+**Weekly sync, by hand** (Denis, 2026-10-05; the cron that will replace it is
+designed in [the spec](superpowers/specs/2026-10-05-bc-weekly-sync-design.md)
+and not built). On the server, in `/srv/compliance/app`. CLI only: the `/ingest`
+form's `bc_odata` option cannot build the address and always fails
+([limits](dev/limits.md)).
+
+**Manufacturers first.** RESOLVE files an item under its BC manufacturer code's
+name via `manufacturer_alias`. A code it does not know becomes its own
+"manufacturer" (the bare code, e.g. `10204`), and a group's manufacturer is never
+re-derived afterwards. So bring the manufacturer master and the aliases up to date
+before the items:
+
+```bash
+# 0. Manufacturers: dry run, read it, apply, then refresh the aliases.
+docker compose exec -T worker python -m app.cli vendor-master --from-bc
+docker compose exec -T worker python -m app.cli vendor-master --from-bc --apply
+docker compose exec -T worker python -m app.cli playbooks sync
+```
+
+A renamed code is refused unless `--allow-renames`; read
+[deployment § 6.2](dev/deployment.md#62-step-2-the-manufacturer-master) before using
+it. `playbooks sync` writes directly and lists any `orphaned_groups`, which a
+person has to look at. `--from-bc` is on `main` from 2026-10-05; the server needs
+a deploy before step 0 works.
+
+Then the items:
+
+```bash
+# 1. Dry run: reads all of BC, writes nothing but the job row.
+KEY="ingest:bc-dry:$(date +%F)"
+docker compose exec -T worker sh -c '
+  python -m app.cli enqueue ingest.run "$0" --priority interactive \
+    --payload "{\"source\":\"bc_odata\",\"catalogue\":\"LJ\",\"dry_run\":true,\"ref\":\"$BC_BASE_URL/allitems\"}"
+' "$KEY"
+
+# 2. About 4 minutes later, read it (or /ingest -> Recent runs).
+docker compose exec -T postgres psql -U dentalia -d dentalia -At -c \
+  "SELECT status, (result - 'skipped_sample' - 'anomalies_preview')::text
+     FROM job WHERE dedupe_key = '$KEY' ORDER BY id DESC LIMIT 1"
+```
+
+The address comes from the worker's own `BC_BASE_URL` inside `sh -c`. Do not
+copy it out of `.env` with `cut`/`tr`: the value is quoted there, and on
+2026-10-05 a `tr` meant to drop the quotes also deleted every `2` and `7` from
+the URL (job 23736, dead on all five attempts).
+
+**Apply only if** the run is `done` and:
+
+- `seen` is not below last week's. 20.027 on 2026-10-02 and again on
+  2026-10-05.
+- `skipped` is 0.
+- `changed` is plausible. 788 on 2026-10-05 (dry run 23737, 3 min 56 s),
+  against the 2026-09-25 export. A
+  four-figure number means BC changed something in bulk, or the API changed
+  meaning under us. Stop and look before applying.
+
+```bash
+# 3. Apply: the same job without dry_run.
+KEY="ingest:bc:$(date +%F)"
+docker compose exec -T worker sh -c '
+  python -m app.cli enqueue ingest.run "$0" --priority interactive \
+    --payload "{\"source\":\"bc_odata\",\"catalogue\":\"LJ\",\"ref\":\"$BC_BASE_URL/allitems\"}"
+' "$KEY"
+```
+
+The apply queues one `resolve.group` per changed item. With `DISCOVER_HOLD=true`
+those items are grouped and nobody searches for their documents yet. Judge the
+run by Today's failed and dead counts, not by an empty queue. A sync never
+deletes: an item gone from BC stays in our table.
+
+**First write to BC: item 605275** (chosen by Denis, 2026-10-05). Writes are
+off (`BC_WRITE_ENABLED=false`), and the push ledger `bc_push_log` is empty: no
+write has ever been made. Read on 2026-10-05:
+
+| Field | In BC now | We would send | Why |
+|---|---|---|---|
+| `pteValidDeclarationOfConformity` | false | **true** | Ivoclar declaration, production, covers the item's group, valid to 2031-05-04 |
+| `pteValidCECertificate` | false | false | Ivoclar's EC certificate is manufacturer-wide; the 2026-09-07 rule counts only a certificate naming the item's group ([design](superpowers/specs/2026-09-07-bc-writeback-design.md)) |
+| `pteWarehouseURL` | empty | `https://api.cw.dentalia.si/item/605275?k=…` | Opens the item's page (200, measured 2026-10-05); 89 characters of BC's 250 |
+
+1. Tell Dentalia when it happens. It is their live BC.
+2. In `.env` set `BC_WRITE_ENABLED=true`, then `docker compose up -d worker web`.
+   The daily drift cron stays off: it needs `SCHEDULER_BC_PUSH_DRIFT_ENABLED`
+   too, which is `false`. While writes are on, any staff login can press
+   **Update Business Central** on an item, so keep the window short.
+3. Press **Update Business Central** on `/items/605275`. The job should report
+   `sent: 1`, and `bc_push_log` should hold three rows with a 2xx status.
+4. Read it back from BC:
+
+   ```bash
+   docker compose exec -T worker python - <<'EOF'
+   from app.config import load_config
+   from app.adapters.bc_client import BcClient
+   c = load_config().bc
+   r = BcClient(c.base_url, username=c.username, password=c.password).get(c.base_url + "/dataitems('605275')")
+   print({k: str(v).split("?")[0] for k, v in r.items() if k.startswith("pte")})
+   EOF
+   ```
+
+   Then ask someone at Dentalia to click the link on the BC item card.
+5. Set `BC_WRITE_ENABLED=false` again, then `docker compose up -d worker web`.
+   The bulk push (`/bc-push`) is a separate decision.
+
+If BC refuses, the response says why:
+
+- **401:** the login. The job fails and is not retried in that process.
+- **400 `Application_DialogException` "Nimate pravic za urejanje artiklov"**
+  ("you have no rights to edit items"): the login works, but the BC user may
+  not edit items. **Measured 2026-10-05** with a no-change write on 605275
+  (its own values sent back, nothing altered, etag unchanged). Dentalia /
+  b-s.si must grant the right before any push can succeed.
+- **403:** the account may read but not modify `dataitems`. That is a question
+  for b-s.si / Dentalia IT.
+- **404:** the item is missing from `dataitems`. Not expected: the page held all
+  20.027 items on 2026-10-05.
+
+Refused attempts stay in the ledger and do not count as sent, so the next push
+retries them. **There is no undo tool.** A hand-made PATCH bypasses
+`bc_push_log`, so the ledger would still show the value, and the next push would
+skip the item. Add the matching ledger rows if you ever revert by hand.
+
 ## Configuration
 
 All config loads through [app/config.py](../app/config.py): environment variables first, then an optional TOML overlay named by `DENTALIA_CONFIG_TOML` (a set-but-unreadable file is a hard error by design), then defaults. The key surface is PRD v3 §11; [.env.example](../.env.example) lists every operational key with its dev default; tuning thresholds (`RESOLVE_NAME_*`, `DISCOVER_*`, `QUEUE_*`) are deliberately code-default-only until the S1.7 sweep recalibration (PHASES S1.3 posture: don't surface tuning keys prematurely). Highlights:

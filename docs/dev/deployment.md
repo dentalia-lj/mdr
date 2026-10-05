@@ -468,20 +468,24 @@ A code re-pointed at a different manufacturer is **refused** unless you pass
 `--allow-renames`. That refusal is the guard against the write-once problem
 above; do not reach for the flag without reading what it would move.
 
-**Route B — BC `allmanufacturers`: NOT REACHABLE TODAY.**
-[app/vendor_master.py](../../app/vendor_master.py)`::read_odata` is written and
-tested against the endpoint b-s.si added on 2026-09-07, and it returns exactly
-what the file reader returns, so `diff`, `apply`, the rename refusal and the
-two-phase preview would all work unchanged. **It has no caller**: no CLI flag,
-no handler, no route. Reaching it needs (a) a `--from-bc` path on the
-`vendor-master` verb that builds a `BcClient` from `cfg.bc` and pages the
-endpoint, and (b) one sampled record, because `BC_MANUFACTURER_PROFILE`'s `no`
-and `name` are guessed from BC's other pages. The guard raises on the first
-record if they are wrong, so a bad guess fails loudly rather than importing 390
-nameless codes.
+**Route B — BC `allmanufacturers`, from the CLI** (since 2026-10-05). The same
+diff, apply and rename refusal, fed from BC's manufacturer page instead of the
+file. It needs `BC_BASE_URL` and the `BC_*` login on the worker (§ 3). It only
+reads BC: the page is not writable.
 
-Until then: **every combination hand-feeds `Proizvajalci.xlsx`**, and that is
-the documented fallback rather than a blocker — 390 rows that change rarely.
+```bash
+docker compose exec -T worker python -m app.cli vendor-master --from-bc          # dry run
+docker compose exec -T worker python -m app.cli vendor-master --from-bc --apply
+docker compose exec -T worker python -m app.cli playbooks sync                   # aliases, before the next item ingest
+```
+
+Measured on live BC 2026-10-05: 390 manufacturers with `code`, `name`,
+`systemId`. Against the server's mirror that day: one code added in BC
+(`10204` EKOM, 2 items, both non-device), one gone from BC (`10198`, no name, no
+items), no renames. Until that day `BC_MANUFACTURER_PROFILE` guessed `no` for the
+code. The guard raised on the first live record instead of importing 390 nameless
+codes, which is how the guess was found. **No browser route yet.** The `/import`
+manufacturer card takes a file only.
 
 ### 6.3 Steps 3 and 4: playbooks (no branch)
 
@@ -594,11 +598,16 @@ docker compose run --rm worker python -m app.cli enqueue ingest.run \
 > day from the server: BC applies the preference (`preference-applied`, a
 > `nextLink`) and costs **about 0.058 s per record whatever is asked for** --
 > `$select` of the six profile fields cuts a record from 6 KB to 0.26 KB but
-> not the time -- so a 1.000-record page takes ~58 s and a full read of ~19.000
-> items ~19 minutes of BC time, inside the 30-minute visibility timeout but not
-> by much. Content checked on one page: all 1.000 carry `no`, `description`
-> and `manufacturerCode`, 361 a device class; 758 are in the mirror and all 758
-> carry the same manufacturer as the 09-25 export. Full read not yet re-run.
+> not the time -- so a 1.000-record page takes ~58 s. Content checked on one
+> page: all 1.000 carry `no`, `description` and `manufacturerCode`, 361 a
+> device class; 758 are in the mirror and all 758 carry the same manufacturer
+> as the 09-25 export. **The full read, run the same day (dry run, job 23729),
+> took ~3 min 50 s for 20.027 items in 21 pages**: the first page ~60 s, every
+> later one ~8 s. So the ~19 minutes extrapolated from the first page did not
+> hold. Read the duration from the worker log, not the job row:
+> `job.finished_at` records the handler's start
+> (`[job-finished-at-is-claim-time]`). The weekly procedure is in the
+> [runbook](../runbook.md#business-central-weekly-sync-and-the-first-write).
 
 > **There is no delta.** Nothing builds an OData `$filter`; `delta_since` is read
 > by the web form and by nothing else. Every OData run is a full catalogue read.
