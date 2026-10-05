@@ -226,3 +226,21 @@ def test_suggestions_come_from_the_file_name_and_page_one(conn):
     assert got["words"] == ["varibase", "variobase", "abutments"]
     assert got["docs"] == [{"doc_id": src, "file_name": "izjava o skladnosti za varibase XC novo.pdf",
                             "items": 1}]
+
+
+def test_equal_scores_put_the_closest_whole_name_first(conn):
+    """Found on dev doc 51 (PrograMill PM3 DoC), 2026-10-05: every name
+    containing "programill" scores 1.0, so item order decided, and the machine
+    itself sat below 50 milling blocks."""
+    _item(conn, "686490", "EMPRESS CAD PROGRAMILL MULTI LT A2 C14 5KOS")
+    _item(conn, "686509", "E.MAX CAD PROGRAMILL MO 2 C14 5KOS")
+    _item(conn, "689238", "PROGRAMILL PM3 SYSTEM")
+    assert _refs(ip.search(conn, _doc(conn), S, "programill"))[0] == "689238"
+
+
+def test_model_codes_are_suggested(conn):
+    """"PM3" names the machine; a letters-only word list dropped it."""
+    _item(conn, "689238", "PROGRAMILL PM3 SYSTEM")
+    doc = _doc(conn, file_name="PrograMill PM3.pdf")
+    got = ip.suggestions(conn, doc, S, lambda d: None)
+    assert got["words"] == ["programill", "pm3"]

@@ -43,7 +43,10 @@ WORDS_TRIED = 40    # first words of the file name and page 1 looked up at all
 WORDS_SHOWN = 8
 DOCS_SHOWN = 5
 
-_WORD = re.compile(r"[^\W\d_]{4,}")
+#: A word worth suggesting: four letters or more, or a model code of three
+#: characters or more mixing letters and digits ("PM3" names the machine in
+#: "PrograMill PM3.pdf"; dev doc 51, 2026-10-05).
+_WORD = re.compile(r"(?<![^\W_])(?:[^\W\d_]{4,}|(?=[^\W_]*\d)(?=[^\W_]*[^\W\d_])[^\W_]{3,})(?![^\W_])")
 _HAS_WORD = re.compile(r"[^\W_]")
 _HAS_LETTER = re.compile(r"[^\W\d_]")
 
@@ -92,7 +95,7 @@ SELECT m.item_ref, m.name, m.md_flag, g.group_id, g.label AS group_label,
         WHERE gm.item_ref = m.item_ref
         ORDER BY ig.group_id LIMIT 1) g ON true
  WHERE m.manufacturer_raw = ANY(%(codes)s) AND {where}
- ORDER BY score DESC, m.item_ref
+ ORDER BY score DESC, {tiebreak}m.item_ref
  LIMIT %(cap)s
 """
 
@@ -116,9 +119,11 @@ def _like_escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def _run(conn, codes, score: str, where: str, params: dict, cap: int = CAP):
-    """`score` and `where` are fixed SQL fragments from this module, never input."""
-    rows = conn.execute(_ROWS.format(score=score, where=where),
+def _run(conn, codes, score: str, where: str, params: dict, cap: int = CAP,
+         tiebreak: str = ""):
+    """`score`, `where` and `tiebreak` are fixed SQL fragments from this module,
+    never input."""
+    rows = conn.execute(_ROWS.format(score=score, where=where, tiebreak=tiebreak),
                         {"codes": codes, "cap": cap, **params}).fetchall()
     total = rows[0]["total"] if rows else 0
     return [Row(item_ref=r["item_ref"], name=r["name"], md_flag=r["md_flag"],
@@ -196,8 +201,12 @@ def search(conn, doc: dict, manufacturer: str | None, q: str) -> Result:
         return result
     if not _HAS_LETTER.search(q):
         return _empty("number", query=q)
+    # Every name holding the whole word scores 1.0, so the whole name's
+    # closeness breaks the tie: "PROGRAMILL PM3 SYSTEM" before fifty milling
+    # blocks that merely mention PrograMill (dev doc 51, 2026-10-05).
     rows, total = _run(conn, codes, NAME_SCORE, f"{NAME_SCORE} >= %(t)s",
-                       {"q": q, "t": SEARCH_THRESHOLD})
+                       {"q": q, "t": SEARCH_THRESHOLD},
+                       tiebreak="similarity(%(q)s, m.name) DESC, ")
     return _result(conn, doc, rows, total, mode="search", query=q)
 
 
