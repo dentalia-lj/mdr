@@ -49,7 +49,7 @@
     {% if suggestions.docs %}<span>Published {{ manufacturer }} documents with that word:</span>
       {% for d in suggestions.docs %}<button type="button" class="linkbtn"
           hx-get="{{ results_url }}&amp;source_doc={{ d.doc_id }}"
-          hx-target="#picker-results-{{ doc.doc_id }}">{{ d.file_name }} ({{ d.items | num }} items)</button>{% endfor %}
+          hx-target="#picker-results-{{ doc.doc_id }}">{{ d.file_name }} ({{ d["items"] | num }} items)</button>{% endfor %}
     {% endif %}
   </div>
   {% endif %}
