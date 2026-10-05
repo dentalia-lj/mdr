@@ -1,0 +1,85 @@
+{# The item picker's body (spec §3, mockup 2), loaded into the panel's <dialog>.
+   Server-rendered; static/item_picker.js keeps the tick set and the tray. #}
+<div class="m-head">
+  <h3>Items this document covers</h3>
+  <p class="hint">{{ doc.type | doc_type }} · {{ doc.file_name or ("document #" ~ doc.doc_id) }} ·
+    Issued: {{ doc.validity_from | day if doc.validity_from else "not stated" }}</p>
+  {% if manufacturer and locked %}
+  <p class="lock">Manufacturer: <b>{{ manufacturer }}</b>
+    <span class="hint">locked, from the document. Only its items can be found.</span></p>
+  {% elif manufacturer %}
+  <p class="lock">Manufacturer: <b>{{ manufacturer }}</b>
+    <span class="hint">chosen by you. Only its items can be found.</span>
+    <button type="button" class="linkbtn" hx-get="/picker/{{ doc.doc_id }}"
+            hx-target="closest .picker-body">Change</button></p>
+  {% endif %}
+</div>
+
+{% if not manufacturer %}
+<div class="m-tools">
+  <label for="picker-mfr-{{ doc.doc_id }}">Which manufacturer made these items?</label>
+  {% if mfr_suggestion %}<p class="hint">The document names <strong>{{ mfr_suggestion.raw }}</strong>.</p>{% endif %}
+  <select id="picker-mfr-{{ doc.doc_id }}" name="manufacturer"
+          hx-get="/picker/{{ doc.doc_id }}" hx-target="closest .picker-body" hx-trigger="change">
+    <option value="">(choose a manufacturer)</option>
+    {% for opt in mfr_options %}
+    <option value="{{ opt.canonical_name }}">{{ opt.canonical_name }}</option>
+    {% endfor %}
+  </select>
+  {% if mfr_suggestion and mfr_suggestion.preselect %}
+  <button type="button" class="btn-find"
+          hx-get="/picker/{{ doc.doc_id }}?manufacturer={{ mfr_suggestion.preselect | urlencode }}"
+          hx-target="closest .picker-body">Use {{ mfr_suggestion.preselect }}</button>
+  {% endif %}
+</div>
+{% else %}
+<div class="m-tools">
+  <div class="searchrow">
+    <label for="picker-q-{{ doc.doc_id }}" class="hint">Search</label>
+    <input id="picker-q-{{ doc.doc_id }}" type="search" name="q" value="{{ first_word }}"
+           autocomplete="off" placeholder="Item number or name"
+           hx-get="{{ results_url }}" hx-trigger="input changed delay:300ms, search"
+           hx-target="#picker-results-{{ doc.doc_id }}">
+  </div>
+  {% if suggestions.words or suggestions.docs %}
+  <div class="seed">
+    {% if suggestions.words %}<span>Suggested from the document:</span>
+      {% for w in suggestions.words %}<button type="button" class="linkbtn" data-picker-q="{{ w }}">{{ w }}</button>{% endfor %}
+    {% endif %}
+    {% if suggestions.docs %}<span>Published {{ manufacturer }} documents with that word:</span>
+      {% for d in suggestions.docs %}<button type="button" class="linkbtn"
+          hx-get="{{ results_url }}&amp;source_doc={{ d.doc_id }}"
+          hx-target="#picker-results-{{ doc.doc_id }}">{{ d.file_name }} ({{ d.items | num }} items)</button>{% endfor %}
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+<div class="m-body">
+  <div class="picker-results" id="picker-results-{{ doc.doc_id }}">{% include "_item_picker_results.html" %}</div>
+  {% if proposed.shown %}
+  <h4>Linked only by a name match</h4>
+  {% with result = proposed %}{% include "_item_picker_results.html" %}{% endwith %}
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="m-foot">
+  <input type="hidden" name="manufacturer" value="{{ manufacturer or '' }}" data-picker-manufacturer>
+  <div class="picker-tray" aria-live="polite"></div>
+  {% if mode == "review" %}
+  <div class="foot-actions">
+    <p class="hint">Nothing is ticked for you. Close with Done, then approve.</p>
+    <button type="button" class="btn-clear" data-picker-cancel>Cancel</button>
+    <button type="button" class="btn-approve" data-picker-done>Done</button>
+  </div>
+  {% else %}
+  <form class="foot-actions" hx-post="/documents/{{ doc.doc_id }}/items"
+        hx-target="next .picker-result" hx-swap="innerHTML">
+    <div class="picker-add-items" hidden></div>
+    <p class="hint">Nothing is ticked for you. Each item you add becomes a confirmed link under your name.</p>
+    <button type="button" class="btn-clear" data-picker-cancel>Cancel</button>
+    <button type="submit" class="btn-approve" data-picker-add disabled>Add these 0 items</button>
+  </form>
+  <div class="picker-result"></div>
+  {% endif %}
+</div>

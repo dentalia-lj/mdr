@@ -1,0 +1,33 @@
+{# The rows of one group in the item picker (picker spec §3, mockups 2 and 4).
+   Reads `g`, `doc`, `doc_types`, `type_short`, `compare_words`, `results_url`.
+   Nothing is ticked here except an item already linked, shown ticked and
+   disabled; static/item_picker.js re-applies the reviewer's ticks after each
+   swap. #}
+{% set type_word = type_short.get(doc.type, doc.type) %}
+<div class="table-wrap">
+<table class="picker-table">
+  <thead><tr><th></th><th>Item</th><th>Name</th><th>Medical device</th>
+    <th>Documents now</th><th>Current {{ type_word }}</th><th></th></tr></thead>
+  <tbody>
+  {% for r in g.rows %}
+  <tr class="{{ 'refused' if r.refused }}">
+    <td><input type="checkbox" data-pick="{{ r.item_ref }}" data-name="{{ r.name }}"
+               aria-label="Tick {{ r.item_ref }}"
+               {{- " disabled" if r.refused or r.linked }}{{ " checked" if r.linked }}></td>
+    <td class="ref"><a href="/items/{{ r.item_ref }}" target="_blank" rel="noopener">{{ r.item_ref }}</a></td>
+    <td>{{ r.name }}</td>
+    <td>{% if r.md_flag %}yes{% elif r.md_flag is sameas false %}no{% else %}<span class="hint">not set in BC</span>{% endif %}</td>
+    <td><span class="dchips">{% for t in doc_types %}<span class="dchip{{ ' on' if r.has[t] }}">{{ type_short[t] }}</span>{% endfor %}</span></td>
+    <td>{% if r.same_type %}{{ r.same_type.validity_from | day if r.same_type.validity_from else "no date" }}
+        <span class="pill">{{ compare_words[r.same_type.compare] }}</span>
+        {%- else %}<span class="hint">none</span>{% endif %}</td>
+    <td>{% if r.refused %}<span class="pill pill-refused">Refused earlier</span>
+        {%- elif r.linked %}<span class="hint">already linked</span>
+        {%- else %}<button type="button" class="linkbtn"
+                hx-get="{{ results_url }}&amp;similar={{ r.item_ref | urlencode }}"
+                hx-target="#picker-results-{{ doc.doc_id }}">Similar</button>{% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>

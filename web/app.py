@@ -136,7 +136,7 @@ from app.config import Web, load_config
 from app.compliance import EXPIRY_HORIZON_DAYS
 
 log = logging.getLogger("dentalia.web")
-from web import access, bc_push_view, catalogue, failures, item_link, missing, onboarding, registry, scheduler_view, words
+from web import access, bc_push_view, catalogue, failures, item_link, item_picker, missing, onboarding, registry, scheduler_view, words
 from web.item_docs import item_documents
 # Re-exported: the Today page and the menu counts read the Missing documents
 # list through this name (office UI redesign spec § 4 and § 7).
@@ -423,6 +423,11 @@ REGULATION_WORDS = {
 # Items listed by name above the Review panel's buttons before the rest fold
 # under "+ K more" (spec § 6).
 REVIEW_ITEMS_SHOWN = 10
+#: The item picker's row vocabulary (picker spec §3): document type chips and
+#: how an item's document of this type compares with the one being decided.
+PICKER_TYPE_SHORT = {"DoC": "DoC", "EC": "CE", "IFU": "IFU", "ISO": "ISO"}
+PICKER_COMPARE_WORDS = {"older": "older than this one", "newer": "newer than this one",
+                        "same date": "same date", "no date": "cannot compare, no date"}
 # `/documents/{doc_id}/file`'s answer when it serves the bytes (spec § 6): a
 # document's file never changes, so the browser may keep it a year without
 # asking again. See `document_file`.
@@ -1503,6 +1508,31 @@ def _mfr_binding_suggestion(
             and manufacturers.normalize(raw) == manufacturers.normalize(preselect)
         ),
     }
+
+
+def _picker_doc(conn, doc_id: int) -> dict | None:
+    """The document the item picker works on (picker spec §3): one covering
+    specific items, on Review (`staged`) or published (`production`). None for
+    anything else, so a whole-range document never gets a picker."""
+    doc = conn.execute(
+        "SELECT doc_id, type, regulation, validity_from, status, coverage_scope, "
+        "canonical_manufacturer, content_hash, archive_url, source_url "
+        "FROM document WHERE doc_id = %s", (doc_id,)).fetchone()
+    if doc is None or doc["coverage_scope"] != "group" or doc["status"] not in ("staged", "production"):
+        return None
+    doc["file_name"] = _file_name(doc["source_url"], doc["archive_url"], doc["content_hash"])
+    return doc
+
+
+def _picker_manufacturer(conn, doc: dict, asked: str) -> tuple[str | None, bool]:
+    """(manufacturer, locked). The document's confirmed one always wins and is
+    locked; otherwise a chosen name counts only if it is a catalogue entity."""
+    if doc["canonical_manufacturer"]:
+        return doc["canonical_manufacturer"], True
+    asked = (asked or "").strip()
+    if asked and asked in {o["canonical_name"] for o in _mfr_binding_options(conn)}:
+        return asked, False
+    return None, False
 
 
 def _staged_doc_detail(conn, doc_id: int) -> dict | None:
@@ -5200,6 +5230,67 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
              "items_shown": REVIEW_ITEMS_SHOWN,
              "today": datetime.now(timezone.utc).date()},
         )
+
+    def _picker_ctx(request, doc, manufacturer, locked) -> dict:
+        from urllib.parse import quote
+        return {
+            "request": request, "doc": doc, "manufacturer": manufacturer, "locked": locked,
+            "mode": "review" if doc["status"] == "staged" else "published",
+            "results_url": (f"/picker/{doc['doc_id']}/results"
+                            f"?manufacturer={quote(manufacturer or '')}"),
+            "doc_types": item_picker.DOC_TYPES, "type_short": PICKER_TYPE_SHORT,
+            "compare_words": PICKER_COMPARE_WORDS,
+        }
+
+    @app.get("/picker/{doc_id:int}", response_class=HTMLResponse)
+    def picker_open(request: Request, doc_id: int, manufacturer: str = ""):
+        """The item picker's body, loaded into the panel's <dialog> (picker
+        spec §3)."""
+        with _conn() as conn:
+            doc = _picker_doc(conn, doc_id)
+            if doc is None:
+                return templates.TemplateResponse(
+                    request, "_result.html",
+                    {"request": request, "error": "Items can be chosen only for a document "
+                     "that covers specific items. Nothing was changed."}, status_code=404)
+            mfr, locked = _picker_manufacturer(conn, doc, manufacturer)
+            ctx = _picker_ctx(request, doc, mfr, locked)
+            if mfr is None:
+                evidence = conn.execute(
+                    "SELECT field, value FROM evidence WHERE doc_id=%s", (doc_id,)).fetchall()
+                ctx.update(mfr_options=_mfr_binding_options(conn),
+                           mfr_suggestion=_mfr_binding_suggestion(conn, evidence))
+            else:
+                sugg = item_picker.suggestions(
+                    conn, doc, mfr,
+                    lambda d: _file_name(d["source_url"], d["archive_url"], d["content_hash"]))
+                first = sugg["words"][0] if sugg["words"] else ""
+                ctx.update(suggestions=sugg, first_word=first,
+                           result=item_picker.search(conn, doc, mfr, first),
+                           proposed=item_picker.proposed(conn, doc, mfr))
+        return templates.TemplateResponse(request, "_item_picker.html", ctx)
+
+    @app.get("/picker/{doc_id:int}/results", response_class=HTMLResponse)
+    def picker_results(request: Request, doc_id: int, manufacturer: str = "", q: str = "",
+                       similar: str = "", source_doc: int | None = None):
+        """One list in the picker: a search, Similar on a row, or a published
+        document's items (picker spec §4). Never outside the manufacturer."""
+        with _conn() as conn:
+            doc = _picker_doc(conn, doc_id)
+            if doc is None:
+                return templates.TemplateResponse(
+                    request, "_result.html", {"request": request, "error": "Not found."},
+                    status_code=404)
+            mfr, locked = _picker_manufacturer(conn, doc, manufacturer)
+            if similar:
+                result = item_picker.similar(conn, doc, mfr, similar)
+            elif source_doc is not None:
+                result = item_picker.items_of(conn, doc, mfr, source_doc)
+            else:
+                result = item_picker.search(conn, doc, mfr, q)
+            ctx = _picker_ctx(request, doc, mfr, locked)
+            ctx["result"] = result
+        return templates.TemplateResponse(request, "_item_picker_results.html", ctx)
 
     @app.get("/staging/suggestion/{suggestion_id:int}/detail", response_class=HTMLResponse)
     def staging_suggestion_detail(request: Request, suggestion_id: int):
