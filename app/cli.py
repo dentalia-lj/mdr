@@ -569,6 +569,33 @@ def cmd_manufacturers(args: argparse.Namespace) -> int:
     return 0
 
 
+def _vendor_rows_from_bc():
+    """The manufacturer master read from BC's `allmanufacturers` page, or None
+    after printing why not. Read-only against BC: the page is not writable."""
+    from app.adapters import bc_client
+    from app.adapters.source import UnknownOdataProperty
+    from app.config import load_config
+
+    import httpx
+
+    cfg = load_config().bc
+    if not cfg.base_url:
+        print("vendor-master: --from-bc needs BC_BASE_URL (the company-scoped "
+              "BC API root)", file=sys.stderr)
+        return None
+    client = bc_client.BcClient(cfg.base_url, username=cfg.username,
+                                password=cfg.password)
+    try:
+        return vendor_master.read_odata(
+            vendor_master.fetch_odata(client, cfg.base_url))
+    except (UnknownOdataProperty, RuntimeError, bc_client.BcAuthRejected,
+            httpx.HTTPError) as exc:
+        print(f"vendor-master: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return None
+    finally:
+        client.close()
+
+
 def cmd_vendor_master(args: argparse.Namespace) -> int:
     """Mirror BC's manufacturer master into `vendor_master`.
 
@@ -578,16 +605,23 @@ def cmd_vendor_master(args: argparse.Namespace) -> int:
     short-circuits on `_existing_link`), so a code re-pointed here after items
     are grouped produces a split-brain no later import can repair.
     """
-    try:
-        rows = vendor_master.read_file(args.file)
-    except (FileNotFoundError, ValueError) as exc:
-        print(f"vendor-master: {exc}", file=sys.stderr)
-        return 2
+    if args.from_bc:
+        rows = _vendor_rows_from_bc()
+        if rows is None:
+            return 2
+        source, batch = "BC allmanufacturers", "bc:allmanufacturers"
+    else:
+        try:
+            rows = vendor_master.read_file(args.file)
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"vendor-master: {exc}", file=sys.stderr)
+            return 2
+        source, batch = args.file, pathlib.Path(args.file).name
 
     with db.connect() as conn:
         d = vendor_master.diff(conn, rows)
 
-        print(f"{len(rows)} row(s) in {args.file}")
+        print(f"{len(rows)} row(s) {'from' if args.from_bc else 'in'} {source}")
         print(
             f"  added {len(d.added)} · renamed {len(d.renamed)} · "
             f"disappeared {len(d.disappeared)} · unchanged {d.unchanged}"
@@ -605,7 +639,7 @@ def cmd_vendor_master(args: argparse.Namespace) -> int:
             stats = vendor_master.apply(
                 conn,
                 rows,
-                batch=args.batch or pathlib.Path(args.file).name,
+                batch=args.batch or batch,
                 allow_renames=args.allow_renames,
             )
         except vendor_master.RenameRefused as exc:
@@ -1200,6 +1234,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="BC manufacturer export (.xlsx/.csv), columns Šifra + Ime",
     )
     vm.add_argument("--batch", default=None, help="import batch label (default: filename)")
+    vm.add_argument(
+        "--from-bc",
+        action="store_true",
+        help="read BC's allmanufacturers page instead of --file (needs BC_BASE_URL)",
+    )
     vm.add_argument("--apply", action="store_true", help="write; without it, dry run")
     vm.add_argument(
         "--allow-renames",
