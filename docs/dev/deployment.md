@@ -896,7 +896,7 @@ Know that before you hand the screen to anyone.
 | `eudamed.certregister` | 6h | **No** — gated by `SCHEDULER_EUDAMED_CERTREGISTER_ENABLED` (off). The tick runs and emits nothing |
 | `eudamed.sweep-due` | 1h | Yes. It only marks manufacturers due (`due_at`); it emits no sweep |
 | `health-watch` | 5m | Yes |
-| `bc.push-drift` | 1h | Off until BOTH `BC_WRITE_ENABLED=true` and `SCHEDULER_BC_PUSH_DRIFT_ENABLED=true`. Writes stay off by Denis's decision (2026-09-24); when they go on, run and check one bulk apply at `/bc-push` before the drift switch |
+| `bc.push-drift` | 1h poll, **fires once a day** | Off until BOTH `BC_WRITE_ENABLED=true` and `SCHEDULER_BC_PUSH_DRIFT_ENABLED=true`. `BC_WRITE_ENABLED=true` set by Denis 2026-10-06 after the first write (605275) succeeded; run and check one bulk apply at `/bc-push` before the drift switch. The day is recorded in `scheduler_run` since 2026-10-06: before that, the per-day dedupe key held only while the day's jobs were active, so the hourly poll re-queued the run once they finished |
 
 Turning a gated cron on is a spend decision, not a config tidy-up: `coverage-scan` fetches and extracts, `eudamed.certregister` reaches a public register, and `email.poll` reads a mailbox. Turn them on one at a time, with someone watching `/scheduler` and the KPI board's spend tile.
 

@@ -3941,7 +3941,7 @@ tbody tr:last-child td{border-bottom:0}
 </tr>
 <tr>
 <td><strong>Business Central — re-push what drifted</strong></td>
-<td>Sends the three compliance fields back to Business Central for the items whose answer has changed, oldest first. Needs two switches: the writeback itself, and a second one for this task alone, so a first bulk send can be checked before this starts filling Business Central on its own. Both are off, which is the normal setting</td>
+<td>Once a day, sends the three compliance fields back to Business Central for the items whose answer has changed, oldest first. Needs two switches: the writeback itself, and a second one for this task alone, so a first bulk send can be checked before this starts filling Business Central on its own. Both are off, which is the normal setting</td>
 <td>No</td>
 </tr>
 </tbody></table></div>
@@ -3975,7 +3975,7 @@ tbody tr:last-child td{border-bottom:0}
 <tr>
 <td><strong>never</strong></td>
 <td>This task has no recorded run at all</td>
-<td>Tell a developer — the scheduler itself may not be switched on</td>
+<td>If its row says it is switched off (<em>Business Central — re-push what drifted</em> and the monthly catalogue import are off unless someone turned them on), nothing. Otherwise tell a developer — the scheduler itself may not be switched on</td>
 <td>A developer's problem</td>
 </tr>
 <tr>

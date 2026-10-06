@@ -80,7 +80,7 @@ Deset opravil, in ali ima vsako od njih delujoč gumb **Run now**:
 | **EUDAMED certificate register pull** | Naenkrat prenese evropski register certifikatov in ga poveže z našimi proizvajalci | **Da** — in to je edini način, da se sploh kdaj osveži, saj je njegov lastni urnik izklopljen |
 | **EUDAMED device sweep — mark due** | Označi proizvajalce, pri katerih je pregled pripomočkov na vrsti. Pregleda nikoli ne zažene sam: za vsakega dobavitelja človek pritisne **Start the check** na strani [Manufacturers](manufacturers.sl.md) | Ne |
 | **Health watch** | Pošlje eno vrstico na opozorilni kanal, kadar se storitev neha javljati, se čakalna vrsta ustavi ali eno od teh opravil odmre. Enkrat na težavo, z drugo vrstico, ko se razreši | Ne |
-| **Business Central — re-push what drifted** | Pošlje tri skladnostna polja nazaj v Business Central za tiste artikle, pri katerih se je odgovor spremenil, najstarejše najprej. Potrebuje dve stikali: pisanje nazaj samo in še ločeno stikalo samo za to opravilo, da lahko prvo skupno pošiljanje preverite, preden začne samo polniti Business Central. Obe sta izklopljeni, kar je običajna nastavitev | Ne |
+| **Business Central — re-push what drifted** | Enkrat na dan pošlje tri skladnostna polja nazaj v Business Central za tiste artikle, pri katerih se je odgovor spremenil, najstarejše najprej. Potrebuje dve stikali: pisanje nazaj samo in še ločeno stikalo samo za to opravilo, da lahko prvo skupno pošiljanje preverite, preden začne samo polniti Business Central. Obe sta izklopljeni, kar je običajna nastavitev | Ne |
 
 Sedem opravil brez gumba teče znotraj sistema samega — ni ničesar ločenega,
 kar bi lahko zagnali ročno. Stran to pove neposredno, z drobnim tiskom pod
@@ -96,7 +96,7 @@ spodaj.
 | **ok** | To opravilo je za trenutno obdobje že steklo | Nič | Dobro |
 | **due** | Za trenutno obdobje še ni steklo, a je bil zadnji zagon dovolj nedaven, da je to normalno | Nič, razen če ostane **due** veliko dlje, kot narekuje lastni urnik | Za zdaj v redu |
 | **stale** | To opravilo že dolgo ni steklo — dlje kot dva lastna cikla | Povejte razvijalcu | Razvijalčev problem |
-| **never** | To opravilo nima zabeleženega niti enega zagona | Povejte razvijalcu — morda scheduler sploh ni vklopljen | Razvijalčev problem |
+| **never** | To opravilo nima zabeleženega niti enega zagona | Če vrstica pravi, da je opravilo izklopljeno (*Business Central — re-push what drifted* in mesečni uvoz kataloga sta izklopljena, dokler ju kdo ne vklopi), nič. Sicer povejte razvijalcu — morda scheduler sploh ni vklopljen | Razvijalčev problem |
 | **unledgered** | Samo pri *EUDAMED device sweep — mark due*. To opravilo namenoma ne vodi zapisa o zagonih, zato ni obdobja, ki bi ga bilo mogoče presojati | Nič. Namesto tega poglejte stolpec **Armed** | Normalno |
 | **not armed** v stolpcu Armed | To opravilo se je ustavilo in ne bo več teklo, dokler ga ne vrnete na urnik | Pritisnite **Re-arm** ob njem. Če se ponavlja, povejte razvijalcu | Vaše za pritisk, razvijalčevo ob ponovitvi |
 | Pasica *"The scheduler has never run against this database"* | Celoten scheduler ne teče | Razvijalčev problem — treba ga je zagnati | Razvijalčev problem |

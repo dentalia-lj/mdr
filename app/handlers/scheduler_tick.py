@@ -84,8 +84,9 @@ POLL_SECONDS = {
     "health-watch": 300,            # the finest poll here: it is the
                                     # one cron whose whole job is to
                                     # notice that something stopped
-    "bc.push-drift": 3600,          # day window; the dedupe key is per day,
-                                    # so an hourly poll fires it once
+    "bc.push-drift": 3600,          # day period, `scheduler_run` ledger; the
+                                    # per-day dedupe key alone let it re-fire
+                                    # hourly once the day's jobs finished
 }
 
 

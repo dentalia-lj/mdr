@@ -556,10 +556,29 @@ def _tick_bc_push_drift(conn, *, enabled: bool, batch: int, cap: int,
     queue full of pushes that will be withheld is noise, not safety, so the work
     is not created either; the second flag lets writes go on for the button and
     the bulk apply while this stays off (2026-09-24).
+
+    **Once a day, recorded in `scheduler_run`.** The tick asks hourly, and the
+    per-day dedupe key only holds while that day's jobs are active: once they
+    finished, the next poll queued the whole run again, so the cron ran hourly
+    and re-sent every item BC refused each hour. Denis, 2026-10-06: once a day,
+    especially while something is failing. A switched-off poll records nothing,
+    so turning the cron on mid-day still gets that day's run.
     """
     if not enabled:
         return {"enqueued": 0, "batches": 0}
 
+    name, period_key = "bc.push-drift", period_key_day(now)
+    with conn.transaction():
+        if already_ran(conn, name, period_key):
+            return {"enqueued": 0, "batches": 0, "period_key": period_key,
+                    "already_ran": True}
+        result = _enqueue_bc_push_drift(conn, batch=batch, cap=cap, now=now)
+        record_run(conn, name, period_key, result.pop("first_job_id"))
+    return {**result, "period_key": period_key}
+
+
+def _enqueue_bc_push_drift(conn, *, batch: int, cap: int, now: dt.datetime) -> dict:
+    """The day's selection, split into `bc.push` batches."""
     rows = conn.execute(
         "SELECT m.item_ref, max(l.pushed_at) AS last_push "
         "  FROM item_mirror m "
@@ -573,6 +592,7 @@ def _tick_bc_push_drift(conn, *, enabled: bool, batch: int, cap: int,
 
     refs = [r["item_ref"] for r in rows]
     enqueued = batches = 0
+    first_job_id = None
     for i in range(0, len(refs), batch):
         chunk = refs[i:i + batch]
         job_id = queue.enqueue(
@@ -584,7 +604,8 @@ def _tick_bc_push_drift(conn, *, enabled: bool, batch: int, cap: int,
         if job_id is not None:
             enqueued += len(chunk)
             batches += 1
-    return {"enqueued": enqueued, "batches": batches}
+            first_job_id = first_job_id or job_id
+    return {"enqueued": enqueued, "batches": batches, "first_job_id": first_job_id}
 
 
 def _tick_health_watch(conn, cfg: Config, *, now: dt.datetime) -> dict:

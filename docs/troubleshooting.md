@@ -56,6 +56,9 @@ Writes were switched on without the endpoint. Set `BC_BASE_URL` in `.env` and `d
 **The drift cron enqueues nothing although writes are on.**
 It needs its own switch too: `SCHEDULER_BC_PUSH_DRIFT_ENABLED=true` on `worker` (and `web`, for the `/scheduler` panel). Deliberate: the first bulk apply is checked before BC is filled automatically.
 
+**The drift cron ran this morning and not again, although it polls hourly.**
+By design since 2026-10-06: the day is recorded in `scheduler_run` (`bc.push-drift`, period = the date), so one run a day reaches BC. An item BC refused waits for tomorrow's run or a click. To force another run the same day, delete that day's `scheduler_run` row, deliberately.
+
 **A boolean is `false` and the review card shows amber.**
 Not a contradiction. `app/bc_fields.py` is deliberately not `compliance.cell_state`: the card's `expiring` and `review-due` are a person's "look at this", while BC gets a boolean an ERP acts on — a document inside its stated validity is `true` however soon it lapses. And a passed date falsifies only when `document_effective_expiry.basis` is `stated` or `inherited`; `staleness` is our own review horizon and never falsifies.
 

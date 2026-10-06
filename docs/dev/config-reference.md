@@ -404,7 +404,7 @@ Two cautions:
 | `scheduler.failure_reonboard_enabled` | bool | `False` | `SCHEDULER_FAILURE_REONBOARD_ENABLED` |
 | `scheduler.email_poll_enabled` | bool | `False` | `SCHEDULER_EMAIL_POLL_ENABLED` |
 | `scheduler.email_poll_interval_hours` | int | `6` | `SCHEDULER_EMAIL_POLL_INTERVAL_HOURS` |
-| `scheduler.bc_push_drift_enabled` | bool | `False` | `SCHEDULER_BC_PUSH_DRIFT_ENABLED` — the hourly `bc.push-drift` cron needs this AND `bc.write_enabled`. **Blast radius:** with an empty ledger every item is "changed", so turning both on writes up to `bc.drift_cap` items an hour into BC until the catalogue has come round once. Keep it off until the first bulk apply at `/bc-push` has been checked (Denis, 2026-09-24). Declared on `worker` and `web` |
+| `scheduler.bc_push_drift_enabled` | bool | `False` | `SCHEDULER_BC_PUSH_DRIFT_ENABLED` — the `bc.push-drift` cron (polled hourly, fires once a day, recorded in `scheduler_run`) needs this AND `bc.write_enabled`. **Blast radius:** with an empty ledger every item is "changed", so turning both on writes up to `bc.drift_cap` items a day into BC until the catalogue has come round once. Keep it off until the first bulk apply at `/bc-push` has been checked (Denis, 2026-09-24). Declared on `worker` and `web` |
 | `scheduler.eudamed_certregister_enabled` | bool | `False` | `SCHEDULER_EUDAMED_CERTREGISTER_ENABLED` |
 | `scheduler.eudamed_certregister_interval_days` | int | `30` | `SCHEDULER_EUDAMED_CERTREGISTER_INTERVAL_DAYS` |
 | `scheduler.eudamed_sweep_interval_days` | int | `90` | `SCHEDULER_EUDAMED_SWEEP_INTERVAL_DAYS` |
