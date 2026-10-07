@@ -2407,8 +2407,20 @@ tbody tr:last-child td{border-bottom:0}
 <th>Dobro ali slabo</th>
 </tr></thead><tbody>
 <tr>
-<td>No emails at all</td>
-<td>Ali ni prispelo nič, ali pa še nihče ni vklopil samodejnega preverjanja nabiralnika</td>
+<td>"No emails yet. The mailbox was last checked on …, and nothing had arrived."</td>
+<td>Nabiralnik se bere, a odkar se pošta bere, ni prispelo nič</td>
+<td>Ni ničesar za storiti. Če je datum star več dni, se preverjanje ne izvaja več: vprašajte razvijalca</td>
+<td>Informativno</td>
+</tr>
+<tr>
+<td>"No emails yet. The last mailbox check failed"</td>
+<td>Sistem nabiralnika ni mogel prebrati, na primer ker je bila prijava zavrnjena</td>
+<td>Prek povezave odprite Failed tasks in poglejte razlog, nato vprašajte razvijalca</td>
+<td>Razvijalčev problem</td>
+</tr>
+<tr>
+<td>"No emails yet. The mailbox has not been checked yet."</td>
+<td>Samodejno preverjanje nabiralnika se še ni izvedlo</td>
 <td>Če ste pričakovali pošto tukaj, vprašajte razvijalca</td>
 <td>Informativno</td>
 </tr>

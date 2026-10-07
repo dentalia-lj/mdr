@@ -91,10 +91,40 @@ def test_emails_page_useful_without_document_says_it_is_being_read(client, conn)
     assert "Being read" in resp.text
 
 
-def test_emails_page_empty_state(client):
+def _seed_poll(conn, status, finished_at=None):
+    conn.execute(
+        "INSERT INTO job (type, payload, dedupe_key, status, finished_at) "
+        "VALUES ('email.poll', '{}', %s, %s, %s)",
+        (f"email.poll:{status}:{finished_at}", status, finished_at),
+    )
+
+
+def test_emails_page_empty_state_before_any_check(client):
     resp = client.get("/emails")
     assert resp.status_code == 200
-    assert "No emails processed yet" in resp.text
+    assert "No emails yet. The mailbox has not been checked yet." in resp.text
+    # The page once said the poll was off whenever the ledger was empty, which
+    # stayed on screen after the mailbox was wired and polling (2026-10-07).
+    assert "GAP G8" not in resp.text
+    assert "is off until" not in resp.text
+
+
+def test_emails_page_empty_state_says_when_the_mailbox_was_last_checked(client, conn):
+    _seed_poll(conn, "done", "2026-10-06 06:06:31+00")
+    _seed_poll(conn, "done", "2026-10-07 06:07:46+00")
+    conn.commit()
+    resp = client.get("/emails")
+    assert "The mailbox was last checked on 7 Oct 2026, and nothing had arrived." in resp.text
+
+
+def test_emails_page_empty_state_says_the_last_check_failed(client, conn):
+    _seed_poll(conn, "done", "2026-10-06 06:06:31+00")
+    _seed_poll(conn, "dead")
+    conn.commit()
+    resp = client.get("/emails")
+    assert "The last mailbox check failed" in resp.text
+    assert 'href="/dead"' in resp.text
+    assert "nothing had arrived" not in resp.text
 
 
 def test_emails_nav_link_present(client):

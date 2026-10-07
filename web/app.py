@@ -4426,11 +4426,20 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                 ).fetchall():
                     if o["other_sources"]:
                         origins[o["content_hash"]] = o
+            # The empty state says what the poll last did, read from its jobs,
+            # not from a flag: a fixed "the poll is off" stayed on screen after
+            # the mailbox was wired and polling every 6 h (2026-10-07).
+            poll = conn.execute(
+                "SELECT (SELECT status::text FROM job WHERE type = 'email.poll' "
+                "        ORDER BY id DESC LIMIT 1) AS newest_status, "
+                "       (SELECT max(finished_at) FROM job "
+                "        WHERE type = 'email.poll' AND status = 'done') AS last_done"
+            ).fetchone()
         return templates.TemplateResponse(
             request, "emails.html",
             {"rows": rows, "total": total, "shown": len(rows), "docs": docs,
              "origins": origins, "today": datetime.now(timezone.utc).date(),
-             "disposition_words": ATTACHMENT_DISPOSITION_WORDS},
+             "disposition_words": ATTACHMENT_DISPOSITION_WORDS, "poll": poll},
         )
 
     # ----------------------------------------------------------------- #

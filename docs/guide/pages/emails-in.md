@@ -45,7 +45,9 @@ you to that document; nothing on this page itself is affected either way.
 
 | You see | It means | What to do | Good or bad |
 |---|---|---|---|
-| No emails at all | Either nothing has arrived, or nobody has switched on automatic mailbox checking yet | Ask a developer if you expected mail here | Informational |
+| "No emails yet. The mailbox was last checked on …, and nothing had arrived." | The mailbox is being read, and nothing has come in since mail started being read | Nothing to do. If the date is days old, the checks have stopped: ask a developer | Informational |
+| "No emails yet. The last mailbox check failed" | The system could not read the mailbox, for example because the sign-in was refused | Open Failed tasks from the link to see why, and ask a developer | A developer's problem |
+| "No emails yet. The mailbox has not been checked yet." | Automatic mailbox checking has not run yet | Ask a developer if you expected mail here | Informational |
 | A short coloured tag and a one-line note under the subject | A machine-written note on what the message seemed to be about | Read it as a hint only, never as proof. Open the actual attachment, or ask the supplier again, before relying on it | Informational |
 | No note under the subject at all | The message had no body worth summarising | Nothing to do | Informational |
 | *"Reply to request #18, IVOCLAR"* under the subject | The message answers that renewal request. Every draft for a request carries its reference in the subject, for example `[DENT-18]`, and the supplier's reply kept it. Click it to open that request's draft | Nothing to do | Good |

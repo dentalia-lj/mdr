@@ -44,7 +44,9 @@ ničesar.
 
 | Vidite | Pomeni | Kaj storiti | Dobro ali slabo |
 |---|---|---|---|
-| No emails at all | Ali ni prispelo nič, ali pa še nihče ni vklopil samodejnega preverjanja nabiralnika | Če ste pričakovali pošto tukaj, vprašajte razvijalca | Informativno |
+| "No emails yet. The mailbox was last checked on …, and nothing had arrived." | Nabiralnik se bere, a odkar se pošta bere, ni prispelo nič | Ni ničesar za storiti. Če je datum star več dni, se preverjanje ne izvaja več: vprašajte razvijalca | Informativno |
+| "No emails yet. The last mailbox check failed" | Sistem nabiralnika ni mogel prebrati, na primer ker je bila prijava zavrnjena | Prek povezave odprite Failed tasks in poglejte razlog, nato vprašajte razvijalca | Razvijalčev problem |
+| "No emails yet. The mailbox has not been checked yet." | Samodejno preverjanje nabiralnika se še ni izvedlo | Če ste pričakovali pošto tukaj, vprašajte razvijalca | Informativno |
 | A short coloured tag and a one-line note under the subject | Strojno napisana opomba o tem, o čem se je zdelo, da sporočilo govori | Berite jo le kot namig, nikoli kot dokaz. Pred zanašanjem odprite dejansko prilogo ali znova vprašajte dobavitelja | Informativno |
 | No note under the subject at all | Sporočilo ni imelo besedila, vrednega povzetka | Ni ničesar za storiti | Informativno |
 | *"Reply to request #18, IVOCLAR"* under the subject | Sporočilo je odgovor na to zahtevo za obnovo. Vsak osnutek za zahtevo nosi v zadevi njeno oznako, na primer `[DENT-18]`, in dobaviteljev odgovor jo je ohranil. Klik odpre osnutek te zahteve | Ni ničesar za storiti | Dobro |

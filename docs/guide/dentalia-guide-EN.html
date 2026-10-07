@@ -2405,8 +2405,20 @@ tbody tr:last-child td{border-bottom:0}
 <th>Good or bad</th>
 </tr></thead><tbody>
 <tr>
-<td>No emails at all</td>
-<td>Either nothing has arrived, or nobody has switched on automatic mailbox checking yet</td>
+<td>"No emails yet. The mailbox was last checked on …, and nothing had arrived."</td>
+<td>The mailbox is being read, and nothing has come in since mail started being read</td>
+<td>Nothing to do. If the date is days old, the checks have stopped: ask a developer</td>
+<td>Informational</td>
+</tr>
+<tr>
+<td>"No emails yet. The last mailbox check failed"</td>
+<td>The system could not read the mailbox, for example because the sign-in was refused</td>
+<td>Open Failed tasks from the link to see why, and ask a developer</td>
+<td>A developer's problem</td>
+</tr>
+<tr>
+<td>"No emails yet. The mailbox has not been checked yet."</td>
+<td>Automatic mailbox checking has not run yet</td>
 <td>Ask a developer if you expected mail here</td>
 <td>Informational</td>
 </tr>
