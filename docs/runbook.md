@@ -838,8 +838,9 @@ If BC refuses, the response says why:
 - **404:** the item is missing from `dataitems`. Not expected: the page held all
   20.027 items on 2026-10-05.
 
-Refused attempts stay in the ledger and do not count as sent, so the next push
-retries them. **There is no undo tool.** A hand-made PATCH bypasses
+Refused attempts stay in the ledger and do not count as sent, so a later push
+retries them: the bulk apply and the daily task the next day (once a day per
+item, 2026-10-07), the item button at once. **There is no undo tool.** A hand-made PATCH bypasses
 `bc_push_log`, so the ledger would still show the value, and the next push would
 skip the item. Add the matching ledger rows if you ever revert by hand.
 

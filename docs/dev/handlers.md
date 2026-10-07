@@ -41,7 +41,7 @@ never clobber a real handler.
 | `report.weekly` | `handlers/report.py:165` | nothing | `test_report_handler.py` |
 | `scheduler.tick` | `handlers/scheduler_tick.py:93` | itself, forever (`queue.defer`) | `test_scheduler_tick.py` |
 | `playbook.reonboard` | `handlers/playbook_probe.py:86` | **nothing** — the only `app.crawl` consumer that emits no `fetch.url` | `test_playbook_probe.py`, `test_playbook_probe_web.py` |
-| `bc.push` | `handlers/bc_push.py:106` | nothing — a leaf, like `report.weekly` | `test_bc_push.py`, `test_bc_fields.py` |
+| `bc.push` | `handlers/bc_push.py:118` | nothing — a leaf, like `report.weekly` | `test_bc_push.py`, `test_bc_fields.py` |
 
 ## Per tag
 
@@ -314,6 +314,7 @@ document at all, so there is usually nothing in the ledger to skip.
 
 ### `bc.push`
 - consumes: `run_id`, `item_refs` (a batch, ~200)
+- once a day (Denis, 2026-10-07): the bulk apply and the drift cron send an item at most once per calendar day, refused attempts included (`too_soon` in the result); the item button sets `payload.manual` and is exempt
 - produced by: the item button and the bulk apply (web), and the `bc.push-drift` cron — once a day (`scheduler_run`), a rolling window, oldest-pushed first, capped by `bc.drift_cap`, emitted only when `bc.write_enabled` AND `scheduler.bc_push_drift_enabled` are both on
 - writes: `bc_push_log` only. No registry table, so invariant 1 is untouched — this stage reads the registry and writes someone else's system
 - emits: nothing

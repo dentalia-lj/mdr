@@ -129,6 +129,7 @@ def test_only_the_field_that_changed_is_sent(conn, seed_item):
     conn.execute(
         "UPDATE item_document SET status='retracted' WHERE item_ref=%s", (item_ref,)
     )
+    _a_day_later(conn, item_ref)
     handle_bc_push(conn, _job([item_ref], run_id="r2"), client=bc)
 
     assert list(bc.calls[1][1]) == ["pteValidDeclarationOfConformity"]
@@ -178,6 +179,7 @@ def test_a_refused_patch_is_resent_next_run(conn, seed_item):
     """The consequence of the rule above, and the reason it matters."""
     item_ref = seed_item()
     handle_bc_push(conn, _job([item_ref]), client=FakeBc(status=500))
+    _a_day_later(conn, item_ref)
 
     ok = FakeBc()
     handle_bc_push(conn, _job([item_ref], run_id="r2"), client=ok)
@@ -267,6 +269,7 @@ def test_an_absent_item_is_retried_next_run(conn, seed_item):
     still go -- so it must not look already-sent."""
     item_ref = seed_item()
     handle_bc_push(conn, _job([item_ref]), client=FakeBc(status=404))
+    _a_day_later(conn, item_ref)
 
     ok = FakeBc()
     handle_bc_push(conn, _job([item_ref], run_id="r2"), client=ok)
@@ -417,3 +420,87 @@ def test_a_refused_login_stops_the_batch(conn, seed_item):
         handle_bc_push(conn, _job([seed_item(), seed_item()]), client=bc)
 
     assert len(bc.calls) == 1
+
+
+# --------------------------------------------------------------------------- #
+# Once a day (Denis, 2026-10-07): the bulk apply and the drift cron send an item
+# at most once per calendar day, refused attempts included. A click on the item
+# page is the exception: a person asked for that item now.
+# --------------------------------------------------------------------------- #
+def _click(item_ref):
+    return {"id": 1, "type": "bc.push",
+            "payload": {"run_id": f"item:{item_ref}", "item_refs": [item_ref],
+                        "manual": True}}
+
+
+def _a_day_later(conn, item_ref):
+    conn.execute("UPDATE bc_push_log SET pushed_at = pushed_at - interval '1 day' "
+                 "WHERE item_ref = %s", (item_ref,))
+
+
+def _changed_since(conn, item_ref):
+    conn.execute("UPDATE item_document SET status='retracted' WHERE item_ref=%s",
+                 (item_ref,))
+
+
+@pytest.mark.parametrize("first_status", [204, 500, 404])
+def test_a_bulk_or_drift_run_does_not_send_an_item_twice_in_a_day(
+        conn, seed_item, first_status):
+    """Accepted, refused or absent: any attempt today spends the item's day, so
+    an item BC keeps refusing is retried daily, not on every press or poll."""
+    item_ref = seed_item()
+    handle_bc_push(conn, _job([item_ref]), client=FakeBc(status=first_status))
+    _changed_since(conn, item_ref)
+
+    bc = FakeBc()
+    result = handle_bc_push(conn, _job([item_ref], run_id="bulk:again"), client=bc)
+
+    assert bc.calls == []
+    assert result["counts"]["too_soon"] == 1
+    assert result["samples"]["too_soon"][0]["item_ref"] == item_ref
+
+
+def test_a_click_sends_even_if_the_item_went_today(conn, seed_item):
+    item_ref = seed_item()
+    handle_bc_push(conn, _job([item_ref]), client=FakeBc())
+    _changed_since(conn, item_ref)
+
+    bc = FakeBc()
+    result = handle_bc_push(conn, _click(item_ref), client=bc)
+
+    assert len(bc.calls) == 1
+    assert result["counts"]["too_soon"] == 0
+
+
+def test_a_click_today_spends_the_day_for_bulk_and_drift(conn, seed_item):
+    item_ref = seed_item()
+    handle_bc_push(conn, _click(item_ref), client=FakeBc())
+    _changed_since(conn, item_ref)
+
+    bc = FakeBc()
+    handle_bc_push(conn, _job([item_ref]), client=bc)
+
+    assert bc.calls == []
+
+
+def test_the_next_day_the_item_goes_again(conn, seed_item):
+    item_ref = seed_item()
+    handle_bc_push(conn, _job([item_ref]), client=FakeBc())
+    _changed_since(conn, item_ref)
+    _a_day_later(conn, item_ref)
+
+    bc = FakeBc()
+    handle_bc_push(conn, _job([item_ref]), client=bc)
+
+    assert len(bc.calls) == 1
+
+
+def test_an_unchanged_item_is_unchanged_not_too_soon(conn, seed_item):
+    """No PATCH either way, but the count says why."""
+    item_ref = seed_item()
+    handle_bc_push(conn, _job([item_ref]), client=FakeBc())
+
+    result = handle_bc_push(conn, _job([item_ref]), client=FakeBc())
+
+    assert result["counts"]["unchanged"] == 1
+    assert result["counts"]["too_soon"] == 0

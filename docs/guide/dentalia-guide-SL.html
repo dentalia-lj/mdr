@@ -4067,7 +4067,7 @@ tbody tr:last-child td{border-bottom:0}
 </ul></section>
 <section class="page" id="pages/bc-push"><h1 id="pages/bc-push--business-central">Business Central</h1>
 <p><strong>V eni povedi:</strong> kaj bi Business Centralu povedali o posameznem artiklu — prikazano vam, preden mu to povemo.</p>
-<p><strong>Stanje:</strong> V uporabi. Preverjeno v kodi 11. 9. 2026.</p>
+<p><strong>Stanje:</strong> V uporabi. Preverjeno v kodi 7. 10. 2026.</p>
 <hr>
 <h2 id="pages/bc-push--ali-lahko-tukaj-kaj-pokvarim">Ali lahko tukaj kaj pokvarim?</h2>
 <p>Ne.</p>
@@ -4077,6 +4077,7 @@ tbody tr:last-child td{border-bottom:0}
 <li>Vrstica na vrhu strani jasno pove, ali je pošiljanje vklopljeno. Kadar je izklopljeno — kar je običajna nastavitev — stran še vedno izračuna, kaj bi se spremenilo; le do Business Centrala ne pride.</li>
 <li>Nič tukaj ne spremeni dokumenta, povezave ali česar koli v tem registru. Spremenijo se lahko samo tri polja na kartici artikla v Business Centralu.</li>
 <li>Dvakratno pošiljanje iste stvari je neškodljivo: sistem primerja, kaj Business Central že ima, in pošlje samo tisto, kar se razlikuje. Če se ni nič spremenilo, pritisk na Pošlji ne pošlje ničesar.</li>
+<li><strong>Pošlji</strong> tukaj in dnevno opravilo vsak artikel pošljeta največ enkrat na dan. Artikel, ki je bil danes že poslan, počaka do jutri, stran pa pove, koliko jih čaka. Izjema je gumb <strong>Update Business Central</strong> na strani posameznega artikla: ta pošlje vedno.</li>
 <li>Če se izkaže, da je vrednost napačna, popravite dokument tukaj in znova pritisnite Pošlji. Naslednje pošiljanje jo prepiše.</li>
 </ul>
 <hr>
@@ -4103,7 +4104,7 @@ tbody tr:last-child td{border-bottom:0}
 <ol>
 <li>Kliknite <strong>Business Central push</strong> v bloku <strong>Operator</strong> na dnu menija.</li>
 <li>Preberite vrh strani: ali je pošiljanje sploh kje vklopljeno, in — če je artiklov, ki bi se lahko spremenili, več kot 1000 — koliko jih je v resnici, saj spodnji seznam vedno prikaže le prvih 1000.</li>
-<li>Preberite naslov pod tem: koliko artiklov bi se spremenilo in koliko se jih že ujema.</li>
+<li>Preberite naslov pod tem: koliko artiklov bi se spremenilo in koliko se jih že ujema. Opomba pod njim pove, koliko jih je bilo danes že poslanih; teh ni na seznamu in gredo jutri.</li>
 <li>Preglejte seznam. Vsaka vrstica prikaže en artikel, eno polje in vrednost, ki bi bila poslana. "First send" pomeni, da Business Centralu o tem artiklu še nikoli nismo ničesar povedali.</li>
 <li>Če je videti pravilno, pritisnite <strong>Pošlji</strong>. Vpraša vas, koliko artiklov nameravate uvrstiti v vrsto, in vas opomni, ali je pošiljanje dejansko vklopljeno. Pritisnite <strong>Yes, send them</strong>, da nadaljujete, ali <strong>Cancel</strong>, da se umaknete brez uvrščanja česarkoli v vrsto.</li>
 <li>Stran potrdi, koliko artiklov je bilo uvrščenih v vrsto.</li>
@@ -4113,7 +4114,7 @@ tbody tr:last-child td{border-bottom:0}
 <ul>
 <li>Delo je uvrščeno v vrsto, ne opravljeno. Zgodi se v ozadju, običajno v minuti ali dveh.</li>
 <li>Vrnite se na to stran: artikli, ki so bili uspešno poslani, se preselijo med "already match" in izginejo s seznama.</li>
-<li>Artikel, ki po nekaj minutah ostane na seznamu, ni bil poslan. To je vredno povedati razvijalcu — najpogosteje pomeni, da Business Central za ta artikel sploh nima kartice.</li>
+<li>Artikel, ki ga je Business Central zavrnil, do konca dneva izgine s seznama (šteje kot danes že poslan) in se vrne jutri. Če se isti artikel vrača dan za dnem, povejte razvijalcu — najpogosteje to pomeni, da Business Central za ta artikel sploh nima kartice.</li>
 <li>Naenkrat je na seznamu največ 1000 artiklov. Kadar jih je več, to pove opomba na vrhu strani, ki navede tudi resnično skupno število. Nič ni izpuščeno; ostali pridejo na vrsto z dnevnim opravilom.</li>
 </ul></section>
 <section class="page" id="pages/ingest"><h1 id="pages/ingest--ingest">Ingest</h1>

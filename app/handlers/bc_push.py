@@ -98,6 +98,18 @@ def _last_sent(conn, item_ref: str) -> dict[str, str]:
     return {r["field"]: r["new_value"] for r in rows}
 
 
+#: Any attempt on this item today, accepted or refused. The once-a-day rule
+#: (Denis, 2026-10-06/07): the bulk apply and the drift cron send an item at
+#: most once per calendar day, so an item BC keeps refusing is retried daily
+#: rather than on every bulk press or cron poll. A click on the item page
+#: (`payload.manual`) is the exception, because a person asked for it now; its
+#: attempt still spends the day for bulk and drift.
+_PUSHED_TODAY_SQL = (
+    "SELECT 1 FROM bc_push_log WHERE item_ref = %s "
+    "AND pushed_at >= date_trunc('day', now()) LIMIT 1"
+)
+
+
 def _wire(value) -> str:
     """One field as the ledger stores it: booleans lower-case, text verbatim."""
     return "true" if value is True else "false" if value is False else str(value)
@@ -128,8 +140,9 @@ def _push(conn, job: dict, cfg, client) -> dict:
     today = date.today()
     r = Result()
     for key in ("seen", "sent", "unchanged", "unprocessed", "failed",
-                "absent", "withheld", "would_send"):
+                "absent", "withheld", "would_send", "too_soon"):
         r.count(key, 0)
+    once_a_day = not job["payload"].get("manual", False)
 
     for item_ref in job["payload"]["item_refs"]:
         r.count("seen")
@@ -150,6 +163,11 @@ def _push(conn, job: dict, cfg, client) -> dict:
         changed = {k: v for k, v in fields.items() if last.get(k) != _wire(v)}
         if not changed:
             r.count("unchanged")
+            continue
+
+        if once_a_day and conn.execute(_PUSHED_TODAY_SQL, (item_ref,)).fetchone():
+            r.count("too_soon")
+            r.sample("too_soon", {"item_ref": item_ref, "fields": sorted(changed)})
             continue
 
         if not cfg.bc.write_enabled:

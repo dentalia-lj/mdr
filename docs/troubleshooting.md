@@ -56,6 +56,9 @@ Writes were switched on without the endpoint. Set `BC_BASE_URL` in `.env` and `d
 **The drift cron enqueues nothing although writes are on.**
 It needs its own switch too: `SCHEDULER_BC_PUSH_DRIFT_ENABLED=true` on `worker` (and `web`, for the `/scheduler` panel). Deliberate: the first bulk apply is checked before BC is filled automatically.
 
+**A bulk push reports `too_soon`, or the preview says "already sent today".**
+By design since 2026-10-07: the bulk apply and the drift cron send an item at most once per calendar day, refused attempts included, so an item BC keeps refusing is retried daily. The item page's **Update Business Central** button is exempt (`payload.manual`) and sends now; its attempt still spends the day for bulk and drift.
+
 **The drift cron ran this morning and not again, although it polls hourly.**
 By design since 2026-10-06: the day is recorded in `scheduler_run` (`bc.push-drift`, period = the date), so one run a day reaches BC. An item BC refused waits for tomorrow's run or a click. To force another run the same day, delete that day's `scheduler_run` row, deliberately.
 

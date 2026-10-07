@@ -4066,7 +4066,7 @@ tbody tr:last-child td{border-bottom:0}
 </ul></section>
 <section class="page" id="pages/bc-push"><h1 id="pages/bc-push--business-central">Business Central</h1>
 <p><strong>In one sentence:</strong> what we would tell Business Central about each article, shown to you before we tell it.</p>
-<p><strong>Status:</strong> Live. Checked against the code on 2026-09-11.</p>
+<p><strong>Status:</strong> Live. Checked against the code on 2026-10-07.</p>
 <hr>
 <h2 id="pages/bc-push--can-i-break-anything-here">Can I break anything here?</h2>
 <p>No.</p>
@@ -4076,6 +4076,7 @@ tbody tr:last-child td{border-bottom:0}
 <li>The line at the top of the page tells you plainly whether sending is switched on. When it is off — the normal setting — the page still works out what would change; it just does not reach Business Central.</li>
 <li>Nothing here changes a document, a link, or anything in this registry. The only thing that can change is three fields on an article's card in Business Central.</li>
 <li>Sending the same thing twice is harmless: the system compares what Business Central already holds and sends only what differs. Pressing Send when nothing has changed sends nothing.</li>
+<li><strong>Send</strong> here and the daily job reach each article at most once a day. An article already sent today waits for tomorrow, and the page tells you how many are waiting. The <strong>Update Business Central</strong> button on an article's own page is the exception: it always sends.</li>
 <li>If a value turns out to be wrong, correct the underlying document here and press Send again. The next send overwrites it.</li>
 </ul>
 <hr>
@@ -4102,7 +4103,7 @@ tbody tr:last-child td{border-bottom:0}
 <ol>
 <li>Click <strong>Business Central push</strong> in the <strong>Operator</strong> block at the bottom of the menu.</li>
 <li>Read the top of the page: whether sending is switched on at all, and — if there are more than 1000 articles that could change — how many there really are, since the list below only ever shows the first 1000.</li>
-<li>Read the heading below that: how many articles would change, and how many already match.</li>
+<li>Read the heading below that: how many articles would change, and how many already match. A note under it says how many more were already sent today; they are not in the list and go tomorrow.</li>
 <li>Look down the list. Each row shows one article, one field, and the value that would be sent. "First send" means we have never told Business Central anything about that article.</li>
 <li>If it looks right, press <strong>Send</strong>. It asks you to confirm how many articles you are about to queue, and reminds you whether sending is actually switched on. Press <strong>Yes, send them</strong> to go ahead, or <strong>Cancel</strong> to back out without queueing anything.</li>
 <li>The page confirms how many articles were queued.</li>
@@ -4112,7 +4113,7 @@ tbody tr:last-child td{border-bottom:0}
 <ul>
 <li>The work is queued, not done. It happens in the background, usually within a minute or two.</li>
 <li>Come back to this page: articles that were sent successfully move into the "already match" count and drop off the list.</li>
-<li>An article that stays on the list after several minutes did not send. That is worth telling a developer about — most often it means Business Central does not have a card for that article at all.</li>
+<li>An article that Business Central refused leaves the list for the rest of the day (it counts as already sent today) and comes back tomorrow. If the same article keeps coming back day after day, tell a developer — most often it means Business Central does not have a card for that article at all.</li>
 <li>At most 1000 articles are listed at a time. When there are more, the note at the top of the page says so and gives the real total. Nothing is left out; the rest arrive through the daily job.</li>
 </ul></section>
 <section class="page" id="pages/ingest"><h1 id="pages/ingest--ingest">Ingest</h1>
