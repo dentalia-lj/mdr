@@ -2,11 +2,9 @@
 
 **V eni povedi:** kaj je prispelo po e-pošti in kaj je sistem našel priloženo.
 
-**Stanje:** Delno v uporabi. Zaslon sam deluje in natančno prikaže vsako
-sporočilo, ki mu je posredovano. Ali mu je karkoli posredovano, je ločeno
-vprašanje: samodejno preverjanje nabiralnika je privzeto izklopljeno in danes
-ni povezan noben nabiralnik, zato lahko ta seznam ostane prazen, dokler ga
-razvijalec ne vklopi. Preverjeno v kodi 15. 9. 2026.
+**Stanje:** Deluje. Nabiralnik `mdr@dentalia.si` se samodejno preveri vsakih
+6 ur (od 6. 10. 2026) in vsako sporočilo, ki tja prispe, je navedeno tukaj.
+Preverjeno na delujočem sistemu 7. 10. 2026.
 
 ---
 

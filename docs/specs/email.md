@@ -6,6 +6,8 @@ dedupe conventions. Handbook rows 6 (`email.poll`), 12 (`email.request`),
 (`fetch_log`), §6 (`renewal_request`, declared migration 006). This spec fixes
 only what those do not.
 
+**Live since 2026-10-06** on `mdr@dentalia.si` (`mail.dentalia.si`, Exchange, signed in as the domain account through `IMAP_LOGIN`), read every 6 hours; the first real message was recorded 2026-10-07. Where this spec says no credentials exist (G8), it describes the slice as built in August.
+
 **Slice boundary (2026-08-19).** This session builds the **INBOUND** half only:
 `email.poll` (mailbox → archive attachments → enter the spine at `extract.doc`)
 plus its read-only producer UI. The **OUTBOUND** half (`email.request` /
@@ -131,7 +133,7 @@ class EmailAdapter(Protocol):
   `UID STORE <uid> +FLAGS (\Seen)`), parses with the stdlib `email` package,
   reads `UIDVALIDITY` from the SELECT response. TLS by default (`IMAP4_SSL`).
   Verified against the CPython `imaplib`/`email` docs; **never connected live in
-  this slice** (no creds exist — GAP G8). Construction is inert; `fetch_unseen`
+  this slice** (no creds existed then — GAP G8, closed 2026-10-06). Construction is inert; `fetch_unseen`
   raises `EmailNotConfigured` when host/user/password are empty (mirrors
   `SearchNotConfigured` — a keyless poll is a skipped rung, not a dead job).
 - `FakeEmailAdapter` — in-memory messages, injected in tests; never touches the
@@ -204,8 +206,8 @@ even if `\Seen` was cleared.
 
 ## 5. Scheduler tie-in
 
-`_tick_email_poll` (gated `scheduler.email_poll_enabled`, default **off** until
-G8 creds exist — same producer-side gating as DISCOVER's email rung and the
+`_tick_email_poll` (gated `scheduler.email_poll_enabled`, default **off**; on in
+production since 2026-10-06 — same producer-side gating as DISCOVER's email rung and the
 expiry/reonboard flags). Emits `email.poll` with payload
 `{"mailbox": <folder>, "since": <period_key>}` and dedupe key
 `email.poll:{period_key}`, where `period_key` is an interval bucket
@@ -227,7 +229,8 @@ ledger, same as every other tick. With the flag off the tick is a logged no-op.
   mailbox's name.
 - **`Adapters.email`** = `imap` (default) | `fake`. Default `imap` is safe: the
   poll is flag-gated off and `fetch_unseen` raises `EmailNotConfigured` while
-  host/creds are empty, so nothing connects until Denis wires G8.
+  host/creds are empty, so nothing connects on a machine without the mailbox's credentials
+  (production has them since 2026-09-25 and polls since 2026-10-06).
 - **`Scheduler`**: `email_poll_enabled` (off), `email_poll_interval_hours` (6).
 - **Outbound, not yet implemented** (declared here so the slice does not invent
   its own names): `renewal.request_cadence_days` — the §7.2 hard rule's bucket,
@@ -292,8 +295,8 @@ Two consequences worth stating, because they shrink work rather than add it:
    read side and a way to deposit a draft remain. Reversing this ruling later
    re-opens the send-as ask; nothing else in the design changes, which is why
    the send step above is struck out rather than deleted.
-2. **The mailbox is named: `mdr@dentalia.si`.** Still outstanding for G8: host,
-   protocol and credentials.
+2. **The mailbox is named: `mdr@dentalia.si`.** Host, protocol and credentials
+   arrived 2026-09-25 (IMAP on `mail.dentalia.si`); G8 closed 2026-10-06.
 
 The client also supplied the copy they send today. It is recorded verbatim so
 the drafter reproduces the ask they already make of manufacturers rather than

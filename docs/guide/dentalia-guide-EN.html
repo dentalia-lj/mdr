@@ -701,7 +701,7 @@ tbody tr:last-child td{border-bottom:0}
 <li><strong>Re-discover documents</strong> only asks the system to search for paperwork again. It does not add, remove, or approve anything by itself. The browser asks you to confirm before it starts.</li>
 <li><strong>Covers this item</strong> and <strong>Does not</strong> decide whether one document you can already see counts for this one product. They do not touch the document itself, or any other product it might cover.</li>
 <li><strong>Re-open</strong> puts a document you rejected back in front of you for another look. Nothing is lost either way.</li>
-<li><strong>Update Business Central</strong> sends this one product's three compliance fields back to Business Central, if they differ from what it already holds. The browser asks you to confirm before it queues anything. It never changes anything here, and while the writeback is switched off — which is the normal setting — it works out what would be sent and sends nothing.</li>
+<li><strong>Update Business Central</strong> sends this one product's three compliance fields back to Business Central, if they differ from what it already holds. The browser asks you to confirm before it queues anything. It never changes anything here. Sending to Business Central has been switched on since 2026-10-06; where it is switched off, the button works out what would be sent and sends nothing.</li>
 <li>Every decision is saved with your name and the time.</li>
 <li>If a button gives you an error, nothing happened. Try again, or ask a developer.</li>
 </ul>
@@ -2383,7 +2383,7 @@ tbody tr:last-child td{border-bottom:0}
 </ul></section>
 <section class="page" id="pages/emails-in"><h1 id="pages/emails-in--emails-received">Emails received</h1>
 <p><strong>In one sentence:</strong> what has arrived by email, and what the system found attached.</p>
-<p><strong>Status:</strong> Partly live. The screen itself works and shows every message it is given accurately. Whether it is given anything is a separate question: automatic mailbox checking is switched off by default, and no mailbox is connected today, so this list may stay empty until a developer turns it on. Checked against the code on 2026-09-15.</p>
+<p><strong>Status:</strong> Live. The mailbox <code>mdr@dentalia.si</code> is checked automatically every 6 hours (since 2026-10-06), and every message that arrives there is listed here. Checked against the running system on 2026-10-07.</p>
 <hr>
 <p>This screen is read-only. There is nothing to press that changes anything — every clickable thing on it is a link that takes you to another screen.</p>
 <hr>
@@ -4131,7 +4131,7 @@ tbody tr:last-child td{border-bottom:0}
 <section class="page" id="pages/ingest"><h1 id="pages/ingest--ingest">Ingest</h1>
 <p><strong>In one sentence:</strong> this is a second, more direct way to bring in your product list — it writes immediately, with no preview.</p>
 <h2 id="pages/ingest--status">Status</h2>
-<p>Partly live. Checked against the code on 2026-08-31. Loading a file already on the server works. The Business Central live connection option does not — it is not built yet, and always fails safely.</p>
+<p>Partly live. Checked against the code on 2026-10-07. Loading a file already on the server works. The Business Central option on this form does not, and always fails safely: the live connection to Business Central works, but it is the weekly sync a developer runs on the server, not this form.</p>
 <h2 id="pages/ingest--can-i-break-anything-here">Can I break anything here?</h2>
 <p>Yes, a little — read this before you use it.</p>
 <ul>
@@ -4139,7 +4139,7 @@ tbody tr:last-child td{border-bottom:0}
 <li>Nothing is ever deleted here either. Products missing from a file are simply left alone.</li>
 <li>But there is no safety net catching a wrong file before it writes. Point it at an old or wrong file, and your product list is updated to match it immediately. It stays that way until someone imports the right file.</li>
 <li>If something fails partway through, the system changes nothing at all. It either finishes cleanly or writes nothing.</li>
-<li>Choosing the Business Central connection option currently always fails — safely, writing nothing. It simply does not work yet.</li>
+<li>Choosing the Business Central connection option currently always fails — safely, writing nothing. This form cannot run it.</li>
 <li>Most readers should use <strong>Import</strong> instead. It does the same thing and shows you what will change before it changes.</li>
 </ul>
 <h2 id="pages/ingest--what-this-is">What this is</h2>
@@ -4148,15 +4148,15 @@ tbody tr:last-child td{border-bottom:0}
 <p>Rarely, if ever, for most readers. Use it only when a developer or IT has told you exactly which file to point it at. For a spreadsheet on your own computer, use <strong>Import</strong> instead — same effect, but it shows you a preview first.</p>
 <h2 id="pages/ingest--before-you-start">Before you start</h2>
 <ul>
-<li>This screen does not let you choose a file from your own computer. It only reads a file already sitting on the Dentalia server, or — once built — a live connection to Business Central.</li>
+<li>This screen does not let you choose a file from your own computer. It only reads a file already sitting on the Dentalia server.</li>
 <li>You need the exact file location from IT or a developer. Typing the wrong one makes the import fail, but writes nothing.</li>
-<li>Do not choose <strong>bc_odata</strong> as the source. It is not built yet and will always fail.</li>
-<li>Under the title, the screen prints a paragraph of technical text written for developers, not you. Part of it is out of date. Ignore it.</li>
+<li>Do not choose <strong>bc_odata</strong> as the source. This form cannot run it, and it will always fail.</li>
+<li>Under the title, the screen prints a paragraph of technical text written for developers, not you. Ignore it.</li>
 </ul>
 <h2 id="pages/ingest--what-you-do">What you do</h2>
 <ol>
 <li>Open <code>/ingest</code> directly in your browser's address bar. <strong>It is deliberately not in the menu on the left</strong> — <a href="#pages/import">Import</a> is the one to reach for, because it takes a file from your own machine and shows you the diff before anything is written. Use this page only when a developer has told you to.</li>
-<li>Under <strong>Source</strong>, choose <strong>csv</strong>. Leave <strong>bc_odata</strong> alone; it does not work yet.</li>
+<li>Under <strong>Source</strong>, choose <strong>csv</strong>. Leave <strong>bc_odata</strong> alone; it does not work from this form.</li>
 <li>Either pick a file from the list under "Pick a file under…", or type the exact path a developer gave you under "Or type a path manually".</li>
 <li>Leave <strong>Priority</strong> on <strong>interactive</strong>, unless told otherwise.</li>
 <li>Click the button labelled <strong>Enqueue ingest.run</strong> — its own internal name for "start this import".</li>
@@ -4185,7 +4185,7 @@ tbody tr:last-child td{border-bottom:0}
 <tr>
 <td><em>company is required for a bc_odata ingest</em></td>
 <td>You chose the Business Central connection but left <strong>Company</strong> blank</td>
-<td>Use <strong>csv</strong> with a file instead — the connection option does not work yet</td>
+<td>Use <strong>csv</strong> with a file instead — the connection option does not work from this form</td>
 <td>Bad — nothing written</td>
 </tr>
 <tr>
@@ -4201,8 +4201,8 @@ tbody tr:last-child td{border-bottom:0}
 <td>OK</td>
 </tr>
 <tr>
-<td>A <strong>Recent runs</strong> row for your attempt shows <em>failed</em>, mentioning the connection is not built</td>
-<td>You chose the Business Central connection option</td>
+<td>A <strong>Recent runs</strong> row for your attempt shows <em>failed</em></td>
+<td>You chose the Business Central connection option, which this form cannot run</td>
 <td>Use <strong>csv</strong> with a file instead, or ask a developer</td>
 <td>Bad, but safe — nothing was written</td>
 </tr>
@@ -4220,7 +4220,7 @@ tbody tr:last-child td{border-bottom:0}
 </tr></thead><tbody>
 <tr>
 <td>csv / bc_odata (Source)</td>
-<td>Where the product list comes from: a file (<strong>csv</strong>), or a live Business Central connection (<strong>bc_odata</strong> — not built yet)</td>
+<td>Where the product list comes from: a file (<strong>csv</strong>), or a live Business Central connection (<strong>bc_odata</strong> — does not work from this form; a developer runs the weekly sync)</td>
 </tr>
 <tr>
 <td><strong>interactive</strong> / <strong>delta</strong> / <strong>sweep</strong> (Priority)</td>

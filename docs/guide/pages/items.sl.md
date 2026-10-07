@@ -22,9 +22,9 @@ Večinoma ne.
   pregled. V nobenem primeru se nič ne izgubi.
 - **Update Business Central** pošlje tri skladnostna polja tega izdelka nazaj v
   Business Central, če se razlikujejo od tega, kar ta že ima. Brskalnik pred
-  tem prosi za potrditev. Tu ne spremeni ničesar, dokler pa je pisanje nazaj
-  izklopljeno -- kar je običajna nastavitev -- izračuna, kaj bi poslal, in ne
-  pošlje ničesar.
+  tem prosi za potrditev. Tu ne spremeni ničesar. Pošiljanje v Business
+  Central je vklopljeno od 6. 10. 2026; kjer je izklopljeno, gumb izračuna,
+  kaj bi poslal, in ne pošlje ničesar.
 - Vsaka odločitev se shrani z vašim imenom in časom.
 - Če gumb vrne napako, se ni zgodilo nič. Poskusite znova ali vprašajte
   razvijalca.

@@ -333,11 +333,11 @@ class UploadExportAdapter(_ExportAdapter):
 
 
 class BcApiAdapter:
-    """BC OData reader (v2) — a stub. The live OData fetch (httpx against the BC
-    endpoint named in `ref`) is not built yet; this exists so the source enum is
-    complete and the byte-identity contract can be proven now. `records` injects
-    OData-shaped dicts for tests/dev; without them, `read()` raises rather than
-    silently yielding an empty catalogue (which would read as "0 items changed").
+    """BC OData reader (v2). With an HTTP `client` it reads the endpoint named in
+    `ref` page by page (live since 2026-10-02, applied 2026-10-06: the weekly
+    sync). `records` injects OData-shaped dicts for tests/dev; with neither,
+    `read()` raises rather than silently yielding an empty catalogue (which
+    would read as "0 items changed").
     """
 
     def __init__(

@@ -892,7 +892,7 @@ Know that before you hand the screen to anyone.
 | `failure-monitor` | 1h | Yes. Re-onboarding gated by `SCHEDULER_FAILURE_REONBOARD_ENABLED` (off) |
 | `coverage-scan` | 1h | **No** — gated by `SCHEDULER_COVERAGE_SCAN_ENABLED` (off). This is the one that sends uncovered groups through DISCOVER unattended, capped by `SCHEDULER_COVERAGE_SCAN_CAP`. `DISCOVER_HOLD` does **not** gate it |
 | `report.weekly` | 1h | Yes |
-| `email.poll` | 15m | **No** — needs IMAP credentials, `EMAIL_POLL_SINCE` (the deploy day; without it the poll dead-letters rather than read the mailbox's history) and `SCHEDULER_EMAIL_POLL_ENABLED`. Read-only: it never marks, moves or deletes mail |
+| `email.poll` | 15m | **No** — needs IMAP credentials, `EMAIL_POLL_SINCE` (the deploy day; without it the poll dead-letters rather than read the mailbox's history) and `SCHEDULER_EMAIL_POLL_ENABLED`. Read-only: it never marks, moves or deletes mail. On in production since 2026-10-06 |
 | `eudamed.certregister` | 6h | **No** — gated by `SCHEDULER_EUDAMED_CERTREGISTER_ENABLED` (off). The tick runs and emits nothing |
 | `eudamed.sweep-due` | 1h | Yes. It only marks manufacturers due (`due_at`); it emits no sweep |
 | `health-watch` | 5m | Yes |
@@ -975,8 +975,11 @@ was the September export `Artikli.xlsx`: `seen` 19.342, `non_md` 3.374,
 items and 8.412 groups; the `resolve.group` fan-out drained in 4 min 24 s with one worker.
 0 unnamed groups (1 group with no manufacturer code at all), 0 failed or dead,
 0 `discover.group`, 10 armed crons, `deploy.sh --check` verified, the office
-pages checked through the tunnel. Not yet done there: documents (step 6),
-discovery (step 7), ingress (§ 7), the first IMAP poll, the first BC read.
+pages checked through the tunnel. Done since: documents (step 6, backfill
+2026-09-28 to 2026-10-01), ingress (§ 7, 2026-09-30), the first IMAP poll
+(2026-10-05; every 6 hours since 2026-10-06), the first BC read (2026-10-02,
+applied 2026-10-06) and the first BC write (2026-10-06). Not yet: discovery
+(step 7; `DISCOVER_HOLD=true`).
 
 **Failed or dead jobs need reading, not just counting.** GATE raises rather than
 stages when a required field has no value, or when its evidence carries no
@@ -1018,10 +1021,11 @@ end.
   is implemented in the repo.
 - **Real logins.** Decisions record `user:admin` unless a trusted proxy sets
   `WEB_TRUSTED_USER_HEADER`. See `WEB_REQUIRE_AUTHENTICATED_USER`.
-- **BC write-back.** The stage is built and gated off (`BC_WRITE_ENABLED`);
-  the handler builds its client and addresses items correctly (2026-09-24), but
-  nothing has ever made a real PATCH: writes stay off until Denis turns them on.
-  [limits.md](limits.md) carries the detail.
+- **BC drift re-push.** Writes are live since 2026-10-06
+  (`BC_WRITE_ENABLED=true`; first write on 605275, a six-item push on
+  2026-10-07). The daily drift cron (`SCHEDULER_BC_PUSH_DRIFT_ENABLED`) stays off
+  until a bulk apply at `/bc-push` has been checked. [limits.md](limits.md)
+  carries the detail.
 - **A second Business Central.** There is one BC, one article numbering, one
   pipeline. Do not reintroduce a catalogue choice.
 

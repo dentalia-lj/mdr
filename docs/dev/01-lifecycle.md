@@ -279,7 +279,7 @@ Stubbed, deferred, or unwired points this journey passes through:
 
 | Point in the journey | What's actually there |
 |---|---|
-| Step 1, BC OData source | `BcApiAdapter.read` (`app/adapters/source.py:301`) raises unless records are injected in tests. The Ingest form offers `bc_odata` and it always dead-letters — [limits.md](limits.md), followup `[ingest-bc-odata-always-fails]` |
+| Step 1, BC OData source | `BcApiAdapter.read` (`app/adapters/source.py`) reads BC's `allitems` page by page when the job's `ref` is the OData URL and `BC_BASE_URL` is set: the weekly sync, run from the CLI ([runbook](../runbook.md#business-central-weekly-sync-and-the-first-write)), live since 2026-10-06. The Ingest form offers `bc_odata` but sends a company and a date instead of the URL, so a job started there always dead-letters — [limits.md](limits.md), followup `[ingest-bc-odata-always-fails]` |
 | Step 2, live T1 name-family ranking | `_default_adjudicator` (`app/handlers/resolve.py:263-273`) raises `NotImplementedError` unless injected; ambiguous matches always stage for human review, never auto-adjudicate live. Followup `resolve-t1-ranking` |
 | Step 2, C4 binding at RESOLVE time | `_apply_manufacturer_bindings` (`app/handlers/resolve.py:250-260`) is **inert — always returns 0**. A newly-resolved item under a manufacturer that already has a production mfr-scope binding does **not** automatically inherit it; the handbook's "receives the link at RESOLVE time" is not built. Deferred to followup `resolve-c4` |
 | Step 3, live T1 search-candidate ranking | `_default_rank` (`app/handlers/discover.py:167`) raises; the search rung degrades to logging a miss and going to `manual` until followup `discover-t1-ranking` lands |

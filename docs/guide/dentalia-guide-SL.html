@@ -704,7 +704,7 @@ tbody tr:last-child td{border-bottom:0}
 <li><strong>Re-discover documents</strong> sistem le prosi, naj znova poišče dokumentacijo. Sam po sebi nič ne doda, odstrani ali odobri. Brskalnik pred tem prosi za potrditev.</li>
 <li><strong>Covers this item</strong> in <strong>Does not</strong> odločata, ali en dokument, ki ga že vidite, velja za ta izdelek. Ne dotikata se dokumenta samega ali katerega koli drugega izdelka, ki ga morda pokriva.</li>
 <li><strong>Re-open</strong> znova postavi dokument, ki ste ga zavrnili, pred vas za ponovni pregled. V nobenem primeru se nič ne izgubi.</li>
-<li><strong>Update Business Central</strong> pošlje tri skladnostna polja tega izdelka nazaj v Business Central, če se razlikujejo od tega, kar ta že ima. Brskalnik pred tem prosi za potrditev. Tu ne spremeni ničesar, dokler pa je pisanje nazaj izklopljeno -- kar je običajna nastavitev -- izračuna, kaj bi poslal, in ne pošlje ničesar.</li>
+<li><strong>Update Business Central</strong> pošlje tri skladnostna polja tega izdelka nazaj v Business Central, če se razlikujejo od tega, kar ta že ima. Brskalnik pred tem prosi za potrditev. Tu ne spremeni ničesar. Pošiljanje v Business Central je vklopljeno od 6. 10. 2026; kjer je izklopljeno, gumb izračuna, kaj bi poslal, in ne pošlje ničesar.</li>
 <li>Vsaka odločitev se shrani z vašim imenom in časom.</li>
 <li>Če gumb vrne napako, se ni zgodilo nič. Poskusite znova ali vprašajte razvijalca.</li>
 </ul>
@@ -2385,7 +2385,7 @@ tbody tr:last-child td{border-bottom:0}
 </ul></section>
 <section class="page" id="pages/emails-in"><h1 id="pages/emails-in--emails-received">Emails received</h1>
 <p><strong>V eni povedi:</strong> kaj je prispelo po e-pošti in kaj je sistem našel priloženo.</p>
-<p><strong>Stanje:</strong> Delno v uporabi. Zaslon sam deluje in natančno prikaže vsako sporočilo, ki mu je posredovano. Ali mu je karkoli posredovano, je ločeno vprašanje: samodejno preverjanje nabiralnika je privzeto izklopljeno in danes ni povezan noben nabiralnik, zato lahko ta seznam ostane prazen, dokler ga razvijalec ne vklopi. Preverjeno v kodi 15. 9. 2026.</p>
+<p><strong>Stanje:</strong> Deluje. Nabiralnik <code>mdr@dentalia.si</code> se samodejno preveri vsakih 6 ur (od 6. 10. 2026) in vsako sporočilo, ki tja prispe, je navedeno tukaj. Preverjeno na delujočem sistemu 7. 10. 2026.</p>
 <hr>
 <p>Ta zaslon je samo za branje. Ni ničesar, kar bi lahko pritisnili in bi karkoli spremenilo — vsaka klikljiva stvar na njem je povezava na drug zaslon.</p>
 <hr>
@@ -4132,7 +4132,7 @@ tbody tr:last-child td{border-bottom:0}
 <section class="page" id="pages/ingest"><h1 id="pages/ingest--ingest">Ingest</h1>
 <p><strong>V enem stavku:</strong> to je drug, bolj neposreden način uvoza seznama izdelkov — zapiše takoj, brez predogleda.</p>
 <h2 id="pages/ingest--stanje">Stanje</h2>
-<p>Delno v uporabi. Preverjeno s kodo 31. 8. 2026. Nalaganje datoteke, ki je že na strežniku, deluje. Možnost žive povezave z Business Centralom ne — še ni zgrajena in vedno varno spodleti.</p>
+<p>Delno v uporabi. Preverjeno s kodo 7. 10. 2026. Nalaganje datoteke, ki je že na strežniku, deluje. Možnost Business Centrala na tem obrazcu ne deluje in vedno varno spodleti: živa povezava z Business Centralom deluje, a je to tedenska sinhronizacija, ki jo na strežniku zažene razvijalec, ne ta obrazec.</p>
 <h2 id="pages/ingest--ali-lahko-tu-kaj-pokvarim">Ali lahko tu kaj pokvarim?</h2>
 <p>Da, malo — preberite to, preden to uporabite.</p>
 <ul>
@@ -4140,7 +4140,7 @@ tbody tr:last-child td{border-bottom:0}
 <li>Tudi tukaj se nič nikoli ne izbriše. Izdelki, ki jih v datoteki ni, ostanejo pri miru.</li>
 <li>A tu ni varovalke, ki bi ujela napačno datoteko, preden ta zapiše. Če ga usmerite na staro ali napačno datoteko, se vaš seznam izdelkov takoj posodobi tako, da se ujema z njo. In tak ostane, dokler kdo ne uvozi prave datoteke.</li>
 <li>Če nekaj spodleti na sredi poti, sistem ne spremeni čisto ničesar. Bodisi se v celoti zaključi, bodisi ne zapiše ničesar.</li>
-<li>Izbira možnosti povezave z Business Centralom trenutno vedno spodleti — varno, brez zapisa. Preprosto še ne deluje.</li>
+<li>Izbira možnosti povezave z Business Centralom trenutno vedno spodleti — varno, brez zapisa. Ta obrazec je ne more zagnati.</li>
 <li>Večina bralcev naj namesto tega uporabi <strong>Import</strong>. Naredi isto stvar in vam pokaže, kaj se bo spremenilo, preden se spremeni.</li>
 </ul>
 <h2 id="pages/ingest--kaj-je-to">Kaj je to</h2>
@@ -4149,15 +4149,15 @@ tbody tr:last-child td{border-bottom:0}
 <p>Za večino bralcev redko, če sploh kdaj. Uporabite ga le, ko vam razvijalec ali IT natančno pove, na katero datoteko naj ga usmerite. Za preglednico na vašem lastnem računalniku raje uporabite <strong>Import</strong> — enak učinek, a najprej pokaže predogled.</p>
 <h2 id="pages/ingest--preden-začnete">Preden začnete</h2>
 <ul>
-<li>Ta zaslon vam ne dovoli izbrati datoteke z vašega lastnega računalnika. Prebere le datoteko, ki že leži na Dentalijinem strežniku, ali — ko bo zgrajena — živo povezavo z Business Centralom.</li>
+<li>Ta zaslon vam ne dovoli izbrati datoteke z vašega lastnega računalnika. Prebere le datoteko, ki že leži na Dentalijinem strežniku.</li>
 <li>Potrebujete točno lokacijo datoteke od IT-ja ali razvijalca. Vnos napačne povzroči, da uvoz spodleti, a ne zapiše nič.</li>
-<li>Ne izbirajte <strong>bc_odata</strong> kot vir. Še ni zgrajen in bo vedno spodletel.</li>
-<li>Pod naslovom zaslon izpiše odstavek tehničnega besedila, napisanega za razvijalce, ne za vas. Del je zastarel. Ne upoštevajte ga.</li>
+<li>Ne izbirajte <strong>bc_odata</strong> kot vir. Ta obrazec ga ne more zagnati, zato bo vedno spodletel.</li>
+<li>Pod naslovom zaslon izpiše odstavek tehničnega besedila, napisanega za razvijalce, ne za vas. Ne upoštevajte ga.</li>
 </ul>
 <h2 id="pages/ingest--kaj-storite">Kaj storite</h2>
 <ol>
 <li>V naslovno vrstico brskalnika neposredno vpišite <code>/ingest</code>. <strong>Namenoma ni v meniju na levi</strong> — posezite raje po <a href="#pages/import">Import</a>, ki vzame datoteko z vašega računalnika in vam pred zapisom pokaže razliko. To stran uporabite le, kadar vam tako naroči razvijalec.</li>
-<li>Pod <strong>Source</strong> izberite <strong>csv</strong>. <strong>bc_odata</strong> pustite pri miru; še ne deluje.</li>
+<li>Pod <strong>Source</strong> izberite <strong>csv</strong>. <strong>bc_odata</strong> pustite pri miru; s tega obrazca ne deluje.</li>
 <li>Izberite datoteko s seznama pod "Pick a file under…" ali vnesite natančno pot, ki vam jo je dal razvijalec, pod "Or type a path manually".</li>
 <li>Pustite <strong>Priority</strong> na <strong>interactive</strong>, razen če vam je naročeno drugače.</li>
 <li>Kliknite gumb z oznako <strong>Enqueue ingest.run</strong> — njegovo lastno interno ime za "začni ta uvoz".</li>
@@ -4186,7 +4186,7 @@ tbody tr:last-child td{border-bottom:0}
 <tr>
 <td><em>company is required for a bc_odata ingest</em></td>
 <td>Izbrali ste povezavo z Business Centralom, a pustili <strong>Company</strong> prazno</td>
-<td>Namesto tega uporabite <strong>csv</strong> z datoteko — možnost povezave še ne deluje</td>
+<td>Namesto tega uporabite <strong>csv</strong> z datoteko — možnost povezave s tega obrazca ne deluje</td>
 <td>Slabo — nič ni bilo zapisano</td>
 </tr>
 <tr>
@@ -4202,8 +4202,8 @@ tbody tr:last-child td{border-bottom:0}
 <td>V redu</td>
 </tr>
 <tr>
-<td>Vrstica na <strong>Recent runs</strong> za vaš poskus prikaže <em>failed</em> in omeni, da povezava ni zgrajena</td>
-<td>Izbrali ste možnost povezave z Business Centralom</td>
+<td>Vrstica na <strong>Recent runs</strong> za vaš poskus prikaže <em>failed</em></td>
+<td>Izbrali ste možnost povezave z Business Centralom, ki je ta obrazec ne more zagnati</td>
 <td>Namesto tega uporabite <strong>csv</strong> z datoteko ali se obrnite na razvijalca</td>
 <td>Slabo, a varno — nič ni bilo zapisano</td>
 </tr>
@@ -4221,7 +4221,7 @@ tbody tr:last-child td{border-bottom:0}
 </tr></thead><tbody>
 <tr>
 <td>csv / bc_odata (Source)</td>
-<td>Od kod prihaja seznam izdelkov: datoteka (<strong>csv</strong>) ali živa povezava z Business Centralom (<strong>bc_odata</strong> — še ni zgrajena)</td>
+<td>Od kod prihaja seznam izdelkov: datoteka (<strong>csv</strong>) ali živa povezava z Business Centralom (<strong>bc_odata</strong> — s tega obrazca ne deluje; tedensko sinhronizacijo zažene razvijalec)</td>
 </tr>
 <tr>
 <td><strong>interactive</strong> / <strong>delta</strong> / <strong>sweep</strong> (Priority)</td>

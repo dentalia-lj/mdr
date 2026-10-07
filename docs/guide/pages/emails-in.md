@@ -2,11 +2,9 @@
 
 **In one sentence:** what has arrived by email, and what the system found attached.
 
-**Status:** Partly live. The screen itself works and shows every message it is
-given accurately. Whether it is given anything is a separate question:
-automatic mailbox checking is switched off by default, and no mailbox is
-connected today, so this list may stay empty until a developer turns it on.
-Checked against the code on 2026-09-15.
+**Status:** Live. The mailbox `mdr@dentalia.si` is checked automatically every
+6 hours (since 2026-10-06), and every message that arrives there is listed
+here. Checked against the running system on 2026-10-07.
 
 ---
 

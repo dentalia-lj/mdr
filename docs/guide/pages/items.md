@@ -22,8 +22,9 @@ Mostly no.
 - **Update Business Central** sends this one product's three compliance fields
   back to Business Central, if they differ from what it already holds. The
   browser asks you to confirm before it queues anything. It never changes
-  anything here, and while the writeback is switched off — which is the
-  normal setting — it works out what would be sent and sends nothing.
+  anything here. Sending to Business Central has been switched on since
+  2026-10-06; where it is switched off, the button works out what would be
+  sent and sends nothing.
 - Every decision is saved with your name and the time.
 - If a button gives you an error, nothing happened. Try again, or ask a developer.
 
