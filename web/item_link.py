@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import io
 import zipfile
+from urllib.parse import quote
 
 from fastapi import HTTPException, Request
 from fastapi.responses import Response
@@ -84,13 +85,19 @@ def register_routes(app, templates, conn_factory, cfg) -> None:
             raise HTTPException(
                 status_code=404, detail="no archived files are reachable for this item"
             )
-        name = (data["item_name"] or item_ref).replace("/", "-")
+        name = (data["item_name"] or item_ref).replace("/", "-") + "-documents.zip"
+        # Encoded the way Starlette's FileResponse does it. A header is
+        # latin-1, so a Slovene name (Č, Š, Ž) raised and 500'd the download,
+        # and a `"` in a name cut the plain form short.
+        encoded = quote(name)
+        disposition = (
+            f'attachment; filename="{name}"' if encoded == name
+            else f"attachment; filename*=utf-8''{encoded}"
+        )
         return Response(
             content=buf.getvalue(),
             media_type="application/zip",
-            headers={
-                "Content-Disposition": f'attachment; filename="{name}-documents.zip"'
-            },
+            headers={"Content-Disposition": disposition},
         )
 
     # Registered BEFORE `/item/{item_ref:path}`, for the same reason as the zip.

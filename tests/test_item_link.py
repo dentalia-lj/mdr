@@ -200,7 +200,7 @@ def test_bc_card_never_serves_the_supersession_chain(guarded, conn):
 # Every link on the card has to work on that alone, and has to resolve the way
 # a BROWSER resolves it -- against the page URL -- for every shape of item
 # number: of the 4.849 items with production documents (local DB, 2026-10-08)
-# 1.742 contain a slash.
+# 1.742 contain a slash, and 1.159 have a name that is not latin-1.
 
 import html
 import re
@@ -304,3 +304,26 @@ def test_item_file_serves_only_production(tmp_path, conn, link_status, doc_statu
     resp = client.get(f"/item/PROD-ONLY/documents/{doc_id}?k={BC_KEY}")
     assert resp.status_code == 404
 
+
+@pytest.mark.parametrize("name", [
+    "KLEŠČE EKSTR. ROUTURIER LEVO 122 1/2L",   # Š, Č: not latin-1
+    'SVEDER 5" DOLG',                          # a quote inside the name
+    "Widget",
+])
+def test_zip_download_name_survives_any_item_name(tmp_path, conn, name):
+    """The zip is named after the item, and a header is latin-1: a Slovene
+    name 500'd the whole download (1.159 of 4.849 items with production
+    documents, local DB 2026-10-08)."""
+    client = _bc_client(tmp_path)
+    _seed_doc_with_real_file(conn, tmp_path, "ZIPNAME-1")
+    conn.execute("UPDATE item_mirror SET name=%s WHERE item_ref='ZIPNAME-1'", (name,))
+    conn.commit()
+    resp = client.get(f"/item/ZIPNAME-1/documents.zip?k={BC_KEY}")
+    assert resp.status_code == 200
+    disposition = resp.headers["content-disposition"]
+    assert disposition.startswith("attachment;")
+    expected = name.replace("/", "-") + "-documents.zip"
+    if quote(expected) == expected:
+        assert f'filename="{expected}"' in disposition
+    else:
+        assert f"filename*=utf-8''{quote(expected)}" in disposition
