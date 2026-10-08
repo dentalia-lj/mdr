@@ -848,9 +848,10 @@ The machine surface, checked the same day against `https://api.cw.dentalia.si`
 | `?k=` | `/item/{ref}` page, `/item/{ref}/documents.zip` | 200 HTML, 200 zip |
 | `X-API-Key` | `/archive/*`, `/api-reference` on the API name | 404 (the name rule) |
 
-The one thing a BC user will meet: **Open** on the item page asks for a staff
-login, and only **Download all** works on the link key alone
-([web.md](web.md) § Rules). Since 2026-09-30 the `Caddyfile` sends
+That table is the 2026-09-30 reading. Since 2026-10-08 **Open** on the item
+page goes to `/item/{ref}/documents/{id}?k=` and works on the link key alone,
+like **Download all** ([web.md](web.md) § Rules); not yet re-measured on the
+server. Since 2026-09-30 the `Caddyfile` sends
 `X-Robots-Tag: noindex, nofollow` on every response and answers `/robots.txt`
 with `Disallow: /` on both names; on the server that takes a pull and `docker compose restart caddy`
 (§ 5.1), not `deploy.sh` alone.

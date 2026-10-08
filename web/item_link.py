@@ -93,6 +93,32 @@ def register_routes(app, templates, conn_factory, cfg) -> None:
             },
         )
 
+    # Registered BEFORE `/item/{item_ref:path}`, for the same reason as the zip.
+    @app.get("/item/{item_ref:path}/documents/{doc_id:int}")
+    def item_document_file(item_ref: str, doc_id: int):
+        """One of the item's documents, on the link key alone.
+
+        The card's Open links used to point at `/documents/{id}/file`, which
+        is service + staff only, so a BC user got the office login (followup
+        [bc-link-single-documents-401]). That route was not opened to the key
+        instead because it serves ANY document by a sequential id, staged and
+        rejected included: on a key every BC user holds, the whole archive
+        would be walkable. This one serves what the page and the zip already
+        show, a production document with a production link to THIS item, and
+        answers everything else with the 404 the rest of `/item/*` gives."""
+        from web.app import _document_file_response  # cycle, see the zip route
+
+        with conn_factory() as conn:
+            row = conn.execute(
+                "SELECT d.archive_url, d.content_hash FROM document d "
+                "JOIN item_document_production p ON p.doc_id = d.doc_id "
+                "WHERE p.item_ref = %s AND d.doc_id = %s",
+                (item_ref, doc_id),
+            ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="not found")
+        return _document_file_response(row, cfg)
+
     @app.get("/item/{item_ref:path}")
     def item_link(
         request: Request, item_ref: str, format: str = "", view: str = "full"

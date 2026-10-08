@@ -6762,6 +6762,7 @@ def test_api_reference_documents_every_endpoint(client, conn):
     for path in (
         "/item/{item_ref}",
         "/item/{item_ref}/documents.zip",
+        "/item/{item_ref}/documents/{doc_id}",
         "/api/items/{item_ref}/documents",
         "/api/documents/{doc_id}",
         "/api/kpi",

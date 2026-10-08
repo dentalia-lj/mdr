@@ -24,7 +24,14 @@
     </p>
 
     {% if documents %}
-      <p><a class="button" href="{{ item_ref }}/documents.zip?{{ request.url.query }}">Download all ({{ documents|length }})</a></p>
+      {# Absolute and encoded, never relative: a browser resolves a relative
+         `{item_ref}/...` against the page's directory. BC's own link encodes
+         a slash (`1000%2F1`), which resolved correctly, but a URL typed with
+         the slash left in sent item `1000/1` to `/item/1000/1000/1/...`. Both
+         links carry the page's query string, and with it the BC key, which is
+         all a BC user has. #}
+      {% set item_path = '/item/' ~ (item_ref | urlencode) %}
+      <p><a class="button" href="{{ item_path }}/documents.zip?{{ request.url.query }}">Download all ({{ documents|length }})</a></p>
       <table>
         <thead>
           <tr><th>Document</th><th>Type</th><th>Valid from</th><th>Valid to</th><th></th></tr>
@@ -36,7 +43,7 @@
             <td>{{ d.type | doc_type }}{% if d.regulation and d.regulation != 'n.a.' %} ({{ d.regulation }}){% endif %}</td>
             <td>{{ d.valid_from or '—' }}</td>
             <td>{{ d.valid_to or '—' }}</td>
-            <td><a href="{{ d.url }}">Open</a></td>
+            <td><a href="{{ item_path }}/documents/{{ d.doc_id }}?{{ request.url.query }}">Open</a></td>
           </tr>
           {% endfor %}
         </tbody>

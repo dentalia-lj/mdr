@@ -160,6 +160,14 @@ client asks for on the phone are plural. <code>404</code> when the item has no
 reachable production documents &mdash; an empty archive is a worse answer than
 saying there is nothing.</p>
 
+<h3><code>GET /item/{item_ref}/documents/{doc_id}</code></h3>
+<p><strong>bc</strong> &middot; <strong>service</strong> &middot; <strong>staff</strong>
+&mdash; one of the item's documents, the PDF the card's <em>Open</em> link
+serves on the BC key alone. Only a production document with a production link
+to <em>that</em> item; any other <code>doc_id</code> is a <code>404</code>, like
+the rest of <code>/item/*</code>. The webshop keeps using
+<code>/documents/{doc_id}/file</code> below.</p>
+
 <h3><code>GET /documents/{doc_id}/file</code></h3>
 <p><strong>service</strong> &middot; <strong>staff</strong> &mdash; the archived
 PDF. This is the supported way to get bytes; the webshop relays them under its

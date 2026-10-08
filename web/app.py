@@ -903,6 +903,47 @@ def _resolve_archive_path(
     return None
 
 
+def _document_file_response(row, cfg) -> Response:
+    """One document's bytes, from a row carrying `archive_url` and
+    `content_hash`. Shared by `/documents/{id}/file` (staff, service) and
+    `/item/{ref}/documents/{id}` (the BC card): the two differ in who may ask
+    and which documents they may ask for, never in what they answer."""
+    archive_url = row["archive_url"] or ""
+    if urlsplit(archive_url).scheme in ("http", "https"):
+        # already client-reachable (storage.base_url configured) — hand the
+        # browser the real location rather than proxying bytes through here
+        return RedirectResponse(archive_url)
+    target = _resolve_archive_path(
+        archive_url, [cfg.archive_root, cfg.imports_dir],
+        rewrites=_parse_path_rewrites(cfg.path_rewrites),
+        content_hash=row["content_hash"],
+    )
+    if target is None:
+        raise HTTPException(
+            status_code=404,
+            detail="archived file is not reachable from this server",
+        )
+    # inline, not attachment: a reviewer clicking "Open full size" wants to
+    # LOOK at the PDF, and `attachment` downloads a fresh copy on every
+    # click instead.
+    #
+    # Cached for a year, privately (office UI redesign, spec § 6). The
+    # Review panel shows this file in an iframe every time a row is
+    # opened, and no request ever got a 304, so every reopening
+    # downloaded the whole file again (median 345 KB, largest 16 MB on
+    # dev). The bytes behind a doc_id never change -- the archive is
+    # hash-addressed and a new file is a new document -- so `immutable`
+    # is true, and `private` keeps it out of shared caches, since neither
+    # route is public. Only the file response carries it: every
+    # refusal above is an HTTPException, and a 404 must stay uncached.
+    # (Starlette's range answers copy these headers, so a 206 part of the
+    # same bytes is cached the same way.)
+    return FileResponse(target, media_type="application/pdf",
+                        filename=_download_name(target.name, row["content_hash"]),
+                        content_disposition_type="inline",
+                        headers={"Cache-Control": DOCUMENT_FILE_CACHE})
+
+
 def _recent_jobs(
     conn,
     *,
@@ -3135,40 +3176,7 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             ).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="unknown document")
-        archive_url = row["archive_url"] or ""
-        if urlsplit(archive_url).scheme in ("http", "https"):
-            # already client-reachable (storage.base_url configured) — hand the
-            # browser the real location rather than proxying bytes through here
-            return RedirectResponse(archive_url)
-        target = _resolve_archive_path(
-            archive_url, [cfg.archive_root, cfg.imports_dir],
-            rewrites=_parse_path_rewrites(cfg.path_rewrites),
-            content_hash=row["content_hash"],
-        )
-        if target is None:
-            raise HTTPException(
-                status_code=404,
-                detail="archived file is not reachable from this server",
-            )
-        # inline, not attachment: a reviewer clicking "Open full size" wants to
-        # LOOK at the PDF, and `attachment` downloads a fresh copy on every
-        # click instead.
-        #
-        # Cached for a year, privately (office UI redesign, spec § 6). The
-        # Review panel shows this file in an iframe every time a row is
-        # opened, and no request ever got a 304, so every reopening
-        # downloaded the whole file again (median 345 KB, largest 16 MB on
-        # dev). The bytes behind a doc_id never change -- the archive is
-        # hash-addressed and a new file is a new document -- so `immutable`
-        # is true, and `private` keeps it out of shared caches, since this
-        # route is staff-only. Only the file response carries it: every
-        # refusal above is an HTTPException, and a 404 must stay uncached.
-        # (Starlette's range answers copy these headers, so a 206 part of the
-        # same bytes is cached the same way.)
-        return FileResponse(target, media_type="application/pdf",
-                            filename=_download_name(target.name, row["content_hash"]),
-                            content_disposition_type="inline",
-                            headers={"Cache-Control": DOCUMENT_FILE_CACHE})
+        return _document_file_response(row, cfg)
 
     @app.get("/documents/{content_hash}/text", response_class=PlainTextResponse)
     def document_text(content_hash: str):

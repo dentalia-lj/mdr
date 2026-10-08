@@ -32,7 +32,7 @@ policy module decides who gets which route.
 | `web/failures.py` | 277 | The Failed split (added 2026-09-11): `classify_failure()` (timeout / dead-address / developer), `failed_split()` and `failed_counts()`, which count only the dead jobs whose work has not been queued again, and the receipts of `/dead/retry-timeouts` and `/dead/search-again`. Read-only, stdlib only |
 | `web/missing.py` | 406 | Missing documents (added 2026-09-11): `missing_view()` for `/missing` (open `discovery-dead-end` tasks, oldest first, 20 a page, manufacturer chips), `missing_summary()` for Today, `upload_context()` for the Upload page's line naming the item and the group it posts, `places_searched()` (the places the group's last `discovery_log` run proves were searched), and the "Search again" receipt. Read-only |
 | `web/access.py` | 158 | `allowed_classes()`, `classify()`, `trusted_user()`, `guard()`: the whole access policy. Plus `is_operator()`, which decides what a signed-in login is offered, never whether it gets in |
-| `web/item_link.py` | 106 | `GET /item/{item_ref}` (BC hyperlink) and `/item/{item_ref}/documents.zip` |
+| `web/item_link.py` | 132 | `GET /item/{item_ref}` (BC hyperlink), `/item/{item_ref}/documents.zip` and `/item/{item_ref}/documents/{doc_id}` (one PDF, the card's Open link) |
 | `web/item_picker.py` | 325 | The Review item picker's reads (added 2026-10-05, spec `docs/superpowers/specs/2026-10-02-review-item-picker-design.md`): `search()` (item numbers first, with the ±10 nearby numbers, then names by `word_similarity` at 0.5 with punctuation ignored), `similar()` (0.2), `items_of()`, `proposed()`, `selected()`, `suggestions()`. One manufacturer's items only, capped at 200. Read-only. Routes in `web/app.py`: `GET /picker/{id}`, `/picker/{id}/results`, `/picker/{id}/summary`, `POST /documents/{id}/items` (enqueues `gate.apply add-items`), and `items` on `POST /staging/{id}/apply`. Page script `web/static/item_picker.js` keeps the tick set; the tick-set check shared with GATE is `app/item_picks.py` |
 | `web/item_docs.py` | 101 | `item_documents()` / `decorate_documents()` — the one item-documents query shared by the BC link and the webshop API so the two can never disagree |
 | `web/words.py` | 356 | One vocabulary (office UI redesign spec § 9, added 2026-09-14): `WORDS` / `word()` (the § 9 table, unknown values pass through), `DOC_TYPE_WORDS` (which IS `web.app.DOC_TYPE_LABELS`) and `DOC_TYPE_SUBJECTS` (the sentence forms), `doc_display_name()`, `day_text()`, `week_label()`, `num()` and `receipt()`. P7b (2026-09-15) added three more dicts, each in its OWN namespace because `WORDS` is flat and two of their keys already mean something else there (`filed` is a document status *and* an audit event; `manual` is a list *and* a discovery rung): `AUDIT_EVENT_WORDS` / `audit_event()`, `RUNG_WORDS` / `rung()` and `RUNG_OUTCOME_WORDS` / `rung_outcome()`. The branch review (2026-09-15) moved `DRAFT_STATUS_WORDS` / `draft_status()` and `DRAFT_KIND_WORDS` / `draft_kind()` here from `web/app.py` for the same reason: they turned out to be read by four screens, not two, and the two that cross-link to `/drafts` (`/expiry`'s **Chase** column and a document's **Renewal chase**) had no map in scope and printed the stored value. `web.app.DRAFT_STATUS_WORDS` / `DRAFT_KIND_WORDS` now point here, the way `DOC_TYPE_LABELS` does. Pure functions, no database and no request; registered in `create_app` as the Jinja filters `word` / `day` / `week_label` / `num` / `doc_type` / `doc_name` / `audit_event` / `rung` / `rung_outcome` / `draft_status` |
@@ -64,7 +64,7 @@ and the others are not.
 |---|---|
 | In | Staff browser (Caddy Basic auth, unauthenticated at the app layer), webshop backend (`X-API-Key` header), BC item-card GET (`?k=` query param) |
 | Out (write) | `job` rows via `app.queue.enqueue` only, plus the narrow exceptions below — never a direct write to the registry |
-| Out (read) | Full HTML pages, HTMX partials, the read-only `/api/*` JSON, archived file bytes (`/archive/*`, `/documents/{id}/file`, `/documents/{hash}/text`), a per-item ZIP (`/item/{ref}/documents.zip`) |
+| Out (read) | Full HTML pages, HTMX partials, the read-only `/api/*` JSON, archived file bytes (`/archive/*`, `/documents/{id}/file`, `/documents/{hash}/text`), a per-item ZIP (`/item/{ref}/documents.zip`) and one item's PDF (`/item/{ref}/documents/{id}`) |
 
 ## Rules
 
@@ -84,13 +84,18 @@ Refusal codes differ by surface, deliberately (`web/access.py:125-133`):
 unauthenticated caller), `/api/*` returns 401 (a service caller can act on
 that), everything else 403.
 
-**The BC item page opens files through the staff login.** `item_card.html`
-links each document's **Open** to its `url`, `/documents/{id}/file`, which is
-`service` + `staff` only and does not read `?k=`. A BC user who clicks Open
-without an `X-API-Key` therefore gets Caddy's Basic prompt; only **Download
-all** (`/item/{ref}/documents.zip`, which carries the page's query string and
-so its `k`) works on the link key alone. That follows the access spec § 2
-route table; measured on the client server 2026-09-30.
+**Every link on the BC item page works on the link key alone** (since
+2026-10-08, decisions.md). **Open** goes to `/item/{ref}/documents/{id}` and
+**Download all** to `/item/{ref}/documents.zip`; both carry the page's query
+string, and so its `k`, and both are absolute with the item number
+URL-encoded. Relative, `Download all` resolved against the page's directory:
+right from BC's own link, which encodes a `/` as `%2F`, but wrong from a URL
+typed with the slash left in. The single-document route serves only
+a production document with a production link to that item, so it exposes
+nothing the zip did not. Until then Open pointed at `/documents/{id}/file`,
+which stays `service` + `staff`: it serves any document by a sequential id,
+staged and rejected included, and on the shared key it would walk the archive.
+The page's JSON (`url` per document) still points there, for the webshop.
 
 `require_authenticated_user=False` (no proxy in front — local dev, tests)
 makes every caller classify as `staff` (`web/access.py:112-113`); this is the
