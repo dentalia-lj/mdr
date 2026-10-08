@@ -850,8 +850,10 @@ The machine surface, checked the same day against `https://api.cw.dentalia.si`
 
 That table is the 2026-09-30 reading. Since 2026-10-08 **Open** on the item
 page goes to `/item/{ref}/documents/{id}?k=` and works on the link key alone,
-like **Download all** ([web.md](web.md) § Rules); not yet re-measured on the
-server. Since 2026-09-30 the `Caddyfile` sends
+like **Download all** ([web.md](web.md) § Rules). Measured on the server after
+the `3a0af4b` deploy, from BC's own URL: 21 items, items with a `/` (`%2F`)
+and Č/Š/Ž names included, page 200, zip 200, every Open a PDF;
+`/documents/{id}/file` with only the key still 401. Since 2026-09-30 the `Caddyfile` sends
 `X-Robots-Tag: noindex, nofollow` on every response and answers `/robots.txt`
 with `Disallow: /` on both names; on the server that takes a pull and `docker compose restart caddy`
 (§ 5.1), not `deploy.sh` alone.
