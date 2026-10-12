@@ -102,7 +102,7 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | task | state | where |
 |---|---|---|
 | 0 contract (PRD, design doc) | done, approved | 4811151 |
-| 1 read plumbing, ledger | built (Opus) 7ae1269, full suite 4491 passed; Opus review running | worktree el-plumbing |
+| 1 read plumbing, ledger | built (Opus) 7ae1269, full suite 4491 passed; Opus review: merge (requests byte-identical on 24 fixtures); 5 small fixes being applied | worktree el-plumbing |
 | 2 checks, page classes | built (Sonnet) 9849a9d; Opus review: merge after fixes (live T0 date bug on Ivoclar stamp, OCR class, null rule); fixes being applied (Opus) | worktree el-checks |
 | 3 scans | waiting for 1 and 2 | |
 | 4 text ladder | waiting for 1 and 2 | |
@@ -239,6 +239,11 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
       (neodent `cert_number`, page 26). Sonnet on the whole text was not reintroduced
       (T-2: 77% of an image call, closed 22% of documents, 0 of 72 answers past page 4).
 - [ ] Hints go to every read, as today's T1 and T2 get them.
+- [ ] From the Task 1 review: the text doc-class call on Haiku 5.5 (256 tokens, adaptive
+      thinking) must send thinking off or treat a `max_tokens` stop as a failure, since a
+      truncated answer becomes `not-a-compliance-document` and drops the file for good;
+      page-aware selection clamps to the page count (`_vision_content` raises past the
+      end); RecordedLlm accepts read options; `.env.example` `MODELS_T1` updated.
 - [ ] Disagreements counted: the extract job result lists each field where reads
       disagreed (field, steps, values), and the extraction record keeps every read.
 - [ ] Batch path: same steps.
@@ -261,6 +266,8 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
       documents get `T1-second`; scans ask the unproven gate fields in the second image
       read (Task 3 asks it only open fields, so a gate field settled at 0.85-0.92 is
       added here).
+- [ ] One call per label per extraction: the unproven gate fields ride in the same
+      `T2-second` call as Task 3's open fields, or that call's cost row is lost.
 - [ ] Combined confidence `1 - (1 - c1)(1 - c2)` when both reads agree and each is at
       least `agreement_min`; citation-proven regulation 1.0.
 - [ ] Migration 071 (or the next free number at merge; other worktrees add
@@ -352,6 +359,11 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
 4. Read the review queue before and after, against the 2026-10-12 reading (1,039).
 
 ## Risks
+
+- No `MODELS_*` key reaches the server's containers (no env line in compose): the
+  `models.t1` swap goes live on the image rebuild, and rolling it back means redeploying
+  the previous commit. An env line in compose would make it a switch; config placement
+  was deferred on 2026-09-14, so that is Denis's call before deploy.
 
 - The scan gate rests on 4 labelled scans, one probable label error among them.
 - Batch mode is off on the server (`EXTRACT_MODE=sync`, 2026-09-29); the batch path is
