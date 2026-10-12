@@ -102,12 +102,12 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | task | state | where |
 |---|---|---|
 | 0 contract (PRD, design doc) | done, approved | 4811151 |
-| 1 read plumbing, ledger | built (Opus) 7ae1269, full suite 4491 passed; Opus review: merge (requests byte-identical on 24 fixtures); 5 small fixes being applied | worktree el-plumbing |
+| 1 read plumbing, ledger | done: built (Opus), reviewed and fixed (Opus), merged; full suite running | merge of f843948 |
 | 2 checks, page classes | done: built (Sonnet), reviewed and fixed (Opus), merged | b9cd734 |
-| 3 scans | waiting for 1 and 2 | |
+| 3 scans | building (Opus) | worktree el-scans |
 | 4 text ladder | waiting for 1 and 2 | |
 | 5 gate, guard, migration | waiting for 3 and 4 | |
-| 6 prompt caching | waiting for 1 | |
+| 6 prompt caching | building (Sonnet) | worktree el-cache |
 | 7 re-extract command | done: built (Sonnet), reviewed and fixed (Opus), merged | c39bb77 |
 | 8 quality and parity | waiting for 1-6 | |
 | 9 production replay | waiting for 1-6 | |
@@ -151,24 +151,24 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
 
 ### Task 1. Read plumbing and the ledger - 10 h / 1.0 h
 
-- [ ] `app/extract/llm.py`: a read names its kind (text / image), model, thinking and,
+- [x] `app/extract/llm.py`: a read names its kind (text / image), model, thinking and,
       for image reads, an explicit page list (default pages 1-4, still at most 4);
       `_params` routes by kind, not by label (today any label but `T1` goes to
       `models.t2`, line 218). Overrides pass as conditional kwargs, like `hints`, so
       the protocol stubs (`extract(tier, doc, filename, missing)`) keep working.
-- [ ] Cost ledger: one label per call (steps table). Fixes today's silent loss: the
+- [x] Cost ledger: one label per call (steps table). Fixes today's silent loss: the
       doc-class call and T1 both log `T1`, and `extraction_cost`'s
       `ON CONFLICT (content_hash, tier, extract_rev) DO NOTHING` drops the second row.
-- [ ] Batch: `AnthropicBatchClient.results` maps label to model (today `tier == "T1"`
+- [x] Batch: `AnthropicBatchClient.results` maps label to model (today `tier == "T1"`
       else t2, line 395); labels use hyphens only (`_custom_id` splits on `_`).
-- [ ] `app/extract/economics.py`: PRICES row for `claude-haiku-5-5`, checked against
+- [x] `app/extract/economics.py`: PRICES row for `claude-haiku-5-5`, checked against
       the price page first (the eval table says batch 0.05/0.25, sync 0.10/0.50 per M).
-- [ ] `app/config.py`: `models.vision_first`, `models.second_read` (both
+- [x] `app/config.py`: `models.vision_first`, `models.second_read` (both
       `claude-haiku-5-5`), an `extract` section (`image_settle` 0.85,
       `agreement_min` 0.70): dataclass, load path, `_str` fallbacks, test_config.
-- [ ] Tests: `tests/test_llm.py`, `tests/test_economics.py`, `tests/test_extract_cost.py`,
+- [x] Tests: `tests/test_llm.py`, `tests/test_economics.py`, `tests/test_extract_cost.py`,
       `tests/test_config*.py`; `tests/fixtures/llm` RecordedLlm keyed by the new labels.
-- [ ] Docs: `docs/dev/config-reference.md` (blast radius), status board note that
+- [x] Docs: `docs/dev/config-reference.md` (blast radius), status board note that
       spend rows by label appear on `/status`.
 - **Done when:** every paid call writes its own cost row; no behaviour change yet.
 
