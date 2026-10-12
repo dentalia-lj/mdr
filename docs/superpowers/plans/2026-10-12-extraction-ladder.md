@@ -69,6 +69,10 @@ Also answered (Denis, after the Task 3 review): on a scan, the item identifiers
 file name; up to 8 more Sonnet calls per 34 scans (about 24 instead of 19).
 After Task 5a (Denis): the confidence note under Technical details as worded; a
 citation-proven `regulation` stores 1.0 in `evidence.confidence`, and the note says so.
+After the Task 5a review (Denis): the guard covers superseded documents too; a kept
+candidate still stages its links; fix now the three existing gate problems the review
+confirmed (a production re-read changing type or regulation inside a supersession
+chain, the reviewer-edit revision clash, no stale-revision check on the binding route).
 
 **Defaults taken (no ruling, say if wrong):** mixed PDFs take the text branch; a
 scan is a document with no text page at all; T0 fields under 0.95 count as settled
@@ -112,7 +116,7 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | 2 checks, page classes | done: built (Sonnet), reviewed and fixed (Opus), merged | b9cd734 |
 | 3 scans | done: built (Opus), reviewed and fixed (Opus), merged; full suite 4820 passed, 5 skipped; decision 3 ruled by Denis (item identifiers asked on filename-typed scanned DoCs) | merge 0c891c8 |
 | 4 text ladder | building (Opus) | worktree el-text |
-| 5a gate side: combined score, migration, published guard, wording | built (Opus) 9cadbe1 + 2fa9e7a, full suite 4868 passed; Opus review running; then store 1.0 for proven regulation (Denis) | worktree el-gate |
+| 5a gate side: combined score, migration, published guard, wording | built (Opus); Opus review: merge after fixes; fixes and Denis's rulings being applied (Opus) | worktree el-gate |
 | 5b extraction side: second reads stamp the contract keys | waiting for 4 and 5a | |
 | 6 prompt caching | done: built (Sonnet), reviewed and fixed (Opus), merged; cache hits to confirm on the first real run | merge of bbc461d |
 | 7 re-extract command | done: built (Sonnet), reviewed and fixed (Opus), merged | c39bb77 |
