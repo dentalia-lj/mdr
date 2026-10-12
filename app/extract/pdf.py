@@ -131,6 +131,61 @@ def is_scan(doc: pymupdf.Document, min_chars: int = 20) -> bool:
     return len(first_page_text(doc).strip()) < min_chars
 
 
+#: Page-class thresholds, from `tools/ladder_probe.py` `page_classes` (kept):
+#: 200 characters is a text page, under 20 is no text layer at all, and half
+#: the page covered by images is a scanned page. One change from the probe:
+#: a page whose images cover most of it AND that carries a text layer is
+#: "ocr", checked before "text". The probe called it "text", but a text layer
+#: laid over a scan can be wrong ("OOIYC" for "001YC", Ceramill 2026-10-08), so
+#: a null read from it must not count as settled. The 0.8 cut is ours: scans
+#: cover ~1.0 of the page, a logo or letterhead stays far below it.
+TEXT_PAGE_CHARS = 200
+NO_TEXT_CHARS = 20
+IMAGE_COVERAGE = 0.5
+OCR_COVERAGE = 0.8
+
+
+def _image_coverage(page) -> float:
+    """Share of the page area covered by images (0..1; overlaps add up, so it
+    is capped)."""
+    area = page.rect.width * page.rect.height or 1
+    total = 0.0
+    for info in page.get_image_info():
+        r = pymupdf.Rect(info["bbox"]) & page.rect
+        if not r.is_empty:
+            total += r.width * r.height
+    return min(total / area, 1.0)
+
+
+def page_classes(doc: pymupdf.Document) -> list[str]:
+    """One class per page, index 0 is page 1:
+
+    - "text":   a real text layer (200+ characters), no full-page image
+    - "image":  a scanned page, no usable text layer (under 20 characters)
+    - "ocr":    a full-page image with a text layer over it
+    - "sparse": little text and no dominant image (cover, blank, divider)
+    """
+    out = []
+    for page in doc:
+        chars = len(_page_text(page).strip())
+        cov = _image_coverage(page)
+        if chars >= NO_TEXT_CHARS and cov >= OCR_COVERAGE:
+            out.append("ocr")
+        elif chars >= TEXT_PAGE_CHARS:
+            out.append("text")
+        elif chars < NO_TEXT_CHARS and cov >= IMAGE_COVERAGE:
+            out.append("image")
+        else:
+            out.append("sparse")
+    return out
+
+
+def has_text_page(doc: pymupdf.Document) -> bool:
+    """Any page with a real text layer. The ladder's notion of "not a scan"
+    (Task 3 switches `is_scan` callers over; `is_scan` itself is unchanged)."""
+    return "text" in page_classes(doc)
+
+
 def rasterize_page(doc: pymupdf.Document, page_index: int = 0, dpi: int = 150) -> bytes:
     """Render a page to PNG bytes for the T2 vision tier."""
     pix = doc[page_index].get_pixmap(dpi=dpi)

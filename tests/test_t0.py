@@ -405,6 +405,15 @@ def test_extract_dates(text, field, iso):
         ("Issue Date: 1. marec 2021", "validity_from", "2021-03-01"),
         # Expiry too -- the same regex serves both label lists.
         ("Expiry Date: December 31, 2027", "validity_to", "2027-12-31"),
+        # Wider parser (2026-10-12, extraction-ladder task 2): five shapes the
+        # eval set printed and the old pattern missed.
+        ("Issue Date: 25. 08. 2025", "validity_from", "2025-08-25"),
+        ("Issue Date: 25.08. 2025", "validity_from", "2025-08-25"),
+        ("Issue Date: 30-Apr-2025", "validity_from", "2025-04-30"),
+        ("Issue Date: June 24th, 2021", "validity_from", "2021-06-24"),
+        ("Issue Date: fev. 18, 2026", "validity_from", "2026-02-18"),
+        ("Issue Date: Jul 14, 2025", "validity_from", "2025-07-14"),
+        ("Expiry Date: 30 Sept 2027", "validity_to", "2027-09-30"),
     ],
 )
 def test_a_spelled_out_month_is_read_like_a_numeric_date(text, field, iso):
@@ -437,6 +446,9 @@ def test_a_month_name_inside_a_word_is_not_a_date():
     day and a year around them, or prose starts producing dates."""
     assert t0.extract_dates("Issue Date: the march of progress 2021") == {}
     assert t0.extract_dates("Issue Date: they may attend in 2021") == {}
+    # abbreviations need a day and a year too
+    assert t0.extract_dates("Issue Date: set out in 2021") == {}
+    assert t0.extract_dates("Issue Date: Mar 2021") == {}
 
 
 # --------------------------------------------------------------------------- #

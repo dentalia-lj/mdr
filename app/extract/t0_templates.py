@@ -223,6 +223,12 @@ _MONTH_NUMBERS = {
     "januar": 1, "februar": 2, "märz": 3, "maerz": 3, "mai": 5, "juni": 6,
     "juli": 7, "oktober": 10, "dezember": 12,
     "marec": 3, "maj": 5, "junij": 6, "julij": 7, "avgust": 8,
+    # Abbreviations (2026-10-12, extraction-ladder task 2): "Jul 14, 2025",
+    # "30-Apr-2025", Portuguese "fev. 18, 2026". Eval-set misses; a day AND a
+    # year are still required around the name, so ordinary words stay safe.
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "jun": 6, "jul": 7, "aug": 8,
+    "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
+    "fev": 2, "abr": 4, "ago": 8, "set": 9, "out": 10, "dez": 12,
 }
 
 #: Longest-first so `junij` is tried before `juni`. `\b` alone would also do it
@@ -237,9 +243,11 @@ _MONTH_ALT = "|".join(
 #: A DAY and a YEAR are both required around the month name, which is what
 #: keeps `may` and `march` as ordinary English words -- "they may attend in
 #: 2021" has no day, so it is not a date.
+#: Also read (2026-10-12): an abbreviation's dot (`fev. 18, 2026`), an ordinal
+#: day (`June 24th, 2021`) and the hyphenated form (`30-Apr-2025`).
 _LONG_DATE = (
-    rf"\b(?:{_MONTH_ALT})\s+\d{{1,2}},?\s+\d{{4}}"
-    rf"|\b\d{{1,2}}\.?\s*(?:{_MONTH_ALT})\s+\d{{4}}"
+    rf"\b(?:{_MONTH_ALT})\.?\s+\d{{1,2}}(?:st|nd|rd|th)?,?\s+\d{{4}}"
+    rf"|\b\d{{1,2}}(?:\.?\s*|-)(?:{_MONTH_ALT})\.?(?:\s+|-)\d{{4}}"
 )
 
 #: Numeric alternatives first, so a date this already read is matched by the
@@ -260,7 +268,9 @@ _LONG_DATE = (
 _LABEL_WINDOW = 60
 
 _DATE_RE = re.compile(
-    rf"(\d{{4}}-\d{{1,2}}-\d{{1,2}}|\d{{1,2}}[./]\d{{1,2}}[./]\d{{4}}|{_LONG_DATE})",
+    # `25. 08. 2025`: blanks after the dots are read (2026-10-12).
+    rf"(\d{{4}}-\d{{1,2}}-\d{{1,2}}|\d{{1,2}}[./][ \t]*\d{{1,2}}[./][ \t]*\d{{4}}"
+    rf"|{_LONG_DATE})",
     re.IGNORECASE,
 )
 
@@ -684,8 +694,10 @@ def extract_basic_udi(text: str, result=None) -> dict | None:
 #: The two spelled-out orders, split out so `_parse_date` reads the same shapes
 #: `_DATE_RE` matches. Anchored like the numeric branches: the caller hands over
 #: exactly what `_DATE_RE` captured.
-_LONG_MDY = re.compile(rf"({_MONTH_ALT})\s+(\d{{1,2}}),?\s+(\d{{4}})", re.IGNORECASE)
-_LONG_DMY = re.compile(rf"(\d{{1,2}})\.?\s*({_MONTH_ALT})\s+(\d{{4}})", re.IGNORECASE)
+_LONG_MDY = re.compile(
+    rf"({_MONTH_ALT})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?,?\s+(\d{{4}})", re.IGNORECASE)
+_LONG_DMY = re.compile(
+    rf"(\d{{1,2}})(?:\.?\s*|-)({_MONTH_ALT})\.?(?:\s+|-)(\d{{4}})", re.IGNORECASE)
 
 
 def _parse_date(s: str) -> str | None:
@@ -693,7 +705,7 @@ def _parse_date(s: str) -> str | None:
     if m:
         y, mo, d = m.groups()
     else:
-        m = re.match(r"(\d{1,2})[./](\d{1,2})[./](\d{4})", s)
+        m = re.match(r"(\d{1,2})[./][ \t]*(\d{1,2})[./][ \t]*(\d{4})", s)
         if m:
             d, mo, y = m.groups()
         else:
