@@ -17,6 +17,7 @@ accuracy where labels exist. Writes only under eval/ladder-probe/.
     python -m tools.ladder_probe run    --run DIR [--cap-usd 10]
     python -m tools.ladder_probe report --run DIR
     python -m tools.ladder_probe gate   --run DIR   # simplified GATE per chain, no API
+    python -m tools.ladder_probe extend --run DIR --arm h55vn [--text]   # an arm added after plan
 """
 
 from __future__ import annotations
@@ -51,6 +52,8 @@ PROBE_ARMS = {
     "s55t": (hc.Arm("claude-sonnet-5-5", None, "Sonnet 5.5, whole text"), "T1"),
     "s55v": (hc.Arm("claude-sonnet-5-5", None, "Sonnet 5.5, page images 1-4 (today's T2)"), "T2"),
     "h55v": (hc.Arm("claude-haiku-5-5", None, "Haiku 5.5, page images 1-4"), "T2"),
+    # second cheap image read, for an agreement rule on scans (added 2026-10-12)
+    "h55vn": (hc.Arm("claude-haiku-5-5", {"type": "disabled"}, "Haiku 5.5, page images 1-4, thinking off"), "T2"),
 }
 IMAGE_TOKENS = 2836          # one 150-dpi page on the 5.5 models (count_tokens, 2026-10-08)
 EST_OUT = {"claude-sonnet-5-5": 3000, "claude-haiku-5-5": 2000}
@@ -254,6 +257,30 @@ def cmd_plan(args) -> int:
     return 0
 
 
+def cmd_extend(args) -> int:
+    """Capture requests for a probe arm added after `plan`, for the planned scans
+    (and text documents with --text), asking the same open fields."""
+    run = pathlib.Path(args.run)
+    plan = json.loads((run / "plan.json").read_text())
+    have = {json.loads(line)["key"] for line in open(run / "requests.jsonl")}
+    docs = list(plan["scans"]) + (list(plan["text_docs"]) if args.text else [])
+    added = 0
+    with open(run / "requests.jsonl", "a") as fh:
+        for d in docs:
+            if not d.get("open"):
+                continue
+            path = str(REPO / d["path"])
+            with pdfutil.open_doc(path) as doc:
+                hints = _hints(pdfutil.page_texts(doc)) if d.get("hinted") else None
+                for r in _capture_reads(d["content_hash"], path, doc, d["open"], hints, (args.arm,)):
+                    if r["key"] not in have:
+                        fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+                        have.add(r["key"])
+                        added += 1
+    print(f"requests added for {args.arm}: {added}")
+    return 0
+
+
 # --------------------------------------------------------------------------- #
 # run (Batch API, cached, budget guard)
 # --------------------------------------------------------------------------- #
@@ -277,9 +304,11 @@ def cmd_run(args) -> int:
     state_path = run / "batches.json"
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
     client = hc._client()
-    if not state:
-        todo = [r for r in reqs if hc.cached(r["key"]) is None]
-        print(f"{len(todo)} requests not cached; estimate (batch):")
+    submitted = {k for ids in state.values() for k in ids.values()}
+    todo = [r for r in reqs if hc.cached(r["key"]) is None and r["key"] not in submitted]
+    print(f"{len(todo)} requests neither cached nor submitted")
+    if todo:
+        print("estimate (batch):")
         if _estimate(todo) > args.cap_usd:
             print(f"STOP: estimate exceeds cap ${args.cap_usd}")
             return 2
@@ -294,7 +323,8 @@ def cmd_run(args) -> int:
             state_path.write_text(json.dumps(state, indent=1))
             print(f"  submitted {arm}: {b.id} ({len(rs)})", flush=True)
     by_key = {r["key"]: r for r in reqs}
-    pending, errors = set(state), []
+    pending = {bid for bid, ids in state.items() if any(hc.cached(k) is None for k in ids.values())}
+    errors = []
     while pending:
         for bid in sorted(pending):
             b = client.messages.batches.retrieve(bid)
@@ -671,12 +701,17 @@ def main(argv=None) -> int:
     p = sub.add_parser("run")
     p.add_argument("--run", required=True)
     p.add_argument("--cap-usd", type=float, default=10.0)
+    p = sub.add_parser("extend")
+    p.add_argument("--run", required=True)
+    p.add_argument("--arm", required=True, choices=sorted(PROBE_ARMS))
+    p.add_argument("--text", action="store_true", help="also the planned text documents")
     p = sub.add_parser("report")
     p.add_argument("--run", required=True)
     p = sub.add_parser("gate")
     p.add_argument("--run", required=True)
     args = ap.parse_args(argv)
-    return {"plan": cmd_plan, "run": cmd_run, "report": cmd_report, "gate": cmd_gate}[args.cmd](args)
+    return {"plan": cmd_plan, "extend": cmd_extend, "run": cmd_run, "report": cmd_report,
+            "gate": cmd_gate}[args.cmd](args)
 
 
 if __name__ == "__main__":

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import contextlib
 import csv
 import datetime
 import hashlib
@@ -56,6 +57,23 @@ class Arm:
     thinking: dict | None   # None = whatever the API defaults to
     label: str
     effort: str | None = None   # None = the API default (medium on Haiku 5.5)
+    prompt: str | None = None   # a key of PROMPT_VARIANTS; None = the pipeline's prompt as is
+
+
+#: In-memory edits of the T1 prompt for an arm. The prompt file is never changed;
+#: each edit must match exactly once or the capture fails.
+PROMPT_VARIANTS = {
+    # Denis, 2026-10-12 (docs/decisions.md): a DoC's cert_number holds the
+    # certificate it cites, in every tier.
+    "ruling-a": [(
+        "- `cert_number` — the certificate number (EC / ISO certs), or `null` (DoCs\n"
+        "  themselves have none).",
+        "- `cert_number` — for an EC / ISO certificate, its own number. For a DoC, the\n"
+        "  number of the notified-body certificate the declaration cites (e.g.\n"
+        "  `G1 021108 0031`), or `null` if it cites none. Never a notified body's\n"
+        "  four-digit identification number (e.g. `0482`).",
+    )],
+}
 
 
 ARMS = {
@@ -63,17 +81,19 @@ ARMS = {
     "h55": Arm("claude-haiku-5-5", None, "Haiku 5.5, model swap only (adaptive thinking, effort medium)"),
     "h55n": Arm("claude-haiku-5-5", {"type": "disabled"}, "Haiku 5.5, thinking disabled"),
     "h55hi": Arm("claude-haiku-5-5", None, "Haiku 5.5, adaptive thinking, effort high", "high"),
+    "h55a": Arm("claude-haiku-5-5", None, "Haiku 5.5, T1 prompt with the DoC certificate ruling",
+                prompt="ruling-a"),
 }
 BASE = "h45"
 CHALLENGERS = ("h55", "h55n", "h55hi")
-SUFFIX = {"h45": "45", "h55": "55", "h55n": "55n", "h55hi": "55hi"}
+SUFFIX = {"h45": "45", "h55": "55", "h55n": "55n", "h55hi": "55hi", "h55a": "55a"}
 
 # Fallback chars/token until a dry run measures them. 2.44 is the Slovene figure
 # measured on Haiku 4.5's tokenizer (pdf.LLM_TEXT_BUDGET_CHARS); Haiku 5.5's
 # tokenizer is documented at ~1.3x the tokens for the same text.
 DEFAULT_CPT = {"claude-haiku-4-5": 2.44, "claude-haiku-5-5": 2.44 / 1.3}
 DEFAULT_OUT = {("extract", "h45"): 1500, ("extract", "h55"): 4000, ("extract", "h55n"): 1500,
-               ("extract", "h55hi"): 8192,
+               ("extract", "h55hi"): 8192, ("extract", "h55a"): 4000, ("classify", "h55a"): 256,
                ("classify", "h45"): 100, ("classify", "h55"): 256, ("classify", "h55n"): 100,
                ("classify", "h55hi"): 256}
 
@@ -151,6 +171,25 @@ def _capture(fn) -> dict:
     except _Captured as c:
         return c.params
     raise RuntimeError("pipeline code made no API call")
+
+
+@contextlib.contextmanager
+def _prompt_variant(name: str | None):
+    """Swap the T1 prompt for one arm's capture, then restore it."""
+    if name is None:
+        yield
+        return
+    original = llm_mod.T1_SYSTEM
+    text = original
+    for old, new in PROMPT_VARIANTS[name]:
+        if text.count(old) != 1:
+            raise AssertionError(f"prompt variant {name}: edit does not match exactly once")
+        text = text.replace(old, new)
+    llm_mod.T1_SYSTEM = text
+    try:
+        yield
+    finally:
+        llm_mod.T1_SYSTEM = original
 
 
 # --------------------------------------------------------------------------- #
@@ -283,7 +322,8 @@ def _prepare(d: dict) -> tuple[dict, list[dict]]:
             if doc_class == "unknown":
                 kinds.append(("classify", lambda: llm.classify(doc, path)))
             for kind, fn in kinds:
-                params = _capture(fn)
+                with _prompt_variant(ARMS[arm_id].prompt if kind == "extract" else None):
+                    params = _capture(fn)
                 reqs.append({"content_hash": d["content_hash"], "arm": arm_id, "kind": kind,
                              "key": request_key(params), "chars": _prompt_chars(params),
                              "params": params})
@@ -292,15 +332,21 @@ def _prepare(d: dict) -> tuple[dict, list[dict]]:
 
 
 def _assert_same_input(reqs: list[dict]) -> None:
-    """Every arm must send the same request but for model and thinking."""
-    by_kind = collections.defaultdict(list)
+    """Every arm must send the same request but for model and thinking; an arm
+    with a prompt variant may differ in `system` too, and in nothing else."""
+    by_kind, systems = collections.defaultdict(list), collections.defaultdict(set)
     for r in reqs:
-        stripped = {k: v for k, v in r["params"].items() if k not in ("model", "thinking")}
+        stripped = {k: v for k, v in r["params"].items() if k not in ("model", "thinking", "system")}
         stripped["output_config"] = {k: v for k, v in stripped["output_config"].items() if k != "effort"}
         by_kind[r["kind"]].append(request_key(stripped))
+        if not (r["kind"] == "extract" and ARMS[r["arm"]].prompt):
+            systems[r["kind"]].add(json.dumps(r["params"]["system"], sort_keys=True))
     for kind, keys in by_kind.items():
         if len(set(keys)) != 1:
-            raise AssertionError(f"arms differ beyond model/thinking for {kind}")
+            raise AssertionError(f"arms differ beyond model/thinking/system for {kind}")
+    for kind, sy in systems.items():
+        if len(sy) != 1:
+            raise AssertionError(f"arms without a prompt variant differ in system for {kind}")
 
 
 def cmd_plan(args) -> int:
@@ -496,22 +542,26 @@ def cmd_batch(args) -> int:
     state_path = run / "batches.json"
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
     client = _client()
-    if not state:
-        reqs = _requests(run)
+    submitted = {k for ids in state.values() for k in ids.values()}
+    reqs = _requests(run)
+    skip_path = run / "skipped_over_100k.json"
+    if skip_path.exists() and state:
+        skip = set(json.loads(skip_path.read_text()))
+    else:
         est_all = _estimate(reqs, "batch")
         skip = set() if args.allow_over_100k else est_all["flagged"]
         if est_all["flagged"]:
             print(f"prompt over 100k tokens on Haiku 5.5 (estimated): {sorted(h[:12] for h in est_all['flagged'])}"
                   f" -> {'INCLUDED' if args.allow_over_100k else 'skipped, all arms'}")
-        (run / "skipped_over_100k.json").write_text(json.dumps(sorted(skip)))
-        todo = [r for r in reqs if r["content_hash"] not in skip and cached(r["key"]) is None]
-        print(f"batch: {len(todo)} requests not cached")
+        skip_path.write_text(json.dumps(sorted(skip)))
+    todo = [r for r in reqs if r["content_hash"] not in skip and cached(r["key"]) is None
+            and r["key"] not in submitted]
+    print(f"batch: {len(todo)} requests neither cached nor submitted")
+    if todo:
         total = _print_estimate(_estimate(todo, "batch"))
         if total > args.cap_usd:
             print(f"STOP: estimate ${total:.3f} exceeds cap ${args.cap_usd}")
             return 2
-        if not todo:
-            return 0
         by_arm = collections.defaultdict(list)
         for r in todo:
             by_arm[r["arm"]].append(r)
@@ -522,8 +572,8 @@ def cmd_batch(args) -> int:
             state[batch.id] = ids
             state_path.write_text(json.dumps(state, indent=1))
             print(f"  submitted {arm}: {batch.id} ({len(rs)} requests)")
-    by_key = {r["key"]: r for r in _requests(run)}
-    pending = set(state)
+    by_key = {r["key"]: r for r in reqs}
+    pending = {bid for bid, ids in state.items() if any(cached(k) is None for k in ids.values())}
     errors = []
     while pending:
         for bid in sorted(pending):
