@@ -289,12 +289,61 @@ def test_hints_ride_a_second_system_block_leaving_the_prompt_file_untouched(fixt
 
 
 def test_no_hints_leaves_the_request_exactly_as_it_was(fixture_pdf):
-    """Every document without a playbook must produce the request T1 has always
-    produced -- a plain string system prompt."""
+    """Changed deliberately with prompt caching (extraction-ladder Task 6). It
+    used to pin a plain-string system prompt; with no hints `system` is now a
+    one-block list whose only block is the unchanged prompt text plus
+    `cache_control`. Everything else in the request is pinned by
+    `test_caching_changes_only_the_system_field`."""
     doc = pdf.open_doc(fixture_pdf(TEXT_PDF))
     p = llm._params("T1", Models(), doc, ["validity_from"], 4096)
 
-    assert p["system"] == llm.T1_SYSTEM
+    assert p["system"] == [
+        {"type": "text", "text": llm.T1_SYSTEM, "cache_control": {"type": "ephemeral"}}]
+
+
+@pytest.mark.parametrize("label", ["T1", "T2"])
+def test_caching_changes_only_the_system_field(fixture_pdf, label):
+    """Compare against a request rebuilt by hand from the same parts: model,
+    max_tokens, messages, output_config (and thinking) are as they were."""
+    doc = pdf.open_doc(fixture_pdf(TEXT_PDF))
+    p = llm._params(label, Models(), doc, ["validity_from"], 4096)
+    read = llm.resolve_read(label, Models())
+    if read.kind == llm.TEXT:
+        content = llm._text_content(doc, ["validity_from"])
+    else:
+        content = llm._vision_content(doc, ["validity_from"], read.pages)
+    expected = {
+        "model": read.model, "max_tokens": 4096,
+        "messages": [{"role": "user", "content": content}],
+        "output_config": {"format": {"type": "json_schema", "schema": llm.SCHEMA}},
+    }
+    assert {k: v for k, v in p.items() if k != "system"} == expected
+
+
+@pytest.mark.parametrize("label", ["T1", "T2"])
+def test_cache_marker_sits_on_the_static_block_never_on_the_hints(fixture_pdf, label):
+    doc = pdf.open_doc(fixture_pdf(TEXT_PDF))
+    p = llm._params(label, Models(), doc, ["validity_from"], 4096, hints="A hint.")
+
+    assert p["system"][0]["cache_control"] == {"type": "ephemeral"}
+    assert "cache_control" not in p["system"][1]
+    assert p["system"][1]["text"] == "A hint."
+
+
+def test_batch_requests_carry_the_cache_marker(fixture_pdf):
+    doc = pdf.open_doc(fixture_pdf(TEXT_PDF))
+    req = llm.AnthropicBatchClient(StubBatchSdk("{}"), Models()).build_requests(
+        "abc123", "T1", doc, ["validity_from"])
+    assert req[0]["params"]["system"][0]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_doc_class_prompt_is_not_cached():
+    """Decided in Task 6: the prompt is about 2.75k characters (roughly 700
+    tokens), over Haiku 5.5's 512-token minimum but under Haiku 4.5's 4,096, and
+    `models.t1` can be either, so a marker would be a no-op on one and a cache
+    write nothing re-reads soon on the other. Left as the plain string."""
+    assert isinstance(llm.DOC_CLASS_SYSTEM, str)
+    assert len(llm.DOC_CLASS_SYSTEM) < 4 * 4096
 
 
 def test_sync_and_batch_build_byte_identical_requests(fixture_pdf):
@@ -405,10 +454,10 @@ def test_params_route_by_kind_not_by_label(fixture_pdf, label, kind, model, thin
 
     assert p["model"] == model
     if kind == "text":
-        assert p["system"] == llm.T1_SYSTEM
+        assert p["system"][0]["text"] == llm.T1_SYSTEM
         assert _images(p) == []
     else:
-        assert p["system"] == llm.T2_SYSTEM
+        assert p["system"][0]["text"] == llm.T2_SYSTEM
         assert _images(p)
     if thinking is None:
         assert "thinking" not in p

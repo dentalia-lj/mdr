@@ -162,6 +162,21 @@ pricing page 2026-10-12): $0.10 / $0.50 per MTok up to 100,000 prompt tokens,
 $0.50 / $2.50 over, for the whole call. Prompt length counts cache reads and
 writes. Sonnet 5.5 reads its cache at 0.05x, not the default 0.1x.
 
+**Prompt caching** (Task 6, 2026-10-12). `_system` (`app/extract/llm.py`) always
+returns a list of blocks now: the static T1 or T2 prompt first, carrying
+`cache_control: {"type": "ephemeral"}` (the default 5-minute cache), then the
+playbook hints block when there is one, never marked. Sync reads and batch
+requests share `_request`, so both carry it. Below a model's minimum cacheable
+prefix (512 tokens on Haiku 5.5, 4,096 on Haiku 4.5) the API ignores the marker;
+the T1 prompt is about 4,870 tokens and the T2 image prompt about 3,696. The
+doc-class prompt (about 700 tokens) is not marked: it clears Haiku 5.5's minimum
+but not Haiku 4.5's, and `models.t1` can be either. `Usage` records cache read
+and write tokens but cannot tell a 1-hour write from a 5-minute one, which is why
+only the default cache is used. Eval-cache keys that hash the request bytes
+(`tools/haiku_compare.py`) miss on the new `system` shape. Whether
+`cache_read_input_tokens` rises above 0 is read off the first real run's ledger
+rows; it is not provable offline.
+
 **T0 template engine** ("engine-agnostic data", `app/extract/t0_layout.py`).
 A `Template` (`t0_layout.py:37-43`) is `slug`, `manufacturer`, `anchors`
 (text to match, never pixel/bbox coordinates), `ref_strategy` (one of

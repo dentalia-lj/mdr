@@ -313,21 +313,22 @@ def _response_json(resp) -> dict:
         return {}
 
 
-def _system(base: str, hints: str | None) -> str | list[dict]:
-    """System prompt for one request.
+def _system(base: str, hints: str | None) -> list[dict]:
+    """System prompt for one request, always a list of blocks.
 
-    With no hints this returns the prompt string unchanged, so every document
-    without a playbook produces byte-for-byte the request it always did. With
-    hints it becomes two blocks: `base` FIRST and byte-identical (a stable,
-    cacheable prefix and a prompt file that stays reviewable as prose), then the
-    per-manufacturer block. The hints are never interpolated into the prompt
-    file itself."""
-    if not hints:
-        return base
-    return [
-        {"type": "text", "text": base},
-        {"type": "text", "text": hints},
-    ]
+    `base` is FIRST and byte-identical (a stable prefix and a prompt file that
+    stays reviewable as prose) and carries `cache_control` (5-minute ephemeral,
+    the default), so the static prompt is written to the cache once and read at
+    a fraction of the input price by the next call inside the window. The
+    per-manufacturer hints, when there are any, follow as a second block with no
+    marker: they change from one manufacturer to the next, and a marker on them
+    would only pay a cache write that nothing reads. The hints are never
+    interpolated into the prompt file itself. Below the model's minimum
+    cacheable prefix the marker is ignored by the API, not an error."""
+    blocks = [{"type": "text", "text": base, "cache_control": {"type": "ephemeral"}}]
+    if hints:
+        blocks.append({"type": "text", "text": hints})
+    return blocks
 
 
 def _request(read: Read, doc, missing: list[str], max_tokens: int,
