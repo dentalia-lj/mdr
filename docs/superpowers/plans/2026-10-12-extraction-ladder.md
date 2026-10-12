@@ -97,6 +97,21 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | second image read (scans) | pages 1-4 | models.second_read, thinking off | `T2-second` |
 | Sonnet image read | pages 1-4 | models.t2 | `T2` |
 
+## Progress (updated as tasks land)
+
+| task | state | where |
+|---|---|---|
+| 0 contract (PRD, design doc) | done, approved | 4811151 |
+| 1 read plumbing, ledger | building (Opus) | worktree el-plumbing |
+| 2 checks, page classes | built (Sonnet) 9849a9d; Opus review running | worktree el-checks |
+| 3 scans | waiting for 1 and 2 | |
+| 4 text ladder | waiting for 1 and 2 | |
+| 5 gate, guard, migration | waiting for 3 and 4 | |
+| 6 prompt caching | waiting for 1 | |
+| 7 re-extract command | done: built (Sonnet), reviewed and fixed (Opus), merged | c39bb77 |
+| 8 quality and parity | waiting for 1-6 | |
+| 9 production replay | waiting for 1-6 | |
+
 ## Who builds what, and in parallel (Denis, 2026-10-12)
 
 Sonnet builds the tasks that are self-contained and fully specified; every Sonnet
@@ -125,11 +140,11 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
 
 ### Task 0. Contract first (docs only) - 3 h / 0.3 h
 
-- [ ] PRD v3 section 5: lines 206 (tier ladder) and 210 ("escalation on low per-field
+- [x] PRD v3 section 5: lines 206 (tier ladder) and 210 ("escalation on low per-field
       confidence only") to escalation on failed evidence checks and disagreement; the
       ladder of the steps table above. Flag list: add informational `pages-unread`.
       Evidence tuple: the agreeing read's model and confidence.
-- [ ] `docs/dentalia-v3-v4-system-design.md` tier table (lines 73-80).
+- [x] `docs/dentalia-v3-v4-system-design.md` tier table (lines 73-80).
       `docs/dev/extraction.md` describes the code as built, so it changes with Tasks 3
       and 4 (lines 1, 67, 194-197 describe T2 as forced for scans), not here.
 - **Done when:** Denis has approved the PRD wording. Tasks 1-5 start only after that.
@@ -279,13 +294,13 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
 
 ### Task 7. Re-extract command - 6 h / 0.6 h
 
-- [ ] `python -m app.cli reextract` for a selector: DoCs whose `cert_number` came
+- [x] `python -m app.cli reextract` for a selector: DoCs whose `cert_number` came
       from T1 and is null; scans whose last result was `not-a-compliance-document` on
       empty text; or a list of content hashes. Dry run by default, counts printed,
       `--apply` enqueues `extract.doc` (terminal jobs do not block re-enqueue).
-- [ ] Sync mode only: in batch mode `batch_ref` has no revision, so a resolved row
+- [x] Sync mode only: in batch mode `batch_ref` has no revision, so a resolved row
       returns the old results; the command refuses there.
-- [ ] Tests: `tests/test_cli*.py`. Docs: `docs/runbook.md`.
+- [x] Tests: `tests/test_cli*.py`. Docs: `docs/runbook.md`.
 
 ### Task 8. Quality and parity check against the evaluation - 8 h / 0.8 h
 
