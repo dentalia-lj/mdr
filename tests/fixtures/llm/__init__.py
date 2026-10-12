@@ -18,6 +18,12 @@ read, ``T2`` for an image read), as ``AnthropicLlm`` stamps it. Every ``extract`
 field with no recorded value, so the ladder can run to completion on docs we have
 not hand-recorded. Recorded values always win over the generic fill.
 
+``null_missing=True`` answers such a field null instead, as a real read does:
+the response schema requires every field, so a read that found nothing still
+returns the field, empty. Without either flag an unrecorded field is absent,
+and a read with nothing recorded returns ``{}``, which the scan ladder takes
+for a FAILED read (no answer), not an empty one.
+
 Response file format (one JSON object per file under ``responses/``), matching the
 handbook 5 evidence shape (``tier``/``model_id`` are stamped by the stub, so the
 per-field objects omit them)::
@@ -45,12 +51,13 @@ def hash_file(path: str) -> str:
 
 class RecordedLlm:
     def __init__(self, responses: list[dict] | None = None, *, fill_missing: bool = False,
-                 fill_conf: float = 0.9):
+                 fill_conf: float = 0.9, null_missing: bool = False):
         self._fields: dict[tuple[str, str], dict] = {}
         self._model: dict[tuple[str, str], str] = {}
         self.calls: list[tuple[str, tuple]] = []
         self.fill_missing = fill_missing
         self.fill_conf = fill_conf
+        self.null_missing = null_missing
         for r in responses or []:
             self.register(**r)
 
@@ -95,4 +102,7 @@ class RecordedLlm:
                     "value": f"<{tier}:{field}>", "conf": self.fill_conf, "tier": ev_tier,
                     "verbatim": f"stub {tier} {field}", "page": None, "model_id": model_id,
                 }
+            elif self.null_missing:
+                out[field] = {"value": None, "conf": 0.0, "tier": ev_tier, "verbatim": "",
+                              "page": None, "model_id": model_id}
         return out

@@ -116,12 +116,12 @@ def test_emax_escalates_only_missing_fields(fixture_pdf):
 # --------------------------------------------------------------------------- #
 def test_scanned_doc_read_by_vision_tier(fixture_pdf):
     """An 11-page scan. The recorded cheap image read (`T2-first`) settles four
-    fields at 0.90 or more; the second cheap read (unrecorded) answers nothing,
-    so the five fields neither read answered are UNREAD -- the image reads see
-    pages 1-4 of 11, and Sonnet would see the same four -- not settled and not
-    sent to Sonnet."""
+    fields at 0.90 or more; the second cheap read (unrecorded) answers every
+    field it is asked empty, so the five fields both reads answered empty are
+    UNREAD -- the image reads see pages 1-4 of 11, and Sonnet would see the
+    same four -- not settled and not sent to Sonnet."""
     path = fixture_pdf("DENSTPLY/IMP - DOC - ATIS TX SURGICAL INSTRUMENTS - DEC-00101190.pdf")
-    _, fields, used, llm = _run(path)  # recorded T2-first regulation/validity_to/...
+    _, fields, used, llm = _run(path, null_missing=True)  # recorded T2-first regulation/...
 
     assert used == ["T0", "T2-first", "T2-second"]
     assert fields["regulation"]["value"] == "MDR"

@@ -185,6 +185,9 @@ Deliberate (2026-10-12). A scan T0 cannot type is classified off its page images
 **A scanned document carries `pages-unread`.**
 Informational, not a fault. The image reads see pages 1-4; on a longer scan, a field neither cheap read found may be on a page nobody read, so it is left empty and flagged rather than settled as absent or sent to Sonnet (who sees the same four pages). `extraction_attempt.fields._pages_unread` names the fields. A person reads the rest of the file if the field matters.
 
+**A scan's `extract.doc` result shows `counts.read_failures`.**
+A read on the scan ladder answered nothing: its response would not parse or was cut at `max_tokens` (the worker log has the `unparseable structured output` warning), or, in batch mode, its batch request errored. `failed_reads` names the steps. Nothing was lost: a failed read is never taken as an empty answer, so its fields went on to the next read, Sonnet included (2026-10-12). Recurring failures on one label are worth a look at the worker log; one is noise.
+
 **A document was re-extracted with different values and the old ones survive.**
 Working as designed: never downgrade, never delete (Invariant 4). Older candidates flag rather than overwrite; null dates are `downgrade-uncomparable`. Supersession decisions belong to VALIDATE/GATE, not to whoever noticed.
 

@@ -503,7 +503,9 @@ def _classify_image_request(read: Read, doc, filename: str) -> dict:
     params = {
         "model": read.model,
         "max_tokens": DOC_CLASS_MAX_TOKENS,
-        "system": _system(DOC_CLASS_IMAGE_SYSTEM, None),
+        # A plain string, as `classify` sends: the doc-class prompt stays
+        # uncached (Task 6, about $0.0001 a call to gain), so not `_system`.
+        "system": DOC_CLASS_IMAGE_SYSTEM,
         "messages": [{"role": "user", "content": content}],
         "output_config": {"format": {"type": "json_schema", "schema": DOC_CLASS_SCHEMA}},
     }

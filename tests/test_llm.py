@@ -715,6 +715,17 @@ def test_classify_image_asks_the_cheap_vision_model_about_pages_one_and_two():
         ("doc-class-image", LadderModels.vision_first)]
 
 
+def test_the_image_doc_class_prompt_is_a_plain_string_and_never_cached():
+    """As the text `classify` sends it (Task 6 left the doc-class prompt
+    uncached). Built without `_system`, so the cache marker Task 6 puts on
+    every `_system` block does not reach it on merge."""
+    client = _StopClient('{"doc_class": "EC", "quote": "EC Certificate"}')
+    llm.AnthropicLlm(client, LadderModels()).classify_image(_scan_doc(1), "scan.pdf")
+
+    assert client.kwargs["system"] == llm.DOC_CLASS_IMAGE_SYSTEM
+    assert "cache_control" not in str(client.kwargs)
+
+
 def test_classify_image_keeps_the_closed_answer_vocabulary():
     tier = llm.AnthropicLlm(_StopClient('{"doc_class": "Invoice", "quote": "INVOICE"}'),
                             LadderModels())

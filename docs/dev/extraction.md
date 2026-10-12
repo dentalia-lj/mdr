@@ -32,9 +32,9 @@ itself.
 | `app/extract/t0_templates.py` | 1267 | T0: doc-class classification, keyword tables, REF-list extraction, `field_ev()` evidence shape |
 | `app/extract/t0_layout.py` | 307 | The T0 REF-list layout-template engine (anchors + text-relative regions, read from playbooks) |
 | `app/extract/udi.py` | 148 | Offline Basic UDI-DI check-character validation (HIBCC + GS1, MOD 1021/32) |
-| `app/extract/tiers.py` | 830 | The ladder itself: `needs_escalation`, `merge` (stronger read prevails), `calibrate`, `run_extraction` (text ladder), `run_scan_ladder` (scans), `read_disagreements`, `extraction_attempt`/`extraction_cost` writers |
+| `app/extract/tiers.py` | 893 | The ladder itself: `needs_escalation`, `merge` (stronger read prevails), `calibrate`, `run_extraction` (text ladder), `run_scan_ladder` (scans), `read_disagreements`, `failed_reads`, `extraction_attempt`/`extraction_cost` writers |
 | `app/extract/checks.py` | 323 | Evidence checks, pure: `settled` / `null_settled` / `both_null_settled` against the text layer; for scans `well_formed`, `normalized` and `agree` (shape and agreement, no text needed) |
-| `app/extract/llm.py` | 718 | T1/T2 Anthropic clients (sync `AnthropicLlm`, batch `AnthropicBatchClient`), `READ_STEPS`, the JSON schema, per-field evidence construction, the doc-class calls (`classify` on page 1-2 text, `classify_image` on page 1-2 images) |
+| `app/extract/llm.py` | 720 | T1/T2 Anthropic clients (sync `AnthropicLlm`, batch `AnthropicBatchClient`), `READ_STEPS`, the JSON schema, per-field evidence construction, the doc-class calls (`classify` on page 1-2 text, `classify_image` on page 1-2 images) |
 | `app/extract/batching.py` | 56 | Batch API state machine (`advance_batch`) over the `batch_ref` side table |
 | `app/extract/economics.py` | 110 | Token usage → USD, per-model `PRICES`, `UnknownModelPricing` |
 | `app/extract/pdf.py` | 240 | The only module touching PyMuPDF directly: text, rasterization, `is_scan`, `bounded_text`, per-page classes (`page_classes`; `has_text_page` decides text ladder or scan ladder) |
@@ -94,12 +94,20 @@ Steps and labels from `llm.READ_STEPS`:
 3. `T2-second` (`models.second_read`, thinking off) for what is open. Settled
    when both reads agree (`checks.agree`: the same well-formed value after
    `checks.normalized` — dates as ISO, codes compacted, lists as sets — each read
-   at least `gate.agreement_min`, 0.70) or both are empty and
+   at least `gate.agreement_min`, 0.70) or both ANSWERED it empty and
    `checks.both_null_settled` allows it (never a Basic UDI-DI on a scan).
+   A **failed read** is not an empty answer: a real read returns every field it
+   is asked, null included (the response schema requires them all), so a read
+   that returns nothing failed (a response that would not parse or was cut at
+   `max_tokens`, or an errored batch request). Its fields stay open and go on
+   to the next read; it is marked `failed` in `_reads` and counted on the job
+   result (`failed_reads`, `counts.read_failures`; review 2026-10-12: two
+   failed cheap reads used to "settle" every field but the UDI as empty).
 4. A scan longer than the four pages the image reads see: a field both cheap
-   reads left empty is **unread**, not settled and not sent to Sonnet (who
+   reads answered empty is **unread**, not settled and not sent to Sonnet (who
    sees the same pages). Recorded under `_pages_unread`; VALIDATE raises the
-   informational flag `pages-unread` from it (`tiers.integrity_flags`).
+   informational flag `pages-unread` from it (`tiers.integrity_flags`). Two
+   failed reads say nothing about the pages, so their fields go to Sonnet.
 5. Type to scope: once the type is known to be EC, ISO or IFU, the scope follows
    from it (`t0_templates.derive_coverage_scope`) and replaces a scope that
    disagrees or is empty, as T0 evidence ("type=EC") at the type's confidence
@@ -107,7 +115,14 @@ Steps and labels from `llm.READ_STEPS`:
    the second read the scope. Measured: two cheap reads agreed on `group` for an
    MDD certificate in the eval; this caught it.
 6. `T2` (`models.t2`, Sonnet) for what is still open, never when nothing is.
-   Its answer closes what it was asked; type to scope runs once more.
+   Its answer closes what it was asked, an **empty answer included**
+   (`tiers._sonnet_closes`): the field held a value no rule settled, and the
+   strongest read found nothing there. Two guards stay: an empty answer never
+   shortens a `ref_list`, and T0 at 0.95 is never overwritten. A field Sonnet
+   gave no answer for (a failed read) keeps what it holds. Review 2026-10-12:
+   on the eval, four `cert_number` values only the second cheap read gave,
+   contradicted by the first read and by Sonnet, survived Sonnet's null; one
+   was a manufacturer SRN. Type to scope runs once more.
 
 The pursued set is `needs_escalation`'s, keyed to what is KNOWN (T0 at 0.95 or
 settled by a read) rather than to a value, so it only shrinks: a known IFU
@@ -117,12 +132,16 @@ file name gets `manufacturer` at 0.6), and by value it would have kept the item
 identifiers from ever being asked.
 
 Every read is kept: `_reads` on the attempt's `fields`, a list in read order of
-`{step, model_id, fields: {field: {value, conf, page}}}` (None for a field
-asked and not answered); a list because jsonb sorts an object's keys. Every
-field two reads answered differently is on the job result as `disagreements`
-(`{field, steps, values}`) and counted as `counts.read_disagreements`
-(`tiers.read_disagreements`); disagreements are counted, not sent to review
-(Denis, 2026-10-12). A scan field's evidence carries `step` (its label), which
+`{step, model_id, fields: {field: {value, conf, page}}}` (a null `value` for
+a field answered empty, None for a field the read gave no answer for) and
+`failed: true` on a read that answered nothing; a list because jsonb sorts an
+object's keys. Every field two reads answered differently is on the job result
+as `disagreements` (`{field, steps, values}`) and counted as
+`counts.read_disagreements` (`tiers.read_disagreements`; a read with no answer
+for the field is left out, it gave no reading); disagreements are counted, not
+sent to review (Denis, 2026-10-12). Failed reads are on the job result as
+`failed_reads` (their steps) and counted as `counts.read_failures`
+(`tiers.failed_reads`). A scan field's evidence carries `step` (its label), which
 GATE ignores and `merge` ranks by.
 
 **Merge policy** (`merge`): the **stronger** read wins for the fields it
@@ -131,7 +150,8 @@ GATE ignores and `merge` ranks by.
 guess under 0.95; T0 at 0.95 or more is never overwritten; equal strength,
 later wins. On the text ladder each read is stronger than the one before, so
 there it is exactly the old later-wins rule. A blank later answer never erases
-an earlier hit
+an earlier hit (one exception, outside `merge`: Sonnet's empty answer on the
+scan ladder closes the field, step 6 above)
 (`_is_blank`, `tiers.py:128-136`); one shrink guard applies only to
 `_ENUMERATED_FIELDS = {"ref_list"}` (`tiers.py:142,145-154`) — a later tier
 may not replace a longer list with a shorter one, because an LLM `ref_list`
@@ -352,7 +372,7 @@ schema enforces it.
 | File | Pins |
 |---|---|
 | `tests/test_tiers.py` | Escalation gating, `merge`/shrink-guard, `run_extraction`, `test_a_scan_takes_the_image_ladder_and_never_a_text_read` |
-| `tests/test_tiers_scan.py` | The scan ladder: routing (a mixed PDF stays text), the image doc-class call, 1/3/6-page scans and `pages-unread`, settle at 0.85, agreement at 0.70, both-null except the UDI, type to scope, Sonnet only for what is open, the reads record, disagreements, `merge` by strength |
+| `tests/test_tiers_scan.py` | The scan ladder: routing (a mixed PDF stays text), the image doc-class call, 1/3/6-page scans and `pages-unread`, settle at 0.85, agreement at 0.70, both-null except the UDI, failed reads (never an empty answer, counted), type to scope, Sonnet only for what is open and its empty answer closing a field, the reads record, disagreements, `merge` by strength |
 | `tests/test_checks.py` | `checks.py` — the text checks, page classes, and the scan shape / agreement checks |
 | `tests/test_tiers_corpus.py` | Ladder behaviour against the seed corpus |
 | `tests/test_t0.py`, `tests/test_t0_corpus.py` | `t0_templates.py` classification and field extraction |

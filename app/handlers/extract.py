@@ -199,6 +199,13 @@ def _finalize(conn, content_hash, group_id, doc_class, tiers_used, fields,
     if disagreements:
         out["disagreements"] = disagreements
         out.setdefault("counts", {})["read_disagreements"] = len(disagreements)
+    # A read that failed (unparseable or truncated response, errored batch
+    # request) answered nothing; its fields stayed open rather than counting as
+    # empty. Counted so it is never silent; absent when there are none.
+    failed = tiers.failed_reads(fields)
+    if failed:
+        out["failed_reads"] = failed
+        out.setdefault("counts", {})["read_failures"] = len(failed)
     return out
 
 

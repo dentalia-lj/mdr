@@ -684,15 +684,25 @@ def test_batch_scan_doc_class_with_no_answer_fails_rather_than_refuses(conn, tmp
         eh.handle_extract_doc(conn, job, batch_client=bc, poll_interval_s=0)
 
 
+#: `_LabelLlm` answers for a label: the read fails and answers nothing.
+_FAILED = "failed"
+
+
 class _LabelLlm:
-    """Sync stub keyed by read label."""
+    """Sync stub keyed by read label. Like a real read it answers every field
+    it is asked, null where it was given nothing; `_FAILED` answers nothing."""
 
     def __init__(self, answers):
         self.answers, self.calls = answers, []
 
     def extract(self, tier, doc, filename, missing, **kw):
         self.calls.append(tier)
-        return {f: ev for f, ev in self.answers.get(tier, {}).items() if f in missing}
+        given = self.answers.get(tier, {})
+        if given == _FAILED:
+            return {}
+        return {f: given.get(f) or {"value": None, "conf": 0.0, "tier": "T2", "verbatim": "",
+                                    "page": None, "model_id": f"model-{tier}"}
+                for f in missing}
 
 
 DENTSPLY_SCAN = "DENSTPLY/IMP - DOC - ATIS TX SURGICAL INSTRUMENTS - DEC-00101190.pdf"  # 11 pages
@@ -720,7 +730,44 @@ def test_sync_scan_keeps_every_read_and_flags_unread_pages(conn, fixture_pdf):
     assert tiers_mod.PAGES_UNREAD_FLAG in tiers_mod.integrity_flags(fields)
     assert [x["step"] for x in fields[tiers_mod.READS_KEY]] == ["T2-first", "T2-second"]
     assert "disagreements" not in r                          # nothing read twice differs
+    assert "failed_reads" not in r and "read_failures" not in r.get("counts", {})
     assert _count(conn, "SELECT count(*) c FROM job WHERE type='validate.doc'") == 1
+
+
+def test_sync_scan_counts_failed_reads_on_the_job_result(conn, fixture_pdf):
+    """Both cheap reads fail (a response that would not parse answers nothing).
+    That is not two empty answers: nothing settles, nothing is marked unread,
+    Sonnet is asked every field, and the failures are counted."""
+    llm = _LabelLlm({"T2-first": _FAILED, "T2-second": _FAILED,
+                     "T2": _scan_fields("T2", SCAN_SETTLED)})
+    job = {"payload": {"archive_url": fixture_pdf(DENTSPLY_SCAN),
+                       "content_hash": "sha-scan-failed", "group_id": 4}}
+
+    r = eh.handle_extract_doc(conn, job, llm=llm)
+    conn.commit()
+
+    assert llm.calls == ["T2-first", "T2-second", "T2"]
+    assert r["failed_reads"] == ["T2-first", "T2-second"]
+    assert r["counts"]["read_failures"] == 2
+    fields = conn.execute("SELECT fields FROM extraction_attempt "
+                          "WHERE content_hash='sha-scan-failed'").fetchone()["fields"]
+    assert tiers_mod.PAGES_UNREAD_KEY not in fields          # 11 pages, yet not unread
+    assert fields["regulation"]["step"] == "T2"
+
+
+def test_batch_scan_counts_an_errored_request_as_a_failed_read(conn, fixture_pdf):
+    """An errored batch request leaves no result (`results` skips it): the
+    read failed, its fields go on to the next read, and it is counted."""
+    job = _enqueue_extract(conn, "sha-b10", 6, fixture_pdf(SCAN_CERT))
+    bc = StubBatchClient({"T2-first": {},
+                          "T2-second": _scan_fields("T2-second", SCAN_SETTLED, conf=0.80),
+                          "T2": _scan_fields("T2", SCAN_SETTLED)}, ready_after=0)
+
+    r, waited = _drive(conn, job, bc)
+
+    assert waited == ["T2-first", "T2-second", "T2"]
+    assert r["failed_reads"] == ["T2-first"]
+    assert r["counts"]["read_failures"] == 1
 
 
 def _empty_ref(tier):

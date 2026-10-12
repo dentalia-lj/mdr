@@ -311,7 +311,10 @@ def test_a_scan_takes_the_image_ladder_and_never_a_text_read(fixture_pdf):
     T0 holds the scope at 1.0 as `manufacturer`, so no item id is pursued."""
     path = fixture_pdf("IVOCLAR/MDR Certificate IV AG 2017_745.pdf")  # a scan
     doc = pdf.open_doc(path)
-    stub = StubLlm({"T2-first": {}, "T2-second": {}})
+    # Empty ANSWERS, as a real read gives them: every asked field, value null.
+    # An empty dict would be a failed read, which settles nothing.
+    nulls = {f: ev(None, 0.0, "T2") for f in tiers.TARGET}
+    stub = StubLlm({"T2-first": nulls, "T2-second": nulls})
     _, fields, used = tiers.run_extraction(doc, path, llm=stub, threshold=0.95)
     assert used == ["T0", "T2-first", "T2-second"]
     assert [tier for tier, _ in stub.calls] == ["T2-first", "T2-second"]

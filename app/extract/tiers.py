@@ -629,17 +629,45 @@ def _scope_from_type(fields: dict, known: set[str]) -> None:
 
 def _reads_record(reads: dict[str, tuple[list[str], dict]]) -> list[dict]:
     """`READS_KEY`'s value: per read, in read order, its step, its model and,
-    for every field it was asked, what it answered (None when it answered
-    nothing). Value, confidence and page only: the verbatim of the read that
-    prevailed is on the field."""
+    for every field it was asked, what it answered: `{value, conf, page}`, a
+    null value included, or None when the read gave no answer for the field at
+    all. Value, confidence and page only: the verbatim of the read that
+    prevailed is on the field.
+
+    A read that answered none of the fields it was asked is marked
+    `"failed": True` (`failed_reads`): a real read answers every field it is
+    asked, null included (the response schema requires them all), so an empty
+    answer means the read itself failed -- a response that would not parse or
+    was cut at max_tokens (`llm._response_json`), or a batch request that
+    errored (`AnthropicBatchClient.results` skips it)."""
     out = []
     for label, (asked, answer) in reads.items():
         model = next((ev.get("model_id") for ev in answer.values() if ev.get("model_id")), None)
-        out.append({"step": label, "model_id": model, "fields": {
+        entry = {"step": label, "model_id": model, "fields": {
             f: ({"value": answer[f].get("value"), "conf": answer[f].get("conf"),
                  "page": answer[f].get("page")} if f in answer else None)
-            for f in asked}})
+            for f in asked}}
+        if asked and not answer:
+            entry["failed"] = True
+        out.append(entry)
     return out
+
+
+def _sonnet_closes(field: str, incumbent, threshold: float) -> bool:
+    """Whether Sonnet's EMPTY answer for `field` replaces what the field holds.
+
+    It does: a field reaches Sonnet only while the cheap reads leave it open,
+    so what it holds is a value no rule settled (review 2026-10-12: on the eval
+    a `cert_number` only the second cheap read gave, contradicted by the first
+    and by Sonnet, survived Sonnet's null, which `merge`'s blank guard kept;
+    the measured route takes Sonnet's answer). Two guards stay, as in `merge`:
+    an enumeration is never replaced by a shorter answer, and an empty one is
+    shorter than any list; T0 at or above the threshold is never overwritten."""
+    if not isinstance(incumbent, dict) or _is_blank(incumbent):
+        return True
+    if field in _ENUMERATED_FIELDS:
+        return False
+    return _rank(incumbent, threshold) != _T0_SETTLED
 
 
 def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list[str],
@@ -664,25 +692,28 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
        above is settled.
     3. `T2-second` (`models.second_read`, thinking off) for what is open. A
        field settles when both reads agree (`checks.agree`: one well-formed
-       value, each read at least `agreement_min`) or both are empty and
+       value, each read at least `agreement_min`) or both ANSWERED it empty and
        `checks.both_null_settled` allows it (never a Basic UDI-DI on a scan,
-       never when pages went unread).
-    4. On a scan longer than the pages read, a field both cheap reads left
+       never when pages went unread). A read that failed gave no answer, which
+       is not an empty one: its fields stay open (`failed_reads`).
+    4. On a scan longer than the pages read, a field both cheap reads answered
        empty is UNREAD: not settled, not sent to Sonnet (who sees the same
        pages), recorded under `PAGES_UNREAD_KEY` (flag `pages-unread`).
     5. Type to scope (`_scope_from_type`), as soon as the type is known:
        after each read, so a type the first read settles spares the second
        read the scope.
     6. `T2` (`models.t2`, Sonnet) for what is still open, and only then; its
-       answer closes every field it was asked, and type to scope runs again on
-       the type it leaves.
+       answer closes every field it was asked, an empty answer included
+       (`_sonnet_closes`), and type to scope runs again on the type it leaves.
+       A field Sonnet gave no answer for keeps what it holds.
 
     The pursued set is recomputed after every read, as the text ladder
     recomputes `needs_escalation` after T1, but keyed to what is KNOWN rather
     than to a value (`_scan_pursued`), so it only shrinks: an IFU stops being
     asked for certificate fields, a manufacturer-wide certificate for item
     identifiers. Every read is recorded under `READS_KEY`;
-    `read_disagreements` counts where they differ.
+    `read_disagreements` counts where they differ and `failed_reads` names the
+    reads that failed.
     """
     if doc_class == "unknown" and classify is not None:
         answer, quote = classify(doc, filename)
@@ -738,7 +769,9 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
             a = first.get(f)
             if checks.agree(f, a, b, agreement_min):
                 known.add(f)
-            elif _is_blank(a) and _is_blank(b):
+            elif f in first and f in second and _is_blank(a) and _is_blank(b):
+                # Both reads ANSWERED it empty. A field missing from an answer
+                # is a failed read, not an empty one, and stays open.
                 if checks.both_null_settled(f, ctx):
                     known.add(f)
                 elif ctx.unread_pages:
@@ -748,8 +781,16 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
 
     open_fields = [f for f in _scan_pursued(fields, known) if f not in unread]
     if open_fields:
-        fields = merge(fields, step(SONNET_IMAGE, open_fields))
-        known |= set(open_fields)        # the last read closes what it was asked
+        sonnet = step(SONNET_IMAGE, open_fields)
+        fields = merge(fields, sonnet)
+        # The last read closes what it was asked, an empty answer included:
+        # `merge` keeps a value against a blank, which is right only for a
+        # field Sonnet gave no answer for (absent from `sonnet`).
+        for f in open_fields:
+            if f in sonnet and _is_blank(sonnet[f]) and _sonnet_closes(
+                    f, fields.get(f), threshold):
+                fields[f] = sonnet[f]
+        known |= set(open_fields)
         _scope_from_type(fields, known)
 
     if unread:
@@ -768,17 +809,27 @@ def _shown(value):
     return str(value)[:80]
 
 
+def failed_reads(fields: dict) -> list[str]:
+    """The steps whose read failed (`_reads_record`), in read order. For the
+    extract job result, so a failed read is counted rather than silent."""
+    return [e.get("step") for e in fields.get(READS_KEY) or [] if e.get("failed")]
+
+
 def read_disagreements(fields: dict) -> list[dict]:
     """Every field two or more reads answered differently, from `READS_KEY`:
     `{field, steps, values}`, the steps in read order and each value as that
     read gave it (None for an empty answer). Compared normalized
     (`checks.normalized`), so spacing and case are not a disagreement; an
-    empty answer against a value is one. For the extract job result (PRD v3
-    section 5: "disagreements between reads are counted on the job result")."""
+    empty answer against a value is one. A read that gave no answer for the
+    field (a failed read, recorded as None) is not a reading and is left out.
+    For the extract job result (PRD v3 section 5: "disagreements between reads
+    are counted on the job result")."""
     by_field: dict[str, list[tuple[str, object]]] = {}
     for entry in fields.get(READS_KEY) or []:
         for f, ev in (entry.get("fields") or {}).items():
-            by_field.setdefault(f, []).append((entry.get("step"), (ev or {}).get("value")))
+            if ev is None:
+                continue
+            by_field.setdefault(f, []).append((entry.get("step"), ev.get("value")))
     out = []
     for f, seen in by_field.items():
         if len(seen) > 1 and len({checks.normalized(f, v) for _, v in seen}) > 1:

@@ -57,10 +57,24 @@ def ev(value, conf, page=1):
             "tier": "T2", "model_id": "stub-model"}
 
 
+def null_ev():
+    """What a real read gives for a field it found nothing for: the response
+    schema requires every field, so the field is there, with a null value."""
+    return {"value": None, "conf": 0.0, "verbatim": "", "page": None,
+            "tier": "T2", "model_id": "stub-model"}
+
+
+#: `answers[label] = FAILED`: the read fails and answers nothing at all, as
+#: `AnthropicLlm.extract` does on a response that will not parse or was cut at
+#: max_tokens, and the batch transport on an errored request.
+FAILED = "failed"
+
+
 class ScanLlm:
-    """Answers by label from `answers[label][field] = (value, conf)`; records
-    every read as (label, missing). `classify_image` exists only when an
-    answer for it is given, as on a client that predates it."""
+    """Answers by label from `answers[label][field] = (value, conf)`, every
+    other asked field null, as a real read answers; `FAILED` answers nothing.
+    Records every read as (label, missing). `classify_image` exists only when
+    an answer for it is given, as on a client that predates it."""
 
     def __init__(self, answers=None, image_class=None, text_class=None):
         self.answers = answers or {}
@@ -78,7 +92,9 @@ class ScanLlm:
     def extract(self, label, doc, filename, missing, **kw):
         self.calls.append((label, tuple(missing)))
         given = self.answers.get(label, {})
-        return {f: ev(*given[f]) for f in missing if f in given}
+        if given == FAILED:
+            return {}
+        return {f: ev(*given[f]) if f in given else null_ev() for f in missing}
 
     def asked(self, label):
         return next((set(m) for lb, m in self.calls if lb == label), None)
@@ -294,11 +310,47 @@ def test_disagreeing_reads_go_to_sonnet_and_sonnet_prevails(t0):
 
 
 def test_an_empty_sonnet_answer_never_erases_a_cheap_read(t0):
+    """No answer at all (the read failed) is not a reading: the field keeps
+    what it holds."""
+    t0()
+    first = dict(EVERYTHING, type=("EC", 0.80))
+    llm = ScanLlm({"T2-first": first, "T2-second": {"type": ("ISO", 0.80)}, "T2": FAILED})
+    _, fields, _ = run(_scan(1), llm)
+    assert fields["type"]["value"] == "EC"
+
+
+def test_sonnets_null_answer_closes_the_field(t0):
+    """Sonnet ANSWERED the field empty: that is the strongest read's reading,
+    and it replaces a value no rule settled (review 2026-10-12)."""
     t0()
     first = dict(EVERYTHING, type=("EC", 0.80))
     llm = ScanLlm({"T2-first": first, "T2-second": {"type": ("ISO", 0.80)}, "T2": {}})
     _, fields, _ = run(_scan(1), llm)
-    assert fields["type"]["value"] == "EC"
+    assert fields["type"]["value"] is None and fields["type"]["step"] == "T2"
+
+
+def test_a_value_only_the_second_read_gave_does_not_survive_sonnets_null(t0):
+    """The eval case: the first cheap read and Sonnet both found no certificate
+    number, the second read gave one (an SRN, at 0.6). It used to stand."""
+    t0()
+    first = {k: v for k, v in EVERYTHING.items() if k != "cert_number"}
+    llm = ScanLlm({"T2-first": first, "T2-second": {"cert_number": ("DE-MF-000006032", 0.6)},
+                   "T2": {}})
+    _, fields, used = run(_scan(2), llm)
+    assert used == ["T0", "T2-first", "T2-second", "T2"]
+    assert llm.asked("T2") == {"cert_number"}
+    assert fields["cert_number"]["value"] is None and fields["cert_number"]["step"] == "T2"
+
+
+def test_sonnets_null_never_shortens_a_ref_list(t0):
+    """The enumeration guard stays: an empty answer is shorter than any list."""
+    t0()
+    first = dict(EVERYTHING, ref_list=(["003477", "003478"], 0.80))
+    llm = ScanLlm({"T2-first": first, "T2-second": {"ref_list": (["003477"], 0.80)},
+                   "T2": {}})
+    _, fields, _ = run(_scan(1), llm)
+    assert llm.asked("T2") == {"ref_list"}
+    assert fields["ref_list"]["value"] == ["003477", "003478"]
 
 
 @pytest.mark.parametrize("field_name, settles", [
@@ -444,10 +496,14 @@ def test_every_read_is_kept_on_the_attempt(t0):
 
 
 def test_a_field_asked_and_not_answered_is_kept_as_none(t0):
+    """No answer (a failed read) is None; an answer of null keeps its shape."""
     t0()
-    llm = ScanLlm({"T2-first": {"type": ("EC", 0.95)}, "T2-second": {}, "T2": {}})
+    llm = ScanLlm({"T2-first": {"type": ("EC", 0.95)}, "T2-second": FAILED, "T2": {}})
     _, fields, _ = run(_scan(1), llm)
-    assert fields[tiers.READS_KEY][1]["fields"]["regulation"] is None
+    reads = fields[tiers.READS_KEY]
+    assert reads[0]["fields"]["regulation"] == {"value": None, "conf": 0.0, "page": None}
+    assert reads[1]["fields"]["regulation"] is None
+    assert reads[1]["failed"] is True and "failed" not in reads[0]
 
 
 def test_disagreements_list_the_field_the_steps_and_the_values(t0):
@@ -466,9 +522,64 @@ def test_an_empty_answer_against_a_value_is_a_disagreement():
     fields = {tiers.READS_KEY: [
         {"step": "T2-first", "model_id": "m",
          "fields": {"cert_number": {"value": "C-1", "conf": .8, "page": 1}}},
-        {"step": "T2-second", "model_id": "m", "fields": {"cert_number": None}}]}
+        {"step": "T2-second", "model_id": "m",
+         "fields": {"cert_number": {"value": None, "conf": 0.0, "page": None}}}]}
     assert tiers.read_disagreements(fields) == [
         {"field": "cert_number", "steps": ["T2-first", "T2-second"], "values": ["C-1", None]}]
+
+
+def test_no_answer_is_not_a_disagreement():
+    """A failed read gave no reading to disagree with."""
+    fields = {tiers.READS_KEY: [
+        {"step": "T2-first", "model_id": "m",
+         "fields": {"cert_number": {"value": "C-1", "conf": .8, "page": 1}}},
+        {"step": "T2-second", "model_id": None, "fields": {"cert_number": None},
+         "failed": True}]}
+    assert tiers.read_disagreements(fields) == []
+
+
+# --- a failed read is not an empty answer ------------------------------------
+
+def test_two_failed_cheap_reads_settle_nothing_and_send_every_field_to_sonnet(t0):
+    """Both cheap reads fail. Before 2026-10-12's review every field but the UDI
+    "settled" as two empty answers and Sonnet was asked only the UDI."""
+    t0()
+    llm = ScanLlm({"T2-first": FAILED, "T2-second": FAILED, "T2": EVERYTHING})
+    _, fields, used = run(_scan(2), llm)
+    assert used == ["T0", "T2-first", "T2-second", "T2"]
+    assert llm.asked("T2") == set(EVERYTHING)
+    assert fields["type"]["value"] == "DoC" and fields["type"]["step"] == "T2"
+    assert tiers.failed_reads(fields) == ["T2-first", "T2-second"]
+
+
+def test_two_failed_cheap_reads_on_a_long_scan_are_not_unread(t0):
+    """Unread means both cheap reads ANSWERED empty on a scan longer than the
+    pages read. A failure says nothing about the pages, so the fields go to
+    Sonnet and no `pages-unread` is recorded."""
+    t0()
+    llm = ScanLlm({"T2-first": FAILED, "T2-second": FAILED, "T2": EVERYTHING})
+    _, fields, _ = run(_scan(6), llm)
+    assert llm.asked("T2") == set(EVERYTHING)
+    assert tiers.PAGES_UNREAD_KEY not in fields
+    assert tiers.PAGES_UNREAD_FLAG not in tiers.integrity_flags(fields)
+    assert tiers.failed_reads(fields) == ["T2-first", "T2-second"]
+
+
+def test_one_failed_read_and_one_empty_answer_do_not_settle(t0):
+    """Two reads must both answer empty; one empty answer beside a failure is
+    one read, and it goes to Sonnet."""
+    t0()
+    first = {k: v for k, v in EVERYTHING.items() if k != "validity_to"}
+    llm = ScanLlm({"T2-first": first, "T2-second": FAILED, "T2": {}})
+    _, fields, _ = run(_scan(2), llm)
+    assert llm.asked("T2") == {"validity_to"}
+    assert tiers.failed_reads(fields) == ["T2-second"]
+
+
+def test_no_failed_reads_none_named(t0):
+    t0()
+    _, fields, _ = run(_scan(1), ScanLlm({"T2-first": EVERYTHING}))
+    assert tiers.failed_reads(fields) == []
 
 
 def test_no_reads_no_disagreements():
