@@ -233,7 +233,7 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
 - **Done when:** on the eval set the built ladder sends 7 +/- 1 of 79 text documents
   to Sonnet (Task 8).
 
-### Task 5. Gate: agreement as confidence - 18 h / 1.8 h
+### Task 5. Gate: agreement as confidence - 21 h / 2.1 h
 
 - [ ] Second read only where a gate field is neither T0 nor citation-proven: text
       documents get `T1-second`; scans ask the unproven gate fields in the second image
@@ -248,6 +248,13 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
       reads the first read's own scope confidence, not the combined one; per-link
       production and `_score` read the combined one; the task-5 supersede guard reads
       `validity_from` (never combined).
+- [ ] Published-document guard (Denis, 2026-10-12): when a document already in
+      production is read again, GATE replaces its fields only if the new read itself
+      reaches production; otherwise the stored values stay, no review task opens (Review
+      never lists tasks on published documents), and the difference is counted on the job
+      result. Today `_upsert_document` overwrites the fields whatever the new disposition.
+      134 of the 654 DoCs to re-read are published. Update the `reextract` runbook section
+      ("GATE has no guard for this yet") and `docs/troubleshooting.md` re-read entry.
 - [ ] The 2026-09-16 ruling's wording was never built: a note on the confidence columns
       of `web/templates/_staging_doc_detail.html` and `document_detail.html` (the
       model's own number, uncalibrated, may combine two agreeing reads), the guide's
@@ -315,9 +322,11 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
 ## After deploy (server, Denis's go for each step)
 
 1. Deploy; `MODELS_T1` on the server follows the new default; `EXTRACT_MODE` stays sync.
-2. `reextract` the 654 DoCs T1 read under the old prompt.
-3. The 281 dropped scans: first a sample of 40 to measure how many end in review
-   (today 95% of read scans do), then the rest.
+2. `reextract --doc-cert-null --include-published` the 654 DoCs T1 read under the old
+   prompt (293 filed, 226 staged, 134 published, 1 superseded on 2026-10-12); the
+   published ones only because Task 5's guard exists.
+3. The 281 dropped scans: `reextract --dropped-scans --limit 40 --apply` first to measure
+   how many end in review (today 95% of read scans do), then the rest.
 4. Read the review queue before and after, against the 2026-10-12 reading (1,039).
 
 ## Risks
@@ -333,7 +342,7 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
 
 | | human h | Claude Code h |
 |---|---|---|
-| Tasks 0-9 | 113 | 11.3 |
+| Tasks 0-9 | 116 | 11.6 |
 
 Neither column covers Denis's review, the deploy, or the post-deploy runs.
 Order: 0, then 1, 2, then 3 and 4 (both need 1 and 2), then 5 (needs 3 and 4), 6, 7,
