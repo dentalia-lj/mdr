@@ -15,13 +15,13 @@ stubs:
 
 The live clients are built lazily (constructing needs no key; only the call
 does), so import and tests never need a key. Mode is env-selected
-(`DENTALIA_EXTRACT_MODE=batch`) with sync the default.
+(`DENTALIA_EXTRACT_MODE=batch`) with sync the default, read through
+`batching.extract_mode()`, the one reader `reextract` shares.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 
 from app import playbooks as playbooks_mod
 from app import queue
@@ -386,7 +386,7 @@ def handle_extract_doc(conn, job: dict, llm=None, batch_client=None,
 
 
 def _dispatch(conn, job):
-    if os.environ.get("DENTALIA_EXTRACT_MODE", "sync").lower() == "batch":
+    if batching.extract_mode() == "batch":
         return handle_extract_doc(conn, job, batch_client=_default_batch_client())
     return handle_extract_doc(conn, job)
 

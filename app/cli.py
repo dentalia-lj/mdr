@@ -1017,10 +1017,14 @@ def cmd_reextract(args: argparse.Namespace) -> int:
         hashes = [h.strip() for h in (args.hashes or "").split(",") if h.strip()]
         if args.hashes_file:
             with open(args.hashes_file) as fh:
-                hashes += [ln.strip() for ln in fh if ln.strip() and not ln.startswith("#")]
+                hashes += [ln for ln in (raw.strip() for raw in fh)
+                           if ln and not ln.startswith("#")]
     if not (args.doc_cert_null or args.dropped_scans or hashes is not None):
         print("choose at least one of --doc-cert-null, --dropped-scans, --hashes, "
               "--hashes-file", file=sys.stderr)
+        return 2
+    if args.limit is not None and args.limit < 1:
+        print("--limit must be at least 1", file=sys.stderr)
         return 2
     reason = reextract.refusal()
     if reason:
@@ -1028,7 +1032,8 @@ def cmd_reextract(args: argparse.Namespace) -> int:
         return 1
     with db.connect() as conn:
         plan = reextract.plan(conn, doc_cert_null=args.doc_cert_null,
-                              dropped_scans=args.dropped_scans, hashes=hashes)
+                              dropped_scans=args.dropped_scans, hashes=hashes,
+                              include_published=args.include_published, limit=args.limit)
         for line in reextract.render(plan):
             print(line)
         if not plan.send:
@@ -1371,6 +1376,11 @@ def build_parser() -> argparse.ArgumentParser:
                     help="scans refused as not-a-compliance-document before the gate")
     rx.add_argument("--hashes", help="comma-separated content hashes")
     rx.add_argument("--hashes-file", help="file with one content hash per line")
+    rx.add_argument("--include-published", action="store_true",
+                    help="also re-read published documents nobody approved (GATE refreshes "
+                         "their fields from the new read)")
+    rx.add_argument("--limit", type=int,
+                    help="send only the first N eligible hashes (hash order: a fair sample)")
     rx.add_argument("--apply", action="store_true", help="queue; without it, dry run")
     rx.set_defaults(func=cmd_reextract)
 
