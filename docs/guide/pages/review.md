@@ -242,6 +242,7 @@ other screen says the word in the third column, and the
 | **A link** | The connection between one document and one item. A document can have many | |
 | **A group** | Items we treat as one family, because one document usually covers all of them | |
 | **C5**, **C17** and similar codes | Internal rule numbers. Ignore them | |
+| **Confidence**, under **Technical details** | The reading program's own estimate of how sure it was, not checked against documents a person has verified. Where two separate reads agreed on a value, it combines the two | |
 
 ---
 

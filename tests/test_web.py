@@ -7465,3 +7465,64 @@ def test_a_page_lights_the_menu_entry_it_is_reached_from(client, path, entry, la
     assert len(active) == 1, f"{path} lights {active}"
     assert active[0][0] == entry
     assert active[0][1].strip().startswith(label)
+
+
+# --------------------------------------------------------------------------- #
+# The confidence note (rulings 2026-09-16 and 2026-10-12)
+# --------------------------------------------------------------------------- #
+# The calibration factors ship at 1,0, and "a factor of 1,0 with no note reads
+# as 'calibrated, and it came out at 1'" (decisions.md, 2026-09-16, "The wording
+# is not optional"). Since 2026-10-12 the stored number can also combine two
+# agreeing reads. Both evidence tables say so, under the table, inside
+# Technical details where the column is.
+CONFIDENCE_NOTE = ("Confidence is the model's own number and is not calibrated. "
+                   "Where two reads agreed on a value, it combines the two.")
+
+
+def _seed_evidenced_doc(conn, status):
+    suffix = uuid.uuid4().hex[:12]
+    doc_id = conn.execute(
+        "INSERT INTO document (type, regulation, validity_from, coverage_scope, "
+        "content_hash, archive_url, status) VALUES ('DoC','MDR','2024-01-01','group',"
+        "%s,'/archive/conf.pdf',%s) RETURNING doc_id",
+        (f"h-conf-{suffix}", status),
+    ).fetchone()["doc_id"]
+    conn.execute(
+        "INSERT INTO evidence (doc_id, field, value, archive_url, page, verbatim, tier, "
+        "model_id, confidence, extracted_at, agreed_model_id, agreed_confidence) "
+        "VALUES (%s,'type','DoC','/archive/conf.pdf',1,'Declaration','T1','m-first',"
+        "0.9775, now(), 'm-second', 0.85)", (doc_id,))
+    conn.commit()
+    return doc_id
+
+
+@pytest.mark.parametrize("status,path", [
+    ("staged", "/staging/{}/detail"),
+    ("production", "/documents/{}"),
+])
+def test_the_confidence_column_says_what_the_number_is(client, conn, status, path):
+    doc_id = _seed_evidenced_doc(conn, status)
+    text = client.get(path.format(doc_id)).text
+    assert CONFIDENCE_NOTE in text
+    details = text.index("Technical details")
+    column = text.index("<th>Confidence</th>")
+    assert details < column < text.index(CONFIDENCE_NOTE), (
+        "the note belongs under the evidence table, inside Technical details")
+
+
+@pytest.mark.parametrize("status,path", [
+    ("staged", "/staging/{}/detail"),
+    ("production", "/documents/{}"),
+])
+def test_no_confidence_note_without_a_confidence_column(client, conn, status, path):
+    suffix = uuid.uuid4().hex[:12]
+    doc_id = conn.execute(
+        "INSERT INTO document (type, regulation, validity_from, coverage_scope, "
+        "content_hash, archive_url, status) VALUES ('DoC','MDR','2024-01-01','group',"
+        "%s,'/archive/none.pdf',%s) RETURNING doc_id",
+        (f"h-noconf-{suffix}", status),
+    ).fetchone()["doc_id"]
+    conn.commit()
+    text = client.get(path.format(doc_id)).text
+    assert "No evidence recorded." in text
+    assert CONFIDENCE_NOTE not in text
