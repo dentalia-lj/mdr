@@ -70,6 +70,27 @@ _M = Decimal(1_000_000)
 
 
 @pytest.mark.parametrize(
+    "model_id, first, second",
+    [
+        # A cached T1 call: 1,200 uncached input, a 4,870-token cached prefix,
+        # 400 output. First call writes the prefix (1.25x), the next reads it.
+        # Haiku 4.5 $1 / $5: (1200 + 6087.5) + 2000 = 9287.5 ; (1200 + 487) + 2000 = 3687.
+        ("claude-haiku-4-5", Decimal("0.0092875"), Decimal("0.003687")),
+        # Haiku 5.5 $0.10 / $0.50, read 0.1x: 928.75 ; 368.7 (per MTok units).
+        ("claude-haiku-5-5", Decimal("0.00092875"), Decimal("0.0003687")),
+        # Sonnet 5.5 $2 / $10, read 0.05x: 2*7287.5 + 4000 ; 2*(1200 + 243.5) + 4000.
+        ("claude-sonnet-5-5", Decimal("0.018575"), Decimal("0.006887")),
+    ],
+)
+def test_a_cached_call_prices_the_write_then_the_read(model_id, first, second):
+    write = Usage(input_tokens=1200, output_tokens=400, cache_creation_tokens=4870)
+    read = Usage(input_tokens=1200, output_tokens=400, cache_read_tokens=4870)
+    assert cost_usd(model_id, write) == first
+    assert cost_usd(model_id, read) == second
+    assert cost_usd(model_id, read, batch=True) == second / 2
+
+
+@pytest.mark.parametrize(
     "model_id, usage, expected",
     [
         # Sonnet 5.5 reads its cache at 0.05x ($0.10/MTok), writes at 1.25x.

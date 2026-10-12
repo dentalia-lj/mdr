@@ -11,8 +11,10 @@ economics ledger must never under-report (the never-silent rule).
 
 Token accounting matches the Anthropic API: `input_tokens` is already the
 NON-cached input count, so cache_read / cache_creation are billed additively on
-top at their own multipliers (this pipeline doesn't cache today, so both are 0 and
-cost reduces to input*rate + output*rate).
+top at their own multipliers. The T1 and T2 reads mark their static system prompt
+for caching since 2026-10-12 (`llm._system`); a call whose prefix is under the
+model's minimum, or that nothing cached, reports both as 0 and costs
+input*rate + output*rate.
 
 One model is priced by prompt length: Haiku 5.5 bills a request whose prompt is
 over 100,000 tokens at a second, higher pair of rates, output included. "Prompt"
@@ -72,7 +74,8 @@ PRICES: dict[str, Price] = {
                               long_input_per_mtok=Decimal("0.50"),
                               long_output_per_mtok=Decimal("2.50")),
     # T2 from 2026-09-29. Its cache hit is $0.10, 0.05x the input rate, not the
-    # 0.1x default (2026-10-12; nothing caches yet, so no logged row is off).
+    # 0.1x default (2026-10-12). Nothing was cached before that day, so no row
+    # logged earlier is off.
     "claude-sonnet-5-5": Price(Decimal("2"), Decimal("10"), cache_read_mult=Decimal("0.05")),
     "claude-sonnet-5": Price(Decimal("2"), Decimal("10")),  # retained: prices already-logged spend
     "claude-sonnet-4-6": Price(Decimal("3"), Decimal("15")),  # retained: prices already-logged spend
