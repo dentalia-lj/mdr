@@ -138,7 +138,10 @@ in the system's own bookkeeping — a developer's problem, not yours.
 
 Under the figures, a table splits the spend by model, by the kind of reading
 (**Tier**) and by whether it went through the cheaper, slower bulk route
-(**Batch**). Every paid reading is counted.
+(**Batch**). It counts the readings of every file whose reading finished. If
+a reading is paid for and the task then fails, that cost is not recorded and
+the retry's readings are the ones counted, so the real bill can be a little
+higher than the table.
 
 ---
 

@@ -454,17 +454,35 @@ def test_an_unknown_label_must_name_its_kind_and_model(fixture_pdf):
 def test_a_kind_outside_text_and_image_is_refused(fixture_pdf):
     doc = pdf.open_doc(fixture_pdf(TEXT_PDF))
     with pytest.raises(ValueError):
-        llm._params("T1", LadderModels(), doc, ["type"], 4096, kind="audio")
+        llm._params("T3-maybe", LadderModels(), doc, ["type"], 4096,
+                    kind="audio", model="named-model")
 
 
-def test_explicit_options_override_the_table(fixture_pdf):
+@pytest.mark.parametrize("override", [
+    {"kind": "image"},            # a "T1" that is really an image read
+    {"kind": "text"},             # even the row's own kind: the row decides
+    {"model": "other-model"},     # a "T1" billed to another model
+])
+@pytest.mark.parametrize("label", [s[0] for s in EXTRACT_STEPS])
+def test_a_table_label_refuses_a_kind_or_model_override(fixture_pdf, label, override):
+    """The label is the ledger's key: a different read under it would share
+    a row with the real one, and the unique key would drop one of them."""
     doc = pdf.open_doc(fixture_pdf(TEXT_PDF))
-    p = llm._params("T2-first", LadderModels(), doc, ["type"], 4096,
-                    model="other-model", thinking=THINKING_OFF)
-    assert p["model"] == "other-model"
+    with pytest.raises(ValueError, match="own label"):
+        llm._params(label, LadderModels(), doc, ["type"], 4096, **override)
+
+
+def test_thinking_can_be_set_or_cleared_explicitly(fixture_pdf):
+    doc = pdf.open_doc(fixture_pdf(TEXT_PDF))
+    # set on a row that names none
+    p = llm._params("T2-first", LadderModels(), doc, ["type"], 4096, thinking=THINKING_OFF)
     assert p["thinking"] == THINKING_OFF
-    p = llm._params("T1", LadderModels(), doc, ["type"], 4096, kind="image")
-    assert p["system"] == llm.T2_SYSTEM and p["model"] == LadderModels.t1
+    # cleared on a row that names one: no thinking key at all
+    p = llm._params("T2-second", LadderModels(), doc, ["type"], 4096, thinking=None)
+    assert "thinking" not in p
+    # left alone: the row's own
+    p = llm._params("T2-second", LadderModels(), doc, ["type"], 4096)
+    assert p["thinking"] == THINKING_OFF
 
 
 # --- image pages -------------------------------------------------------------
@@ -531,7 +549,8 @@ def test_label_goes_to_the_ledger_and_kind_to_the_evidence(fixture_pdf, label, k
 def test_an_image_read_cites_document_pages_not_image_positions():
     """The vision prompt reports `page` as the 1-based index of the IMAGE. With
     an explicit page list that index is translated back to the document's page,
-    and a cite outside the images sent is dropped rather than kept wrong."""
+    and a cite outside the images sent is nulled rather than kept wrong, and
+    counted. The value and its quote stay."""
     client = StubClient(_THREE_FIELDS)
     tier = llm.AnthropicLlm(client, LadderModels())
     doc = _probe_pdf(6)
@@ -542,7 +561,16 @@ def test_an_image_read_cites_document_pages_not_image_positions():
     assert got["regulation"]["page"] == 5
     assert got["cert_number"]["page"] == 2
     assert got["type"]["page"] is None
+    assert (got["type"]["value"], got["type"]["verbatim"]) == ("EC", "c")
+    assert tier.cited_pages_nulled == 1
     assert _images(client.messages.kwargs) == [_png(doc, 5), _png(doc, 2)]
+
+
+def test_only_the_fields_returned_count_as_nulled():
+    """`type` cites image 9 of 2, but nobody asked for it: nothing to count."""
+    tier = llm.AnthropicLlm(StubClient(_THREE_FIELDS), LadderModels())
+    tier.extract("T2-first", _probe_pdf(6), "f.pdf", ["regulation"], pages=[5, 2])
+    assert tier.cited_pages_nulled == 0
 
 
 def test_the_default_pages_keep_the_cited_page_as_it_was():
@@ -551,6 +579,7 @@ def test_the_default_pages_keep_the_cited_page_as_it_was():
     tier = llm.AnthropicLlm(StubClient(_THREE_FIELDS), LadderModels())
     got = tier.extract("T2", _probe_pdf(6), "f.pdf", ["regulation", "cert_number", "type"])
     assert [got[f]["page"] for f in ("regulation", "cert_number", "type")] == [1, 2, 9]
+    assert tier.cited_pages_nulled == 0
 
 
 def test_classify_logs_its_own_label():
@@ -579,26 +608,31 @@ def test_batch_results_map_each_label_to_its_model(label, kind, model, _t):
 
 
 def test_batch_results_use_the_model_the_request_was_built_with(fixture_pdf):
+    """A label with no READ_STEPS row names its own model; the poll that built
+    the request prices and stamps the result with that model."""
     payload = '{"regulation": {"value": "MDR", "confidence": 0.9, "verbatim": "x", "page": 1}}'
-    bc = llm.AnthropicBatchClient(StubBatchSdk(payload, custom_id="T2-first_abc123"),
+    bc = llm.AnthropicBatchClient(StubBatchSdk(payload, custom_id="T3-probe_abc123"),
                                   LadderModels())
     doc = pdf.open_doc(fixture_pdf(TEXT_PDF))
-    req = bc.build_requests("abc123", "T2-first", doc, ["regulation"], model="override-model")
+    req = bc.build_requests("abc123", "T3-probe", doc, ["regulation"],
+                            kind="image", model="override-model")
 
     got = bc.results("batch_123")
 
     assert req[0]["params"]["model"] == "override-model"
     assert got["regulation"]["model_id"] == "override-model"
+    assert got["regulation"]["tier"] == "T2"
     assert bc.usage_log[0].model_id == "override-model"
 
 
-def test_batch_results_translate_an_explicit_page_list():
-    payload = '{"regulation": {"value": "MDR", "confidence": 0.9, "verbatim": "x", "page": 1}}'
-    bc = llm.AnthropicBatchClient(StubBatchSdk(payload, custom_id="T2-first_abc123"),
-                                  LadderModels())
-    bc.build_requests("abc123", "T2-first", _probe_pdf(6), ["regulation"], pages=[5, 2])
-
-    assert bc.results("batch_123")["regulation"]["page"] == 5
+def test_a_batch_read_refuses_an_explicit_page_list():
+    """`batch_ref` does not store the pages sent, so `results()` on a later poll
+    could translate the cited image index only by recomputing the list, and a
+    list that changed in between would cite the wrong page without a sound."""
+    bc = llm.AnthropicBatchClient(StubBatchSdk("{}"), LadderModels())
+    with pytest.raises(ValueError, match="page list"):
+        bc.build_requests("abc123", "T2-first", _probe_pdf(6), ["regulation"], pages=[5, 2])
+    assert bc._reads == {}
 
 
 def test_batch_results_refuse_a_label_no_table_row_explains():
@@ -609,12 +643,13 @@ def test_batch_results_refuse_a_label_no_table_row_explains():
 
 
 def test_sync_and_batch_build_identical_requests_for_a_ladder_read():
-    """The byte-identity guarantee above, for a read that uses every option."""
+    """The byte-identity guarantee above, for a ladder read with hints and its
+    row's thinking setting (a batch read takes no page list)."""
     missing, hints = ["validity_to"], "A hint."
     sync = llm._params("T2-second", LadderModels(), _probe_pdf(6), missing,
-                       llm.DEFAULT_MAX_TOKENS, hints=hints, pages=[3, 1])
+                       llm.DEFAULT_MAX_TOKENS, hints=hints)
     batch = llm.AnthropicBatchClient(StubBatchSdk("{}"), LadderModels()).build_requests(
-        "abc123", "T2-second", _probe_pdf(6), missing, hints=hints, pages=[3, 1])
+        "abc123", "T2-second", _probe_pdf(6), missing, hints=hints)
 
     assert batch[0]["params"] == sync
     assert batch[0]["custom_id"] == "T2-second_abc123"

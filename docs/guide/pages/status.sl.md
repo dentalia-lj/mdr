@@ -139,7 +139,10 @@ vrzel v lastnem knjigovodstvu sistema — razvijalčev problem, ne vaš.
 
 Pod številkama razpredelnica razdeli porabo po modelu, po vrsti branja
 (**Tier**) in po tem, ali je šlo po cenejši, počasnejši skupinski poti
-(**Batch**). Šteto je vsako plačano branje.
+(**Batch**). Šteje branja vsake datoteke, katere branje se je končalo. Če je
+branje plačano, opravilo pa nato spodleti, ta strošek ni zabeležen in štejejo
+se branja ponovnega poskusa, zato je dejanski račun lahko nekoliko višji od
+razpredelnice.
 
 ---
 

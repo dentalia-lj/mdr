@@ -69,10 +69,11 @@ Full list, the placement rule, and the implementation traps:
 
 ### Keys that do nothing
 
-Two kinds. The second kind is the dangerous one.
+Two kinds, and a pair of keys read only by steps nothing sends yet. The second
+kind is the dangerous one.
 
 **Never referenced anywhere.** The identifier does not appear in `app/`, `web/`
-or `tools/` at all.
+or `tools/` at all (outside `app/config.py`, which loads it).
 
 | Key | Env var | Note |
 |---|---|---|
@@ -81,9 +82,16 @@ or `tools/` at all.
 | `mfr_binding.per_manufacturer` | *(TOML only)* | — |
 | `fetch.robots_ttl_hours` | `FETCH_ROBOTS_TTL_HOURS` | read by `fetch.url` only (since 2026-09-11): how long a host's robots.txt answer is reused before FETCH asks again. The crawl rung and the probe (`discover.py`, `playbook_probe.py`) still pass nothing and get the module's own `24`. Blast radius: longer means a host that tightens its robots.txt is obeyed later; a transport failure is cached 5 minutes regardless |
 | `scheduler.failure_monitor_interval_hours` | `SCHEDULER_FAILURE_MONITOR_INTERVAL_HOURS` | The tick runs daily regardless |
-| `models.vision_first`, `models.second_read` | `MODELS_VISION_FIRST`, `MODELS_SECOND_READ` | **Not yet wired** (2026-10-12). Named by the read-steps table (`app/extract/llm.py` `READ_STEPS`), which no live ladder step sends yet. Extraction-ladder plan Tasks 3-5 wire them |
 | `extract.image_settle` | `EXTRACT_IMAGE_SETTLE` | **Not yet wired** (2026-10-12). Plan Task 3 reads it |
 | `gate.agreement_min` | `GATE_AGREEMENT_MIN` | **Not yet wired** (2026-10-12). Plan Tasks 3 and 5 read it |
+
+**Read, but only by steps nothing sends yet.** `models.vision_first` and
+`models.second_read` (`MODELS_VISION_FIRST`, `MODELS_SECOND_READ`, 2026-10-12)
+are read: `app/extract/llm.py` `READ_STEPS` names them for the labels
+`doc-class-image`, `T2-first`, `T1-second` and `T2-second`, and `resolve_read`
+looks them up. No live ladder step sends any of those labels, so changing
+either key changes nothing today. Extraction-ladder plan Tasks 3-5 wire them;
+see [limits.md](limits.md#built-but-not-wired).
 
 **Shadowed by an identical function default.** The name exists in the code, so a
 casual grep looks reassuring — but the config value never reaches it.

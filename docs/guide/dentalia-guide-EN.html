@@ -2781,7 +2781,7 @@ tbody tr:last-child td{border-bottom:0}
 <p>The <strong>30d of €…</strong> tile is the amount spent in the last 30 days, against a monthly cap. The <strong>Spend</strong> tab adds a second figure: the total ever spent, against a separate all-time cap.</p>
 <p><strong>Neither cap stops anything automatically.</strong> Going over either one does not block the system from working. It is a number to notice and mention to a developer, not an alarm.</p>
 <p>If the tab shows a note that some calls have no price recorded, that is a gap in the system's own bookkeeping — a developer's problem, not yours.</p>
-<p>Under the figures, a table splits the spend by model, by the kind of reading (<strong>Tier</strong>) and by whether it went through the cheaper, slower bulk route (<strong>Batch</strong>). Every paid reading is counted.</p>
+<p>Under the figures, a table splits the spend by model, by the kind of reading (<strong>Tier</strong>) and by whether it went through the cheaper, slower bulk route (<strong>Batch</strong>). It counts the readings of every file whose reading finished. If a reading is paid for and the task then fails, that cost is not recorded and the retry's readings are the ones counted, so the real bill can be a little higher than the table.</p>
 <hr>
 <h2 id="pages/status--what-can-go-wrong">What can go wrong</h2>
 <div class="tw"><table><thead><tr>

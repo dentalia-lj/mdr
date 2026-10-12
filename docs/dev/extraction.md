@@ -135,14 +135,27 @@ image read, an explicit page list (default pages 1-4, at most
 `MAX_VISION_PAGES`). The request is routed by kind, never by label: until
 2026-10-12 `_params` sent every label but `T1` to `models.t2`. The kind also
 stamps `evidence.tier` (`T1` text, `T2` image), so GATE's page rule and the
-REF-cap flag keep seeing exactly those two values. With an explicit page list,
-the page the vision prompt cites (an image index) is translated back to the
-document page, and a cite outside the images sent becomes `None`. The options
-reach `extract` / `build_requests` only as keyword arguments, so every stub
-implementing `extract(tier, doc, filename, missing)` keeps working.
-`AnthropicBatchClient.results` maps each result's label back to the read it
-was built from that poll, else to the label's `READ_STEPS` row; a label with
-no row raises instead of being priced as `models.t2`, the old fallback.
+REF-cap flag keep seeing exactly those two values. A label in `READ_STEPS`
+takes its kind and model from its row, and naming either is refused: a
+different read gets its own label, so it never shares a ledger row with the
+real one. A label with no row must name both. `thinking=None` sends no
+thinking key even where the row names one. With an explicit page list (sync
+path only), the page the vision prompt cites (an image index) is translated
+back to the document page. A cite outside the images sent becomes `None`, keeps
+its value and quote, and is counted: the extract handler puts the total on the
+job result as `counts.cited_page_outside_images`. GATE then raises
+`evidence-page-missing` (blocking, manual review) only when the field is
+`type`, `regulation` or `coverage_scope`; any other field is stored without a
+page. The options reach `extract` / `build_requests` only as keyword
+arguments, so every stub implementing `extract(tier, doc, filename, missing)`
+keeps working. `AnthropicBatchClient.build_requests` refuses a page list until
+`batch_ref` stores the pages sent ([limits.md](limits.md#built-but-not-wired));
+`results` maps each result's label back to the read it was built from that
+poll, else to the label's `READ_STEPS` row, and a label with no row raises
+instead of being priced as `models.t2`, the old fallback. One extraction sends
+each label at most once: `_finalize` in `app/handlers/extract.py` fails the
+job before writing anything when a label repeats, since the ledger would keep
+one of the two rows.
 
 **Haiku 5.5 is priced by prompt length** (`economics.PRICES`, read off the
 pricing page 2026-10-12): $0.10 / $0.50 per MTok up to 100,000 prompt tokens,

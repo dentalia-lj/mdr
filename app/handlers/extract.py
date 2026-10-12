@@ -128,6 +128,16 @@ def _finalize(conn, content_hash, group_id, doc_class, tiers_used, fields,
     playbook steered ANY part of the read, T0 lexicons included, not only a
     hint block; `hinted` (whether a hint block was actually built) rides only
     the job result for the KPI board, never the attempt row."""
+    # One ledger row per paid call needs one label per call. Two calls under one
+    # label at one revision would meet on extraction_cost's unique key, and
+    # `ON CONFLICT DO NOTHING` (there for the batch path's re-fetches) would
+    # drop the second without a word. A ladder that sends a label twice has a
+    # bug; fail the job before anything is written rather than undercount.
+    labels = [call.tier for call in usage_log]
+    repeated = sorted({lb for lb in labels if labels.count(lb) > 1})
+    if repeated:
+        raise ValueError(f"extract.doc {content_hash}: read label(s) {repeated} sent more "
+                         f"than once in one extraction; the cost ledger keeps one row each")
     rev = tiers.next_extract_rev(conn, content_hash)
     tiers.write_extraction_attempt(
         conn, content_hash, tiers_used, fields, extract_rev=rev,
@@ -190,9 +200,17 @@ def _handle_sync(conn, doc, filename, content_hash, group_id, llm, result=None,
                                                          result=result,
                                                          companion_url=companion_url,
                                                          hints=hints)
-    return _finalize(conn, content_hash, group_id, doc_class, tiers_used, fields,
-                     usage_log=getattr(tier_client, "usage_log", ()),
-                     archive_url=filename, steering=steering, hinted=hints is not None)
+    out = _finalize(conn, content_hash, group_id, doc_class, tiers_used, fields,
+                    usage_log=getattr(tier_client, "usage_log", ()),
+                    archive_url=filename, steering=steering, hinted=hints is not None)
+    # An image read with an explicit page list that cited an image it was not
+    # sent has that page nulled (`llm._cited_pages`). Counted here so it is
+    # never silent; absent when zero, so every result without one is unchanged.
+    # `getattr`: the injected llm is a protocol object and stubs lack the field.
+    nulled = getattr(tier_client, "cited_pages_nulled", 0)
+    if nulled:
+        out.setdefault("counts", {})["cited_page_outside_images"] = nulled
+    return out
 
 
 def _handle_batch(conn, job, doc, filename, content_hash, group_id,

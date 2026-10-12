@@ -106,26 +106,44 @@ class Read:
         return "T1" if self.kind == TEXT else "T2"
 
 
+#: `resolve_read`'s "no thinking option given" marker, so that an explicit
+#: `thinking=None` can mean "send no thinking key" even on a label whose row
+#: names one.
+_FROM_TABLE = object()
+
+
 def resolve_read(label: str, models, *, kind: str | None = None, model: str | None = None,
-                 thinking: dict | None = None, pages=None) -> Read:
-    """The read a label names, with any explicit option taking precedence over
-    its `READ_STEPS` row. A label with no row must name its kind and model:
-    routing an unknown label to a default would bill it at whatever that default
-    is, which is how every non-`T1` label used to go to `models.t2`.
+                 thinking=_FROM_TABLE, pages=None) -> Read:
+    """The read a label names.
+
+    A `READ_STEPS` label takes its kind and model from its row, and naming
+    either is refused: the label is the cost ledger's key, so a `T1` that
+    was really an image read, or a `T2-first` sent to another model, would
+    share a row with the real one and the ledger's unique key would drop one
+    of them -- the loss the labels exist to end. A different read takes a
+    label of its own. A label with no row must name both its kind and its
+    model: routing it to a default would bill it at whatever that default is,
+    which is how every non-`T1` label used to go to `models.t2`.
+
+    `thinking` defaults to the row's setting (none for a label with no row).
+    `thinking=None` sends no thinking key at all, the API default, whatever the
+    row says; a dict sends that dict.
 
     `pages` (image reads only) are 1-based document pages in the order they are
     sent: at most `MAX_VISION_PAGES`, none twice. Refused rather than trimmed --
     a caller asking for five pages has a bug, not a preference."""
     step = READ_STEPS.get(label)
-    kind = kind or (step.kind if step else None)
+    if step is not None:
+        if kind is not None or model is not None:
+            raise ValueError(f"read {label!r}: a READ_STEPS label takes its kind and "
+                             f"model from its row; a different read needs its own label")
+        kind, model = step.kind, getattr(models, step.model_key)
     if kind not in _KINDS:
         raise ValueError(f"read {label!r}: kind must be one of {_KINDS}, got {kind!r}")
-    if model is None and step is not None:
-        model = getattr(models, step.model_key)
     if not model:
         raise ValueError(f"read {label!r}: no model (unknown label, none named)")
-    if thinking is None and step is not None:
-        thinking = step.thinking
+    if thinking is _FROM_TABLE:
+        thinking = step.thinking if step is not None else None
     if pages is not None:
         if kind != IMAGE:
             raise ValueError(f"read {label!r}: pages apply to image reads only")
@@ -346,24 +364,36 @@ def _params(tier: str, models, doc, missing: list[str], max_tokens: int,
                     max_tokens, hints)
 
 
-def _cited_pages(fields: dict, read: Read) -> dict:
-    """Translate each field's cited page from image position to document page.
+def _cited_pages(fields: dict, read: Read) -> int:
+    """Translate each field's cited page from image position to document page,
+    in place. Returns how many cites it had to null.
 
     The vision prompt asks for "the 1-based index of the page image", which is
     the document page only while the images are pages 1..4 in order -- the
     default, left exactly as it was. With an explicit page list the index is
-    looked up in it, and a cite outside the images sent becomes None: GATE then
-    raises `evidence-page-missing` rather than storing a page nobody showed the
-    model."""
+    looked up in it, and a cite outside the images sent becomes None rather
+    than a page nobody showed the model. The value and its quote stay.
+
+    What a None page does downstream depends on the field. On `type`,
+    `regulation` or `coverage_scope` (GATE's `REQUIRED_FIELDS`) GATE raises
+    `evidence-page-missing`, a blocking flag, and the document goes to manual
+    review. On every other field GATE raises nothing and the evidence row is
+    written with no page. So the caller counts what this returns: the sync
+    read keeps a running total that the extract handler puts on the job
+    result."""
     if read.pages is None:
-        return fields
+        return 0
+    nulled = 0
     for ev in fields.values():
         n = ev.get("page")
         if n is None:
             continue
-        ev["page"] = (read.pages[n - 1]
-                      if isinstance(n, int) and 1 <= n <= len(read.pages) else None)
-    return fields
+        if isinstance(n, int) and 1 <= n <= len(read.pages):
+            ev["page"] = read.pages[n - 1]
+        else:
+            ev["page"] = None
+            nulled += 1
+    return nulled
 
 
 def _custom_id(content_hash: str, tier: str) -> str:
@@ -447,20 +477,30 @@ class AnthropicLlm:
         self.models = models
         self.max_tokens = max_tokens
         self.usage_log: list[CallCost] = []  # priced calls this instance made
+        # Cites `_cited_pages` nulled across this instance's reads (an image
+        # read with an explicit page list citing an image it was not sent).
+        # The extract handler reports a non-zero total on the job result.
+        self.cited_pages_nulled = 0
 
     def extract(self, tier: str, doc, filename: str, missing: list[str],
                 hints: str | None = None, **read_options) -> dict:
         """One labelled read. `tier` is the step's label (`READ_STEPS`);
-        `read_options` (kind, model, thinking, pages) override its row. Callers
-        holding the injected protocol object pass them only when set, as
-        `tiers.run_extraction` does with `hints`: every stub predates them."""
+        `read_options` are `resolve_read`'s (kind and model for a label with no
+        row, thinking, pages). Callers holding the injected protocol object pass
+        them only when set, as `tiers.run_extraction` does with `hints`: every
+        stub predates them."""
         read = resolve_read(tier, self.models, **read_options)
         params = _request(read, doc, missing, self.max_tokens, hints)
         resp = self.client.messages.create(**params)
         _capture(self.usage_log, read.label, read.model, resp, batch=False)
-        parsed = _cited_pages(
-            _fields_from_json(_response_json(resp), read.evidence_tier, read.model), read)
-        return {f: parsed[f] for f in missing if f in parsed}
+        parsed = _fields_from_json(_response_json(resp), read.evidence_tier, read.model)
+        out = {f: parsed[f] for f in missing if f in parsed}
+        nulled = _cited_pages(out, read)
+        if nulled:
+            self.cited_pages_nulled += nulled
+            _log.warning("extract.cited_page_outside_images label=%s pages=%s nulled=%d",
+                         read.label, list(read.pages), nulled)
+        return out
 
     def classify(self, doc, filename: str) -> tuple[str, str]:
         """Decide what this file is when T0 could not (`doc_class == "unknown"`).
@@ -515,7 +555,8 @@ class AnthropicBatchClient:
     handler builds requests with `build_requests` and hands them to
     `advance_batch`; `batch_ref` (keyed by content_hash+tier) is the crash-safe
     state. The client keeps only a per-instance note of the reads it built
-    (`_reads`), which nothing depends on surviving a restart.
+    (`_reads`), which nothing depends on surviving a restart. That is also why
+    a batch read takes no explicit page list (`build_requests`).
 
     Batch-of-1 per (content_hash, tier): the batch_ref PK is (content_hash,
     tier), so each doc+tier is its own batch. `tier` is the read's label
@@ -531,13 +572,23 @@ class AnthropicBatchClient:
         self.usage_log: list[CallCost] = []  # priced calls, populated by results()
         # custom_id -> the Read its request was built from. The handler builds
         # the requests on every poll before asking for results, so on the poll
-        # that reads them this holds the model and pages actually sent; a fresh
-        # instance falls back to the label's READ_STEPS row.
+        # that reads them this holds the model actually sent (a label with no
+        # READ_STEPS row names its own); a fresh instance falls back to the
+        # label's row.
         self._reads: dict[str, Read] = {}
 
     def build_requests(self, content_hash: str, tier: str, doc, missing: list[str],
                        hints: str | None = None, **read_options) -> list[dict]:
         read = resolve_read(tier, self.models, **read_options)
+        # No explicit page list in batch mode until `batch_ref` stores the list
+        # that was sent. The cited page comes back as an index into the images,
+        # and `results()` runs on a later poll: it could only translate that
+        # index by recomputing the list, and a list that changed in between (a
+        # deploy, a different earlier answer) would turn every cite into the
+        # wrong document page without a sound. docs/dev/limits.md.
+        if read.pages is not None:
+            raise ValueError(f"read {read.label!r}: a batch read takes no page list until "
+                             f"batch_ref stores the pages sent")
         custom_id = _custom_id(content_hash, read.label)
         self._reads[custom_id] = read
         return [{
@@ -559,6 +610,9 @@ class AnthropicBatchClient:
             read = (self._reads.get(item.custom_id)
                     or resolve_read(_tier_of(item.custom_id), self.models))
             _capture(self.usage_log, read.label, read.model, item.result.message, batch=True)
-            out.update(_cited_pages(_fields_from_json(
-                _response_json(item.result.message), read.evidence_tier, read.model), read))
+            # No page translation: a batch read is always pages 1..4 in order
+            # (`build_requests` refuses a page list), so the cited image index
+            # is the document page, as for today's sync T2.
+            out.update(_fields_from_json(
+                _response_json(item.result.message), read.evidence_tier, read.model))
         return out

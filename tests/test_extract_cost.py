@@ -15,6 +15,8 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from app import queue
 from app.extract import llm
 from app.extract import tiers as tiers_mod
@@ -155,6 +157,33 @@ def test_ledger_keeps_one_row_per_label_and_stays_idempotent(conn):
     tiers = [r["tier"] for r in _rows(conn, "sha-cost-labels")]
     assert len(tiers) == 6
     assert set(tiers) == {"doc-class", "T1", "T1-second", "T2-first", "T2-second", "T2"}
+
+
+class _TwiceLlm:
+    """A ladder bug: two paid calls under one label in one extraction."""
+
+    def __init__(self):
+        from app.extract.economics import CallCost, Usage
+        self.usage_log = []
+        self._call = lambda: CallCost("T1", "claude-haiku-4-5", Usage(100, 10))
+
+    def extract(self, tier, doc, filename, missing):
+        self.usage_log += [self._call(), self._call()]
+        return {}
+
+
+def test_a_label_sent_twice_in_one_extraction_fails_before_writing(conn, fixture_pdf):
+    """The ledger would keep one of the two rows and drop the other without a
+    word, so `_finalize` refuses before writing the attempt or any cost row."""
+    job = {"payload": {"archive_url": fixture_pdf(ISO_CERT),
+                       "content_hash": "sha-cost-twice", "group_id": 1}}
+
+    with pytest.raises(ValueError, match="T1"):
+        eh.handle_extract_doc(conn, job, llm=_TwiceLlm())
+
+    assert _rows(conn, "sha-cost-twice") == []
+    assert conn.execute("SELECT count(*) AS c FROM extraction_attempt "
+                        "WHERE content_hash='sha-cost-twice'").fetchone()["c"] == 0
 
 
 def test_t0_only_doc_writes_no_cost_rows(conn, fixture_pdf):
