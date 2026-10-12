@@ -44,7 +44,7 @@ an image read, whatever the label, as `AnthropicLlm` stamps it.
 | file | fixture | tier | fills |
 |---|---|---|---|
 | `ivoclar_emax_t1_udi.json` | IVOCLAR/IPS e.max Ceram.pdf | T1 | `basic_udi_di` |
-| `dentsply_scan_t2.json` | DENSTPLY/IMP - DOC - ATIS TX ... .pdf | T2 | `regulation`, `validity_to` (scanned → vision) |
+| `dentsply_scan_t2.json` | DENSTPLY/IMP - DOC - ATIS TX ... .pdf | T2-first | `regulation`, `validity_to`, `cert_number`, `coverage_scope` (scanned → the cheap image read; relabelled from `T2` 2026-10-12, when scans began with `T2-first`) |
 
 `ivoclar_emax_t1_udi.json` no longer serves the ladder: S1.5 broadened `_UDI_LABEL`
 so T0 reads e.max's `basic_udi_di` itself (tier T0, conf 1.0) and the T1 escalation

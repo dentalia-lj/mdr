@@ -63,17 +63,21 @@ class RecordedLlm:
         self._fields[(content_hash, tier)] = fields
         self._model[(content_hash, tier)] = model_id
 
-    def extract(self, tier: str, doc, filename: str, missing: list[str]) -> dict:
+    def extract(self, tier: str, doc, filename: str, missing: list[str],
+                hints: str | None = None, **read_options) -> dict:
         """Real tier interface. Returns evidence for requested `missing` fields:
-        recorded values where present, generic fill otherwise (if enabled)."""
+        recorded values where present, generic fill otherwise (if enabled).
+        `hints` and the read options (`resolve_read`'s thinking / pages) are
+        accepted as `AnthropicLlm.extract` accepts them, and change nothing: a
+        recording answers by file and label."""
         self.calls.append((tier, tuple(missing)))
         # The label keys the recording; the step's kind stamps the evidence. A
         # label with no READ_STEPS row keeps its own name, as before.
         step = READ_STEPS.get(tier)
         ev_tier = tier if step is None else ("T1" if step.kind == TEXT else "T2")
-        # A text read sees nothing on a scanned page; model that so scans fall
-        # through to T2 (matches AnthropicLlm T1 getting empty full_text).
-        if ev_tier == "T1" and doc is not None and pdfutil.is_scan(doc):
+        # A text read sees nothing on a document with no text page (matches
+        # AnthropicLlm's text read getting empty text).
+        if ev_tier == "T1" and doc is not None and not pdfutil.has_text_page(doc):
             return {}
         key = (hash_file(filename), tier)
         recorded = self._fields.get(key, {})

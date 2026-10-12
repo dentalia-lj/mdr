@@ -34,16 +34,17 @@ delete the row.
 |---|---|
 | `fetch.robots_ttl_hours` | `app/robots.py::check` is wired since 2026-09-03 — called from the crawl rung (`app/handlers/discover.py:491`) and the probe (`app/handlers/playbook_probe.py:136`) — and neither of those passes `ttl_hours`, so for them the cache uses `robots.py`'s own 24-hour default. Since 2026-09-11 `fetch.url` consults it too and does pass the key (`app/handlers/fetch.py`), so the key now configures FETCH's reads and nothing else; the `refused_host` list remains the operator ruling that survives a permissive robots.txt |
 | Five scheduler features | Default off: the email discovery rung, expiry emails, failure re-onboarding, mailbox polling (switched on in production since 2026-10-06), the EUDAMED certificate register. See [config-reference.md](config-reference.md#scheduler) |
-| The extraction ladder's newer read steps | Since 2026-10-12 `app/extract/llm.py` `READ_STEPS` holds seven labels, and the live ladder sends three: `doc-class`, `T1`, `T2`. `doc-class-image`, `T1-second`, `T2-first` and `T2-second` are resolvable and tested, and nothing sends them; so `models.vision_first`, `models.second_read`, `extract.image_settle` and `gate.agreement_min` change nothing yet. Extraction-ladder plan Tasks 3-5 wire them. An explicit page list for an image read works on the sync path only: `AnthropicBatchClient.build_requests` refuses one, because `batch_ref` does not store the pages sent and the cited image index could not be translated back on a later poll. Delete this row when the ladder sends the new labels and `batch_ref` keeps the page list |
+| The extraction ladder's newer read steps | Since 2026-10-12 `app/extract/llm.py` `READ_STEPS` holds seven labels. The text ladder sends `doc-class`, `T1` and `T2`; the scan ladder (`tiers.run_scan_ladder`, plan Task 3) sends `doc-class-image`, `T2-first`, `T2-second` and `T2`. `T1-second` is resolvable and tested and nothing sends it (plan Task 5), and `gate.agreement_min` is read by the scan ladder's agreement rule only, not yet by GATE's combined score (Task 5). An explicit page list for an image read works on the sync path only: `AnthropicBatchClient.build_requests` refuses one, because `batch_ref` does not store the pages sent and the cited image index could not be translated back on a later poll. Delete this row when `T1-second` is sent, GATE reads `agreement_min` and `batch_ref` keeps the page list |
+| `pages-unread` for text beyond the budget | PRD v3 §5 raises `pages-unread` for unread scan pages and for text beyond the LLM text budget (`pdf.bounded_text`). Only the scan half is built (Task 3, 2026-10-12); a truncated text read still flags nothing. Extraction-ladder plan Task 4 owns the text ladder. Delete this row when a truncated text read raises the flag |
 
 ## Looks configurable, is not
 
-Nine config keys have no effect (counted 2026-10-12): four never read
-(`email.send_policy`, `mfr_binding.auto_link`, `mfr_binding.per_manufacturer`,
-`scheduler.failure_monitor_interval_hours`), two added for the extraction
-ladder and not wired yet (`extract.image_settle`, `gate.agreement_min`), two
-read only by ladder steps nothing sends yet (`models.vision_first`,
-`models.second_read`), and `queue.max_attempts`, shadowed. Full detail and the
+Five config keys have no effect (counted 2026-10-12, after the scan ladder
+wired `extract.image_settle`, `gate.agreement_min`, `models.vision_first` and
+`models.second_read`): four never read (`email.send_policy`,
+`mfr_binding.auto_link`, `mfr_binding.per_manufacturer`,
+`scheduler.failure_monitor_interval_hours`), and `queue.max_attempts`,
+shadowed. Full detail and the
 failure modes in [config-reference.md](config-reference.md#keys-that-do-nothing).
 
 The one worth repeating here: **`queue.max_attempts` is shadowed.**

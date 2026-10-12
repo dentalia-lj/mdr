@@ -71,12 +71,20 @@ class ReadStep:
 
 #: The extraction-ladder plan's "Read steps and their labels" (2026-10-12), one
 #: table for sync and batch alike. Labels carry hyphens only: `_custom_id` joins
-#: label and hash with `_` and `_tier_of` splits on the first one. Only `T1` and
-#: `T2` are sent by the ladder today; the other rows are plumbing for Tasks 3-5.
-#: The two `doc-class` rows label the classify calls, never an `extract`.
+#: label and hash with `_` and `_tier_of` splits on the first one. The text
+#: ladder sends `doc-class`, `T1` and `T2`; the scan ladder (`tiers.
+#: run_scan_ladder`) `doc-class-image`, `T2-first`, `T2-second` and `T2`;
+#: `T1-second` is plumbing for Task 5. The two `doc-class` rows label the
+#: classify calls, never an `extract`.
+#:
+#: `doc-class-image` sends thinking off (Task 3, 2026-10-12): its answer is one
+#: word and a quote in 256 tokens, and a Haiku 5.5 thinking by default could
+#: spend the budget before answering, which `_classify_answer` would then have
+#: to fail on. The plan's table names no thinking setting for it; this row is
+#: the one place that differs.
 READ_STEPS: dict[str, ReadStep] = {
     "doc-class": ReadStep(TEXT, "t1"),
-    "doc-class-image": ReadStep(IMAGE, "vision_first"),
+    "doc-class-image": ReadStep(IMAGE, "vision_first", THINKING_OFF),
     "T1": ReadStep(TEXT, "t1"),
     "T1-second": ReadStep(TEXT, "second_read", THINKING_OFF),
     "T2-first": ReadStep(IMAGE, "vision_first"),
@@ -464,6 +472,65 @@ DOC_CLASS_SCHEMA = {
     },
 }
 
+#: The compliance classes a doc-class call may answer; anything else is
+#: `NOT_A_DOCUMENT`.
+_DOC_CLASSES = ("DoC", "EC", "ISO", "IFU", "SPP")
+
+#: The doc-class prompt for a file with no text layer: the text prompt,
+#: unchanged and first, then a short note that the pages come as images. Same
+#: classes, same closed answer schema.
+DOC_CLASS_IMAGE_SYSTEM = DOC_CLASS_SYSTEM.rstrip("\n") + "\n\n" + _load_prompt("doc_class_image.md")
+DOC_CLASS_IMAGE_LABEL = "doc-class-image"
+DOC_CLASS_MAX_TOKENS = 256
+
+
+def _image_block(doc, page_index: int) -> dict:
+    """One page rendered for an image read (150 dpi PNG, as `_vision_content`)."""
+    png = pdfutil.rasterize_page(doc, page_index, dpi=150)
+    return {"type": "image", "source": {
+        "type": "base64", "media_type": "image/png",
+        "data": base64.standard_b64encode(png).decode("ascii")}}
+
+
+def _classify_image_request(read: Read, doc, filename: str) -> dict:
+    """The messages.create() body for the scan doc-class call: the file name
+    and pages 1..`DOC_CLASS_PAGES` as images. Shared by the sync call and the
+    batch client so both send the same request."""
+    n = min(doc.page_count, DOC_CLASS_PAGES)
+    content = [{"type": "text",
+                "text": f"File name: {filename}\n\nThe first {n} page(s) follow as images."}]
+    content += [_image_block(doc, i) for i in range(n)]
+    params = {
+        "model": read.model,
+        "max_tokens": DOC_CLASS_MAX_TOKENS,
+        "system": _system(DOC_CLASS_IMAGE_SYSTEM, None),
+        "messages": [{"role": "user", "content": content}],
+        "output_config": {"format": {"type": "json_schema", "schema": DOC_CLASS_SCHEMA}},
+    }
+    if read.thinking is not None:
+        params["thinking"] = dict(read.thinking)
+    return params
+
+
+def _classify_answer(message, label: str) -> tuple[str, str]:
+    """`(doc_class, quote)` from a doc-class response.
+
+    A response cut at `max_tokens` RAISES rather than reading as a refusal:
+    its JSON is truncated, and a truncated answer read as
+    `not-a-compliance-document` drops the file for good, with nothing to say a
+    model never finished (Task 1 review, 2026-10-12). Raising fails the job,
+    which retries and then lands in dead jobs, where a person sees it. Any
+    other answer outside the five classes is a refusal, as before."""
+    if getattr(message, "stop_reason", None) == "max_tokens":
+        raise RuntimeError(f"{label}: the answer was cut at max_tokens; refusing to read "
+                           f"a truncated answer as {NOT_A_DOCUMENT}")
+    payload = _response_json(message)
+    answer = payload.get("doc_class")
+    quote = str(payload.get("quote") or "")
+    if answer not in _DOC_CLASSES:
+        return NOT_A_DOCUMENT, quote
+    return answer, quote
+
 class AnthropicLlm:
     """LLM tier for the ladder: `extract(tier, doc, filename, missing)`.
 
@@ -547,6 +614,23 @@ class AnthropicLlm:
             return NOT_A_DOCUMENT, str(payload.get("quote") or "")
         return answer, str(payload.get("quote") or "")
 
+    def classify_image(self, doc, filename: str) -> tuple[str, str]:
+        """`classify` for a file with no text page (`tiers.run_scan_ladder`):
+        the same question asked of the page 1-2 images, by
+        `models.vision_first` under its own label `doc-class-image`.
+
+        Until 2026-10-12 a scan T0 could not type went to `classify`, found no
+        text and was refused without a call: 281 production scans were never
+        read. A file with no pages at all has nothing to show and is still
+        refused without one. A response cut at `max_tokens` raises
+        (`_classify_answer`) rather than reading as a refusal."""
+        if doc.page_count == 0:
+            return NOT_A_DOCUMENT, ""
+        read = resolve_read(DOC_CLASS_IMAGE_LABEL, self.models)
+        resp = self.client.messages.create(**_classify_image_request(read, doc, filename))
+        _capture(self.usage_log, read.label, read.model, resp, batch=False)
+        return _classify_answer(resp, read.label)
+
 
 class AnthropicBatchClient:
     """Batch API transport for the tier ladder (C9). Implements the interface
@@ -596,6 +680,16 @@ class AnthropicBatchClient:
             "params": _request(read, doc, missing, self.max_tokens, hints),
         }]
 
+    def build_classify_requests(self, content_hash: str, doc, filename: str) -> list[dict]:
+        """The scan doc-class call as a batch-of-1 under `doc-class-image`, the
+        same request `AnthropicLlm.classify_image` sends. `results` answers it
+        with `{"doc_class": ..., "quote": ...}`."""
+        read = resolve_read(DOC_CLASS_IMAGE_LABEL, self.models)
+        custom_id = _custom_id(content_hash, read.label)
+        self._reads[custom_id] = read
+        return [{"custom_id": custom_id,
+                 "params": _classify_image_request(read, doc, filename)}]
+
     def submit(self, requests) -> str:
         return self.client.messages.batches.create(requests=requests).id
 
@@ -610,6 +704,12 @@ class AnthropicBatchClient:
             read = (self._reads.get(item.custom_id)
                     or resolve_read(_tier_of(item.custom_id), self.models))
             _capture(self.usage_log, read.label, read.model, item.result.message, batch=True)
+            if read.label in _CLASSIFY_LABELS:
+                # A doc-class result is an answer, not fields (batch-of-1, so
+                # these keys never meet a field read's in one dict).
+                answer, quote = _classify_answer(item.result.message, read.label)
+                out.update({"doc_class": answer, "quote": quote})
+                continue
             # No page translation: a batch read is always pages 1..4 in order
             # (`build_requests` refuses a page list), so the cited image index
             # is the document page, as for today's sync T2.

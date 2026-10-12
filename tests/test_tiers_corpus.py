@@ -69,12 +69,17 @@ def test_ladder_over_corpus(entry, fixture_pdf):
             assert fields[field]["tier"] == "T0", f"{field} should stay T0"
             assert fields[field]["value"] == ev["value"]
 
-    # scanned docs reach the vision tier
+    # scanned docs (no text page) take the image ladder, never a text read
     if entry["is_scan"]:
-        assert "T2" in used
+        assert used[:2] == ["T0", "T2-first"] or used[:3] == ["T0", "doc-class-image", "T2-first"]
+        assert "T1" not in used
 
-    # every produced value carries complete evidence (T0 base, T1/T2 add model_id)
+    # every produced value carries complete evidence (T0 base, T1/T2 add model_id).
+    # Keys with a leading underscore are records about the extraction (the
+    # reads kept, the fields left unread), not evidence.
     for field, ev in fields.items():
+        if field.startswith("_"):
+            continue
         assert_extractor_evidence(ev, llm=(ev["tier"] in ("T1", "T2")))
 
     # every field the ladder asked a tier for landed in the merged result (a value,
@@ -110,13 +115,21 @@ def test_emax_escalates_only_missing_fields(fixture_pdf):
 # focused: a scanned DoC is read by the vision tier, not the text tier
 # --------------------------------------------------------------------------- #
 def test_scanned_doc_read_by_vision_tier(fixture_pdf):
+    """An 11-page scan. The recorded cheap image read (`T2-first`) settles four
+    fields at 0.90 or more; the second cheap read (unrecorded) answers nothing,
+    so the five fields neither read answered are UNREAD -- the image reads see
+    pages 1-4 of 11, and Sonnet would see the same four -- not settled and not
+    sent to Sonnet."""
     path = fixture_pdf("DENSTPLY/IMP - DOC - ATIS TX SURGICAL INSTRUMENTS - DEC-00101190.pdf")
-    _, fields, used, _ = _run(path)  # recorded T2 regulation/validity_to
+    _, fields, used, llm = _run(path)  # recorded T2-first regulation/validity_to/...
 
-    assert used == ["T0", "T1", "T2"]
-    # T1 (text) read nothing off the scan; the recorded T2 answer supplies regulation
+    assert used == ["T0", "T2-first", "T2-second"]
     assert fields["regulation"]["value"] == "MDR"
     assert fields["regulation"]["tier"] == "T2"
+    assert fields["regulation"]["step"] == "T2-first"
+    assert sorted(fields[tiers.PAGES_UNREAD_KEY]) == sorted(
+        ["type", "validity_from", "manufacturer", "ref_list", "basic_udi_di"])
+    assert tiers.PAGES_UNREAD_FLAG in tiers.integrity_flags(fields)
 
 
 # --------------------------------------------------------------------------- #

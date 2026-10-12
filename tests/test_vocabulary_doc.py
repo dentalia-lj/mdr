@@ -24,7 +24,7 @@ import pytest
 
 from app.handlers import gate as gh
 from app.results import ANOMALY_KINDS
-from app.extract.tiers import REF_TRUNCATION_FLAG, TARGET
+from app.extract.tiers import PAGES_UNREAD_FLAG, REF_TRUNCATION_FLAG, TARGET
 
 DOC = pathlib.Path(__file__).resolve().parents[1] / "docs" / "vocabulary.md"
 
@@ -70,6 +70,7 @@ def test_every_emitted_flag_is_documented(doc):
     # VALIDATE extends its flag list with tiers.integrity_flags(), so this one
     # is emitted through a constant the regex above cannot see either.
     emitted.add(REF_TRUNCATION_FLAG)
+    emitted.add(PAGES_UNREAD_FLAG)
     assert len(emitted) >= 13, "the flags.append idiom changed; this guard is blind"
     assert not _missing(doc, emitted), (
         f"flags emitted but undocumented: {_missing(doc, emitted)}")

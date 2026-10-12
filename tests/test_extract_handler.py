@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from app import queue
 from app.extract import pdf as pdf_mod
 from app.extract import tiers as tiers_mod
@@ -549,29 +551,176 @@ def test_batch_path_escalates_to_second_tier_per_field(conn, fixture_pdf):
     assert row["fields"]["regulation"]["tier"] == "T2"
 
 
-def test_batch_scan_with_nothing_left_to_extract_skips_the_t2_batch(conn, fixture_pdf):
-    """A scan forces the vision tier, but only if there is something to ask it.
+#: A cheap image read of SCAN_CERT that settles every field T0 leaves open
+#: (well-formed, at 0.9 or more). T0 reads EC/MDR off the file name at 0.6 and
+#: derives the scope at 1.0, so these six are what the ladder asks.
+SCAN_SETTLED = {
+    "type": "EC", "regulation": "MDR", "validity_from": "2023-05-26",
+    "validity_to": "2028-05-25", "cert_number": "CE 123456", "manufacturer": "Ivoclar Vivadent AG",
+}
 
-    `tiers.run_extraction` already guards this on the sync path ("don't pay for
-    a vision call with nothing to extract"); the batch path has to guard it too,
-    or a scanned document whose fields T1 already completed submits a T2 batch
-    with an empty field list and pays vision rates for an answer nobody reads.
-    """
-    path = fixture_pdf(SCAN_CERT)
-    job = _enqueue_extract(conn, "sha-b5", 6, path)
-    bc = StubBatchClient({"T1": _batch_fields("T1")}, ready_after=0)
 
-    r = None
-    for _ in range(8):
+def _scan_fields(label, values, conf=0.95):
+    return {f: {"value": v, "conf": conf, "tier": "T2", "verbatim": f"read {v}",
+                "page": 1, "model_id": f"model-{label}"} for f, v in values.items()}
+
+
+def _drive(conn, job, bc, limit=10):
+    waited, r = [], None
+    for _ in range(limit):
         r = eh.handle_extract_doc(conn, job, batch_client=bc, poll_interval_s=0)
         conn.commit()
         if r.get("_deferred"):
+            waited.append(r["waiting_on"])
             continue
         break
+    return r, waited
 
-    assert r["tiers_used"] == ["T0", "T1"]      # the scan did NOT force T2
-    assert bc.submits == ["sha-b5:T1"]          # no second batch was submitted
+
+def test_batch_scan_settled_by_the_first_image_read_submits_nothing_more(conn, fixture_pdf):
+    """A scan takes the image ladder in batch mode too, and pays only for the
+    reads it needs: one cheap read settles everything, so no second read and no
+    Sonnet batch is submitted (and no text read at all)."""
+    job = _enqueue_extract(conn, "sha-b5", 6, fixture_pdf(SCAN_CERT))
+    bc = StubBatchClient({"T2-first": _scan_fields("T2-first", SCAN_SETTLED)}, ready_after=0)
+
+    r, waited = _drive(conn, job, bc)
+
+    assert r["tiers_used"] == ["T0", "T2-first"]
+    assert waited == ["T2-first"]
+    assert bc.submits == ["sha-b5:T2-first"]
     assert _count(conn, "SELECT count(*) c FROM batch_ref WHERE content_hash='sha-b5'") == 1
+
+
+def test_batch_scan_runs_each_step_under_its_own_label(conn, fixture_pdf):
+    """The same steps and labels as the sync ladder: `T2-first`, `T2-second`
+    for what that leaves open, then `T2` (Sonnet) for what the two reads
+    disagree on. Each is its own batch_ref row, submitted once."""
+    job = _enqueue_extract(conn, "sha-b6", 6, fixture_pdf(SCAN_CERT))
+    first = dict(SCAN_SETTLED)
+    second = {"type": "ISO"}
+    bc = StubBatchClient({
+        "T2-first": {**_scan_fields("T2-first", first),
+                     **_scan_fields("T2-first", {"type": "EC"}, conf=0.80)},
+        "T2-second": _scan_fields("T2-second", second, conf=0.80),
+        "T2": _scan_fields("T2", {"type": "EC"}),
+    }, ready_after=0)
+
+    r, waited = _drive(conn, job, bc)
+
+    assert waited == ["T2-first", "T2-second", "T2"]
+    assert bc.submits == ["sha-b6:T2-first", "sha-b6:T2-second", "sha-b6:T2"]
+    assert r["tiers_used"] == ["T0", "T2-first", "T2-second", "T2"]
+    assert r["counts"]["read_disagreements"] == 1
+    assert r["disagreements"] == [{"field": "type", "steps": ["T2-first", "T2-second", "T2"],
+                                   "values": ["EC", "ISO", "EC"]}]
+    row = conn.execute("SELECT tier, fields FROM extraction_attempt "
+                       "WHERE content_hash='sha-b6'").fetchone()
+    assert row["tier"] == "T0+T2-first+T2-second+T2"
+    assert row["fields"]["type"]["step"] == "T2"
+    # Read order survives the jsonb round trip (a list, not an object).
+    assert [r["step"] for r in row["fields"][tiers_mod.READS_KEY]] == ["T2-first", "T2-second", "T2"]
+    assert tiers_mod.read_disagreements(row["fields"]) == r["disagreements"]
+
+
+class _ClassifyingBatchClient(StubBatchClient):
+    """As StubBatchClient, plus the scan doc-class call under its own label."""
+
+    def build_classify_requests(self, content_hash, doc, filename):
+        return [{"custom_id": f"{content_hash}:doc-class-image", "tier": "doc-class-image"}]
+
+
+def _untyped_scan(tmp_path, pages=1) -> str:
+    """A scan T0 cannot type: image pages, a file name with no type marker."""
+    import pymupdf
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 60, 80), False)
+    pix.clear_with(200)
+    doc = pymupdf.open()
+    for _ in range(pages):
+        doc.new_page().insert_image(pymupdf.Rect(0, 0, 595, 842), stream=pix.tobytes("png"))
+    path = tmp_path / "scan.pdf"
+    doc.save(str(path))
+    doc.close()
+    return str(path)
+
+
+def test_batch_scan_refused_by_its_image_doc_class_call_emits_nothing(conn, tmp_path):
+    job = _enqueue_extract(conn, "sha-b7", 6, _untyped_scan(tmp_path))
+    bc = _ClassifyingBatchClient({"doc-class-image": {"doc_class": tiers_mod.NOT_A_DOCUMENT,
+                                                      "quote": "INVOICE"}}, ready_after=0)
+
+    r, waited = _drive(conn, job, bc)
+
+    assert waited == ["doc-class-image"]
+    assert r["doc_class"] == tiers_mod.NOT_A_DOCUMENT and r["emitted"] is None
+    assert bc.submits == ["sha-b7:doc-class-image"]          # no field read paid for
+    assert _count(conn, "SELECT count(*) c FROM job WHERE type='validate.doc'") == 0
+
+
+def test_batch_scan_accepted_by_its_image_doc_class_call_is_read(conn, tmp_path):
+    job = _enqueue_extract(conn, "sha-b8", 6, _untyped_scan(tmp_path))
+    bc = _ClassifyingBatchClient({
+        "doc-class-image": {"doc_class": "EC", "quote": "EC Certificate"},
+        "T2-first": _scan_fields("T2-first", dict(SCAN_SETTLED, coverage_scope="manufacturer")),
+    }, ready_after=0)
+
+    r, waited = _drive(conn, job, bc)
+
+    assert waited == ["doc-class-image", "T2-first"]
+    assert r["doc_class"] == "compliance-doc"
+    assert r["tiers_used"] == ["T0", "doc-class-image", "T2-first"]
+    assert _count(conn, "SELECT count(*) c FROM job WHERE type='validate.doc'") == 1
+
+
+def test_batch_scan_doc_class_with_no_answer_fails_rather_than_refuses(conn, tmp_path):
+    """An errored batch request leaves no answer. Read as a refusal it would
+    drop the scan for good; it fails the job instead, which a person sees."""
+    job = _enqueue_extract(conn, "sha-b9", 6, _untyped_scan(tmp_path))
+    bc = _ClassifyingBatchClient({"doc-class-image": {}}, ready_after=0)
+
+    eh.handle_extract_doc(conn, job, batch_client=bc, poll_interval_s=0)   # submitted
+    conn.commit()
+    with pytest.raises(RuntimeError, match="no answer"):
+        eh.handle_extract_doc(conn, job, batch_client=bc, poll_interval_s=0)
+
+
+class _LabelLlm:
+    """Sync stub keyed by read label."""
+
+    def __init__(self, answers):
+        self.answers, self.calls = answers, []
+
+    def extract(self, tier, doc, filename, missing, **kw):
+        self.calls.append(tier)
+        return {f: ev for f, ev in self.answers.get(tier, {}).items() if f in missing}
+
+
+DENTSPLY_SCAN = "DENSTPLY/IMP - DOC - ATIS TX SURGICAL INSTRUMENTS - DEC-00101190.pdf"  # 11 pages
+
+
+def test_sync_scan_keeps_every_read_and_flags_unread_pages(conn, fixture_pdf):
+    """An 11-page scan: the image reads see pages 1-4. A field both cheap reads
+    left empty is unread -- recorded, flagged, not sent to Sonnet -- and every
+    read is kept on the attempt."""
+    answered = {"type": "DoC", "regulation": "MDR", "validity_from": "2021-05-26",
+                "validity_to": "2030-05-26", "coverage_scope": "group",
+                "manufacturer": "Dentsply Implants Manufacturing GmbH",
+                "ref_list": ["25810"], "basic_udi_di": "++J022MD0098KV"}
+    llm = _LabelLlm({"T2-first": _scan_fields("T2-first", answered), "T2-second": {}})
+    job = {"payload": {"archive_url": fixture_pdf(DENTSPLY_SCAN),
+                       "content_hash": "sha-scan-unread", "group_id": 4}}
+
+    r = eh.handle_extract_doc(conn, job, llm=llm)
+    conn.commit()
+
+    assert llm.calls == ["T2-first", "T2-second"]            # no Sonnet
+    fields = conn.execute("SELECT fields FROM extraction_attempt "
+                          "WHERE content_hash='sha-scan-unread'").fetchone()["fields"]
+    assert fields[tiers_mod.PAGES_UNREAD_KEY] == ["cert_number"]
+    assert tiers_mod.PAGES_UNREAD_FLAG in tiers_mod.integrity_flags(fields)
+    assert [x["step"] for x in fields[tiers_mod.READS_KEY]] == ["T2-first", "T2-second"]
+    assert "disagreements" not in r                          # nothing read twice differs
+    assert _count(conn, "SELECT count(*) c FROM job WHERE type='validate.doc'") == 1
 
 
 def _empty_ref(tier):

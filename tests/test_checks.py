@@ -441,3 +441,77 @@ def test_is_scan_is_unchanged_by_the_new_classes():
     # page 1 is an OCR page with a text layer: is_scan still reads page-1 length only
     assert pdf.is_scan(_build(["ocr"])) is False
     assert pdf.is_scan(_build(["image", "text"])) is True
+
+
+# --------------------------------------------------------------------------- #
+# reads off page images: shape, normal form, agreement (scan ladder, Task 3)
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("field_name, a, b, same", [
+    ("validity_from", "2025-08-25", "25.08.2025", True),        # dates compare as ISO
+    ("validity_from", "2025-08-25", "25. 08. 2025", True),
+    ("validity_from", "2025-08-25", "2025-08-26", False),
+    ("cert_number", "G10 082649 0004", "G10082649 0004", True),  # codes compacted
+    ("basic_udi_di", "++J022MD0098KV", "++j022md 0098kv", True),
+    ("ref_list", ["003477", "003478"], ["003478", "00 3477"], True),  # lists as sets
+    ("ref_list", ["003477"], ["003477", "003478"], False),
+    ("manufacturer", "GC EUROPE N.V.", "gc  europe n.v", True),  # spacing, case, end dot
+    ("manufacturer", "GC EUROPE N.V.", "GC Corporation", False),
+    ("type", "DoC", "doc", True),
+    ("type", "EC", "ISO", False),
+])
+def test_normalized_compares_what_two_reads_mean(field_name, a, b, same):
+    assert (checks.normalized(field_name, a) == checks.normalized(field_name, b)) is same
+
+
+@pytest.mark.parametrize("value", [None, "", "  ", [], ["", " "]])
+def test_an_empty_answer_normalizes_to_none(value):
+    assert checks.normalized("ref_list" if isinstance(value, list) else "type", value) is None
+
+
+@pytest.mark.parametrize("field_name, value, ok", [
+    ("validity_from", "2025-08-25", True),
+    ("validity_from", "25.08.2025", False),     # an image read answers ISO, as asked
+    ("validity_from", "2025-02-30", False),     # the shape of a date, not a day
+    ("validity_to", "2025", False),             # the STRAUMANN copyright year
+    ("type", "EC", True),
+    ("type", "Declaration of Conformity", False),
+    ("coverage_scope", "group", True),
+    ("coverage_scope", "item", False),
+    ("regulation", "n.a.", True),
+    ("regulation", "MDR 2017/745", False),
+    ("cert_number", "G10 082649 0004", True),
+    ("cert_number", "0482", False),             # a notified-body number
+    ("cert_number", "CE-0197", False),
+    ("basic_udi_di", "++J022MD0098KV", True),
+    ("ref_list", ["003477"], True),
+    ("ref_list", [], False),
+    ("manufacturer", "GC EUROPE N.V.", True),
+    ("manufacturer", None, False),
+])
+def test_well_formed_is_the_shape_a_field_takes(field_name, value, ok):
+    assert checks.well_formed(field_name, value) is ok
+
+
+def _r(value, conf):
+    return {"value": value, "conf": conf}
+
+
+@pytest.mark.parametrize("a, b, minimum, agreed", [
+    (_r("EC", 0.70), _r("EC", 0.70), 0.70, True),     # each read at the floor
+    (_r("EC", 0.69), _r("EC", 0.95), 0.70, False),    # one under it
+    (_r("EC", 0.95), _r("EC", 0.69), 0.70, False),
+    (_r("EC", 0.90), _r("ISO", 0.90), 0.70, False),   # different values
+    (_r(None, 0.90), _r(None, 0.90), 0.70, False),    # two nulls: both_null_settled's
+    (_r("Declaration", 0.9), _r("Declaration", 0.9), 0.70, False),  # agreed, malformed
+    (_r("EC", 0.90), None, 0.70, False),              # the second read gave nothing
+])
+def test_agree_needs_one_well_formed_value_and_each_read_at_the_floor(a, b, minimum, agreed):
+    assert checks.agree("type", a, b, minimum) is agreed
+
+
+def test_agree_reads_dates_and_codes_in_their_normal_form():
+    assert checks.agree("cert_number", _r("G10 082649 0004", 0.8),
+                        _r("G10082649 0004", 0.8), 0.70)
+    # Well-formed means ISO for a date, so a non-ISO answer never settles one.
+    assert not checks.agree("validity_from", _r("2025-08-25", 0.9), _r("25.08.2025", 0.9), 0.70)

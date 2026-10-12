@@ -387,6 +387,8 @@ REASON_CODE_CHIP = {
     "evidence-page-missing": "other",
     "iso-without-standard-number": "other",
     "date-label-not-adjacent": "other",
+    # part of a scan was not read: about the reading, not about our items
+    "pages-unread": "other",
 }
 
 # Link bases that follow a document into production when it is approved:

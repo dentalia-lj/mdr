@@ -340,11 +340,13 @@ class LadderModels:
 
 THINKING_OFF = {"type": "disabled"}
 
-#: The plan's "Read steps and their labels" table, transcribed.
+#: The plan's "Read steps and their labels" table, transcribed. One row
+#: differs from it: `doc-class-image` sends thinking off (Task 3), so a model
+#: thinking by default cannot spend the 256-token answer budget first.
 PLAN_STEPS = [
     # label,            kind,    model,                thinking
     ("doc-class",       "text",  "model-t1",           None),
-    ("doc-class-image", "image", "model-vision-first", None),
+    ("doc-class-image", "image", "model-vision-first", THINKING_OFF),
     ("T1",              "text",  "model-t1",           None),
     ("T1-second",       "text",  "model-second-read",  THINKING_OFF),
     ("T2-first",        "image", "model-vision-first", None),
@@ -653,3 +655,112 @@ def test_sync_and_batch_build_identical_requests_for_a_ladder_read():
 
     assert batch[0]["params"] == sync
     assert batch[0]["custom_id"] == "T2-second_abc123"
+
+
+# --- the scan doc-class call on page images (Task 3) --------------------------
+
+def _scan_doc(pages: int):
+    """Image-only pages, told apart by their grey level."""
+    import pymupdf
+    doc = pymupdf.open()
+    for n in range(pages):
+        pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 60, 80), False)
+        pix.clear_with(40 + 50 * n)
+        doc.new_page().insert_image(pymupdf.Rect(0, 0, 595, 842), stream=pix.tobytes("png"))
+    return doc
+
+
+def _system_text(system) -> str:
+    """The system prompt as text, whether sent as a string or as blocks."""
+    if isinstance(system, str):
+        return system
+    return "\n".join(b["text"] for b in system)
+
+
+class _StopResp:
+    def __init__(self, text, stop_reason="end_turn"):
+        self.content = [_Block(text)]
+        self.stop_reason = stop_reason
+
+
+class _StopClient:
+    def __init__(self, text, stop_reason="end_turn"):
+        self.kwargs = None
+        self.messages = SimpleNamespace(create=self._create)
+        self._resp = _StopResp(text, stop_reason)
+
+    def _create(self, **kw):
+        self.kwargs = kw
+        return self._resp
+
+
+def test_classify_image_asks_the_cheap_vision_model_about_pages_one_and_two():
+    client = _StopClient('{"doc_class": "EC", "quote": "EC Certificate 0123"}')
+    tier = llm.AnthropicLlm(client, LadderModels())
+    doc = _scan_doc(3)
+
+    assert tier.classify_image(doc, "scan.pdf") == ("EC", "EC Certificate 0123")
+
+    p = client.kwargs
+    assert p["model"] == LadderModels.vision_first
+    assert p["thinking"] == THINKING_OFF
+    assert p["max_tokens"] == 256
+    assert p["output_config"]["format"]["schema"] == llm.DOC_CLASS_SCHEMA
+    assert _images(p) == [_png(doc, 1), _png(doc, 2)]          # never page 3
+    assert "scan.pdf" in p["messages"][0]["content"][0]["text"]
+    text = _system_text(p["system"])
+    assert llm.DOC_CLASS_SYSTEM.strip() in text                # the text prompt, whole
+    assert "no text layer" in text                             # and the image note
+    assert [(c.tier, c.model_id) for c in tier.usage_log] == [
+        ("doc-class-image", LadderModels.vision_first)]
+
+
+def test_classify_image_keeps_the_closed_answer_vocabulary():
+    tier = llm.AnthropicLlm(_StopClient('{"doc_class": "Invoice", "quote": "INVOICE"}'),
+                            LadderModels())
+    assert tier.classify_image(_scan_doc(1), "scan.pdf") == (llm.NOT_A_DOCUMENT, "INVOICE")
+
+
+def test_a_classify_image_answer_cut_at_max_tokens_fails_rather_than_refuses():
+    """Task 1 review: a truncated answer read as `not-a-compliance-document`
+    drops the file for good. It raises, and the job's failure is visible."""
+    tier = llm.AnthropicLlm(_StopClient('{"doc_class": "E', stop_reason="max_tokens"),
+                            LadderModels())
+    with pytest.raises(RuntimeError, match="max_tokens"):
+        tier.classify_image(_scan_doc(1), "scan.pdf")
+
+
+def test_a_file_with_no_pages_is_refused_without_a_call():
+    import pymupdf
+    client = _StopClient("{}")
+    tier = llm.AnthropicLlm(client, LadderModels())
+    assert tier.classify_image(pymupdf.open(), "empty.pdf") == (llm.NOT_A_DOCUMENT, "")
+    assert client.kwargs is None and tier.usage_log == []
+
+
+def test_batch_classify_sends_the_sync_request_and_reads_its_answer():
+    payload = '{"doc_class": "IFU", "quote": "Instructions for use"}'
+    sync_client = _StopClient(payload)
+    llm.AnthropicLlm(sync_client, LadderModels()).classify_image(_scan_doc(2), "scan.pdf")
+    bc = llm.AnthropicBatchClient(StubBatchSdk(payload, custom_id="doc-class-image_abc123"),
+                                  LadderModels())
+
+    req = bc.build_classify_requests("abc123", _scan_doc(2), "scan.pdf")
+    got = bc.results("batch_123")
+
+    assert req[0]["custom_id"] == "doc-class-image_abc123"
+    assert req[0]["params"] == sync_client.kwargs
+    assert got == {"doc_class": "IFU", "quote": "Instructions for use"}
+    assert [(c.tier, c.model_id, c.batch) for c in bc.usage_log] == [
+        ("doc-class-image", LadderModels.vision_first, True)]
+
+
+def test_a_batch_classify_answer_cut_at_max_tokens_fails_too():
+    bc = llm.AnthropicBatchClient(StubBatchSdk("{}", custom_id="doc-class-image_abc123"),
+                                  LadderModels())
+    bc.client.messages.batches.results = lambda batch_id: [SimpleNamespace(
+        custom_id="doc-class-image_abc123",
+        result=SimpleNamespace(type="succeeded",
+                               message=_StopResp('{"doc_cl', stop_reason="max_tokens")))]
+    with pytest.raises(RuntimeError, match="max_tokens"):
+        bc.results("batch_123")
