@@ -11,6 +11,11 @@ gate.candidate, handbook §7 — two-level disposition:
 
 Calibration (G2) is applied HERE: score = min effective confidence over the
 required fields, effective = raw x factor(model_id, field) (identity default).
+Since 2026-10-12 a field two reads agreed on, each at least gate.agreement_min,
+counts 1 - (1 - c1)(1 - c2), and a citation-proven regulation 1.0
+(`_gate_confidence`); the one-field guards keep the first read's own number.
+A published document is replaced only by a reading that itself reaches
+production (`_kept_published`).
 Every written value carries complete evidence (inv. 2) — an incomplete required
 field is a hard error, never a partial write. Idempotent (at-least-once
 delivery): re-delivery upserts the same rows and does not duplicate evidence /
@@ -29,7 +34,7 @@ import json
 from psycopg.types.json import Json
 
 from app import item_picks, manufacturers, queue
-from app.config import load_config
+from app.config import GateThresholds, load_config
 from app.extract import tiers
 from app.handlers import register
 
@@ -299,33 +304,110 @@ def _require_complete_evidence(fields: dict) -> list[str]:
     return flags
 
 
-def _score(fields: dict, calib_map: dict) -> float:
-    return min(
-        tiers.calibrate(fields[f]["conf"], fields[f].get("model_id"), f, calib_map)
-        for f in REQUIRED_FIELDS
-    )
+def _calibrated(ev, conf_key: str, model_key: str, field: str,
+                calib_map: dict) -> float | None:
+    """One read's calibrated confidence off a field's evidence dict: the first
+    read's (`conf` / `model_id`) or the agreeing read's (`agreed_conf` /
+    `agreed_model_id`). Missing or unparseable is None, never a pass."""
+    if not isinstance(ev, dict) or ev.get(conf_key) is None:
+        return None
+    try:
+        raw_conf = float(ev[conf_key])
+    except (TypeError, ValueError):
+        return None
+    return tiers.calibrate(raw_conf, ev.get(model_key), field, calib_map)
 
 
 def _field_confidence(fields: dict, name: str, calib_map: dict) -> float | None:
-    """Calibrated confidence of ONE field, for the guards that hinge on a single
-    value rather than on the whole candidate's score.
+    """The FIRST read's OWN calibrated confidence for one field, for the guards
+    that hinge on a single value rather than on the whole candidate's score.
 
-    Two such guards exist: task 5's auto-file, which turns on `validity_from`,
-    and §7b's auto-bind, which turns on `manufacturer`. Neither field is in
-    REQUIRED_FIELDS (`_score` never covers them), so each is read and calibrated
-    separately — through the same tiers.calibrate() path `_score` uses, so that
-    a model-tier swap cannot silently change what "confident" means here.
+    Three such guards read it, and all three stay on the own number when a
+    second read agreed (PRD v3 section 7, 2026-10-12: the agreement evidence was
+    measured on the production disposition, not on these writes):
+    `scope_stated` (`coverage_scope`) and the name check (`manufacturer`) on
+    §7b's catalogue-wide auto-bind, and task 5's supersede fast path
+    (`validity_from`). Only `_score` reads the combined number
+    (`_gate_confidence`). Calibrated through the same tiers.calibrate() path,
+    so that a model-tier swap cannot silently change what "confident" means.
 
     Missing or unparseable confidence returns None and therefore FAILS every
     caller's guard; it is never treated as passing."""
-    ev = fields.get(name)
-    if not isinstance(ev, dict) or ev.get("conf") is None:
+    return _calibrated(fields.get(name), "conf", "model_id", name, calib_map)
+
+
+def _agreed_confidence(ev, field: str, calib_map: dict,
+                       agreement_min: float) -> float | None:
+    """`1 - (1 - own)(1 - agreed)` for a field two reads agreed on, or None when
+    there is no agreement that counts (Denis, 2026-10-12; PRD v3 section 7).
+
+    The extraction record names the agreeing read in `agreed_model_id` and its
+    own raw confidence in `agreed_conf`, and only when that read gave the same
+    well-formed value (Task 5b stamps them; nothing here re-compares values).
+    Both reads must be at least `agreement_min` after calibration: the per-read
+    floor is what keeps two unsure models agreeing on a wrong type out of
+    production (measured 0.6 + 0.85 -> 0.94 on the eval).
+
+    T0 (no `model_id`) is never combined, and a T3 human edit has no model
+    either; both keep their own number. A missing half of the pair, or an
+    unparseable `agreed_conf`, is no agreement."""
+    if not isinstance(ev, dict) or not ev.get("model_id") or not ev.get("agreed_model_id"):
         return None
-    try:
-        raw_conf = float(ev["conf"])
-    except (TypeError, ValueError):
+    own = _calibrated(ev, "conf", "model_id", field, calib_map)
+    agreed = _calibrated(ev, "agreed_conf", "agreed_model_id", field, calib_map)
+    if own is None or agreed is None or own < agreement_min or agreed < agreement_min:
         return None
-    return tiers.calibrate(raw_conf, ev.get("model_id"), name, calib_map)
+    return 1 - (1 - own) * (1 - agreed)
+
+
+def _gate_confidence(fields: dict, name: str, calib_map: dict,
+                     agreement_min: float) -> float | None:
+    """GATE's confidence for one field: what `_score` takes the minimum of.
+
+    In order (PRD v3 section 7, amended 2026-10-12):
+      * T0 (no `model_id`): its own number, unchanged;
+      * `regulation` proven by its printed citation (`proven: "citation"`, the
+        checks proved it from the one citation printed, or from neither for
+        `n.a.`): 1.0;
+      * two agreeing reads, each at least `agreement_min`: combined;
+      * otherwise the first read's own calibrated number.
+
+    The thresholds stay where they are and no per-model factor is added: the
+    combination is new evidence, a factor would only restate the old one."""
+    own = _field_confidence(fields, name, calib_map)
+    if own is None:
+        return None
+    ev = fields[name]
+    if not ev.get("model_id"):
+        return own
+    if name == "regulation" and ev.get("proven") == "citation":
+        return 1.0
+    combined = _agreed_confidence(ev, name, calib_map, agreement_min)
+    return own if combined is None else combined
+
+
+def _score(fields: dict, calib_map: dict, agreement_min: float) -> float:
+    """The document score: the lowest `_gate_confidence` over REQUIRED_FIELDS.
+    It decides the disposition and, through `score >= high`, per-link
+    production. An unreadable confidence scores 0.0, so it holds the document
+    rather than passing it."""
+    return min(_gate_confidence(fields, f, calib_map, agreement_min) or 0.0
+               for f in REQUIRED_FIELDS)
+
+
+def _stored_confidence(ev: dict, field: str, agreement_min: float):
+    """What `evidence.confidence` holds: the first read's own raw number, or,
+    where two reads agreed, the two combined (PRD v3 section 5, "the stored
+    confidence is the combined one").
+
+    Uncalibrated, as the column always was: the page note on both evidence
+    tables says the number is the model's own and not calibrated, and that it
+    may combine two agreeing reads. So the combination is taken over the raw
+    numbers (an empty calibration map), and a citation-proven `regulation`
+    stores its read's own number, not GATE's 1.0, which no read stated.
+    With every factor at 1.0 the qualifying test is the one `_score` applies."""
+    combined = _agreed_confidence(ev, field, {}, agreement_min)
+    return ev.get("conf", 0.0) if combined is None else combined
 
 
 def _source_url_for(conn, content_hash: str) -> str | None:
@@ -701,7 +783,8 @@ def _apply_supersession(conn, doc_id, supersedes_id, decided_by, job) -> None:
         _audit(conn, "supersede", supersedes_id, decided_by, job, detail={"superseded_by": doc_id})
 
 
-def _insert_evidence(conn, doc_id, extract_rev, fields, archive_url) -> None:
+def _insert_evidence(conn, doc_id, extract_rev, fields, archive_url, *,
+                     agreement_min: float = GateThresholds.agreement_min) -> None:
     """One evidence row per field that carries a value, scoped to the extraction
     revision that produced it (evidence.extract_rev, migration 014 — [gate-evidence]
     ruling 2026-07-31). Append-only + idempotent: NOT EXISTS guard on
@@ -718,26 +801,37 @@ def _insert_evidence(conn, doc_id, extract_rev, fields, archive_url) -> None:
     (`..._RA_810_DoC_EU_SIGNED.pdf`) whose product list lives in a separate annex
     (`..._RA_812_Liste_DoC.pdf`), and the declaration's `ref_list` is read off
     that annex. Invariant 2 asks where the value was READ, so pointing such a row
-    at the declaration would send a reviewer to a page holding no list at all."""
+    at the declaration would send a reviewer to a page holding no list at all.
+
+    Where a second read agreed (migration 071), the row also names it:
+    `agreed_model_id` and its own raw `agreed_confidence`, written as the
+    extraction record carries them, and `confidence` holds the combined number
+    (`_stored_confidence`). `model_id`, `verbatim` and `page` stay the first
+    read's, the one whose value is stored."""
     for field, ev in fields.items():
-        if not isinstance(ev, dict):
-            continue
-        value = ev.get("value")
-        if value in (None, "", []):
+        value_text = _evidence_value(ev)
+        if value_text is None:
             continue
         field_url = ev.get("archive_url") or archive_url
-        value_text = value if isinstance(value, str) else json.dumps(value)
+        try:
+            agreed_conf = (None if ev.get("agreed_conf") is None
+                           else float(ev["agreed_conf"]))
+        except (TypeError, ValueError):
+            agreed_conf = None
         conn.execute(
             """
             INSERT INTO evidence (doc_id, field, value, archive_url, page, verbatim,
-                                  tier, model_id, confidence, extracted_at, extract_rev)
-            SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, now(), %s
+                                  tier, model_id, confidence, extracted_at, extract_rev,
+                                  agreed_model_id, agreed_confidence)
+            SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, now(), %s, %s, %s
             WHERE NOT EXISTS (
                 SELECT 1 FROM evidence WHERE doc_id=%s AND field=%s AND extract_rev=%s
             )
             """,
             (doc_id, field, value_text, field_url, ev.get("page"), ev.get("verbatim", ""),
-             ev.get("tier", ""), ev.get("model_id"), ev.get("conf", 0.0), extract_rev,
+             ev.get("tier", ""), ev.get("model_id"),
+             _stored_confidence(ev, field, agreement_min), extract_rev,
+             ev.get("agreed_model_id"), agreed_conf,
              doc_id, field, extract_rev),
         )
         # Heal the storage handle on a row the guard above skipped. `_upsert_document`
@@ -758,6 +852,60 @@ def _insert_evidence(conn, doc_id, extract_rev, fields, archive_url) -> None:
             "WHERE doc_id=%s AND field=%s AND extract_rev=%s AND archive_url IS DISTINCT FROM %s",
             (field_url, doc_id, field, extract_rev, field_url),
         )
+
+
+def _evidence_value(ev) -> str | None:
+    """The `evidence.value` text a field's evidence dict is stored as, or None
+    when it carries no value and gets no row. One rule for the writer above and
+    for `_published_differences`, so a comparison never reports a difference
+    that is only a formatting one."""
+    if not isinstance(ev, dict):
+        return None
+    value = ev.get("value")
+    if value in (None, "", []):
+        return None
+    return value if isinstance(value, str) else json.dumps(value)
+
+
+def _published_differences(conn, doc_id, fields) -> list[str]:
+    """The fields on which a reading GATE did not adopt differs from what the
+    published document holds, sorted. "Holds" is each field's current evidence
+    (the row with the highest `extract_rev`, a reviewer's T3 edit included),
+    which is what the document's columns were written from. A field one side
+    has and the other lacks is a difference."""
+    stored = {r["field"]: r["value"] for r in conn.execute(
+        "SELECT DISTINCT ON (field) field, value FROM evidence WHERE doc_id=%s "
+        "ORDER BY field, extract_rev DESC, id DESC", (doc_id,)).fetchall()}
+    read = {f: v for f, v in ((f, _evidence_value(ev)) for f, ev in fields.items())
+            if v is not None}
+    return sorted(f for f in set(stored) | set(read) if stored.get(f) != read.get(f))
+
+
+def _kept_published(conn, doc_id, fields, out: dict) -> dict:
+    """The published-document guard's result (Denis, 2026-10-12; extraction-
+    ladder plan, Task 5): a document already in `production`, read again by a
+    candidate that does not itself reach production, keeps everything.
+
+    Before this, `_upsert_document` kept the STATUS (production is sticky) and
+    overwrote every field with whatever the new reading said, whatever that
+    reading's own disposition; evidence was appended for it; and a `manual`
+    reading opened a review task that Review never lists, because Review lists
+    staged documents only. Now nothing is written for such a reading: not the
+    document's fields (inv. 4, never made current), not evidence (inv. 2: the
+    stored values keep the evidence they were written with), not links, not a
+    task, and not a supersession pointer (inv. 5: type and regulation do not
+    move under a chain). The reading itself stays on `extraction_attempt`.
+
+    Never silent: `published_kept` says the guard held, `out["disposition"]`
+    is what the reading scored, and the fields it would have changed are listed
+    and counted (`counts.published_differences`, absent when there are none,
+    like every `counts` key)."""
+    out["published_kept"] = True
+    diffs = _published_differences(conn, doc_id, fields)
+    if diffs:
+        out["published_differences"] = diffs
+        out.setdefault("counts", {})["published_differences"] = len(diffs)
+    return out
 
 
 def _snapshot(job: dict) -> dict:
@@ -884,6 +1032,10 @@ def _handle_mfr_binding(conn, job) -> dict:
     # there already names this exact hazard ("a wrong `manufacturer` links the
     # doc to the entire catalogue"). Held to `high`, not `med`: this is the
     # guard standing between an unparsed REF list and a catalogue-wide write.
+    # Both this and the name check below read the first read's OWN number,
+    # never two agreeing reads combined (PRD v3 section 7, 2026-10-12): the
+    # agreement evidence was measured on the production disposition, not on
+    # this catalogue-wide write.
     scope_stated = (_field_confidence(fields, "coverage_scope", calib_map) or 0.0) >= cfg.gate.high
 
     name = p.get("manufacturer") or _val(fields, "manufacturer")
@@ -904,9 +1056,23 @@ def _handle_mfr_binding(conn, job) -> dict:
              and scope_stated and not enumerated
              and _is_md_document(fields) else None)
 
+    # Read before any branch: every outcome below that is not `production`
+    # leaves a published document exactly as it is (`_kept_published`).
+    prev = conn.execute(
+        "SELECT doc_id, status FROM document WHERE content_hash=%s", (p["content_hash"],)
+    ).fetchone()
+    prev_status = prev["status"] if prev else None
+    agreement_min = cfg.gate.agreement_min
+
     if bound is None:
+        if prev_status == "production":
+            out = {"disposition": "mfr-binding", "doc_id": prev["doc_id"]}
+            if flags:
+                out["flags"] = flags
+            return _kept_published(conn, prev["doc_id"], fields, out)
         doc_id = _upsert_document(conn, fields, p["content_hash"], archive_url, "staged")
-        _insert_evidence(conn, doc_id, p["extract_rev"], fields, archive_url)
+        _insert_evidence(conn, doc_id, p["extract_rev"], fields, archive_url,
+                         agreement_min=agreement_min)
         _backresolve_here(conn, doc_id, fields)
         task = {"route": "mfr-binding", "manufacturer": name}
         if flags:
@@ -918,11 +1084,6 @@ def _handle_mfr_binding(conn, job) -> dict:
         if flags:
             out["flags"] = flags
         return out
-
-    prev = conn.execute(
-        "SELECT status FROM document WHERE content_hash=%s", (p["content_hash"],)
-    ).fetchone()
-    prev_status = prev["status"] if prev else None
 
     codes = manufacturers.item_codes_for(conn, bound)
     n_items = conn.execute(
@@ -965,9 +1126,16 @@ def _handle_mfr_binding(conn, job) -> dict:
     storable = _bindable_manufacturer(conn, bound)
 
     if not n_items and not declassified:
+        if prev_status == "production":
+            out = {"disposition": "mfr-binding", "doc_id": prev["doc_id"],
+                   "manufacturer": bound, "reason": "md-class-unknown"}
+            if flags:
+                out["flags"] = flags
+            return _kept_published(conn, prev["doc_id"], fields, out)
         doc_id = _upsert_document(conn, fields, p["content_hash"], archive_url, "staged",
                                   canonical_manufacturer=storable)
-        _insert_evidence(conn, doc_id, p["extract_rev"], fields, archive_url)
+        _insert_evidence(conn, doc_id, p["extract_rev"], fields, archive_url,
+                         agreement_min=agreement_min)
         _backresolve_here(conn, doc_id, fields)
         # The manufacturer DID resolve -- that is what separates this from the
         # `bound is None` branch above, and the reviewer needs to be told so,
@@ -985,9 +1153,14 @@ def _handle_mfr_binding(conn, job) -> dict:
         return out
 
     status = "production" if n_items else "filed"
+    if status == "filed" and prev_status == "production":
+        return _kept_published(conn, prev["doc_id"], fields, {
+            "disposition": "filed", "doc_id": prev["doc_id"], "manufacturer": bound,
+            "links": 0})
     doc_id = _upsert_document(conn, fields, p["content_hash"], archive_url, status,
                               canonical_manufacturer=storable)
-    _insert_evidence(conn, doc_id, p["extract_rev"], fields, archive_url)
+    _insert_evidence(conn, doc_id, p["extract_rev"], fields, archive_url,
+                     agreement_min=agreement_min)
     _backresolve_here(conn, doc_id, fields)
     # The binding IS the decision this task was raised to obtain. Leaving it open
     # is how the review board came to show 24 items against 14 real ones.
@@ -1004,6 +1177,19 @@ def _handle_mfr_binding(conn, job) -> dict:
     if prev_status != "filed":
         _audit(conn, "filed", doc_id, "gate", job, detail={"manufacturer": bound})
     return {"disposition": "filed", "doc_id": doc_id, "manufacturer": bound, "links": 0}
+
+
+def _candidate_result(disposition, doc_id, score, payload, flags) -> dict:
+    """`gate.candidate`'s job result on the REF route."""
+    out = {"disposition": disposition, "doc_id": doc_id, "score": round(score, 4),
+           "links": len(payload.get("links", []))}
+    # Report the flags that decided this disposition. GATE raises its own on top
+    # of VALIDATE's (evidence findings, the device-type guard), so a job result
+    # showing only the verdict hides the reason -- and the reason is the part a
+    # person needs when the answer is "staged" (CLAUDE.md: never silent).
+    if flags:
+        out["flags"] = sorted(set(flags))
+    return out
 
 
 def handle_gate_candidate(conn, job: dict) -> dict:
@@ -1035,7 +1221,11 @@ def handle_gate_candidate(conn, job: dict) -> dict:
 
     cfg = load_config()
     calib_map = getattr(cfg, "calibration", {}) or {}
-    score = _score(fields, calib_map)
+    # PRD v3 section 7 (2026-10-12): each required field at its combined
+    # confidence (`_gate_confidence`), so the disposition and per-link
+    # production below both read two agreeing reads as one stronger one.
+    agreement_min = cfg.gate.agreement_min
+    score = _score(fields, calib_map, agreement_min)
     ref_gate = bool(p.get("ref_gate"))
     # GATE's own evidence findings join VALIDATE's. They are blocking, so the
     # document is archived and reviewed rather than dead-lettered.
@@ -1077,8 +1267,9 @@ def handle_gate_candidate(conn, job: dict) -> dict:
     # Any failure falls through to the normal chain, where "older-than-current"
     # (back in BLOCKING_FLAGS) forces manual exactly as it did before this task
     # — never production, never a silent downgrade.
+    #   validity_from's number in (3) is the first read's OWN, never two agreeing
+    #   reads combined (PRD v3 section 7, 2026-10-12): `_field_confidence`.
     auto_superseded = p.get("superseded_by_doc_id")
-    supersede_skipped = False
     auto_supersede_ok = (
         auto_superseded is not None
         and not any(f in BLOCKING_FLAGS and f != "older-than-current" for f in flags)
@@ -1104,9 +1295,22 @@ def handle_gate_candidate(conn, job: dict) -> dict:
                   "filed": "filed"}.get(disposition, "staged")
 
     prev = conn.execute(
-        "SELECT status FROM document WHERE content_hash=%s", (p["content_hash"],)
+        "SELECT doc_id, status FROM document WHERE content_hash=%s", (p["content_hash"],)
     ).fetchone()
     prev_status = prev["status"] if prev else None
+
+    # The published-document guard (Denis, 2026-10-12): a reading that does not
+    # itself reach production changes nothing on a document that is already
+    # published -- no field, no evidence, no link, no task, no chain pointer.
+    # Placed before the first write, so there is nothing to undo; the stale-rev
+    # no-op above it still runs first. `_kept_published` says why.
+    if prev_status == "production" and disposition != "production":
+        out = _candidate_result(disposition, prev["doc_id"], score, p, flags)
+        if auto_supersede_ok:
+            # The fast path's own report for a target already published, which
+            # the chain-pointer block below would have made; the guard skips it.
+            out["supersede_skipped"] = "target already production"
+        return _kept_published(conn, prev["doc_id"], fields, out)
 
     # 053: only an UNAMBIGUOUS resolution is stored. Zero canonicals means we
     # cannot name the manufacturer; more than one means a human must choose, and
@@ -1146,13 +1350,16 @@ def handle_gate_candidate(conn, job: dict) -> dict:
         # identically, and both raise rather than skip.
         _assert_chain_identity(conn, auto_superseded, doc_id)
         # `AND status='superseded'` is load-bearing, not belt-and-braces:
-        # _upsert_document's status CASE is sticky, so a doc_id already sitting
-        # at 'production' keeps that status even when this candidate computed
-        # `superseded`. Without the predicate the row becomes production AND
-        # carrying a chain pointer — a contradiction /api/documents/{doc_id}
-        # would serve to external consumers as
-        # {"status": "production", "superseded_by": N}. The predicate fires
-        # exactly when _upsert_document really did land this row as superseded.
+        # _upsert_document's status CASE is sticky, so a doc_id sitting at a
+        # status a machine may not leave keeps it even when this candidate
+        # computed `superseded`. Without the predicate the row would carry a
+        # chain pointer under that status -- for `production` a contradiction
+        # /api/documents/{doc_id} would serve as {"status": "production",
+        # "superseded_by": N}. A row already `production` no longer reaches
+        # this block at all (the published-document guard above returns first
+        # and reports `supersede_skipped`, which is never silent); the
+        # predicate still covers `rejected`, and fires exactly when
+        # _upsert_document really did land this row as superseded.
         changed = conn.execute(
             "UPDATE document SET superseded_by=%s "
             "WHERE doc_id=%s AND superseded_by IS NULL AND status='superseded' "
@@ -1161,12 +1368,6 @@ def handle_gate_candidate(conn, job: dict) -> dict:
         ).fetchone()
         if changed is not None:
             _audit(conn, "auto-superseded", doc_id, "gate", job)
-        elif prev_status == "production":
-            # Never silent (CLAUDE.md): the candidate qualified for auto-filing
-            # but the row it targets is already production under some other
-            # decision, so the chain pointer was withheld deliberately. Reported
-            # on the job result, which Task 3 persists to job.result.
-            supersede_skipped = True
 
     # task 4 back-resolution: this document may itself be a certificate that
     # earlier-processed declarations cited before we held it. Shared with the
@@ -1181,6 +1382,8 @@ def handle_gate_candidate(conn, job: dict) -> dict:
     if _is_current_rev(conn, p["content_hash"], p["extract_rev"]):
         for link in p.get("links", []):
             basis = link["match_basis"]
+            # `score` is the combined one (`_score`): per-link production reads
+            # two agreeing reads exactly as the disposition does.
             link_status = ("production"
                            if basis in TRUSTED_BASES and doc_status == "production" and score >= cfg.gate.high
                            else "staged")
@@ -1188,7 +1391,8 @@ def handle_gate_candidate(conn, job: dict) -> dict:
         _retract_unsupported_links(conn, doc_id, p.get("links", []), job,
                                    group_id=p.get("group_id"))
 
-    _insert_evidence(conn, doc_id, p["extract_rev"], fields, archive_url)
+    _insert_evidence(conn, doc_id, p["extract_rev"], fields, archive_url,
+                     agreement_min=agreement_min)
 
     if disposition == "production" and prev_status != "production":
         _audit(conn, "production-write", doc_id, "gate", job)
@@ -1211,17 +1415,7 @@ def handle_gate_candidate(conn, job: dict) -> dict:
     if disposition == "production" and p.get("supersedes") is not None:
         _apply_supersession(conn, doc_id, p["supersedes"], "gate", job)
 
-    out = {"disposition": disposition, "doc_id": doc_id, "score": round(score, 4),
-           "links": len(p.get("links", []))}
-    # Report the flags that decided this disposition. GATE raises its own on top
-    # of VALIDATE's (evidence findings, the device-type guard), so a job result
-    # showing only the verdict hides the reason -- and the reason is the part a
-    # person needs when the answer is "staged" (CLAUDE.md: never silent).
-    if flags:
-        out["flags"] = sorted(set(flags))
-    if supersede_skipped:
-        out["supersede_skipped"] = "target already production"
-    return out
+    return _candidate_result(disposition, doc_id, score, p, flags)
 
 
 register("gate.candidate", handle_gate_candidate)
@@ -1255,11 +1449,13 @@ def _apply_edits(conn, doc_id, edits) -> None:
         if field not in _EDITABLE:
             raise ValueError(f"gate.apply: '{field}' is not an editable field")
         conn.execute(f"UPDATE document SET {_EDITABLE[field]} WHERE doc_id=%s", (value, doc_id))
-        # human edit is its own evidence tier (T3, full confidence)
+        # human edit is its own evidence tier (T3, full confidence). A person is
+        # not a read, so there is no agreeing read to name (migration 071).
         conn.execute(
             "INSERT INTO evidence (doc_id, field, value, archive_url, page, verbatim, "
-            "tier, model_id, confidence, extracted_at, extract_rev) "
-            "VALUES (%s, %s, %s, %s, NULL, %s, 'T3', NULL, 1.0, now(), %s)",
+            "tier, model_id, confidence, extracted_at, extract_rev, "
+            "agreed_model_id, agreed_confidence) "
+            "VALUES (%s, %s, %s, %s, NULL, %s, 'T3', NULL, 1.0, now(), %s, NULL, NULL)",
             (doc_id, field, str(value), archive_url, str(value), rev),
         )
 

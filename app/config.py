@@ -70,11 +70,12 @@ class GateThresholds:
     `agreement_min` (PRD §11 and Denis's rulings of 2026-10-12): the confidence
     EACH of two agreeing reads must state before their agreement counts -- for
     GATE's combined score `1 - (1 - c1)(1 - c2)`, and for a scan field settled
-    by two cheap image reads. Read by nothing yet (extraction-ladder plan, Task
-    1 is plumbing; Tasks 3 and 5 wire it). It lives here, not under `extract`,
-    because the PRD names it `gate.agreement_min` and GATE is where the
-    combined number is used; one key keeps the scan rule and the score on the
-    same floor.
+    by two cheap image reads. Read by the scan ladder (Task 3) and by GATE
+    (`gate._agreed_confidence`, Task 5); the one-field guards in GATE never
+    read it, they stay on the first read's own number. It lives here, not
+    under `extract`, because the PRD names it `gate.agreement_min` and GATE is
+    where the combined number is used; one key keeps the scan rule and the
+    score on the same floor.
     """
 
     high: float = 0.92

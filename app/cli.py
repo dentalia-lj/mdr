@@ -1377,8 +1377,8 @@ def build_parser() -> argparse.ArgumentParser:
     rx.add_argument("--hashes", help="comma-separated content hashes")
     rx.add_argument("--hashes-file", help="file with one content hash per line")
     rx.add_argument("--include-published", action="store_true",
-                    help="also re-read published documents nobody approved (GATE refreshes "
-                         "their fields from the new read)")
+                    help="also re-read published documents nobody approved (GATE replaces "
+                         "their fields only when the new read itself reaches production)")
     rx.add_argument("--limit", type=int,
                     help="send only the first N eligible hashes (hash order: a fair sample)")
     rx.add_argument("--apply", action="store_true", help="queue; without it, dry run")

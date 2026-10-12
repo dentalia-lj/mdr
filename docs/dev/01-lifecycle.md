@@ -191,6 +191,19 @@ run in parallel:
    `manual`/`staged` writes are still archived and evidenced — only the
    *disposition* differs, never the completeness of what's recorded
    (invariant 2).
+   - **The score** (2026-10-12) is the lowest of `type`, `regulation` and
+     `coverage_scope` at their combined confidence: two agreeing reads,
+     each at least `gate.agreement_min`, count `1 - (1 - c1)(1 - c2)`; a
+     citation-proven `regulation` counts 1.0; T0 keeps its number
+     (`gate._gate_confidence`). The auto-bind's scope and name checks and
+     the fast path's `validity_from` keep the first read's own number.
+   - **A published document read again** (2026-10-12): when the document is
+     already `production` and the new candidate does not itself reach
+     production, on either route, GATE writes nothing at all (fields,
+     evidence, links, task and chain pointer stay as they were), and the job
+     result says `published_kept` and counts the fields the read saw
+     differently (`gate._kept_published`). Checked after the stale-rev no-op
+     and before the first write.
 
 **8. Visible on a product.** A `production` document is now servable:
 `/item/{item_ref}?k=` (the BC hyperlink target, `docs/runbook.md`'s Web UI

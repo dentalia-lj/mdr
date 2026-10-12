@@ -741,7 +741,10 @@ def handle_gate_candidate(job):
     require_complete_evidence(ext)                # missing evidence -> hard error, never write
 
     # document level
-    score = min(f.conf for f in ext.required_fields)     # REQUIRED_FIELDS only — validity_from NOT included
+    score = min(gate_confidence(f) for f in ext.required_fields)   # REQUIRED_FIELDS only — validity_from NOT included;
+                                                  # 2026-10-12: two agreeing reads each >= agreement_min
+                                                  # count 1-(1-c1)(1-c2), citation-proven regulation 1.0,
+                                                  # T0 unchanged. calibrated_confidence() below stays OWN.
     auto_superseded = p.get("superseded_by_doc_id")
     # task 5, fix round 1: the fast path is NARROW — all three must hold, or
     # this falls through to the ordinary chain below, where "older-than-current"
@@ -759,6 +762,12 @@ def handle_gate_candidate(job):
         doc_status = "staged"
     else:
         doc_status = "manual"
+
+    # 2026-10-12: a published document is replaced only by a candidate that is
+    # itself production; anything else writes nothing and reports
+    # published_kept + published_differences on the job result.
+    if db.document.status_by_hash(p["content_hash"]) == "production" and doc_status != "production":
+        return kept_published(...)
 
     with db.tx():                                 # single transaction: claim+write+audit
         doc = db.document.upsert_by_hash(ext, status=

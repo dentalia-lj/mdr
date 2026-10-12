@@ -25,8 +25,8 @@ never clobber a real handler.
 | `fetch.url` | `handlers/fetch.py:145` | `extract.doc` or `validate.doc`, **or nothing** when the body is not a document | `test_fetch_handler.py` |
 | `extract.doc` | `handlers/extract.py:389` | `validate.doc`, **or nothing** when the doc-class call answers `not-a-compliance-document` | `test_extract_handler.py`, `test_extract_cost.py`, `test_doc_class_gate.py` |
 | `validate.doc` | `handlers/validate.py:780` | `gate.candidate` | `test_validate_handler.py` |
-| `gate.candidate` | `handlers/gate.py:1009` | nothing (terminal) | `test_gate_candidate_handler.py` |
-| `gate.apply` | `handlers/gate.py:1532` | `discover.group` on reject | `test_gate_apply_handler.py` |
+| `gate.candidate` | `handlers/gate.py:1195` | nothing (terminal) | `test_gate_candidate_handler.py` |
+| `gate.apply` | `handlers/gate.py:1728` | `discover.group` on reject | `test_gate_apply_handler.py` |
 | `backfill.scan` | `handlers/backfill.py:270` | `extract.doc` | `test_backfill_handler.py` |
 | `upload.ingest` | `handlers/upload.py:33` | `extract.doc` or `validate.doc` | `test_upload_handler.py` |
 | `vendor.import` | `handlers/vendor_import.py:40` | nothing, deliberately | `test_vendor_import_handler.py` |
@@ -113,8 +113,11 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 - consumes: `content_hash`, `extract_rev` required; `group_id`, `ref_gate`, `flags`, `links`, `supersedes`, `related_doc_id`, `cert_doc_id`, `superseded_by_doc_id`, `archive_url`, `manufacturer`, `route` optional
 - writes: `document`, `item_document`, `evidence`, `manual_task`, `audit_log`
 - emits: nothing — terminal
-- fails how: a stale `extract_rev` is a counted no-op. Missing extraction raises. Unusable evidence raises. An UNATTRIBUTABLE manufacturer bind raises rather than promoting nothing ([gate-bind-zero-links], `gate.py:1223`) — that is a name resolving to no BC *codes*. A name that resolves fine but whose items carry no MD flag is **not** a fault and never was: since migration 053 it is a legitimate bind that records the manufacturer and links nothing
-- note: `TRUSTED_BASES` (`gate.py:47`) is what caps `name-family` / `fetch-context` / `ref-catalogue` at staged, backed structurally by the DB CHECK in migrations 005/021
+- fails how: a stale `extract_rev` is a counted no-op. Missing extraction raises. Unusable evidence raises. An UNATTRIBUTABLE manufacturer bind raises rather than promoting nothing ([gate-bind-zero-links], `gate.py:1516`) — that is a name resolving to no BC *codes*. A name that resolves fine but whose items carry no MD flag is **not** a fault and never was: since migration 053 it is a legitimate bind that records the manufacturer and links nothing
+- note: `TRUSTED_BASES` (`gate.py:52`) is what caps `name-family` / `fetch-context` / `ref-catalogue` at staged, backed structurally by the DB CHECK in migrations 005/021
+- note: **combined confidence** (PRD v3 section 7, 2026-10-12). `_score` takes the minimum of `_gate_confidence` over `type`, `regulation`, `coverage_scope`: a field whose evidence carries `agreed_model_id` + `agreed_conf` counts `1 - (1 - own)(1 - agreed)` when both calibrated numbers are at least `gate.agreement_min`; a `regulation` with `proven: "citation"` counts 1.0; T0 (no `model_id`) keeps its own number. The disposition and per-link production read that score. The one-field guards read the first read's own number through `_field_confidence`, never the combined one: `scope_stated` and the manufacturer-name check on the auto-bind route, and the supersede fast path's `validity_from`. Nothing stamps the agreement keys yet (extraction-ladder plan Task 5b), so today every field scores its own number
+- note: evidence (migration 071) gets `agreed_model_id` and the agreeing read's own raw `agreed_confidence` from those keys, and `confidence` stores the two combined, uncalibrated (`_stored_confidence`). A citation-proven `regulation` stores its read's own number, not 1.0. T3 rows write both columns NULL
+- note: **published-document guard** (Denis, 2026-10-12). A candidate that does not itself reach production, for a document already `production`, writes nothing: no field, no evidence, no link write or retraction, no review task, no chain pointer, on both routes (`_kept_published`). The result carries `published_kept: true`, the would-be `disposition`, and `published_differences` (the fields whose reading differs from the current evidence) with `counts.published_differences`, both absent when nothing differs. A candidate that does reach production replaces fields and evidence as before
 - note: both GATE handlers set `document.canonical_manufacturer` (migration 053). It is the CONFIRMED manufacturer, not the printed name in evidence; null means undecided, never "none". Sticky under re-upsert via `COALESCE(EXCLUDED..., document....)`
 
 ### `gate.apply`
