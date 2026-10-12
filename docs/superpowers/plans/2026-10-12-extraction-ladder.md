@@ -107,7 +107,7 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | 3 scans | building (Opus) | worktree el-scans |
 | 4 text ladder | waiting for 1 and 2 | |
 | 5 gate, guard, migration | waiting for 3 and 4 | |
-| 6 prompt caching | built (Sonnet) f75a454; Opus review: merge after fixes (eval replay key, docs figures); fixes being applied | worktree el-cache |
+| 6 prompt caching | done: built (Sonnet), reviewed and fixed (Opus), merged; cache hits to confirm on the first real run | merge of bbc461d |
 | 7 re-extract command | done: built (Sonnet), reviewed and fixed (Opus), merged | c39bb77 |
 | 8 quality and parity | waiting for 1-6 | |
 | 9 production replay | waiting for 1-6 | |
@@ -298,10 +298,10 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
 
 ### Task 6. Prompt caching - 5 h / 0.5 h
 
-- [ ] `cache_control` on the first system block; without hints `_system` returns a
+- [x] `cache_control` on the first system block; without hints `_system` returns a
       bare string today, so it becomes a one-block list (update the pin
       `test_no_hints_leaves_the_request_exactly_as_it_was`).
-- [ ] Check Haiku 5.5's minimum cacheable prefix first: the image prefix is 3,696
+- [x] Check Haiku 5.5's minimum cacheable prefix first: the image prefix is 3,696
       tokens and may fall under it. Cache read and write prices are already in
       `economics.py` (verify).
 - **Done when:** the first real run shows `cache_read_input_tokens` above 0 on the
