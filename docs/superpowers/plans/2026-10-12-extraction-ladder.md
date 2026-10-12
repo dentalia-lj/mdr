@@ -389,10 +389,10 @@ guard read `conf` alone.
 
 ## Risks
 
-- No `MODELS_*` key reaches the server's containers (no env line in compose): the
-  `models.t1` swap goes live on the image rebuild, and rolling it back means redeploying
-  the previous commit. An env line in compose would make it a switch; config placement
-  was deferred on 2026-09-14, so that is Denis's call before deploy.
+- No `MODELS_*` key reaches the server's containers, and none is added (Denis,
+  2026-10-12): the new ladder's settle and agreement thresholds were measured on Haiku
+  5.5, so switching T1 back to Haiku 4.5 alone would run an unmeasured flow. Rolling
+  back means redeploying the previous commit.
 
 - The scan gate rests on 4 labelled scans, one probable label error among them.
 - Batch mode is off on the server (`EXTRACT_MODE=sync`, 2026-09-29); the batch path is
