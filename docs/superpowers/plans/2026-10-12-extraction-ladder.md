@@ -103,7 +103,7 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 |---|---|---|
 | 0 contract (PRD, design doc) | done, approved | 4811151 |
 | 1 read plumbing, ledger | built (Opus) 7ae1269, full suite 4491 passed; Opus review: merge (requests byte-identical on 24 fixtures); 5 small fixes being applied | worktree el-plumbing |
-| 2 checks, page classes | done: built (Sonnet), reviewed and fixed (Opus), merged | merge after 1cc130d |
+| 2 checks, page classes | done: built (Sonnet), reviewed and fixed (Opus), merged | b9cd734 |
 | 3 scans | waiting for 1 and 2 | |
 | 4 text ladder | waiting for 1 and 2 | |
 | 5 gate, guard, migration | waiting for 3 and 4 | |
