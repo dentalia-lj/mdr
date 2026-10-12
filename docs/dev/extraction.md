@@ -33,7 +33,7 @@ itself.
 | `app/extract/llm.py` | 335 | T1/T2 Anthropic clients (sync `AnthropicLlm`, batch `AnthropicBatchClient`), the JSON schema, per-field evidence construction |
 | `app/extract/batching.py` | 56 | Batch API state machine (`advance_batch`) over the `batch_ref` side table |
 | `app/extract/economics.py` | 110 | Token usage → USD, per-model `PRICES`, `UnknownModelPricing` |
-| `app/extract/pdf.py` | 137 | The only module touching PyMuPDF directly: text, rasterization, `is_scan`, `bounded_text` |
+| `app/extract/pdf.py` | 240 | The only module touching PyMuPDF directly: text, rasterization, `is_scan`, `bounded_text`, per-page classes (`page_classes`, `has_text_page`; not yet used by the ladder) |
 | `app/extract/text_store.py` | 77 | `document_text` sidecar — what was actually read, independent of the tier ladder |
 | `app/handlers/extract.py` | 374 | `handle_extract_doc` — sync/batch dispatch, hint assembly, `_finalize` (writes + emits `validate.doc`) |
 | `app/handlers/gate.py` | — | `_insert_evidence` (622-678), `_require_complete_evidence` (238-266), `_apply_edits` (1118-1139) — see Rules and Gotchas |

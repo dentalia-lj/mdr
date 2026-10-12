@@ -451,6 +451,31 @@ def test_a_month_name_inside_a_word_is_not_a_date():
     assert t0.extract_dates("Issue Date: Mar 2021") == {}
 
 
+# Ivoclar's page header stamps the document TEMPLATE's version and its validity;
+# the declaration's own date is the place-and-date line. Once abbreviated months
+# became readable (2026-10-12) the stamp outranked that line as a labelled date
+# on two declarations (Ceramill map DRS, VivaScan).
+IVOCLAR_STAMP = (
+    "Template ID:\nTemplate title:\nTEFO-04812-EN \n"
+    "Version:2.0, Valid as of: 13 Sep 2023 08:54:32 (GMT+02:00)\n"
+    "EU Declaration of Conformity\nCeramill map DRS Kit\nCLASS I\n"
+    "Schaan, 12.02.2024\n(this document is valid without signature)\n"
+)
+
+
+def test_a_template_version_stamp_is_not_the_documents_date():
+    out = t0.extract_dates(IVOCLAR_STAMP)
+    assert out["validity_from"]["value"] == "2024-02-12"
+    assert out["validity_from"]["verbatim"] == "Schaan, 12.02.2024"
+
+
+def test_valid_as_of_without_a_version_stamp_still_reads():
+    assert t0.extract_dates("Valid as of: February 14, 2025")["validity_from"]["value"] == "2025-02-14"
+    # a stamped header first, the document's own "valid as of" further down
+    text = "Version: 13   Valid as of: 18 Aug 2025\nBody\nValid as of: 14 Feb 2025\n"
+    assert t0.extract_dates(text)["validity_from"]["value"] == "2025-02-14"
+
+
 # --------------------------------------------------------------------------- #
 # accent folding + `effective date` (2026-08-31)
 #

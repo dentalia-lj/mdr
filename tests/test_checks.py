@@ -55,6 +55,39 @@ def test_a_date_the_quote_does_not_contain_does_not_settle(quote, iso):
     assert checks.settled("validity_to", ev("1999-01-01", quote), c) is False
 
 
+# The four eval dates the wider parser must NOT settle (2026-10-08 probe): the
+# value is right or plausible, but the quote does not prove it.
+UNPROVEN_DATES = [
+    # the quote carries no date at all; the date sits elsewhere on the page
+    ("validity_from", "2026-01-21",
+     "Date of issue is the date of release, please refer to Signatures list at "
+     "the beginning of the document.",
+     "Date of issue is the date of release, please refer to Signatures list at "
+     "the beginning of the document.\nPolarion ALM 2410\n2026-01-21 10:26\n"),
+    # a two-column certificate: labels, then values; the quote is the reader's
+    # reconstruction, with a remark the page does not hold
+    ("validity_to", "2023-12-17",
+     "Valid until ... 2023-12-17 (layout order: 2020-06-03, 2023-12-17, D1002600038)",
+     "Valid from\nValid until\nRegistration no.\n2020-06-03\n2023-12-17\nD1002600038\n"),
+    # a revision-history row, with the reader's own note appended
+    ("validity_from", "2025-11-18",
+     "5.0 2025-11-18 R. Ritter APM112430 (revision history entry for Version 5.0; "
+     "no explicit 'Valid from' date stated)",
+     "4.0\n2025-10-30 \nR. Ritter\nAPM112242\n5.0\n2025-11-18 \nR. Ritter\nAPM112430\n"),
+    # a revision-history table read across its columns
+    ("validity_from", "2025-11-24",
+     "1.0 \nDate \n2025-11-24 \nAuthor \nR. Ritter \nRemark \nFirst MDR Version",
+     "Revision History\nVersion \nDate \nAuthor\nRemark\n1.0 \n2025-11-24 \nR. Ritter\n"
+     "First MDR Version\n"),
+]
+
+
+@pytest.mark.parametrize("f,iso,quote,page_text", UNPROVEN_DATES)
+def test_the_eval_dates_the_quote_does_not_prove_stay_unsettled(f, iso, quote, page_text):
+    c = ctx(LONG + page_text)
+    assert checks.settled(f, ev(iso, quote), c) is False
+
+
 def test_a_quote_that_is_not_on_the_cited_page_does_not_settle():
     c = ctx(LONG, LONG + "Issue Date: 2022-07-08")
     quote = "Issue Date: 2022-07-08"
@@ -65,6 +98,24 @@ def test_a_quote_that_is_not_on_the_cited_page_does_not_settle():
 def test_the_quote_match_tolerates_whitespace_and_case():
     c = ctx(LONG + "ISSUE   DATE:\n 2022-07-08")
     assert checks.settled("validity_from", ev("2022-07-08", "issue date: 2022-07-08"), c)
+
+
+@pytest.mark.parametrize("ellipsis", ["...", "\u2026", "...."])
+def test_a_shortened_quote_holds_when_every_piece_is_on_the_page(ellipsis):
+    # GC declarations (Fuji Coat LC, Fuji ORTHO LC): the label sits in a table
+    # header, the code rows below, and the reader quotes "label ... code".
+    page = LONG + "Basis-UDI-DI\nProduct name\nFuji Coat LC\n76152081XSCAN001YC\n"
+    c = ctx(page)
+    quote = f"Basis-UDI-DI {ellipsis} 76152081XSCAN001YC"
+    assert checks.quote_on_page(quote, 1, c.pages) is True
+    assert checks.settled("basic_udi_di", ev("76152081XSCAN001YC", quote), c) is True
+
+
+def test_a_shortened_quote_fails_when_one_piece_is_not_on_the_page():
+    c = ctx(LONG + "Basis-UDI-DI\n76152081XSCAN001YC\n", LONG + "Fuji Coat LC")
+    assert checks.quote_on_page("Basis-UDI-DI ... Fuji Coat LC", 1, c.pages) is False
+    assert checks.quote_on_page("Basis-UDI-DI ... Fuji Coat LC", None, c.pages) is False
+    assert checks.quote_on_page("...", 1, c.pages) is False
 
 
 # --------------------------------------------------------------------------- #
@@ -157,9 +208,20 @@ def test_regulation_is_proven_by_the_printed_citation_alone(text, value, ok):
 # --------------------------------------------------------------------------- #
 # semantic fields, missing evidence
 # --------------------------------------------------------------------------- #
-@pytest.mark.parametrize("f", ["type", "coverage_scope", "unknown_field"])
-def test_semantic_fields_are_never_settled_here(f):
-    assert checks.settled(f, ev("DoC", "Declaration of conformity"), ctx(LONG)) is False
+@pytest.mark.parametrize("f", ["type", "coverage_scope"])
+def test_a_semantic_field_settles_on_a_quote_on_the_cited_page(f):
+    # Denis, 2026-10-12: as measured, a T1 quote found on the cited page stops
+    # the ladder for type and coverage_scope; the gate still wants T0 or two
+    # agreeing reads before production (task 5).
+    c = ctx(LONG, "EU Declaration of Conformity. " * 10)
+    assert checks.settled(f, ev("DoC", "EU Declaration of Conformity", page=2), c) is True
+    assert checks.settled(f, ev("DoC", "EU Declaration of Conformity", page=1), c) is False
+    assert checks.settled(f, ev("DoC", "a sentence the page does not hold", page=2), c) is False
+    assert checks.settled(f, ev(None, "EU Declaration of Conformity", page=2), c) is False
+
+
+def test_an_unknown_field_is_never_settled():
+    assert checks.settled("unknown_field", ev("DoC", "Declaration of conformity"), ctx(LONG)) is False
 
 
 def test_null_or_missing_evidence_is_not_settled():
@@ -203,8 +265,74 @@ def test_a_sparse_page_does_not_unsettle_a_null():
     assert checks.null_settled("basic_udi_di", c) is True
 
 
+@pytest.mark.parametrize("classes", [
+    [],                     # no classes given: unknown, not reliable
+    ["text"],               # one class for two pages
+    ["sparse", "sparse"],   # no page carries a text layer
+])
+def test_a_null_is_not_settled_when_the_page_classes_cannot_vouch_for_the_text(classes):
+    c = Ctx(pages=["Plain body text.  " * 20, "Second page text.  " * 20], classes=classes)
+    assert checks.null_settled("basic_udi_di", c) is False
+
+
+def test_a_vector_drawn_page_does_not_let_a_null_settle():
+    # A GC declaration drawn as outlines: no characters, no large image, only
+    # paths. Classed "image", so an empty text layer proves nothing.
+    doc = _build(["text", "vector"])
+    c = Ctx(pages=pdf.page_texts(doc), classes=pdf.page_classes(doc))
+    assert c.classes == ["text", "image"]
+    assert checks.null_settled("cert_number", c) is False
+    only = _build(["vector"])
+    c = Ctx(pages=pdf.page_texts(only), classes=pdf.page_classes(only))
+    assert checks.null_settled("cert_number", c) is False
+
+
 def test_semantic_fields_have_no_null_rule():
     assert checks.null_settled("type", ctx("anything")) is False
+
+
+# --------------------------------------------------------------------------- #
+# two empty reads (PRD v3 section 5, corrected 2026-10-12 to the measured rule)
+# --------------------------------------------------------------------------- #
+BODY = "Plain body text.  " * 20
+
+
+@pytest.mark.parametrize("f", ["cert_number", "validity_to", "ref_list", "type",
+                               "coverage_scope", "manufacturer", "basic_udi_di"])
+def test_two_empty_reads_settle_any_field(f):
+    # labels for the field do not stop it; that is the single-read null rule
+    c = ctx(BODY + "Certificate no. Valid until Manufacturer REF")
+    assert checks.both_null_settled(f, c) is True
+
+
+def test_two_empty_reads_settle_despite_image_and_ocr_pages():
+    c = ctx(BODY, "", BODY, classes=["text", "image", "ocr"])
+    assert checks.both_null_settled("cert_number", c) is True
+
+
+@pytest.mark.parametrize("label", ["Basic UDI-DI: see annex", "Basis-UDI-DI", "UDI"])
+def test_two_empty_udi_reads_do_not_settle_when_the_text_carries_a_udi_label(label):
+    assert checks.both_null_settled("basic_udi_di", ctx(BODY + label)) is False
+    assert checks.both_null_settled("cert_number", ctx(BODY + label)) is True
+
+
+def test_including_is_not_a_udi_label_for_two_empty_reads():
+    assert checks.both_null_settled("basic_udi_di", ctx(BODY + "including guidelines")) is True
+
+
+def test_two_empty_udi_reads_do_not_settle_without_a_text_layer():
+    # a scan: no text to look for a UDI label in (the measured scan route never
+    # settled a UDI on two nulls); other fields still settle
+    c = ctx("", "", classes=["image", "image"])
+    assert checks.both_null_settled("basic_udi_di", c) is False
+    assert checks.both_null_settled("validity_to", c) is True
+    assert checks.both_null_settled("basic_udi_di", Ctx(pages=[BODY], classes=[])) is False
+
+
+@pytest.mark.parametrize("kwargs", [{"unread": {5}}, {"truncated": True}])
+@pytest.mark.parametrize("f", ["cert_number", "basic_udi_di", "type"])
+def test_two_empty_reads_do_not_settle_when_part_was_not_read(f, kwargs):
+    assert checks.both_null_settled(f, ctx(BODY, **kwargs)) is False
 
 
 # --------------------------------------------------------------------------- #
@@ -251,6 +379,20 @@ def _build(kinds: list[str]) -> pymupdf.Document:
                 page.insert_text((72, y), "Declaration of conformity text line.",
                                  render_mode=3)
                 y += 20
+        elif kind == "background":  # digital text OVER a full-page image
+            page.insert_image(page.rect, stream=_png())
+            for i in range(12):
+                page.insert_text((72, 72 + 20 * i), "Declaration of conformity text line.")
+        elif kind == "under":  # visible text drawn first, a scan painted over it
+            for i in range(12):
+                page.insert_text((72, 72 + 20 * i), "Declaration of conformity text line.")
+            page.insert_image(page.rect, stream=_png())
+        elif kind == "vector":  # text converted to outlines: paths, no characters
+            for k in range(250):
+                x, y = 72 + (k % 25) * 18, 72 + (k // 25) * 18
+                page.draw_rect(pymupdf.Rect(x, y, x + 10, y + 10), color=(0, 0, 0), fill=(0, 0, 0))
+        elif kind == "blank":
+            pass
         elif kind == "sparse":
             page.insert_text((72, 72), "Cover")
         elif kind == "logo":  # small image + a real text layer
@@ -266,6 +408,14 @@ def _build(kinds: list[str]) -> pymupdf.Document:
     (["ocr"], ["ocr"]),
     (["sparse"], ["sparse"]),
     (["logo"], ["text"]),
+    # a full-page background image under visible text is a digital page, not an
+    # OCR layer (14 such certificates and declarations in the eval set)
+    (["background"], ["text"]),
+    # visible text painted over by a later full-page image is hidden: OCR-like
+    (["under"], ["ocr"]),
+    # no characters, drawn content: classed with scans
+    (["vector"], ["image"]),
+    (["blank"], ["sparse"]),
     (["text", "image", "ocr", "sparse"], ["text", "image", "ocr", "sparse"]),
 ])
 def test_page_classes(kinds, expected):
@@ -276,8 +426,12 @@ def test_page_classes(kinds, expected):
     (["text"], True),
     (["image", "text"], True),
     (["image"], False),
-    (["ocr"], False),
+    # an OCR layer is a text layer: the measured ladder ran T1 on these
+    (["ocr"], True),
+    (["image", "ocr"], True),
+    (["background"], True),
     (["sparse", "image"], False),
+    (["vector"], False),
 ])
 def test_has_text_page(kinds, has_text):
     assert pdf.has_text_page(_build(kinds)) is has_text

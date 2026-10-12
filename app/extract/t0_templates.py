@@ -289,8 +289,11 @@ _DATE_RE = re.compile(
 #   - a comma must separate it from the date (the signature-block convention),
 #   - the date must END the line, so a table cell that happens to carry a
 #     city and a date does not qualify.
-# Month-name dates ("Leuven, 12 February 2026") are NOT matched here and stay
-# with the LLM tiers -- see the open [extract-t0] entry on month-name parsing.
+# Spelled-out dates are matched here too, through `_LONG_DATE` ("Leuven,
+# 12 February 2026" since 2026-08-31; "Leuven, 23 Apr 2025" and "Spenge, June
+# 24th, 2021" since 2026-10-12, which added 9 signature-date reads across the
+# SFTP mirror, all the declaration's own date). The numeric branch below does
+# not take blanks after the dots ("Konstanz, 25. 08. 2025"); `_DATE_RE` does.
 #
 # The date does not sit flush against the comma, because the line is a FORM
 # FIELD and the blank is drawn: GC prints "Leuven, ……………" and types the date
@@ -796,6 +799,30 @@ def _pairing_is_safe(field: str, between: str) -> bool:
 DATE_LABEL_REFUSED_KEY = "_date_label_refused"
 
 
+def _label_index(low: str, lab: str) -> int:
+    """Where `lab` first occurs in the lowered text, -1 if nowhere.
+
+    One exception: a "valid as of" on a line that also says "version" is a
+    document-template stamp, not the document's date. Ivoclar prints
+    "TEFO-04812-EN Version:2.0, Valid as of: 13 Sep 2023 08:54:32" in its page
+    header; once `_DATE_RE` learned abbreviated months (2026-10-12) that stamp
+    became readable and, as a LABELLED date at 1.0, beat the real place-and-date
+    line "Schaan, 12.02.2024" on two declarations (Ceramill map DRS, VivaScan).
+    Measured over the 126 mirror documents carrying the label: those two read
+    the signature date again, nothing else changes. A stamped occurrence is
+    skipped and the search moves on to the next one."""
+    i = low.find(lab)
+    if lab != "valid as of":
+        return i
+    while i != -1:
+        start = low.rfind("\n", 0, i) + 1
+        end = low.find("\n", i)
+        if "version" not in low[start : end if end != -1 else len(low)]:
+            return i
+        i = low.find(lab, i + len(lab))
+    return -1
+
+
 def extract_dates(text: str, playbook=None) -> dict:
     """Labelled validity dates, plus the place-and-date fallback for
     `validity_from`.
@@ -818,7 +845,7 @@ def extract_dates(text: str, playbook=None) -> dict:
     ):
         for lab in labels:
             lab = _fold_accents(lab)
-            i = low.find(lab)
+            i = _label_index(low, lab)
             if i == -1:
                 continue
             window = text[i + len(lab) : i + len(lab) + _LABEL_WINDOW]

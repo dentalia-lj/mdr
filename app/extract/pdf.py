@@ -133,16 +133,35 @@ def is_scan(doc: pymupdf.Document, min_chars: int = 20) -> bool:
 
 #: Page-class thresholds, from `tools/ladder_probe.py` `page_classes` (kept):
 #: 200 characters is a text page, under 20 is no text layer at all, and half
-#: the page covered by images is a scanned page. One change from the probe:
-#: a page whose images cover most of it AND that carries a text layer is
-#: "ocr", checked before "text". The probe called it "text", but a text layer
-#: laid over a scan can be wrong ("OOIYC" for "001YC", Ceramill 2026-10-08), so
-#: a null read from it must not count as settled. The 0.8 cut is ours: scans
-#: cover ~1.0 of the page, a logo or letterhead stays far below it.
+#: the page covered by images is a scanned page.
+#:
+#: Two changes from the probe, both measured 2026-10-12 on the eval's 79 text
+#: documents and 34 scans and on the 1,341-PDF SFTP mirror:
+#:
+#: - "ocr" is a page whose text layer is HIDDEN behind a large image: the text
+#:   is invisible (render mode 3, PyMuPDF's `ignore-text`) or drawn before an
+#:   image covering half the page. That is what an OCR layer over a scan looks
+#:   like, and such a layer can be wrong ("OOIYC" for "001YC", Ceramill), so a
+#:   null read from it must not count as settled. It is decided by the text's
+#:   visibility, not by how much of the page the image covers: 14 digital
+#:   certificates and declarations draw their text OVER a full-page or tiled
+#:   background image (coverage 0.93 to 1.0, the same as a scan), and an
+#:   image-coverage cut flagged all 14 next to the 8 real OCR documents. The
+#:   visibility rule flags exactly the 8.
+#: - "image" also takes a page with no text layer whose content is VECTOR
+#:   DRAWING (text converted to outlines): GC prints whole declarations that way
+#:   (EverX Flow, Fuji II Caps: 0 characters, 1-2% image, 470 to 2,037 path
+#:   operations a page). The probe called them "sparse", which let a null
+#:   settle on an empty text layer. In the mirror, every other page under 20
+#:   characters and under half covered by images has at most 25 path operations
+#:   (blank or near-blank pages), so 200 separates the two with a wide margin.
 TEXT_PAGE_CHARS = 200
 NO_TEXT_CHARS = 20
 IMAGE_COVERAGE = 0.5
-OCR_COVERAGE = 0.8
+VECTOR_PAGE_PATHS = 200
+
+#: bboxlog kinds that put text on the page where it can be seen.
+_VISIBLE_TEXT = frozenset({"fill-text", "stroke-text"})
 
 
 def _image_coverage(page) -> float:
@@ -157,33 +176,62 @@ def _image_coverage(page) -> float:
     return min(total / area, 1.0)
 
 
+def _drawing_order(page) -> tuple[bool, int]:
+    """(text hidden behind a large image, number of vector path operations).
+
+    Read from PyMuPDF's bbox log, which lists what the page draws in drawing
+    order. The text counts as hidden when most of its runs are invisible or
+    drawn before the last image covering half the page (a later image paints
+    over them)."""
+    log = page.get_bboxlog()
+    area = page.rect.width * page.rect.height or 1
+    big = [i for i, (kind, r) in enumerate(log)
+           if kind == "fill-image"
+           and (pymupdf.Rect(r) & page.rect).get_area() >= IMAGE_COVERAGE * area]
+    texts = [(i, kind) for i, (kind, _) in enumerate(log) if "text" in kind]
+    paths = sum(1 for kind, _ in log if "path" in kind)
+    if not big or not texts:
+        return False, paths
+    hidden = sum(1 for i, kind in texts if kind not in _VISIBLE_TEXT or i < big[-1])
+    return 2 * hidden > len(texts), paths
+
+
 def page_classes(doc: pymupdf.Document) -> list[str]:
     """One class per page, index 0 is page 1:
 
-    - "text":   a real text layer (200+ characters), no full-page image
-    - "image":  a scanned page, no usable text layer (under 20 characters)
-    - "ocr":    a full-page image with a text layer over it
-    - "sparse": little text and no dominant image (cover, blank, divider)
+    - "text":   a real text layer (200+ characters) that is not hidden behind
+                an image; a background image under visible text stays "text"
+    - "ocr":    a text layer hidden behind a large image (an OCR layer over a scan)
+    - "image":  no usable text layer (under 20 characters) and the content is a
+                scanned image or vector drawing (text converted to outlines)
+    - "sparse": little text and nothing drawn (cover, blank, divider)
     """
     out = []
     for page in doc:
         chars = len(_page_text(page).strip())
-        cov = _image_coverage(page)
-        if chars >= NO_TEXT_CHARS and cov >= OCR_COVERAGE:
+        hidden, paths = _drawing_order(page)
+        if chars >= NO_TEXT_CHARS and hidden:
             out.append("ocr")
         elif chars >= TEXT_PAGE_CHARS:
             out.append("text")
-        elif chars < NO_TEXT_CHARS and cov >= IMAGE_COVERAGE:
+        elif chars < NO_TEXT_CHARS and (
+                _image_coverage(page) >= IMAGE_COVERAGE or paths >= VECTOR_PAGE_PATHS):
             out.append("image")
         else:
             out.append("sparse")
     return out
 
 
+#: Classes whose page carries a text layer a text read can use.
+TEXT_BEARING = frozenset({"text", "ocr"})
+
+
 def has_text_page(doc: pymupdf.Document) -> bool:
-    """Any page with a real text layer. The ladder's notion of "not a scan"
-    (Task 3 switches `is_scan` callers over; `is_scan` itself is unchanged)."""
-    return "text" in page_classes(doc)
+    """Any page with a text layer, an OCR layer included. The ladder's notion of
+    "not a scan" (Task 3 switches `is_scan` callers over; `is_scan` itself is
+    unchanged): the measured ladder ran T1 on OCR-layer documents too, so they
+    are text documents here; `checks.null_settled` is what distrusts the layer."""
+    return any(c in TEXT_BEARING for c in page_classes(doc))
 
 
 def rasterize_page(doc: pymupdf.Document, page_index: int = 0, dpi: int = 150) -> bytes:
