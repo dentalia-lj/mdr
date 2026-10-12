@@ -108,8 +108,8 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | 0 contract (PRD, design doc) | done, approved | 4811151 |
 | 1 read plumbing, ledger | done: built (Opus), reviewed and fixed (Opus), merged; full suite 4674 passed, 5 skipped | merge of f843948 |
 | 2 checks, page classes | done: built (Sonnet), reviewed and fixed (Opus), merged | b9cd734 |
-| 3 scans | built (Opus) a287be6; Opus review: merge after 2 fixes (Sonnet's null closes a field; a failed read is not an empty answer); text ladder unchanged on 94 docs; fixes running; decision 3 (REF/UDI asked on filename-typed scanned DoCs) with Denis | worktree el-scans |
-| 4 text ladder | waiting for 1 and 2 | |
+| 3 scans | done: built (Opus), reviewed and fixed (Opus), merged; full suite 4820 passed, 5 skipped; decision 3 ruled by Denis (item identifiers asked on filename-typed scanned DoCs) | merge 0c891c8 |
+| 4 text ladder | starting (Opus) | worktree el-text |
 | 5 gate, guard, migration | waiting for 3 and 4 | |
 | 6 prompt caching | done: built (Sonnet), reviewed and fixed (Opus), merged; cache hits to confirm on the first real run | merge of bbc461d |
 | 7 re-extract command | done: built (Sonnet), reviewed and fixed (Opus), merged | c39bb77 |
@@ -199,23 +199,23 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
 
 ### Task 3. Scans: S-2 - 16 h / 1.6 h
 
-- [ ] `app/extract/tiers.py` scan branch (no text page): doc-class on the page 1-2
+- [x] `app/extract/tiers.py` scan branch (no text page): doc-class on the page 1-2
       images (`not-a-compliance-document` is terminal, as for text); first image read;
       a field at or above `image_settle` settles; second image read (thinking off) for
       what is open; agreement settles (rule 4); type to scope by
       `derive_coverage_scope` for EC / ISO / IFU; Sonnet image for what remains.
-- [ ] Scans over 4 pages: an empty field after both Haiku reads is not settled and not
+- [x] Scans over 4 pages: an empty field after both Haiku reads is not settled and not
       sent to Sonnet (Sonnet sees the same pages); it is marked unread and the document
       carries the informational flag `pages-unread` (`gate.INFORMATIONAL_FLAGS`).
-- [ ] `merge`: stronger read prevails; blank and enumeration guards unchanged.
-- [ ] `app/handlers/extract.py` batch path: the same steps with the labels above. The
+- [x] `merge`: stronger read prevails; blank and enumeration guards unchanged.
+- [x] `app/handlers/extract.py` batch path: the same steps with the labels above. The
       batch path makes no doc-class call at all today (found in Task 1), so `unknown`
       documents skip it in batch mode: add it here for scans and in Task 4 for text.
-- [ ] Tests: `tests/test_tiers*.py`, `tests/test_extract*.py`, `tests/test_gate*.py`
+- [x] Tests: `tests/test_tiers*.py`, `tests/test_extract*.py`, `tests/test_gate*.py`
       (flag class), `tests/test_docs_sets.py` (flag vocabulary): blank page, scanned
       invoice, 1 / 3 / 6-page scans, settle at 0.85, agreement, UDI never on nulls,
       Sonnet only for what stays open.
-- [ ] Docs: `docs/dev/handlers.md`, `docs/dev/01-lifecycle.md`, `docs/vocabulary.md`
+- [x] Docs: `docs/dev/handlers.md`, `docs/dev/01-lifecycle.md`, `docs/vocabulary.md`
       (flag), `docs/dev/limits.md` (row for scans dropped as not-a-document, if one
       exists: check before deleting).
 - **Done when:** a scan with an empty text layer reaches the gate with fields; no
