@@ -107,7 +107,7 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | 3 scans | building (Opus) | worktree el-scans |
 | 4 text ladder | waiting for 1 and 2 | |
 | 5 gate, guard, migration | waiting for 3 and 4 | |
-| 6 prompt caching | built (Sonnet) f75a454, 197 tests; Opus review running | worktree el-cache |
+| 6 prompt caching | built (Sonnet) f75a454; Opus review: merge after fixes (eval replay key, docs figures); fixes being applied | worktree el-cache |
 | 7 re-extract command | done: built (Sonnet), reviewed and fixed (Opus), merged | c39bb77 |
 | 8 quality and parity | waiting for 1-6 | |
 | 9 production replay | waiting for 1-6 | |
