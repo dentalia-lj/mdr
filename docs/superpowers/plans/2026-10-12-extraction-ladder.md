@@ -67,6 +67,8 @@ Also answered (Denis, after the Task 3 review): on a scan, the item identifiers
 (REF list, Basic UDI-DI) are skipped only when the `manufacturer` scope is known
 (T0 at 0.95 or more, or settled by the reads), not when it is T0's guess from the
 file name; up to 8 more Sonnet calls per 34 scans (about 24 instead of 19).
+After Task 5a (Denis): the confidence note under Technical details as worded; a
+citation-proven `regulation` stores 1.0 in `evidence.confidence`, and the note says so.
 
 **Defaults taken (no ruling, say if wrong):** mixed PDFs take the text branch; a
 scan is a document with no text page at all; T0 fields under 0.95 count as settled
@@ -110,7 +112,7 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | 2 checks, page classes | done: built (Sonnet), reviewed and fixed (Opus), merged | b9cd734 |
 | 3 scans | done: built (Opus), reviewed and fixed (Opus), merged; full suite 4820 passed, 5 skipped; decision 3 ruled by Denis (item identifiers asked on filename-typed scanned DoCs) | merge 0c891c8 |
 | 4 text ladder | building (Opus) | worktree el-text |
-| 5a gate side: combined score, migration, published guard, wording | building (Opus), alongside 4 | worktree el-gate |
+| 5a gate side: combined score, migration, published guard, wording | built (Opus) 9cadbe1 + 2fa9e7a, full suite 4868 passed; Opus review running; then store 1.0 for proven regulation (Denis) | worktree el-gate |
 | 5b extraction side: second reads stamp the contract keys | waiting for 4 and 5a | |
 | 6 prompt caching | done: built (Sonnet), reviewed and fixed (Opus), merged; cache hits to confirm on the first real run | merge of bbc461d |
 | 7 re-extract command | done: built (Sonnet), reviewed and fixed (Opus), merged | c39bb77 |
