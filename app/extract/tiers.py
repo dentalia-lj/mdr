@@ -5,6 +5,10 @@ unreadable REF list escalates only the REF list. LLM tiers are injected (an
 object with `extract(tier, doc, filename, missing) -> {field: evidence}`), so
 the ladder is testable with a stub and the real Anthropic client drops in later.
 
+A document with no text page takes its own ladder of image reads instead
+(`run_scan_ladder`, S-2, 2026-10-12): no text read, a doc-class call on the
+page images, two cheap image reads, Sonnet only for what they leave open.
+
 Calibration (gap G2): extraction stores each field's RAW self-reported
 confidence. `calibrate()` is the mechanism applied later at GATE time —
 `effective = raw * factor(model_id, field)`, clamped to [0, 1], default factor
@@ -17,10 +21,12 @@ from __future__ import annotations
 
 from psycopg.types.json import Json
 
-from app.extract import economics
+from app.config import Extract as _ExtractDefaults
+from app.config import GateThresholds as _GateDefaults
+from app.extract import checks, economics
 from app.extract import pdf as pdfutil
 from app.extract import t0_templates as t0_keys
-from app.extract.t0_templates import t0_extract
+from app.extract.t0_templates import derive_coverage_scope, t0_extract
 
 # The 11-field target schema, defined in a leaf module and re-exported here.
 # `app.playbooks._parse` and the playbook editor route need these names and run
@@ -155,8 +161,64 @@ def _shrinks(incumbent: dict | None, challenger: dict) -> bool:
     return len(b) < len(a)
 
 
-def merge(base: dict, new: dict) -> dict:
-    """Later tier wins for the fields it returned; earlier hits are preserved.
+#: How strong each read step is, for `merge` (rulings 2026-10-12: "stronger
+#: read prevails"): the Sonnet image read over a cheap image read over the
+#: text read over a T0 guess. A second read ranks just under its first: it
+#: exists to confirm, so it fills a gap the first left and never replaces what
+#: the first read. The doc-class answers rank lowest of the paid reads: one
+#: word off the header, which any field read of the same document outranks.
+#: Keyed by the read label (`llm.READ_STEPS`), which a scan read carries as
+#: `step` on its evidence (`_stamp`).
+_STEP_RANK = {
+    "doc-class": 1, "doc-class-image": 1, "T1-second": 1,
+    "T1": 2,
+    "T2-second": 3,
+    "T2-first": 4,
+    "T2": 5,
+}
+
+#: Evidence with no `step` (the text ladder, unchanged; every stored
+#: extraction before 2026-10-12) is ranked by its tier. A `T2` with no step is
+#: the Sonnet read: until the scan ladder there was no other image read.
+_TIER_RANK = {"T1": _STEP_RANK["T1"], "T2": _STEP_RANK["T2"]}
+
+#: T0 below the escalation threshold is a guess any read may correct; at or
+#: above it, T0 outranks every read and is never overwritten by one.
+_T0_GUESS, _T0_SETTLED = 0, 6
+
+
+def _rank(evidence: dict, threshold: float = 0.95) -> int | None:
+    """Strength of one evidence dict, or None when it cannot be placed (a tier
+    no read produces), in which case `merge` falls back to later-wins."""
+    step = evidence.get("step")
+    if step in _STEP_RANK:
+        return _STEP_RANK[step]
+    tier = evidence.get("tier")
+    if tier == "T0":
+        return _T0_SETTLED if (evidence.get("conf") or 0.0) >= threshold else _T0_GUESS
+    return _TIER_RANK.get(tier)
+
+
+def _weaker(challenger: dict, incumbent: dict | None) -> bool:
+    """Whether `challenger` is a weaker read than a non-blank `incumbent`."""
+    if not isinstance(incumbent, dict) or _is_blank(incumbent):
+        return False
+    a, b = _rank(challenger), _rank(incumbent)
+    return a is not None and b is not None and a < b
+
+
+def merge(base: dict, new: dict, *, by_strength: bool = True) -> dict:
+    """The stronger read wins for the fields it returned; earlier hits are
+    preserved.
+
+    **Stronger, not later** (rulings 2026-10-12): Sonnet's image read over a
+    cheap image read over the text read over T0 below 0.95 (`_STEP_RANK`). A
+    weaker read never replaces a stronger one's value; on equal strength the
+    later read wins, as every read did before. T0 at or above 0.95 is never
+    overwritten. On the text ladder (T0, T1, Sonnet's T2, in that order) this
+    is exactly the old later-wins rule, because each read there is stronger
+    than the one before; it decides only on a scan, whose second cheap read
+    comes after the first and ranks below it.
 
     Escalation fills gaps — it never erases. A later tier that returns *nothing*
     for a field an earlier tier already answered is reporting its own failure,
@@ -186,14 +248,39 @@ def merge(base: dict, new: dict) -> dict:
     mode of BOTH sides -- an unparsed table for T0, a prompt cap for the LLM --
     so "more codes" is the better answer regardless of who found them, and the
     KOMET text-column gap (where T0 under-reads and the LLM sees more) keeps
-    working. Lists are never unioned: evidence carries one verbatim, page and
-    tier per field, and a spliced value would have no single trail to cite.
+    working. So for an enumeration the length decides before the strength
+    does: a longer list wins from any read, and only two lists of one length
+    are settled by which read is stronger. The one exception is T0 at or above
+    0.95, which no read overwrites. Lists are never unioned: evidence carries
+    one verbatim, page and tier per field, and a spliced value would have no
+    single trail to cite.
+
+    A key whose value is not evidence (`_date_label_refused`, `_reads`,
+    `_pages_unread`: records about the extraction, not fields) is copied as
+    given.
+
+    `by_strength=False` is the rule as it stood before 2026-10-12 (later wins,
+    with the blank and shrink guards), for `app/repair_ref_list.py`: it replays
+    a fresh T0 under STORED answers to restore what a blank answer erased, and
+    by strength a T0 that today reads a field at 0.95 would also replace the
+    stored read of it, which that repair does not do.
     """
     out = dict(base)
     for field, evidence in new.items():
-        if _is_blank(evidence) and not _is_blank(base.get(field)):
+        if not isinstance(evidence, dict):
+            out[field] = evidence
             continue
-        if field in _ENUMERATED_FIELDS and _shrinks(base.get(field), evidence):
+        incumbent = base.get(field)
+        if _is_blank(evidence) and not _is_blank(incumbent):
+            continue
+        if field in _ENUMERATED_FIELDS and isinstance(incumbent, dict):
+            if _shrinks(incumbent, evidence):
+                continue
+            if _shrinks(evidence, incumbent) and (
+                    not by_strength or _rank(incumbent) != _T0_SETTLED):
+                out[field] = evidence     # longer wins, whichever read found it
+                continue
+        if by_strength and _weaker(evidence, incumbent):
             continue
         out[field] = evidence
     return out
@@ -252,6 +339,24 @@ ISO_WITHOUT_STANDARD_FLAG = "iso-without-standard-number"
 #: record; this function only reads it.
 DATE_LABEL_NOT_ADJACENT_FLAG = "date-label-not-adjacent"
 
+#: Part of the document was not read, so a field left empty there is unread,
+#: not absent (PRD v3 section 5, added 2026-10-12). Informational (Denis,
+#: 2026-10-12): it caps nothing and blocks nothing. Raised today for a scan
+#: longer than the pages its image reads see (`MAX_VISION_PAGES`): a field both
+#: cheap image reads left empty is not settled and not sent to Sonnet, which
+#: sees the same pages. The same shape as `date-label-not-adjacent`: the ladder
+#: records the fields under `PAGES_UNREAD_KEY` at the time, because an unread
+#: field stores nothing to compute the flag from later.
+PAGES_UNREAD_FLAG = "pages-unread"
+PAGES_UNREAD_KEY = "_pages_unread"
+
+#: Every read the scan ladder made, kept on the extraction attempt (PRD v3
+#: section 5: "Every read is kept on the extraction attempt"): a list, in read
+#: order, of {"step", "model_id", "fields": {field: {value, conf, page}}}. A
+#: list because jsonb sorts an object's keys, which would lose the order. Not
+#: evidence: GATE's evidence writer skips any key whose value is not a dict.
+READS_KEY = "_reads"
+
 #: What counts as naming the standard. Bare "ISO" is deliberately not enough --
 #: it is the word the conflation turns on.
 _ISO_STANDARD_NUMBERS = ("13485", "9001")
@@ -292,6 +397,10 @@ def integrity_flags(fields: dict) -> list[str]:
     # never reaches this key.
     if fields.get(t0_keys.DATE_LABEL_REFUSED_KEY):
         flags.append(DATE_LABEL_NOT_ADJACENT_FLAG)
+
+    # Recorded by the scan ladder, never computed here: see the constant.
+    if fields.get(PAGES_UNREAD_KEY):
+        flags.append(PAGES_UNREAD_FLAG)
 
     ev = fields.get("ref_list")
     if isinstance(ev, dict):
@@ -335,12 +444,45 @@ T1_DOC_CLASS_CONF = 0.90
 NOT_A_DOCUMENT = "not-a-compliance-document"
 
 
+#: The scan ladder's two thresholds. The defaults are the config dataclasses'
+#: own, so the numbers live in one place; the extract handler passes the
+#: configured `extract.image_settle` and `gate.agreement_min`.
+IMAGE_SETTLE = _ExtractDefaults.image_settle
+AGREEMENT_MIN = _GateDefaults.agreement_min
+
+#: The scan ladder's steps (`llm.READ_STEPS` labels).
+DOC_CLASS_IMAGE = "doc-class-image"
+FIRST_IMAGE, SECOND_IMAGE, SONNET_IMAGE = "T2-first", "T2-second", "T2"
+
+#: Types whose coverage scope follows from the type alone
+#: (`t0_templates.derive_coverage_scope`: EC and ISO are manufacturer-wide, an
+#: IFU is for a product or a family).
+_SCOPE_FROM_TYPE = ("EC", "ISO", "IFU")
+
+
+class Deferred(Exception):
+    """A batch read has not finished: the batch transport stops the scan ladder
+    at this step and defers its job (`app/handlers/extract.py`). The sync
+    transport never raises it."""
+
+    def __init__(self, label: str, state: str):
+        super().__init__(f"{label}: {state}")
+        self.label, self.state = label, state
+
+
 def run_extraction(doc, filename: str, llm, threshold: float = 0.95,
                    result=None, companion_url: str | None = None,
-                   hints: str | None = None) -> tuple[str, dict, list[str]]:
-    """T0, then escalate absent/low fields to T1, then T2 (T2 also forced for
-    scans). Business/MSDS docs short-circuit with no LLM. Returns
-    (doc_class, merged_fields, tiers_used).
+                   hints: str | None = None, image_settle: float = IMAGE_SETTLE,
+                   agreement_min: float = AGREEMENT_MIN) -> tuple[str, dict, list[str]]:
+    """T0, then the text ladder (T1, then T2) or, for a document with no text
+    page at all, the scan ladder (`run_scan_ladder`). Business/MSDS docs
+    short-circuit with no LLM. Returns (doc_class, merged_fields, tiers_used).
+
+    The two branches split on `pdf.has_text_page`: a page with a text layer,
+    an OCR layer over a scan included, makes it a text document (plan
+    2026-10-12, "a scan is a document with no text page at all"), so a mixed
+    PDF takes the text branch, unchanged. `image_settle` and `agreement_min`
+    are the scan ladder's.
 
     `result` is the caller's `app.results.Result`, passed to T0 so a playbook
     template that matched but parsed nothing is counted at the point it happens
@@ -357,6 +499,23 @@ def run_extraction(doc, filename: str, llm, threshold: float = 0.95,
                                    companion_url=companion_url)
     used = ["T0"]
     if doc_class in ("business-doc", "msds"):
+        return doc_class, fields, used
+
+    llm_kwargs = {"hints": hints} if hints is not None else {}
+
+    # No text page at all: nothing for a text read or the text doc-class call
+    # to see. Until 2026-10-12 such a file went to the text doc-class call,
+    # which found no text and refused it -- 281 production scans were never
+    # read -- or, when T0 typed it off its filename, through a T1 read of empty
+    # text into a forced Sonnet image read.
+    if not pdfutil.has_text_page(doc):
+        def read(label, missing):
+            return llm.extract(label, doc, filename, missing, **llm_kwargs)
+
+        doc_class, fields = run_scan_ladder(
+            doc, filename, doc_class, fields, used, read,
+            classify=getattr(llm, "classify_image", None), threshold=threshold,
+            image_settle=image_settle, agreement_min=agreement_min)
         return doc_class, fields, used
 
     # T0 declined to type this file. Ask, rather than guess.
@@ -386,14 +545,15 @@ def run_extraction(doc, filename: str, llm, threshold: float = 0.95,
                 fields["type"] = {"value": answer, "conf": T1_DOC_CLASS_CONF,
                                   "tier": "T1", "verbatim": quote, "page": 1}
 
-    llm_kwargs = {"hints": hints} if hints is not None else {}
-
     missing = needs_escalation(fields, threshold)
     if missing:
         fields = merge(fields, llm.extract("T1", doc, filename, missing, **llm_kwargs))
         used.append("T1")
         missing = needs_escalation(fields, threshold)
 
+    # `is_scan` (page 1 has no text) now fires only on a MIXED PDF -- a
+    # document with no text page at all took the scan ladder above. Left as it
+    # was: the text ladder is extraction-ladder plan Task 4's to rebuild.
     if missing or pdfutil.is_scan(doc):
         target_fields = missing or needs_escalation(fields, threshold)
         if target_fields:   # don't pay for a vision call with nothing to extract
@@ -401,6 +561,281 @@ def run_extraction(doc, filename: str, llm, threshold: float = 0.95,
             used.append("T2")
 
     return doc_class, fields, used
+
+
+def _stamp(answer: dict, label: str) -> dict:
+    """One read's answer with each field's evidence marked with the step that
+    produced it, so `merge` can rank it. Copies: the evidence a client hands
+    back is never mutated."""
+    return {f: {**ev, "step": label} for f, ev in (answer or {}).items() if isinstance(ev, dict)}
+
+
+def _image_settles(field: str, evidence: dict | None, image_settle: float) -> bool:
+    """A cheap image read settles a field on its own: the value is well-formed
+    and the read states at least `extract.image_settle` (0.85, measured)."""
+    return (isinstance(evidence, dict)
+            and checks.well_formed(field, evidence.get("value"))
+            and float(evidence.get("conf") or 0.0) >= image_settle)
+
+
+def _scan_pursued(fields: dict, known: set[str]) -> list[str]:
+    """`needs_escalation` for the scan ladder, with "confident" meaning KNOWN:
+    held by T0 at or above the threshold, or settled by the reads. The same
+    two suppressions: no certificate fields once the type is known to be an
+    IFU, no item identifiers once the scope is known to be `manufacturer`.
+
+    Known, where `needs_escalation` tests the scope's VALUE alone. On a scan
+    that value is mostly T0's guess: a DoC typed off its file name with no REF
+    list read gets `manufacturer` at 0.6 (`derive_coverage_scope`), and by
+    value the item identifiers would never be asked of any read, though a DoC
+    is exactly the document that needs one. Keyed to knowledge, the pursued
+    set only shrinks as fields settle, so the first image read is asked
+    everything a later one could be. The one exception is type to scope
+    replacing a known `manufacturer` scope (an IFU): the item identifiers it
+    brings in are asked of the next read and settle there as a first read
+    would, or go to Sonnet."""
+    doc_type = (fields.get("type") or {}).get("value")
+    always = _ESCALATE_ALWAYS
+    if "type" in known and doc_type in _NO_CERTIFICATE_TYPES:
+        always = [f for f in always if f not in _ESCALATE_CERTIFICATE]
+    pursued = list(always)
+    scope = (fields.get("coverage_scope") or {}).get("value")
+    if not ("coverage_scope" in known and scope == "manufacturer"):
+        pursued += _ESCALATE_ITEM_ID
+    return [f for f in pursued if f not in known]
+
+
+def _scope_from_type(fields: dict, known: set[str]) -> None:
+    """Type to scope (measured 2026-10-12): once the type is known to be EC,
+    ISO or an IFU, the scope follows from it (`derive_coverage_scope`), and a
+    scope that disagrees with that, or is empty, is replaced. Two cheap reads
+    agreed on `group` for an MDD certificate in the eval; this is the rule that
+    caught it. The replacement is the derivation's own evidence (T0, no page,
+    "type=EC"), at the type's confidence where that is lower: the scope is no
+    surer than the type it follows from. A scope that already agrees keeps its
+    read's evidence. Either way the scope is then known."""
+    doc_type = fields.get("type") or {}
+    value = doc_type.get("value")
+    if "type" not in known or value not in _SCOPE_FROM_TYPE:
+        return
+    type_conf = float(doc_type.get("conf") or 0.0)
+    derived = derive_coverage_scope(value, False, type_conf=type_conf)
+    current = (fields.get("coverage_scope") or {}).get("value")
+    if checks.normalized("coverage_scope", current) != checks.normalized(
+            "coverage_scope", derived["value"]):
+        fields["coverage_scope"] = {**derived, "conf": min(type_conf, derived["conf"])}
+    known.add("coverage_scope")
+
+
+def _reads_record(reads: dict[str, tuple[list[str], dict]]) -> list[dict]:
+    """`READS_KEY`'s value: per read, in read order, its step, its model and,
+    for every field it was asked, what it answered: `{value, conf, page}`, a
+    null value included, or None when the read gave no answer for the field at
+    all. Value, confidence and page only: the verbatim of the read that
+    prevailed is on the field.
+
+    A read that answered none of the fields it was asked is marked
+    `"failed": True` (`failed_reads`): a real read answers every field it is
+    asked, null included (the response schema requires them all), so an empty
+    answer means the read itself failed -- a response that would not parse or
+    was cut at max_tokens (`llm._response_json`), or a batch request that
+    errored (`AnthropicBatchClient.results` skips it)."""
+    out = []
+    for label, (asked, answer) in reads.items():
+        model = next((ev.get("model_id") for ev in answer.values() if ev.get("model_id")), None)
+        entry = {"step": label, "model_id": model, "fields": {
+            f: ({"value": answer[f].get("value"), "conf": answer[f].get("conf"),
+                 "page": answer[f].get("page")} if f in answer else None)
+            for f in asked}}
+        if asked and not answer:
+            entry["failed"] = True
+        out.append(entry)
+    return out
+
+
+def _sonnet_closes(field: str, incumbent, threshold: float) -> bool:
+    """Whether Sonnet's EMPTY answer for `field` replaces what the field holds.
+
+    It does: a field reaches Sonnet only while the cheap reads leave it open,
+    so what it holds is a value no rule settled (review 2026-10-12: on the eval
+    a `cert_number` only the second cheap read gave, contradicted by the first
+    and by Sonnet, survived Sonnet's null, which `merge`'s blank guard kept;
+    the measured route takes Sonnet's answer). Two guards stay, as in `merge`:
+    an enumeration is never replaced by a shorter answer, and an empty one is
+    shorter than any list; T0 at or above the threshold is never overwritten."""
+    if not isinstance(incumbent, dict) or _is_blank(incumbent):
+        return True
+    if field in _ENUMERATED_FIELDS:
+        return False
+    return _rank(incumbent, threshold) != _T0_SETTLED
+
+
+def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list[str],
+                    read, classify=None, *, threshold: float = 0.95,
+                    image_settle: float = IMAGE_SETTLE,
+                    agreement_min: float = AGREEMENT_MIN) -> tuple[str, dict]:
+    """S-2, the scan ladder (PRD v3 section 5, amended 2026-10-12; plan Task 3).
+    For a document with no text page. Returns (doc_class, fields) and appends
+    each step's label to `used`.
+
+    `read(label, missing) -> {field: evidence}` makes one image read;
+    `classify(doc, filename) -> (doc_class, quote)` the doc-class call on the
+    page 1-2 images (optional, like `classify` on the text ladder: absent it, an
+    `unknown` document is read as before). Both are injected so the sync and
+    batch transports share every rule here; the batch `read` raises `Deferred`
+    while its batch runs.
+
+    1. `unknown` to T0: the doc-class call on the images. A refusal
+       (`not-a-compliance-document`) is terminal: no fields, no further read.
+    2. `T2-first` (`models.vision_first`, pages 1-4) for every pursued field T0
+       has not settled. A field it answers well-formed at `image_settle` or
+       above is settled.
+    3. `T2-second` (`models.second_read`, thinking off) for what is open. A
+       field settles when both reads agree (`checks.agree`: one well-formed
+       value, each read at least `agreement_min`) or both ANSWERED it empty and
+       `checks.both_null_settled` allows it (never a Basic UDI-DI on a scan,
+       never when pages went unread). A read that failed gave no answer, which
+       is not an empty one: its fields stay open (`failed_reads`).
+    4. On a scan longer than the pages read, a field both cheap reads answered
+       empty is UNREAD: not settled, not sent to Sonnet (who sees the same
+       pages), recorded under `PAGES_UNREAD_KEY` (flag `pages-unread`).
+    5. Type to scope (`_scope_from_type`), as soon as the type is known:
+       after each read, so a type the first read settles spares the second
+       read the scope.
+    6. `T2` (`models.t2`, Sonnet) for what is still open, and only then; its
+       answer closes every field it was asked, an empty answer included
+       (`_sonnet_closes`), and type to scope runs again on the type it leaves.
+       A field Sonnet gave no answer for keeps what it holds.
+
+    The pursued set is recomputed after every read, as the text ladder
+    recomputes `needs_escalation` after T1, but keyed to what is KNOWN rather
+    than to a value (`_scan_pursued`), so it only shrinks: an IFU stops being
+    asked for certificate fields, a manufacturer-wide certificate for item
+    identifiers. Every read is recorded under `READS_KEY`;
+    `read_disagreements` counts where they differ and `failed_reads` names the
+    reads that failed.
+    """
+    if doc_class == "unknown" and classify is not None:
+        answer, quote = classify(doc, filename)
+        used.append(DOC_CLASS_IMAGE)
+        if answer == NOT_A_DOCUMENT:
+            return NOT_A_DOCUMENT, {}
+        doc_class = "compliance-doc"
+        # The answer is evidence about the type, as on the text ladder, and
+        # never overwrites a T0 read. Ranked below every field read (`step`).
+        if "type" not in fields:
+            fields["type"] = {"value": answer, "conf": T1_DOC_CLASS_CONF, "tier": "T2",
+                              "verbatim": quote, "page": 1, "step": DOC_CLASS_IMAGE}
+
+    # Imported here: `llm` imports this module (NOT_A_DOCUMENT, the REF cap).
+    from app.extract.llm import MAX_VISION_PAGES
+
+    known = {f for f, ev in fields.items()
+             if isinstance(ev, dict) and ev.get("tier") == "T0"
+             and float(ev.get("conf") or 0.0) >= threshold}
+    open_fields = _scan_pursued(fields, known)
+    if not open_fields:
+        return doc_class, fields
+
+    ctx = checks.Ctx(pages=pdfutil.page_texts(doc), classes=pdfutil.page_classes(doc),
+                     unread_pages=frozenset(range(MAX_VISION_PAGES + 1, doc.page_count + 1)))
+    reads: dict[str, tuple[list[str], dict]] = {}
+
+    def step(label: str, missing: list[str]) -> dict:
+        answer = _stamp(read(label, missing), label)
+        used.append(label)
+        reads[label] = (list(missing), answer)
+        return answer
+
+    first = step(FIRST_IMAGE, open_fields)
+    fields = merge(fields, first)
+    known |= {f for f in open_fields if _image_settles(f, first.get(f), image_settle)}
+    _scope_from_type(fields, known)
+
+    unread: list[str] = []
+    open_fields = _scan_pursued(fields, known)
+    if open_fields:
+        second = step(SECOND_IMAGE, open_fields)
+        fields = merge(fields, second)
+        for f in open_fields:
+            b = second.get(f)
+            if f not in reads[FIRST_IMAGE][0]:
+                # Brought in by type to scope after the first read (an IFU
+                # whose scope was T0's `manufacturer`): this is its first read,
+                # and it settles as one does, or goes to Sonnet.
+                if _image_settles(f, b, image_settle):
+                    known.add(f)
+                continue
+            a = first.get(f)
+            if checks.agree(f, a, b, agreement_min):
+                known.add(f)
+            elif f in first and f in second and _is_blank(a) and _is_blank(b):
+                # Both reads ANSWERED it empty. A field missing from an answer
+                # is a failed read, not an empty one, and stays open.
+                if checks.both_null_settled(f, ctx):
+                    known.add(f)
+                elif ctx.unread_pages:
+                    unread.append(f)
+
+    _scope_from_type(fields, known)
+
+    open_fields = [f for f in _scan_pursued(fields, known) if f not in unread]
+    if open_fields:
+        sonnet = step(SONNET_IMAGE, open_fields)
+        fields = merge(fields, sonnet)
+        # The last read closes what it was asked, an empty answer included:
+        # `merge` keeps a value against a blank, which is right only for a
+        # field Sonnet gave no answer for (absent from `sonnet`).
+        for f in open_fields:
+            if f in sonnet and _is_blank(sonnet[f]) and _sonnet_closes(
+                    f, fields.get(f), threshold):
+                fields[f] = sonnet[f]
+        known |= set(open_fields)
+        _scope_from_type(fields, known)
+
+    if unread:
+        fields[PAGES_UNREAD_KEY] = unread
+    fields[READS_KEY] = _reads_record(reads)
+    return doc_class, fields
+
+
+def _shown(value):
+    """A read's value, short enough for a job result."""
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        head = ", ".join(str(c) for c in value[:5])
+        return head + (f" ... ({len(value)})" if len(value) > 5 else "")
+    return str(value)[:80]
+
+
+def failed_reads(fields: dict) -> list[str]:
+    """The steps whose read failed (`_reads_record`), in read order. For the
+    extract job result, so a failed read is counted rather than silent."""
+    return [e.get("step") for e in fields.get(READS_KEY) or [] if e.get("failed")]
+
+
+def read_disagreements(fields: dict) -> list[dict]:
+    """Every field two or more reads answered differently, from `READS_KEY`:
+    `{field, steps, values}`, the steps in read order and each value as that
+    read gave it (None for an empty answer). Compared normalized
+    (`checks.normalized`), so spacing and case are not a disagreement; an
+    empty answer against a value is one. A read that gave no answer for the
+    field (a failed read, recorded as None) is not a reading and is left out.
+    For the extract job result (PRD v3 section 5: "disagreements between reads
+    are counted on the job result")."""
+    by_field: dict[str, list[tuple[str, object]]] = {}
+    for entry in fields.get(READS_KEY) or []:
+        for f, ev in (entry.get("fields") or {}).items():
+            if ev is None:
+                continue
+            by_field.setdefault(f, []).append((entry.get("step"), ev.get("value")))
+    out = []
+    for f, seen in by_field.items():
+        if len(seen) > 1 and len({checks.normalized(f, v) for _, v in seen}) > 1:
+            out.append({"field": f, "steps": [label for label, _ in seen],
+                        "values": [_shown(v) for _, v in seen]})
+    return out
 
 
 def next_extract_rev(conn, content_hash: str) -> int:

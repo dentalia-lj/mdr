@@ -38,6 +38,14 @@ def test_wrong_tier_has_no_recorded_value(fixture_pdf):
     assert llm.extract("T2", None, fixture_pdf(EMAX), ["basic_udi_di"]) == {}
 
 
+def test_null_missing_answers_an_unrecorded_field_empty(fixture_pdf):
+    """As a real read does: the field is there, its value null."""
+    llm = RecordedLlm.from_dir(null_missing=True)
+    out = llm.extract("T1", None, fixture_pdf(EMAX), ["cert_number", "basic_udi_di"])
+    assert out["cert_number"]["value"] is None and out["cert_number"]["tier"] == "T1"
+    assert out["basic_udi_di"]["value"] == "76152082ACERA008F6"   # recorded still wins
+
+
 def test_fill_missing_produces_wellformed_evidence(fixture_pdf):
     llm = RecordedLlm.from_dir(fill_missing=True, fill_conf=0.97)
     out = llm.extract("T1", None, fixture_pdf(EMAX), ["cert_number"])

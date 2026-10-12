@@ -208,6 +208,7 @@ a *defect*.
 | `auto-superseded` | fast-path signal that this candidate files itself into the supersession chain |
 | `ref-list-possibly-truncated` | a T1/T2 `ref_list` came back at exactly the prompt cap (`tiers.REF_LIST_PROMPT_CAP`), so it may be a partial reading of a longer list. It **reports**, it never prunes: the list is stored and linked in full, and a T0 or T3 list of the same length is not flagged because neither is subject to the prompt cap |
 | `iso-without-standard-number` | `type` is `ISO` but no ISO standard number (13485 or 9001) appears in any of the document's evidence verbatims. It **reports**, it never re-types: the document keeps the type it was given and a reviewer sees that nothing supports it. Extends the 2026-08-20 ruling that `iso 13485` is the ONLY ISO signal from T0, where it was enforced, to whatever tier produced the type — doc 967 is an MDR Annex IX quality-management certificate T1 typed `ISO`. Deliberately **not** a `type`-versus-`regulation` check: a real ISO 13485 certificate may cite MDR in its scope, so that rule would fire on correct documents |
+| `pages-unread` | part of the document was not read, so a field left empty there is **unread**, not absent (PRD v3 §5, added 2026-10-12). Raised today for a scan longer than the four pages its image reads see: a field both cheap image reads (`T2-first`, `T2-second`) answered empty is not settled and not sent to Sonnet, who sees the same four pages. The ladder records the fields under `tiers.PAGES_UNREAD_KEY` (`_pages_unread`) on the extraction attempt and `tiers.integrity_flags` turns that into the flag. It **reports**: the fields that were read stand on their own evidence, and a missing required field stops the document through the rules that test for it. The PRD also names text beyond the LLM text budget; that half is not built yet ([limits.md](dev/limits.md#built-but-not-wired)) |
 | `date-label-not-adjacent` | T0 found a date label, refused to pair it with the date that followed because real content sat between them, and then read no value for that field by any other route. It **reports**, it caps nothing and blocks nothing: it is a note about our parser, not about the document. Records that the page has a layout T0 cannot read — the signal that would justify authoring a `t0_layout` template, and the cost signal too, since the field either escalates to a paid tier or goes unread. A refusal a LATER LABEL then satisfied is never flagged (doc 317, bilingual, English label a bare heading and German label carrying the value): that is the fall-through working as designed, and a flag that fires on correct behaviour teaches people to ignore flags. Unlike every other flag here it cannot be computed from the stored fields — a refusal is a non-event — so `extract_dates` records it under `t0_templates.DATE_LABEL_REFUSED_KEY` and `tiers.integrity_flags` only reads it |
 
 **An unrecognised flag gates.** `gate.py` `_gates_disposition` tests membership
@@ -237,7 +238,7 @@ flags are. That is deliberate — a document linking nothing is not "production"
 |---|---|---|
 | `T0` | deterministic: regex, pdfplumber tables, playbook templates | free |
 | `T1` | text LLM (`models.t1`) | cheap |
-| `T2` | vision LLM (`models.t2`), for scans | expensive |
+| `T2` | an image read: the cheap ones (`models.vision_first`, `models.second_read`) and Sonnet's (`models.t2`). Every read of a scan (no text page), and what T1 could not answer | cheap to expensive |
 | `T3` | a human, via `gate.apply` edits | — |
 
 These are **evidence** tiers. The cost ledger (`extraction_cost.tier`, the
@@ -246,15 +247,21 @@ These are **evidence** tiers. The cost ledger (`extraction_cost.tier`, the
 `READ_STEPS`): `doc-class` and `doc-class-image` (what is this file), `T1` (the
 whole text), `T1-second` (a second text read, thinking off), `T2-first` (a cheap
 image read), `T2-second` (a second image read, thinking off), `T2` (the Sonnet
-image read). A text label's evidence is `T1`, an image label's `T2`. Only
-`doc-class`, `T1` and `T2` are sent today.
+image read). A text label's evidence is `T1`, an image label's `T2`. The text
+ladder sends `doc-class`, `T1` and `T2`; the scan ladder (a document with no
+text page, `tiers.run_scan_ladder`) sends `doc-class-image`, `T2-first`,
+`T2-second` and `T2`; `T1-second` is not sent yet. A scan field's evidence
+also carries the label it came from as `step`, which is how `tiers.merge`
+lets the stronger read prevail (Sonnet over a cheap image read over the text
+read over a T0 guess).
 
 | `doc_class` | effect |
 |---|---|
 | `compliance-doc` | proceed with extraction |
 | `business-doc` | short-circuit, no LLM (invoices, delivery notes) |
 | `msds` | short-circuit, no LLM (safety data sheets) |
-| `unknown` | proceed — a missed classification costs money, a wrong skip costs a document |
+| `unknown` | ask the doc-class call (`doc-class` on the page 1-2 text, `doc-class-image` on the page 1-2 images of a scan); without one, proceed — a missed classification costs money, a wrong skip costs a document |
+| `not-a-compliance-document` | the doc-class call's refusal: terminal, the attempt is written and nothing is emitted |
 
 | `document.type` | `DoC` · `EC` · `ISO` · `IFU` · `SPP` · `other` |
 |---|---|
@@ -354,6 +361,6 @@ where T0 enumerates.
 | `coverage_scope` | CHECK constraint, migration 022 |
 | trusted vs capped `match_basis` | CHECK constraint, migrations 005 and 021 |
 | flag classes | `app/handlers/gate.py` — `BLOCKING_FLAGS`, `CAPPING_FLAGS`, `INFORMATIONAL_FLAGS` |
-| flags themselves | `app/handlers/validate.py`, emitted inline — except `ref-list-possibly-truncated` and `iso-without-standard-number`, which VALIDATE takes from `app/extract/tiers.py` `integrity_flags` because both are properties of how the extraction arrived |
+| flags themselves | `app/handlers/validate.py`, emitted inline — except `ref-list-possibly-truncated`, `iso-without-standard-number`, `date-label-not-adjacent` and `pages-unread`, which VALIDATE takes from `app/extract/tiers.py` `integrity_flags` because all four are properties of how the extraction arrived |
 | anomaly kinds | `app/results.py` `ANOMALY_KINDS` |
 | extraction TARGET | `app/extract/tiers.py` `TARGET` |

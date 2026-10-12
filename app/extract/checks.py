@@ -18,6 +18,13 @@ Two helpers decide an EMPTY field, and they answer different questions:
 `null_settled` (one read is empty and the text could not hold the field) and
 `both_null_settled` (two reads are both empty; PRD v3 section 5, corrected
 2026-10-12 to what was measured).
+
+A scan has no text layer to prove anything against, so its reads are judged by
+shape and by each other instead: `well_formed` (the value has the shape its
+field takes), `normalized` (the form two reads are compared in) and `agree`
+(two reads give the same well-formed value, each sure enough). Ported from
+`tools/ladder_probe.py` `format_ok` and `tools/haiku_compare.py` `norm`, the
+functions the scan route was measured with.
 """
 
 from __future__ import annotations
@@ -228,3 +235,89 @@ def both_null_settled(field_name: str, ctx: Ctx) -> bool:
         if re.search(LABELS["basic_udi_di"], ctx.text, re.IGNORECASE):
             return False
     return True
+
+
+# --------------------------------------------------------------------------- #
+# Reads off page images: shape and agreement, no text layer
+# --------------------------------------------------------------------------- #
+
+#: The closed vocabularies the prompts ask for. `coverage_scope` is also closed
+#: by the response schema; `type` and `regulation` are free strings there.
+TYPES = frozenset({"DoC", "EC", "ISO", "IFU", "SPP", "other"})
+SCOPES = frozenset({"group", "manufacturer"})
+REGULATIONS = frozenset({"MDR", "MDD", "n.a."})
+
+#: Fields whose value is a list of codes, compared as a set.
+LIST_FIELDS = frozenset({"ref_list", "referenced_docs"})
+
+#: Scalar fields compared as codes: spacing is not part of the value
+#: ("G10 082649 0004" and "G10082649 0004" are one certificate).
+_CODE_FIELDS = frozenset({"basic_udi_di", "cert_number"})
+
+_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def normalized(field_name: str, value):
+    """The form two reads are compared in, or None for an empty answer: a list
+    becomes the set of its compacted codes, a date its ISO form when it parses,
+    a code its compacted form, anything else whitespace-collapsed and case-
+    folded with trailing punctuation dropped."""
+    if _blank(value):
+        return None
+    if field_name in LIST_FIELDS:
+        items = value if isinstance(value, (list, tuple, set, frozenset)) else [value]
+        return frozenset(compact(c) for c in items if str(c).strip()) or None
+    if field_name in DATE_FIELDS:
+        s = str(value).strip()
+        return _parse_date(s) or _ws(s)
+    if field_name in _CODE_FIELDS:
+        return compact(value)
+    return _ws(str(value)).rstrip(".;,")
+
+
+def well_formed(field_name: str, value) -> bool:
+    """The value has the shape its field takes, which is all that can be
+    checked on a read with no text layer to hold it against: not empty; a
+    date in ISO form that is a real day; `type`, `coverage_scope` and
+    `regulation` inside their vocabularies; a Basic UDI-DI whose check pair is
+    not invalid; a `cert_number` that is not a notified-body number; a list
+    holding at least one code."""
+    if normalized(field_name, value) is None:
+        return False
+    if field_name in DATE_FIELDS:
+        s = str(value).strip()
+        return bool(_ISO_DATE.fullmatch(s)) and _parse_date(s) == s
+    if field_name == "type":
+        return value in TYPES
+    if field_name == "coverage_scope":
+        return value in SCOPES
+    if field_name == "regulation":
+        return value in REGULATIONS
+    if field_name == "basic_udi_di":
+        return validate_basic_udi(str(value)).status != INVALID
+    if field_name == "cert_number":
+        return not is_notified_body_number(value)
+    if field_name in LIST_FIELDS:
+        return isinstance(value, (list, tuple)) and all(isinstance(c, str) for c in value)
+    return True
+
+
+def _conf(evidence) -> float:
+    try:
+        return float((evidence or {}).get("conf") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def agree(field_name: str, a: dict | None, b: dict | None, minimum: float) -> bool:
+    """Two reads settle a field by agreeing: the same normalized value, well-
+    formed, and each read at least `minimum` sure (`gate.agreement_min`,
+    rulings 2026-10-12). Two empty answers are not this rule's business; they
+    are `both_null_settled`'s."""
+    va = (a or {}).get("value")
+    vb = (b or {}).get("value")
+    if not (well_formed(field_name, va) and well_formed(field_name, vb)):
+        return False
+    if normalized(field_name, va) != normalized(field_name, vb):
+        return False
+    return _conf(a) >= minimum and _conf(b) >= minimum

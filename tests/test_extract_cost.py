@@ -113,10 +113,14 @@ class _RoutingClient:
 
 
 def _untyped_pdf(tmp_path) -> str:
-    """Text T0 cannot type (no header marker), so the doc-class call runs."""
+    """Text T0 cannot type (no header marker), so the doc-class call runs. A
+    full page of it: a page under 200 characters is `sparse`, and a document
+    with no text page takes the scan ladder (`pdf.has_text_page`)."""
     import pymupdf
     doc = pymupdf.open()
-    doc.new_page().insert_text((72, 72), "no markers anywhere in this text", fontsize=12)
+    page = doc.new_page()
+    for i in range(12):
+        page.insert_text((72, 72 + 20 * i), "no markers anywhere in this text", fontsize=12)
     path = tmp_path / "untyped.pdf"
     doc.save(str(path))
     doc.close()
@@ -321,3 +325,101 @@ def test_spend_view_sums_measured_cost(conn, fixture_pdf):
     assert row["calls"] >= 1
     assert row["unpriced_calls"] == 0
     assert row["cost_usd"] is not None
+
+
+# --- the scan ladder: one row per label --------------------------------------
+
+class ScanModels:
+    t1 = "claude-haiku-4-5"
+    t2 = "claude-sonnet-4-6"
+    rank = "claude-haiku-4-5"
+    vision_first = "claude-haiku-5-5"
+    second_read = "claude-haiku-5-5"
+
+
+def _is_classify(kw):
+    return kw["output_config"]["format"]["schema"] == llm.DOC_CLASS_SCHEMA
+
+
+def _scan_answer(kw):
+    """Each scan step told apart by its request: the doc-class schema, the
+    second read's `thinking` off, Sonnet's model, else the first cheap read.
+    The two cheap reads disagree on `type`, so every step runs."""
+    if _is_classify(kw):
+        return _resp(json.dumps({"doc_class": "DoC", "quote": "Declaration"}), _usage(3000, 20))
+    if "thinking" in kw:
+        return _resp(json.dumps({"type": {"value": "ISO", "confidence": 0.8,
+                                          "verbatim": "x", "page": 1}}), _usage(5000, 100))
+    if kw["model"] == ScanModels.t2:
+        return _resp(json.dumps({"type": {"value": "DoC", "confidence": 0.9,
+                                          "verbatim": "x", "page": 1}}), _usage(9000, 300))
+    answers = {f: {"value": v, "confidence": 0.95, "verbatim": f"read {f}", "page": 1}
+               for f, v in {"regulation": "MDR", "validity_from": "2025-08-25",
+                            "validity_to": "2030-05-26", "coverage_scope": "group",
+                            "cert_number": "C-1", "manufacturer": "GC EUROPE N.V.",
+                            "ref_list": ["003477"], "basic_udi_di": "++J022MD0098KV"}.items()}
+    answers["type"] = {"value": "DoC", "confidence": 0.8, "verbatim": "x", "page": 1}
+    return _resp(json.dumps(answers), _usage(6000, 400))
+
+
+def _untyped_scan(tmp_path) -> str:
+    import pymupdf
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 60, 80), False)
+    pix.clear_with(200)
+    doc = pymupdf.open()
+    doc.new_page().insert_image(pymupdf.Rect(0, 0, 595, 842), stream=pix.tobytes("png"))
+    path = tmp_path / "scan.pdf"
+    doc.save(str(path))
+    doc.close()
+    return str(path)
+
+
+def test_a_scan_writes_one_cost_row_per_label(conn, tmp_path):
+    """doc-class-image, T2-first, T2-second and T2: four paid calls, four rows,
+    each priced at its own model."""
+    client = SimpleNamespace(messages=SimpleNamespace(create=lambda **kw: _scan_answer(kw)))
+    tier_client = llm.AnthropicLlm(client, ScanModels())
+    job = {"payload": {"archive_url": _untyped_scan(tmp_path),
+                       "content_hash": "sha-cost-scan", "group_id": 9}}
+
+    result = eh.handle_extract_doc(conn, job, llm=tier_client)
+    conn.commit()
+
+    assert result["tiers_used"] == ["T0", "doc-class-image", "T2-first", "T2-second", "T2"]
+    rows = {r["tier"]: r for r in _rows(conn, "sha-cost-scan")}
+    assert set(rows) == {"doc-class-image", "T2-first", "T2-second", "T2"}
+    assert {t: (r["model_id"], r["input_tokens"]) for t, r in rows.items()} == {
+        "doc-class-image": ("claude-haiku-5-5", 3000),
+        "T2-first": ("claude-haiku-5-5", 6000),
+        "T2-second": ("claude-haiku-5-5", 5000),
+        "T2": ("claude-sonnet-4-6", 9000),
+    }
+    assert all(r["batch"] is False for r in rows.values())
+
+
+def test_a_batch_scan_writes_one_cost_row_per_label(conn, tmp_path):
+    """The same four steps over the Batch API, each its own batch and row,
+    and the polls that re-fetch a resolved step write nothing twice."""
+    h = "sha-cost-bscan"
+
+    def item(label, kw):
+        return _item(label, h, _scan_answer(kw).content[0].text, _scan_answer(kw).usage)
+
+    probe = {"output_config": {"format": {"schema": None}}, "model": ""}
+    items = {
+        "doc-class-image": [item("doc-class-image", {**probe, "output_config": {
+            "format": {"schema": llm.DOC_CLASS_SCHEMA}}})],
+        "T2-first": [item("T2-first", probe)],
+        "T2-second": [item("T2-second", {**probe, "thinking": {"type": "disabled"}})],
+        "T2": [item("T2", {**probe, "model": ScanModels.t2})],
+    }
+    job = _enqueue(conn, h, 9, _untyped_scan(tmp_path))
+    bc = llm.AnthropicBatchClient(_low_client(items), ScanModels())
+
+    r = _drive_batch(conn, job, bc, limit=12)
+
+    assert r["tiers_used"] == ["T0", "doc-class-image", "T2-first", "T2-second", "T2"]
+    rows = _rows(conn, h)
+    assert sorted(x["tier"] for x in rows) == sorted(["doc-class-image", "T2-first",
+                                                      "T2-second", "T2"])
+    assert all(x["batch"] is True for x in rows)

@@ -111,9 +111,14 @@ the tier ladder. An unopenable PDF is counted (`unreadable_pdf`) and
 (`app/handlers/extract.py:283-300`). Otherwise: T0 (deterministic,
 playbook-templated or pdfplumber) runs first; any field it leaves blank or
 low-confidence escalates per-field to T1 (Haiku), then T2 (Sonnet vision) —
-never per-document (`app/extract/tiers.py:265-301`, `merge()` docstring at
-`:157-189`: a later tier only ever fills a gap or grows a value, never
-shrinks or erases one). In batch mode the same job self-defers via
+never per-document (`app/extract/tiers.py` `run_extraction`; `merge()`: a
+later read only ever fills a gap or grows a value, never shrinks or erases
+one, and a weaker read never replaces a stronger one's; on a scan, Sonnet's
+empty answer closes a field the cheap reads left open). A document with no
+text page skips T1: it is classified off its page images when T0 cannot type
+it, then read by a cheap image read, a second cheap read for what that leaves
+open, and Sonnet only for what still is (`tiers.run_scan_ladder`, since
+2026-10-12; [extraction.md](extraction.md)). In batch mode the same job self-defers via
 `queue.defer` across polling cycles until the Anthropic batch completes —
 no second job type, batch state lives in `batch_ref`, never in the payload
 (invariant 9; `app/handlers/extract.py:1-14` module docstring). Emits

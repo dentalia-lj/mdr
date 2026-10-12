@@ -71,8 +71,11 @@ def plan(conn) -> tuple[list[dict], list[dict]]:
             continue
         # The stored `fields` ARE a merged ladder output, so replaying the fixed
         # rule as merge(T0, stored) restores exactly what a blank later answer
-        # erased, and leaves every real later answer winning.
-        repaired = tiers.merge(t0_fields, row["fields"])
+        # erased, and leaves every real later answer winning. `by_strength=False`
+        # keeps it that: the 2026-10-12 ordering would also let a T0 that reads a
+        # field at 0.95 TODAY replace the stored read of it, which is a re-read,
+        # not this repair.
+        repaired = tiers.merge(t0_fields, row["fields"], by_strength=False)
         restored = [f for f in repaired if repaired[f] != row["fields"].get(f)]
         if restored:
             repairs.append({**row, "repaired": repaired, "restored": restored})

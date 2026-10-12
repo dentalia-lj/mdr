@@ -129,7 +129,14 @@ INFORMATIONAL_FLAGS = ("no-ref-overlap", "multi-group-match", "cert-unresolved",
                        # the existing missing-field rules already handle that.
                        # Gating here would withhold coverage over a note about
                        # our own parser.
-                       tiers.DATE_LABEL_NOT_ADJACENT_FLAG)
+                       tiers.DATE_LABEL_NOT_ADJACENT_FLAG,
+                       # Informational by ruling (Denis, 2026-10-12, PRD v3
+                       # section 5): part of the document was not read, so a
+                       # field empty there is unread rather than absent. The
+                       # fields that WERE read stand on their own evidence; a
+                       # missing required field already stops the document
+                       # through the rules that test for it.
+                       tiers.PAGES_UNREAD_FLAG)
 
 REQUIRED_FIELDS = ("type", "regulation", "coverage_scope")
 

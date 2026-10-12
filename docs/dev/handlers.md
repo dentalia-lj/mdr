@@ -23,10 +23,10 @@ never clobber a real handler.
 | `resolve.group` | `handlers/resolve.py:278` | `discover.group` | `test_resolve_handler.py` |
 | `discover.group` | `handlers/discover.py:908` | `fetch.url` ×k, `email.request`, `validate.doc` | `test_discover_handler.py` |
 | `fetch.url` | `handlers/fetch.py:145` | `extract.doc` or `validate.doc`, **or nothing** when the body is not a document | `test_fetch_handler.py` |
-| `extract.doc` | `handlers/extract.py:296` | `validate.doc`, **or nothing** when the doc-class call answers `not-a-compliance-document` | `test_extract_handler.py`, `test_extract_cost.py`, `test_doc_class_gate.py` |
+| `extract.doc` | `handlers/extract.py:389` | `validate.doc`, **or nothing** when the doc-class call answers `not-a-compliance-document` | `test_extract_handler.py`, `test_extract_cost.py`, `test_doc_class_gate.py` |
 | `validate.doc` | `handlers/validate.py:780` | `gate.candidate` | `test_validate_handler.py` |
-| `gate.candidate` | `handlers/gate.py:1002` | nothing (terminal) | `test_gate_candidate_handler.py` |
-| `gate.apply` | `handlers/gate.py:1525` | `discover.group` on reject | `test_gate_apply_handler.py` |
+| `gate.candidate` | `handlers/gate.py:1009` | nothing (terminal) | `test_gate_candidate_handler.py` |
+| `gate.apply` | `handlers/gate.py:1532` | `discover.group` on reject | `test_gate_apply_handler.py` |
 | `backfill.scan` | `handlers/backfill.py:270` | `extract.doc` | `test_backfill_handler.py` |
 | `upload.ingest` | `handlers/upload.py:33` | `extract.doc` or `validate.doc` | `test_upload_handler.py` |
 | `vendor.import` | `handlers/vendor_import.py:40` | nothing, deliberately | `test_vendor_import_handler.py` |
@@ -93,10 +93,13 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 - consumes: `content_hash`, `archive_url`, `group_id?`, `companion_archive_url?`
 - writes: `extraction_attempt`, `extraction_cost`, `document_text`, `batch_ref`
 - emits: `validate.doc`, `validate:{hash}:{rev}:{group_id}`
-- fails how: an unopenable PDF is a counted, non-raising result and emits nothing. Batch mode self-defers per tier until the Anthropic batch is done. A read label sent twice in one extraction raises `ValueError` before anything is written (the cost ledger keeps one row per label)
+- fails how: an unopenable PDF is a counted, non-raising result and emits nothing. Batch mode self-defers per tier until the Anthropic batch is done. A read label sent twice in one extraction raises `ValueError` before anything is written (the cost ledger keeps one row per label). A doc-class answer cut at `max_tokens`, or a batch `doc-class-image` result with no answer, raises `RuntimeError` rather than reading as `not-a-compliance-document` (which would drop the file for good)
 - note: batch state lives in `batch_ref`, never in the payload (invariant 9)
 - note: one `extraction_cost` row per paid call, its `tier` the read's label (`doc-class`, `T1`, `T2`, ...; `llm.READ_STEPS`). Since 2026-10-12: before, the doc-class call and the T1 read both wrote `T1` and the ledger's unique key dropped one of them. `batch_ref.tier` holds the same label
 - note: `counts.cited_page_outside_images` on the result (sync path, absent when zero): cites an image read with an explicit page list made to an image it was not sent; the page is stored as null (`llm._cited_pages`)
+- note: a document with no text page (`pdf.has_text_page`) takes the scan ladder (`tiers.run_scan_ladder`, 2026-10-12) on both transports: `doc-class-image` when T0 left it `unknown`, `T2-first`, `T2-second` for what that leaves open, `T2` (Sonnet) only for what is still open. In batch mode each step is its own batch-of-1 under its label; the ladder re-runs from the top every poll and `tiers.Deferred` stops it at the first step still running. Rules: [extraction.md](extraction.md) "The scan ladder"
+- note: `disagreements` on the result (absent when none): every field two reads answered differently, `{field, steps, values}`, and `counts.read_disagreements`. Every read is kept on the attempt under `fields._reads`; a scan longer than four pages records the fields both cheap reads answered empty under `fields._pages_unread` (VALIDATE's `pages-unread`)
+- note: `failed_reads` on the result (absent when none): the steps of the scan ladder whose read answered nothing (unparseable or truncated response, errored batch request), and `counts.read_failures`. A failed read is never taken as an empty answer: its fields go on to the next read (`tiers.failed_reads`, 2026-10-12)
 
 ### `validate.doc`
 - consumes: `content_hash`, `extract_rev`, `group_id?`, `archive_url?`
@@ -104,7 +107,7 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 - emits: `gate.candidate` always, either `gate:{hash}:{rev}:mfr-binding` or `gate:{hash}:{rev}:{group_id}`
 - fails how: missing extraction row or incomplete required fields are suppressed and counted, job finishes `done` with no emit
 - note: every decision is an additive key on the emitted payload
-- note: the extraction-shape flags (`ref-list-possibly-truncated`, `iso-without-standard-number`, both from `tiers.integrity_flags`) are computed BEFORE the C4 manufacturer-binding branch, so they ride BOTH routes. They sat after the binding return until 2026-09-09, which made `iso-without-standard-number` unreachable on exactly the population it exists for — a QMS certificate is manufacturer-scope by definition
+- note: the extraction-shape flags (`ref-list-possibly-truncated`, `iso-without-standard-number`, `date-label-not-adjacent`, `pages-unread`, all from `tiers.integrity_flags`) are computed BEFORE the C4 manufacturer-binding branch, so they ride BOTH routes. They sat after the binding return until 2026-09-09, which made `iso-without-standard-number` unreachable on exactly the population it exists for — a QMS certificate is manufacturer-scope by definition
 
 ### `gate.candidate`
 - consumes: `content_hash`, `extract_rev` required; `group_id`, `ref_gate`, `flags`, `links`, `supersedes`, `related_doc_id`, `cert_doc_id`, `superseded_by_doc_id`, `archive_url`, `manufacturer`, `route` optional
@@ -248,7 +251,10 @@ previous rule promoted `unknown` to `compliance-doc` off any marker anywhere in
 the full text, which is how a site menu became an `IFU` at confidence 1.00.
 Anything still `unknown` goes to a cheap doc-class call (`AnthropicLlm.classify`,
 `models.t1`) which may answer `not-a-compliance-document`; that answer is
-terminal and suppresses the `validate.doc` emit.
+terminal and suppresses the `validate.doc` emit. A scan (no text page) is asked
+the same question on its page 1-2 images instead (`classify_image`,
+`doc-class-image`, `models.vision_first`, since 2026-10-12): the text call found
+no text on a scan and refused it without a call.
 
 Measured over 1.261 real archived PDFs against 13 PDFs the ranker chose off the
 open web: **97% of real documents are still typed free by T0**, 3% take the call.

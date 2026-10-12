@@ -102,6 +102,7 @@ def test_optional_absent_fields_do_not_reach_the_llm(monkeypatch):
     filled = {f: ev("x", 1.0, "T0") for f in tiers.ESCALATE}
     monkeypatch.setattr(tiers, "t0_extract",
                         lambda doc, filename="", result=None, companion_url=None: ("compliance-doc", filled))
+    monkeypatch.setattr(tiers.pdfutil, "has_text_page", lambda doc: True)
     monkeypatch.setattr(tiers.pdfutil, "is_scan", lambda doc: False)
     stub = StubLlm({})
     _, _, used = tiers.run_extraction(None, "x.pdf", llm=stub, threshold=0.95)
@@ -158,7 +159,9 @@ def test_merge_non_empty_later_value_still_wins_over_an_earlier_hit():
 
 
 def test_merge_zero_is_a_value_not_a_blank():
-    merged = tiers.merge({"pages": ev(7, 1.0, "T0")}, {"pages": ev(0, 0.3, "T2")})
+    # T0 below 0.95: a T0 hit at or above it is never overwritten by any read
+    # (rulings 2026-10-12), which is a different rule from the one tested here.
+    merged = tiers.merge({"pages": ev(7, 0.5, "T0")}, {"pages": ev(0, 0.3, "T2")})
     assert merged["pages"]["value"] == 0  # falsy but real — 0 is not "no answer"
 
 
@@ -301,12 +304,21 @@ def test_run_extraction_escalates_missing_fields_to_t1(fixture_pdf):
     assert fields["type"]["tier"] == "T0"  # T0's high-confidence hit is preserved
 
 
-def test_scanned_doc_forces_t2(fixture_pdf):
+def test_a_scan_takes_the_image_ladder_and_never_a_text_read(fixture_pdf):
+    """No text page: no T1 read of empty text. Two empty cheap reads on this
+    two-page scan settle every field but the Basic UDI-DI (never on two nulls on
+    a scan), which is the one field Sonnet is then asked -- here not even that:
+    T0 holds the scope at 1.0 as `manufacturer`, so no item id is pursued."""
     path = fixture_pdf("IVOCLAR/MDR Certificate IV AG 2017_745.pdf")  # a scan
     doc = pdf.open_doc(path)
-    stub = StubLlm({"T1": {}, "T2": {}})
-    _, _, used = tiers.run_extraction(doc, path, llm=stub, threshold=0.95)
-    assert "T2" in used  # is_scan -> T2 regardless of T1
+    # Empty ANSWERS, as a real read gives them: every asked field, value null.
+    # An empty dict would be a failed read, which settles nothing.
+    nulls = {f: ev(None, 0.0, "T2") for f in tiers.TARGET}
+    stub = StubLlm({"T2-first": nulls, "T2-second": nulls})
+    _, fields, used = tiers.run_extraction(doc, path, llm=stub, threshold=0.95)
+    assert used == ["T0", "T2-first", "T2-second"]
+    assert [tier for tier, _ in stub.calls] == ["T2-first", "T2-second"]
+    assert tiers.PAGES_UNREAD_KEY not in fields      # two pages, all of them read
 
 
 # --------------------------------------------------------------------------- #

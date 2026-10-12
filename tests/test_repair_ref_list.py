@@ -295,7 +295,7 @@ def test_repair_uses_the_shipped_merge_rule(conn, fixture_pdf, monkeypatch):
     calls = []
     real = tiers.merge
     monkeypatch.setattr(repair_ref_list.tiers, "merge",
-                        lambda b, n: calls.append((b, n)) or real(b, n))
+                        lambda b, n, **kw: calls.append((b, n)) or real(b, n, **kw))
     path = fixture_pdf(GC_FIXTURE)
     _seed(conn, path, _erased(path))
     repair_ref_list.plan(conn)

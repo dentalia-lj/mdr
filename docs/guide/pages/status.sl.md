@@ -172,7 +172,7 @@ razpredelnice.
 | **dedupe key** | Interna koda, ki prepreči, da bi se isto opravilo zagnalo dvakrat. Ni nekaj, kar bi morali brati |
 | **priority** — `interactive` / `delta` / `sweep` | Zakaj opravilo obstaja: `interactive` pomeni, da ga je pravkar sprožil klik osebe; `delta` in `sweep` pomenita, da ga je sprožil lastni urnik sistema |
 | **unpriced calls (pricing gap)** | Poraba, ki ji sistem ni znal določiti cene. Vrzel v knjigovodstvu, ne strošek, ki bi ga dolgovali |
-| **Tier** v zavihku Spend: `doc-class`, `T1`, `T2` | Katero branje je plačala vrstica stroškov: `doc-class` je hitro preverjanje, kaj datoteka je, `T1` prebere besedilo dokumenta, `T2` njegove slike strani. Imena, kot je `T2-first`, se pojavijo, ko bodo vklopljeni novi koraki branja. Od 12. oktobra 2026 ima hitro preverjanje svojo vrstico; prej je bilo vpisano pod `T1` in pri datotekah, za katere je sistem moral vprašati, je eno od obeh branj izpadlo iz seštevkov |
+| **Tier** v zavihku Spend: `doc-class`, `T1`, `T2` in koraki za skene | Katero branje je plačala vrstica stroškov: `doc-class` je hitro preverjanje, kaj datoteka je, `T1` prebere besedilo dokumenta, `T2` njegove slike strani. Skeniran dokument (brez besedila za branje) ima svoje korake: `doc-class-image` je hitro preverjanje na slikah strani, `T2-first` cenejše branje slik strani, `T2-second` drugo cenejše branje tistega, kar je prvo pustilo negotovo, in `T2` polno branje slik, samo za tisto, česar prvi dve nista razrešili. Od 12. oktobra 2026 ima hitro preverjanje svojo vrstico; prej je bilo vpisano pod `T1` in pri datotekah, za katere je sistem moral vprašati, je eno od obeh branj izpadlo iz seštevkov |
 
 ---
 

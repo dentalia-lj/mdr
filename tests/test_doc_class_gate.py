@@ -97,6 +97,15 @@ COVER_CERT = ["Certificate\nHolder of Certificate:\nIvoclar Vivadent AG\n",
               "EN ISO 13485:2016\n"]
 
 
+@pytest.fixture(autouse=True)
+def _a_text_document(monkeypatch):
+    """`_Doc` stands for a TEXT document: its short pages would read as
+    `sparse` to `pdf.page_classes` and send it down the scan ladder, which has
+    its own doc-class call on page images (`tests/test_tiers_scan.py`). This
+    file is about the text one."""
+    monkeypatch.setattr(tiers.pdfutil, "has_text_page", lambda doc: True)
+
+
 def _run(doc, llm, filename="d.pdf"):
     return tiers.run_extraction(doc, filename, llm=llm, threshold=0.95)
 
