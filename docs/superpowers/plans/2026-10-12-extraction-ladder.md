@@ -102,7 +102,7 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | task | state | where |
 |---|---|---|
 | 0 contract (PRD, design doc) | done, approved | 4811151 |
-| 1 read plumbing, ledger | building (Opus) | worktree el-plumbing |
+| 1 read plumbing, ledger | built (Opus) 7ae1269, full suite 4491 passed; Opus review running | worktree el-plumbing |
 | 2 checks, page classes | built (Sonnet) 9849a9d; Opus review running | worktree el-checks |
 | 3 scans | waiting for 1 and 2 | |
 | 4 text ladder | waiting for 1 and 2 | |
@@ -204,7 +204,9 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
       sent to Sonnet (Sonnet sees the same pages); it is marked unread and the document
       carries the informational flag `pages-unread` (`gate.INFORMATIONAL_FLAGS`).
 - [ ] `merge`: stronger read prevails; blank and enumeration guards unchanged.
-- [ ] `app/handlers/extract.py` batch path: the same steps with the labels above.
+- [ ] `app/handlers/extract.py` batch path: the same steps with the labels above. The
+      batch path makes no doc-class call at all today (found in Task 1), so `unknown`
+      documents skip it in batch mode: add it here for scans and in Task 4 for text.
 - [ ] Tests: `tests/test_tiers*.py`, `tests/test_extract*.py`, `tests/test_gate*.py`
       (flag class), `tests/test_docs_sets.py` (flag vocabulary): blank page, scanned
       invoice, 1 / 3 / 6-page scans, settle at 0.85, agreement, UDI never on nulls,
