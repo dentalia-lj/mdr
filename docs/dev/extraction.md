@@ -166,16 +166,31 @@ writes. Sonnet 5.5 reads its cache at 0.05x, not the default 0.1x.
 returns a list of blocks now: the static T1 or T2 prompt first, carrying
 `cache_control: {"type": "ephemeral"}` (the default 5-minute cache), then the
 playbook hints block when there is one, never marked. Sync reads and batch
-requests share `_request`, so both carry it. Below a model's minimum cacheable
-prefix (512 tokens on Haiku 5.5, 4,096 on Haiku 4.5) the API ignores the marker;
-the T1 prompt is about 4,870 tokens and the T2 image prompt about 3,696. The
-doc-class prompt (about 700 tokens) is not marked: it clears Haiku 5.5's minimum
-but not Haiku 4.5's, and `models.t1` can be either. `Usage` records cache read
-and write tokens but cannot tell a 1-hour write from a 5-minute one, which is why
-only the default cache is used. Eval-cache keys that hash the request bytes
-(`tools/haiku_compare.py`) miss on the new `system` shape. Whether
+requests share `_request`, so both carry it. What is cached is the marked block
+alone, the prompt file's text: `t1_text.md` is 7,473 characters and
+`t2_vision.md` 4,252, roughly 2,700 and 1,550 tokens on the 5.5 models. That is
+an estimate, not a count: the research doc's fixed part of a call (system prompt,
+schema and request line, counted with `count_tokens` on the 5.5 models) is 4,870
+tokens for T1 and 3,696 for T2, and the 3,221 characters between the two prompts
+make up the 1,174-token difference, about 2.7 characters a token. Whether the
+format instructions the API adds for structured output fall inside the cached
+prefix is not documented. The minimum cacheable prefix is 512 tokens on Haiku 5.5
+and Sonnet 5.5 and 4,096 on Haiku 4.5; below it the API ignores the marker, with
+no error. So today only the image reads on Sonnet 5.5 (`models.t2`) cache; T1 on
+Haiku 4.5 (`models.t1`) does not, and starts to when Task 4 moves `models.t1` to
+Haiku 5.5. A hit needs another call with the same label and model within 5
+minutes: T1 and T2 never share an entry (different prompt, different model), so
+reads come from the next document, as in a backfill, and a lone document pays the
+write (1.25x on the prefix) and reads nothing. Batch requests carry the same
+marker; hits there are best-effort. The doc-class prompt (2,738 characters) is
+not marked: it clears Haiku 5.5's minimum but not Haiku 4.5's, and would save
+about $0.0001 a call on Haiku 5.5 (estimated the same way). `Usage` records cache
+read and write tokens but cannot tell a 1-hour write from a 5-minute one, which
+is why only the default cache is used. `tools/haiku_compare.request_key` drops
+`cache_control` before hashing, and turns a one-block system back into its text,
+so responses cached before Task 6 still replay. Whether
 `cache_read_input_tokens` rises above 0 is read off the first real run's ledger
-rows; it is not provable offline.
+rows (expect 0 on `T1` rows until Task 4); it is not provable offline.
 
 **T0 template engine** ("engine-agnostic data", `app/extract/t0_layout.py`).
 A `Template` (`t0_layout.py:37-43`) is `slug`, `manufacturer`, `anchors`

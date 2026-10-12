@@ -338,12 +338,18 @@ def test_batch_requests_carry_the_cache_marker(fixture_pdf):
 
 
 def test_doc_class_prompt_is_not_cached():
-    """Decided in Task 6: the prompt is about 2.75k characters (roughly 700
-    tokens), over Haiku 5.5's 512-token minimum but under Haiku 4.5's 4,096, and
-    `models.t1` can be either, so a marker would be a no-op on one and a cache
-    write nothing re-reads soon on the other. Left as the plain string."""
-    assert isinstance(llm.DOC_CLASS_SYSTEM, str)
-    assert len(llm.DOC_CLASS_SYSTEM) < 4 * 4096
+    """Decided in Task 6: the prompt is 2,738 characters (roughly 1,000 tokens
+    on the 5.5 models, docs/dev/extraction.md), over Haiku 5.5's 512-token
+    minimum but under Haiku 4.5's 4,096, and `models.t1` can be either; on
+    Haiku 5.5 it would save about $0.0001 a call. So the classify request keeps
+    the plain string system prompt and no marker anywhere."""
+    client = StubClient('{"doc_class": "DoC", "quote": "EU DoC"}')
+    llm.AnthropicLlm(client, Models()).classify(_probe_pdf(1), "f.pdf")
+    sent = client.messages.kwargs
+
+    assert sent["system"] == llm.DOC_CLASS_SYSTEM
+    assert "cache_control" not in sent
+    assert "cache_control" not in str(sent["messages"])
 
 
 def test_sync_and_batch_build_byte_identical_requests(fixture_pdf):

@@ -139,8 +139,23 @@ def arm_params(params: dict, arm: Arm) -> dict:
     return out
 
 
+def _key_params(params: dict) -> dict:
+    """The request as it was keyed before prompt caching (extraction-ladder
+    Task 6, 2026-10-12). `cache_control` changes what is billed, not what the
+    model reads, so it is dropped, and a system that is one block again becomes
+    the plain string it was. Without this every response cached before Task 6
+    misses on replay, and replay raises KeyError."""
+    system = params.get("system")
+    if not isinstance(system, list):
+        return params
+    blocks = [{k: v for k, v in b.items() if k != "cache_control"} for b in system]
+    if len(blocks) == 1 and set(blocks[0]) == {"type", "text"}:
+        return {**params, "system": blocks[0]["text"]}
+    return {**params, "system": blocks}
+
+
 def request_key(params: dict) -> str:
-    return hashlib.sha256(json.dumps(params, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(json.dumps(_key_params(params), sort_keys=True, ensure_ascii=False)
                           .encode()).hexdigest()
 
 

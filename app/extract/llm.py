@@ -336,7 +336,8 @@ def _request(read: Read, doc, missing: list[str], max_tokens: int,
     """The messages.create() body for one resolved read. Routed by KIND, never
     by label: text = the text prompt and the bounded document text, image = the
     vision prompt and page images. `thinking` is added only when the read names
-    one, so `T1` and `T2` stay the exact requests they always were."""
+    one, so `T1` and `T2` still send no thinking key; their `system` is the
+    block list `_system` builds, marked for caching since Task 6 (2026-10-12)."""
     if read.label in _CLASSIFY_LABELS:
         raise ValueError(f"{read.label!r} labels a classify call, not an extraction read")
     if read.kind == TEXT:
@@ -434,12 +435,16 @@ def _capture(usage_log: list, tier: str, model_id: str, message, batch: bool) ->
     call = CallCost(tier, model_id, Usage.from_message(message), batch)
     usage_log.append(call)
     u = call.usage
+    # `in` is the uncached remainder only; `cr` / `cw` are the cache read and
+    # write tokens, so the prompt was in + cr + cw.
     try:
-        _log.info("extract.cost tier=%s model=%s in=%d out=%d batch=%s usd=%.6f",
-                  tier, model_id, u.input_tokens, u.output_tokens, batch, call.cost)
+        _log.info("extract.cost tier=%s model=%s in=%d cr=%d cw=%d out=%d batch=%s usd=%.6f",
+                  tier, model_id, u.input_tokens, u.cache_read_tokens,
+                  u.cache_creation_tokens, u.output_tokens, batch, call.cost)
     except economics.UnknownModelPricing:
-        _log.warning("extract.cost tier=%s model=%s in=%d out=%d batch=%s usd=UNPRICED",
-                     tier, model_id, u.input_tokens, u.output_tokens, batch)
+        _log.warning("extract.cost tier=%s model=%s in=%d cr=%d cw=%d out=%d batch=%s "
+                     "usd=UNPRICED", tier, model_id, u.input_tokens, u.cache_read_tokens,
+                     u.cache_creation_tokens, u.output_tokens, batch)
     return call
 
 
