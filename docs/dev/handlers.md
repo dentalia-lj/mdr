@@ -95,6 +95,7 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 - emits: `validate.doc`, `validate:{hash}:{rev}:{group_id}`
 - fails how: an unopenable PDF is a counted, non-raising result and emits nothing. Batch mode self-defers per tier until the Anthropic batch is done
 - note: batch state lives in `batch_ref`, never in the payload (invariant 9)
+- note: one `extraction_cost` row per paid call, its `tier` the read's label (`doc-class`, `T1`, `T2`, ...; `llm.READ_STEPS`). Since 2026-10-12: before, the doc-class call and the T1 read both wrote `T1` and the ledger's unique key dropped one of them. `batch_ref.tier` holds the same label
 
 ### `validate.doc`
 - consumes: `content_hash`, `extract_rev`, `group_id?`, `archive_url?`

@@ -240,6 +240,15 @@ flags are. That is deliberate — a document linking nothing is not "production"
 | `T2` | vision LLM (`models.t2`), for scans | expensive |
 | `T3` | a human, via `gate.apply` edits | — |
 
+These are **evidence** tiers. The cost ledger (`extraction_cost.tier`, the
+**Tier** column on `/status` → Spend) and `batch_ref.tier` hold the read step's
+**label** instead, one per paid call (2026-10-12, `app/extract/llm.py`
+`READ_STEPS`): `doc-class` and `doc-class-image` (what is this file), `T1` (the
+whole text), `T1-second` (a second text read, thinking off), `T2-first` (a cheap
+image read), `T2-second` (a second image read, thinking off), `T2` (the Sonnet
+image read). A text label's evidence is `T1`, an image label's `T2`. Only
+`doc-class`, `T1` and `T2` are sent today.
+
 | `doc_class` | effect |
 |---|---|
 | `compliance-doc` | proceed with extraction |

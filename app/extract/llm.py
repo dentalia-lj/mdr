@@ -1,12 +1,17 @@
-"""T1 (Haiku text) and T2 (Sonnet vision) extraction tiers via the Anthropic API.
+"""T1 (text) and T2 (image) extraction reads via the Anthropic API.
 
 The Anthropic client is INJECTED, so the tier is unit-tested with a stub and the
 live path is exercised in S0.4 once ANTHROPIC_API_KEY is present (live calls are
-deferred until then). Both tiers ask for the full 9-field target schema as
-structured output and return per-field evidence
-`{value, conf, tier, verbatim, page, model_id}`, filtered to the fields the
-ladder actually requested (per-field escalation). Prompts (gap G1) live in
-`prompts/t1_text.md` and `prompts/t2_vision.md`.
+deferred until then). Both kinds ask for the full target schema as structured
+output and return per-field evidence `{value, conf, tier, verbatim, page,
+model_id}`, filtered to the fields the ladder actually requested (per-field
+escalation). Prompts (gap G1) live in `prompts/t1_text.md` and
+`prompts/t2_vision.md`.
+
+Every call is a READ STEP with a label (`READ_STEPS`, the extraction-ladder
+plan's table of 2026-10-12). The label names the call in the cost ledger and in
+`batch_ref`; the step's KIND (text / image) picks the prompt and content and
+stamps the evidence tier, which stays `T1` or `T2` whatever the label.
 """
 
 from __future__ import annotations
@@ -15,6 +20,7 @@ import base64
 import json
 import logging
 import pathlib
+from dataclasses import dataclass
 
 from app.extract import economics
 from app.extract import pdf as pdfutil
@@ -43,6 +49,93 @@ T2_SYSTEM = _load_prompt("t2_vision.md")
 
 MAX_VISION_PAGES = 4
 DEFAULT_MAX_TOKENS = 8192  # 2048 truncated the structured output on long docs (S0.4)
+
+TEXT, IMAGE = "text", "image"
+_KINDS = (TEXT, IMAGE)
+
+#: What a second read sends (rulings 2026-10-12: "second read Haiku 5.5
+#: thinking off"). The eval measured the agreement rule with exactly this.
+THINKING_OFF = {"type": "disabled"}
+
+
+@dataclass(frozen=True)
+class ReadStep:
+    """One row of the read-steps table: what kind of read a label is, which
+    `config.models` key names its model, and its thinking setting (None = send
+    no `thinking` key, the API default)."""
+
+    kind: str
+    model_key: str
+    thinking: dict | None = None
+
+
+#: The extraction-ladder plan's "Read steps and their labels" (2026-10-12), one
+#: table for sync and batch alike. Labels carry hyphens only: `_custom_id` joins
+#: label and hash with `_` and `_tier_of` splits on the first one. Only `T1` and
+#: `T2` are sent by the ladder today; the other rows are plumbing for Tasks 3-5.
+#: The two `doc-class` rows label the classify calls, never an `extract`.
+READ_STEPS: dict[str, ReadStep] = {
+    "doc-class": ReadStep(TEXT, "t1"),
+    "doc-class-image": ReadStep(IMAGE, "vision_first"),
+    "T1": ReadStep(TEXT, "t1"),
+    "T1-second": ReadStep(TEXT, "second_read", THINKING_OFF),
+    "T2-first": ReadStep(IMAGE, "vision_first"),
+    "T2-second": ReadStep(IMAGE, "second_read", THINKING_OFF),
+    "T2": ReadStep(IMAGE, "t2"),
+}
+DOC_CLASS_LABEL = "doc-class"
+_CLASSIFY_LABELS = frozenset({"doc-class", "doc-class-image"})
+
+
+@dataclass(frozen=True)
+class Read:
+    """One resolved read: its label (the ledger key), kind, model, thinking and,
+    for an image read, an explicit page list (None = pages 1..4, today's T2)."""
+
+    label: str
+    kind: str
+    model: str
+    thinking: dict | None = None
+    pages: tuple[int, ...] | None = None
+
+    @property
+    def evidence_tier(self) -> str:
+        """`evidence.tier`: T1 for a text read, T2 for an image read. The label
+        never reaches evidence -- GATE's page rule and the REF-cap flag test
+        for exactly these two values."""
+        return "T1" if self.kind == TEXT else "T2"
+
+
+def resolve_read(label: str, models, *, kind: str | None = None, model: str | None = None,
+                 thinking: dict | None = None, pages=None) -> Read:
+    """The read a label names, with any explicit option taking precedence over
+    its `READ_STEPS` row. A label with no row must name its kind and model:
+    routing an unknown label to a default would bill it at whatever that default
+    is, which is how every non-`T1` label used to go to `models.t2`.
+
+    `pages` (image reads only) are 1-based document pages in the order they are
+    sent: at most `MAX_VISION_PAGES`, none twice. Refused rather than trimmed --
+    a caller asking for five pages has a bug, not a preference."""
+    step = READ_STEPS.get(label)
+    kind = kind or (step.kind if step else None)
+    if kind not in _KINDS:
+        raise ValueError(f"read {label!r}: kind must be one of {_KINDS}, got {kind!r}")
+    if model is None and step is not None:
+        model = getattr(models, step.model_key)
+    if not model:
+        raise ValueError(f"read {label!r}: no model (unknown label, none named)")
+    if thinking is None and step is not None:
+        thinking = step.thinking
+    if pages is not None:
+        if kind != IMAGE:
+            raise ValueError(f"read {label!r}: pages apply to image reads only")
+        pages = tuple(pages)
+        if not 1 <= len(pages) <= MAX_VISION_PAGES:
+            raise ValueError(f"read {label!r}: 1 to {MAX_VISION_PAGES} pages, got {pages}")
+        if len(set(pages)) != len(pages) or any(
+                not isinstance(n, int) or n < 1 for n in pages):
+            raise ValueError(f"read {label!r}: pages are distinct 1-based numbers, got {pages}")
+    return Read(label, kind, model, thinking, pages)
 
 # --- structured-output schema (gap G1): per-field {value, confidence, verbatim,
 # page}. Built here rather than hand-written JSON so it stays in sync with TARGET.
@@ -161,13 +254,22 @@ def _text_content(doc, missing: list[str]) -> list[dict]:
     }]
 
 
-def _vision_content(doc, missing: list[str]) -> list[dict]:
+def _vision_content(doc, missing: list[str], pages: tuple[int, ...] | None = None) -> list[dict]:
+    """The prompt line, then one image per page: `pages` in the order given, or
+    pages 1..MAX_VISION_PAGES when None (today's T2, byte for byte)."""
+    if pages is None:
+        indexes = range(min(doc.page_count, MAX_VISION_PAGES))
+    else:
+        beyond = [n for n in pages if n > doc.page_count]
+        if beyond:
+            raise ValueError(f"pages {beyond} past the end of a {doc.page_count}-page document")
+        indexes = [n - 1 for n in pages]
     blocks: list[dict] = [{
         "type": "text",
         "text": f"Extract these fields: {', '.join(missing)}. "
                 f"Read the page images below.",
     }]
-    for i in range(min(doc.page_count, MAX_VISION_PAGES)):
+    for i in indexes:
         png = pdfutil.rasterize_page(doc, i, dpi=150)
         blocks.append({
             "type": "image",
@@ -210,22 +312,58 @@ def _system(base: str, hints: str | None) -> str | list[dict]:
     ]
 
 
-def _params(tier: str, models, doc, missing: list[str], max_tokens: int,
-            hints: str | None = None) -> dict:
-    """The messages.create() body for a tier. Shared by the sync tier and the
-    batch client so both submit byte-identical requests (only the transport
-    differs). T1 = text content, T2 = page images."""
-    if tier == "T1":
-        model, system, content = models.t1, T1_SYSTEM, _text_content(doc, missing)
+def _request(read: Read, doc, missing: list[str], max_tokens: int,
+             hints: str | None = None) -> dict:
+    """The messages.create() body for one resolved read. Routed by KIND, never
+    by label: text = the text prompt and the bounded document text, image = the
+    vision prompt and page images. `thinking` is added only when the read names
+    one, so `T1` and `T2` stay the exact requests they always were."""
+    if read.label in _CLASSIFY_LABELS:
+        raise ValueError(f"{read.label!r} labels a classify call, not an extraction read")
+    if read.kind == TEXT:
+        system, content = T1_SYSTEM, _text_content(doc, missing)
     else:
-        model, system, content = models.t2, T2_SYSTEM, _vision_content(doc, missing)
-    return {
-        "model": model,
+        system, content = T2_SYSTEM, _vision_content(doc, missing, read.pages)
+    params = {
+        "model": read.model,
         "max_tokens": max_tokens,
         "system": _system(system, hints),
         "messages": [{"role": "user", "content": content}],
         "output_config": {"format": {"type": "json_schema", "schema": SCHEMA}},
     }
+    if read.thinking is not None:
+        params["thinking"] = dict(read.thinking)   # a copy: never hand out the table's dict
+    return params
+
+
+def _params(tier: str, models, doc, missing: list[str], max_tokens: int,
+            hints: str | None = None, **read_options) -> dict:
+    """The messages.create() body for a labelled read. Shared by the sync tier
+    and the batch client so both submit byte-identical requests (only the
+    transport differs). `read_options` are `resolve_read`'s kind / model /
+    thinking / pages."""
+    return _request(resolve_read(tier, models, **read_options), doc, missing,
+                    max_tokens, hints)
+
+
+def _cited_pages(fields: dict, read: Read) -> dict:
+    """Translate each field's cited page from image position to document page.
+
+    The vision prompt asks for "the 1-based index of the page image", which is
+    the document page only while the images are pages 1..4 in order -- the
+    default, left exactly as it was. With an explicit page list the index is
+    looked up in it, and a cite outside the images sent becomes None: GATE then
+    raises `evidence-page-missing` rather than storing a page nobody showed the
+    model."""
+    if read.pages is None:
+        return fields
+    for ev in fields.values():
+        n = ev.get("page")
+        if n is None:
+            continue
+        ev["page"] = (read.pages[n - 1]
+                      if isinstance(n, int) and 1 <= n <= len(read.pages) else None)
+    return fields
 
 
 def _custom_id(content_hash: str, tier: str) -> str:
@@ -233,7 +371,12 @@ def _custom_id(content_hash: str, tier: str) -> str:
     ^[a-zA-Z0-9_-]{1,64}$ (a 400), and a full sha256 content_hash is already 64
     chars — so the tier goes FIRST (never truncated; that's what results() reads
     back) and the whole thing is capped at 64. Batch-of-1 per hash+tier, so this
-    only has to be legal and tier-recoverable, not globally unique."""
+    only has to be legal and tier-recoverable, not globally unique.
+
+    `tier` is a read label, and an `_` in it would make `_tier_of` read back a
+    prefix of it: refused here rather than discovered as a wrong price."""
+    if "_" in tier:
+        raise ValueError(f"read label {tier!r} contains '_'; labels use hyphens")
     return f"{tier}_{content_hash}"[:64]
 
 
@@ -295,7 +438,8 @@ class AnthropicLlm:
     """LLM tier for the ladder: `extract(tier, doc, filename, missing)`.
 
     `client` is an anthropic.Anthropic (or a stub in tests); `models` exposes
-    `.t1` / `.t2` model ids (config.models).
+    the model ids `READ_STEPS` names (config.models: `.t1` / `.t2`, and
+    `.vision_first` / `.second_read` for the ladder's newer steps).
     """
 
     def __init__(self, client, models, max_tokens: int = DEFAULT_MAX_TOKENS):
@@ -305,11 +449,17 @@ class AnthropicLlm:
         self.usage_log: list[CallCost] = []  # priced calls this instance made
 
     def extract(self, tier: str, doc, filename: str, missing: list[str],
-               hints: str | None = None) -> dict:
-        params = _params(tier, self.models, doc, missing, self.max_tokens, hints=hints)
+                hints: str | None = None, **read_options) -> dict:
+        """One labelled read. `tier` is the step's label (`READ_STEPS`);
+        `read_options` (kind, model, thinking, pages) override its row. Callers
+        holding the injected protocol object pass them only when set, as
+        `tiers.run_extraction` does with `hints`: every stub predates them."""
+        read = resolve_read(tier, self.models, **read_options)
+        params = _request(read, doc, missing, self.max_tokens, hints)
         resp = self.client.messages.create(**params)
-        _capture(self.usage_log, tier, params["model"], resp, batch=False)
-        parsed = _fields_from_json(_response_json(resp), tier, params["model"])
+        _capture(self.usage_log, read.label, read.model, resp, batch=False)
+        parsed = _cited_pages(
+            _fields_from_json(_response_json(resp), read.evidence_tier, read.model), read)
         return {f: parsed[f] for f in missing if f in parsed}
 
     def classify(self, doc, filename: str) -> tuple[str, str]:
@@ -336,8 +486,9 @@ class AnthropicLlm:
         text = "\n".join(pages).strip()
         if not text:
             return NOT_A_DOCUMENT, ""
+        read = resolve_read(DOC_CLASS_LABEL, self.models)
         params = {
-            "model": self.models.t1,
+            "model": read.model,
             "max_tokens": 256,
             "system": DOC_CLASS_SYSTEM,
             "messages": [{"role": "user", "content":
@@ -346,7 +497,10 @@ class AnthropicLlm:
                                          "schema": DOC_CLASS_SCHEMA}},
         }
         resp = self.client.messages.create(**params)
-        _capture(self.usage_log, "T1", params["model"], resp, batch=False)
+        # Its own label: logged as `T1` it collided with the T1 read of the same
+        # document on the ledger's (content_hash, tier, extract_rev) key, and
+        # `ON CONFLICT DO NOTHING` dropped the second row.
+        _capture(self.usage_log, read.label, read.model, resp, batch=False)
         payload = _response_json(resp)
         answer = payload.get("doc_class")
         if answer not in ("DoC", "EC", "ISO", "IFU", "SPP"):
@@ -360,11 +514,14 @@ class AnthropicBatchClient:
     `done(batch_id) -> bool`, `results(batch_id) -> {field: evidence}`. The
     handler builds requests with `build_requests` and hands them to
     `advance_batch`; `batch_ref` (keyed by content_hash+tier) is the crash-safe
-    state, so this client holds no state of its own.
+    state. The client keeps only a per-instance note of the reads it built
+    (`_reads`), which nothing depends on surviving a restart.
 
     Batch-of-1 per (content_hash, tier): the batch_ref PK is (content_hash,
-    tier), so each doc+tier is its own batch. Bulk cross-doc batching (the sweep
-    economy) is a later concern (backfill.scan); the transport is identical.
+    tier), so each doc+tier is its own batch. `tier` is the read's label
+    (`READ_STEPS`), so two reads of one kind never share a batch_ref row. Bulk
+    cross-doc batching (the sweep economy) is a later concern (backfill.scan);
+    the transport is identical.
     """
 
     def __init__(self, client, models, max_tokens: int = DEFAULT_MAX_TOKENS):
@@ -372,12 +529,20 @@ class AnthropicBatchClient:
         self.models = models
         self.max_tokens = max_tokens
         self.usage_log: list[CallCost] = []  # priced calls, populated by results()
+        # custom_id -> the Read its request was built from. The handler builds
+        # the requests on every poll before asking for results, so on the poll
+        # that reads them this holds the model and pages actually sent; a fresh
+        # instance falls back to the label's READ_STEPS row.
+        self._reads: dict[str, Read] = {}
 
     def build_requests(self, content_hash: str, tier: str, doc, missing: list[str],
-                       hints: str | None = None) -> list[dict]:
+                       hints: str | None = None, **read_options) -> list[dict]:
+        read = resolve_read(tier, self.models, **read_options)
+        custom_id = _custom_id(content_hash, read.label)
+        self._reads[custom_id] = read
         return [{
-            "custom_id": _custom_id(content_hash, tier),
-            "params": _params(tier, self.models, doc, missing, self.max_tokens, hints=hints),
+            "custom_id": custom_id,
+            "params": _request(read, doc, missing, self.max_tokens, hints),
         }]
 
     def submit(self, requests) -> str:
@@ -391,8 +556,9 @@ class AnthropicBatchClient:
         for item in self.client.messages.batches.results(batch_id):
             if getattr(item.result, "type", None) != "succeeded":
                 continue
-            tier = _tier_of(item.custom_id)
-            model = self.models.t1 if tier == "T1" else self.models.t2
-            _capture(self.usage_log, tier, model, item.result.message, batch=True)
-            out.update(_fields_from_json(_response_json(item.result.message), tier, model))
+            read = (self._reads.get(item.custom_id)
+                    or resolve_read(_tier_of(item.custom_id), self.models))
+            _capture(self.usage_log, read.label, read.model, item.result.message, batch=True)
+            out.update(_cited_pages(_fields_from_json(
+                _response_json(item.result.message), read.evidence_tier, read.model), read))
         return out

@@ -143,7 +143,7 @@ CREATE TABLE robots_cache (
 -- record resolves via lookup here (existing row for hash+tier => never resubmit)
 CREATE TABLE batch_ref (
   content_hash text NOT NULL,
-  tier         text NOT NULL,             -- T1 | T2
+  tier         text NOT NULL,             -- read label: T1, T2, T2-first, ... (2026-10-12)
   batch_id     text NOT NULL,
   submitted_at timestamptz NOT NULL DEFAULT now(),
   resolved_at  timestamptz,
@@ -392,7 +392,7 @@ CREATE INDEX extraction_hash_idx ON extraction_attempt (content_hash);
 CREATE TABLE extraction_cost (
   id                    bigserial PRIMARY KEY,
   content_hash          text NOT NULL,
-  tier                  text NOT NULL,        -- T1|T2 (T0 is free, never priced)
+  tier                  text NOT NULL,        -- read label: doc-class, T1, T2, T2-first, ... (llm.READ_STEPS, 2026-10-12); T0 is free, never priced
   extract_rev           int  NOT NULL DEFAULT 1,
   model_id              text NOT NULL,
   batch                 boolean NOT NULL DEFAULT false,

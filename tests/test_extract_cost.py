@@ -6,6 +6,8 @@ Covers: sync writes one cost row per LLM tier at the attempt's rev; a T0-only do
 (MSDS) writes none; the batch path writes each tier's row as it resolves and stays
 idempotent across the polls that re-visit an already-resolved tier; an unpriced
 model still records tokens with a null cost; the extraction_spend rollup sums up.
+Since 2026-10-12 a row's `tier` is the read's label, so the doc-class call and the
+T1 read of one document are two rows, not one silently dropped.
 """
 
 from __future__ import annotations
@@ -91,6 +93,68 @@ def test_sync_writes_one_cost_row_per_llm_tier(conn, fixture_pdf):
     assert (r["input_tokens"], r["output_tokens"]) == (1500, 400)
     # Haiku (1500*1 + 400*5)/1e6 = 0.0035
     assert float(r["cost_usd"]) == 0.0035
+
+
+class _RoutingClient:
+    """messages.create answers the doc-class call and the field read apart, each
+    with its own usage, so each row in the ledger can be told from the other."""
+
+    def __init__(self):
+        self.messages = SimpleNamespace(create=self._create)
+
+    @staticmethod
+    def _create(**kw):
+        if kw["system"] == llm.DOC_CLASS_SYSTEM:
+            return _resp(json.dumps({"doc_class": "DoC", "quote": "Declaration"}),
+                         _usage(300, 20))
+        return _resp(_payload(tiers_mod.TARGET), _usage(1500, 400))
+
+
+def _untyped_pdf(tmp_path) -> str:
+    """Text T0 cannot type (no header marker), so the doc-class call runs."""
+    import pymupdf
+    doc = pymupdf.open()
+    doc.new_page().insert_text((72, 72), "no markers anywhere in this text", fontsize=12)
+    path = tmp_path / "untyped.pdf"
+    doc.save(str(path))
+    doc.close()
+    return str(path)
+
+
+def test_doc_class_and_t1_write_a_row_each(conn, tmp_path):
+    """The regression. Both calls logged tier `T1` and the ledger is unique on
+    (content_hash, tier, extract_rev), so `ON CONFLICT DO NOTHING` silently
+    dropped the T1 read on every document T0 could not type."""
+    tier_client = llm.AnthropicLlm(_RoutingClient(), Models())
+    job = {"payload": {"archive_url": _untyped_pdf(tmp_path),
+                       "content_hash": "sha-cost-docclass", "group_id": 9}}
+
+    result = eh.handle_extract_doc(conn, job, llm=tier_client)
+    conn.commit()
+
+    assert result["doc_class"] == "compliance-doc"
+    rows = _rows(conn, "sha-cost-docclass")
+    assert len(rows) == 2
+    assert {(r["tier"], r["model_id"], r["input_tokens"]) for r in rows} == {
+        ("T1", "claude-haiku-4-5", 1500),
+        ("doc-class", "claude-haiku-4-5", 300),
+    }
+
+
+def test_ledger_keeps_one_row_per_label_and_stays_idempotent(conn):
+    """Distinct labels at one revision are distinct rows; the same label twice
+    (a batch poll re-fetching a resolved result) stays one."""
+    from app.extract.economics import CallCost, Usage
+
+    calls = [CallCost(label, "claude-haiku-4-5", Usage(100, 10))
+             for label in ("doc-class", "T1", "T1-second", "T2-first", "T2-second", "T2", "T1")]
+    for call in calls:
+        tiers_mod.write_extraction_cost(conn, "sha-cost-labels", 1, call)
+    conn.commit()
+
+    tiers = [r["tier"] for r in _rows(conn, "sha-cost-labels")]
+    assert len(tiers) == 6
+    assert set(tiers) == {"doc-class", "T1", "T1-second", "T2-first", "T2-second", "T2"}
 
 
 def test_t0_only_doc_writes_no_cost_rows(conn, fixture_pdf):

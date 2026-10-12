@@ -27,9 +27,15 @@ def _usage_msg(**kw):
         ("claude-haiku-4-5", Usage(1000, 1000), False, Decimal("0.006")),
         ("claude-haiku-4-5", Usage(1000, 1000), True, Decimal("0.003")),  # batch 50%
         # Sonnet 5.5 (the T2 model from 2026-09-29): $2 in / $10 out per MTok,
-        # batch $1 / $5, cache hit $0.20 (0.1x). Pricing page read 2026-09-29.
+        # batch $1 / $5. Its cache hit is $0.10 (0.05x), not the 0.1x the
+        # other rows use: pricing page re-read 2026-10-12, see the cache test.
         ("claude-sonnet-5-5", Usage(1000, 1000), False, Decimal("0.012")),
         ("claude-sonnet-5-5", Usage(1000, 1000), True, Decimal("0.006")),
+        # Haiku 5.5 (the cheap reads of the 2026-10-12 ladder): $0.10 in /
+        # $0.50 out per MTok for prompts up to 100,000 tokens, batch half.
+        # platform.claude.com/docs/en/about-claude/pricing, read 2026-10-12.
+        ("claude-haiku-5-5", Usage(1000, 1000), False, Decimal("0.0006")),
+        ("claude-haiku-5-5", Usage(1000, 1000), True, Decimal("0.0003")),
         # Sonnet 5 (T2 until 2026-09-29, retained for logged spend): $2 / $10.
         # platform.claude.com/docs/en/about-claude/pricing, read 2026-09-28: the
         # launch price became standard, the planned rise to $3/$15 did not happen.
@@ -58,6 +64,58 @@ def test_cache_read_discounted_and_write_surcharged():
     # Non-cached input tokens are separate from cache counts and add on top.
     both = cost_usd("claude-haiku-4-5", Usage(input_tokens=1000, cache_read_tokens=1000))
     assert both == cost_usd("claude-haiku-4-5", Usage(input_tokens=1000)) + read
+
+
+_M = Decimal(1_000_000)
+
+
+@pytest.mark.parametrize(
+    "model_id, usage, expected",
+    [
+        # Sonnet 5.5 reads its cache at 0.05x ($0.10/MTok), writes at 1.25x.
+        ("claude-sonnet-5-5", Usage(cache_read_tokens=1_000_000), Decimal("0.10")),
+        ("claude-sonnet-5-5", Usage(cache_creation_tokens=1_000_000), Decimal("2.50")),
+        # Haiku 5.5 uses the standard multipliers: $0.01 read, $0.125 write per
+        # MTok. 100,000 tokens, not a million: a million is a long prompt.
+        ("claude-haiku-5-5", Usage(cache_read_tokens=100_000), Decimal("0.001")),
+        ("claude-haiku-5-5", Usage(cache_creation_tokens=100_000), Decimal("0.0125")),
+        # Sonnet 5 stays at 0.1x ($0.20 on $2): the 0.05x is a 5.5 property.
+        ("claude-sonnet-5", Usage(cache_read_tokens=1_000_000), Decimal("0.20")),
+    ],
+)
+def test_cache_multipliers_per_model(model_id, usage, expected):
+    assert cost_usd(model_id, usage) == expected
+
+
+@pytest.mark.parametrize(
+    "usage, batch, expected",
+    [
+        # At the threshold: still the base rows ($0.10 / $0.50).
+        (Usage(100_000, 1000), False, (100_000 * Decimal("0.10") + 1000 * Decimal("0.50")) / _M),
+        # One token over: the whole request pays the long rows ($0.50 / $2.50),
+        # output included -- "a request over the threshold pays the higher prices".
+        (Usage(100_001, 1000), False, (100_001 * Decimal("0.50") + 1000 * Decimal("2.50")) / _M),
+        # Batch halves the long rows too ($0.25 / $1.25).
+        (Usage(100_001, 1000), True, (100_001 * Decimal("0.25") + 1000 * Decimal("1.25")) / _M),
+        # Prompt length counts cache reads and writes: 60k fresh + 40,001 read
+        # is over, and the read is billed at 0.1x of the LONG input rate.
+        (Usage(60_000, 0, cache_read_tokens=40_001), False,
+         (60_000 * Decimal("0.50") + 40_001 * Decimal("0.1") * Decimal("0.50")) / _M),
+        (Usage(60_000, 0, cache_creation_tokens=40_001), False,
+         (60_000 * Decimal("0.50") + 40_001 * Decimal("1.25") * Decimal("0.50")) / _M),
+        # Output tokens never count towards the prompt length.
+        (Usage(100_000, 500_000), False,
+         (100_000 * Decimal("0.10") + 500_000 * Decimal("0.50")) / _M),
+    ],
+)
+def test_haiku_5_5_prompts_over_100k_tokens_pay_the_long_rows(usage, batch, expected):
+    assert cost_usd("claude-haiku-5-5", usage, batch) == expected
+
+
+def test_models_without_a_long_row_never_switch_rates():
+    """Only Haiku 5.5 is priced by prompt length on the pricing page; Sonnet
+    5.5 bills a 900k-token request at the 9k-token rate."""
+    assert cost_usd("claude-sonnet-5-5", Usage(500_000, 0)) == 500_000 * Decimal("2") / _M
 
 
 def test_unknown_model_raises_never_silent():

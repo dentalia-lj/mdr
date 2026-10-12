@@ -137,6 +137,10 @@ omeniti razvijalcu, ne alarm.
 Če zavihek prikaže opombo, da nekaterim klicem ni zabeležena cena, gre za
 vrzel v lastnem knjigovodstvu sistema — razvijalčev problem, ne vaš.
 
+Pod številkama razpredelnica razdeli porabo po modelu, po vrsti branja
+(**Tier**) in po tem, ali je šlo po cenejši, počasnejši skupinski poti
+(**Batch**). Šteto je vsako plačano branje.
+
 ---
 
 ## Kaj lahko gre narobe
@@ -165,6 +169,7 @@ vrzel v lastnem knjigovodstvu sistema — razvijalčev problem, ne vaš.
 | **dedupe key** | Interna koda, ki prepreči, da bi se isto opravilo zagnalo dvakrat. Ni nekaj, kar bi morali brati |
 | **priority** — `interactive` / `delta` / `sweep` | Zakaj opravilo obstaja: `interactive` pomeni, da ga je pravkar sprožil klik osebe; `delta` in `sweep` pomenita, da ga je sprožil lastni urnik sistema |
 | **unpriced calls (pricing gap)** | Poraba, ki ji sistem ni znal določiti cene. Vrzel v knjigovodstvu, ne strošek, ki bi ga dolgovali |
+| **Tier** v zavihku Spend: `doc-class`, `T1`, `T2` | Katero branje je plačala vrstica stroškov: `doc-class` je hitro preverjanje, kaj datoteka je, `T1` prebere besedilo dokumenta, `T2` njegove slike strani. Imena, kot je `T2-first`, se pojavijo, ko bodo vklopljeni novi koraki branja. Od 12. oktobra 2026 ima hitro preverjanje svojo vrstico; prej je bilo vpisano pod `T1` in pri datotekah, za katere je sistem moral vprašati, je eno od obeh branj izpadlo iz seštevkov |
 
 ---
 

@@ -94,7 +94,8 @@ calibrated; factor defaults to 1.0 pending S0.4 calibration data.
 
 **Batch state machine** (`app/extract/batching.py`). `advance_batch`
 (`batching.py:42-56`) is a 3-state machine over `batch_ref`, keyed
-`(content_hash, tier)`: no row → submit + record, return `"submitted"`;
+`(content_hash, tier)`, where `tier` is the read's label (so two reads of one
+kind never share a row): no row → submit + record, return `"submitted"`;
 row with `resolved_at` → idempotent re-fetch, return `"done"`; row without →
 poll `batch_client.done()`, return `"pending"` or resolve + `"done"`. It
 lives in a side table, never in the job payload, so a crash between submit
@@ -117,6 +118,36 @@ has `cost_usd numeric(12,6)` nullable by design
 (`migrations/010_extraction_cost.sql:32`), and the `extraction_spend` view's
 `unpriced_calls` column exists to find those rows (`010_extraction_cost.sql:
 41-50`).
+
+**One row per paid call, keyed by the read's label** (since 2026-10-12). The
+ledger is unique on `(content_hash, tier, extract_rev)`, and its `tier` column
+holds the call's label from `llm.READ_STEPS` (`doc-class`, `doc-class-image`,
+`T1`, `T1-second`, `T2-first`, `T2-second`, `T2`), not the evidence tier. Before
+that the doc-class call (`AnthropicLlm.classify`) and the T1 read both logged
+`T1`, so on every document T0 could not type the conflict clause dropped one of
+the two rows without a word. `/status` → **Spend** shows the breakdown per
+model, label and transport. Only `doc-class`, `T1` and `T2` are sent today; the
+other labels belong to the extraction-ladder plan's later tasks.
+
+**Read steps** (`app/extract/llm.py`, `READ_STEPS` / `resolve_read`). A read is
+a label plus a kind (text / image), a model, a thinking setting and, for an
+image read, an explicit page list (default pages 1-4, at most
+`MAX_VISION_PAGES`). The request is routed by kind, never by label: until
+2026-10-12 `_params` sent every label but `T1` to `models.t2`. The kind also
+stamps `evidence.tier` (`T1` text, `T2` image), so GATE's page rule and the
+REF-cap flag keep seeing exactly those two values. With an explicit page list,
+the page the vision prompt cites (an image index) is translated back to the
+document page, and a cite outside the images sent becomes `None`. The options
+reach `extract` / `build_requests` only as keyword arguments, so every stub
+implementing `extract(tier, doc, filename, missing)` keeps working.
+`AnthropicBatchClient.results` maps each result's label back to the read it
+was built from that poll, else to the label's `READ_STEPS` row; a label with
+no row raises instead of being priced as `models.t2`, the old fallback.
+
+**Haiku 5.5 is priced by prompt length** (`economics.PRICES`, read off the
+pricing page 2026-10-12): $0.10 / $0.50 per MTok up to 100,000 prompt tokens,
+$0.50 / $2.50 over, for the whole call. Prompt length counts cache reads and
+writes. Sonnet 5.5 reads its cache at 0.05x, not the default 0.1x.
 
 **T0 template engine** ("engine-agnostic data", `app/extract/t0_layout.py`).
 A `Template` (`t0_layout.py:37-43`) is `slug`, `manufacturer`, `anchors`
