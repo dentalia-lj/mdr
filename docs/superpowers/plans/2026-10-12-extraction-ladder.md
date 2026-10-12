@@ -104,7 +104,7 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | 0 contract (PRD, design doc) | done, approved | 4811151 |
 | 1 read plumbing, ledger | done: built (Opus), reviewed and fixed (Opus), merged; full suite 4674 passed, 5 skipped | merge of f843948 |
 | 2 checks, page classes | done: built (Sonnet), reviewed and fixed (Opus), merged | b9cd734 |
-| 3 scans | built (Opus) a287be6, 1653 tests; Opus review running (replays the scan ladder against the eval cache) | worktree el-scans |
+| 3 scans | built (Opus) a287be6; Opus review: merge after 2 fixes (Sonnet's null closes a field; a failed read is not an empty answer); text ladder unchanged on 94 docs; fixes running; decision 3 (REF/UDI asked on filename-typed scanned DoCs) with Denis | worktree el-scans |
 | 4 text ladder | waiting for 1 and 2 | |
 | 5 gate, guard, migration | waiting for 3 and 4 | |
 | 6 prompt caching | done: built (Sonnet), reviewed and fixed (Opus), merged; cache hits to confirm on the first real run | merge of bbc461d |
@@ -244,6 +244,11 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
       truncated answer becomes `not-a-compliance-document` and drops the file for good;
       page-aware selection clamps to the page count (`_vision_content` raises past the
       end); RecordedLlm accepts read options; `.env.example` `MODELS_T1` updated.
+- [ ] From the Task 3 review: Sonnet's explicit null closes an asked field (a T1 value
+      must not survive it); a failed read is never an empty answer and is counted;
+      `derive_coverage_scope` gives the EC / ISO / IFU branches the type's confidence, as
+      the DoC branch does (today a filename-typed EC or ISO at 0.6 gets a `manufacturer`
+      scope at 1.0, `t0_templates.py:946`, so item IDs are never asked if reads retype it).
 - [ ] Disagreements counted: the extract job result lists each field where reads
       disagreed (field, steps, values), and the extraction record keeps every read.
 - [ ] Batch path: same steps.
@@ -267,6 +272,9 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
       documents get `T1-second`; scans ask the unproven gate fields in the second image
       read (Task 3 asks it only open fields, so a gate field settled at 0.85-0.92 is
       added here).
+- [ ] From the Task 3 review: the 24 of 34 scan gate figure holds only if the unproven
+      gate fields are asked in `T2-second` even where `T2-first` settled every open field
+      (Task 3 makes no second call then); Task 3 alone gives 7 production.
 - [ ] One call per label per extraction: the unproven gate fields ride in the same
       `T2-second` call as Task 3's open fields, or that call's cost row is lost.
 - [ ] Combined confidence `1 - (1 - c1)(1 - c2)` when both reads agree and each is at
