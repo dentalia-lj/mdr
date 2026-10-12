@@ -63,6 +63,10 @@ From `docs/decisions.md` (2026-10-12) and the research doc:
 sent to review; evidence gets the agreeing read through a migration; multi-UDI lists
 still go to Sonnet; scans get a doc-class call on their page images, and on scans
 longer than 4 pages an empty field is marked unread instead of settled.
+Also answered (Denis, after the Task 3 review): on a scan, the item identifiers
+(REF list, Basic UDI-DI) are skipped only when the `manufacturer` scope is known
+(T0 at 0.95 or more, or settled by the reads), not when it is T0's guess from the
+file name; up to 8 more Sonnet calls per 34 scans (about 24 instead of 19).
 
 **Defaults taken (no ruling, say if wrong):** mixed PDFs take the text branch; a
 scan is a document with no text page at all; T0 fields under 0.95 count as settled
