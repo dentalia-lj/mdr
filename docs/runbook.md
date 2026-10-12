@@ -586,6 +586,34 @@ docker compose exec worker python -m app.cli revalidate --name "botiss biomateri
 
 It refuses a name that does not resolve to exactly one manufacturer yet (step 2 not done). It sends only documents whose last validation flagged the name, that are staged or filed and that nobody touched: published, rejected, superseded, grouped, reviewer-edited, reopened, never-validated and still-validating documents are left alone and counted. What GATE then does is its usual rule: REFs match and the score clears `gate.high` with no capping flag → production, task closed; no REF matches and the score clears `gate.med` with no blocking flag → `filed` (C15, out of catalogue); otherwise staged or manual. A document that stays on Review keeps its task's old payload (`gate._push_manual` never refreshes an open task), so Review may still show `manufacturer-unresolved`; the card reads the latest validation instead and drops the row. **Row:** `app/revalidate_name.py`; the grouping is `app/unmatched_names.py`.
 
+### Documents need reading again after a model or prompt change (`reextract`)
+
+Invariant 6 says unchanged content is never re-parsed, and it keys on the bytes. After a model or prompt change the reader is no longer the same input, so a file read under the old one can hold a value the new one finds, and nothing else would send it back. The contract already allows for this: PRD v3 C2 freed terminal `extract:<hash>` keys so that re-extracting after a model swap is a normal operation, and the 2026-10-12 ruling "Certificate number on a DoC" (`docs/decisions.md`) asks for a re-read of the T1-read DoCs. `reextract` is that operation: it queues `extract.doc` again for chosen documents. Each re-read **appends** a new `extract_rev` (the old attempts stay), costs real model calls, and runs only with `--apply`. Selectors, combinable:
+
+- `--doc-cert-null`: DoCs whose latest read gave `cert_number` from T1 and left it null (T1 used to be told DoCs carry none).
+- `--dropped-scans`: scans with no text layer and no document, whose latest `extract.doc` result was `not-a-compliance-document`. A scan whose latest job is still active, or dead, has no result and is not counted.
+- `--hashes a,b,c` or `--hashes-file path`: an explicit list of content hashes (one per line, `#` comment lines allowed).
+
+Options: `--limit N` sends only the first N eligible hashes in hash order, which is a fair sample because content hashes are uniform; `--include-published` also re-reads published documents (below).
+
+Run it in the `worker` container. `DENTALIA_EXTRACT_MODE` is set there and nowhere else, and the batch-mode refusal reads the environment of the process the command runs in. A hashes file has to be inside that container too:
+
+```bash
+docker compose exec worker python -m app.cli reextract --doc-cert-null                 # dry run
+docker compose exec worker python -m app.cli reextract --doc-cert-null --apply
+docker compose exec worker python -m app.cli reextract --dropped-scans --limit 40 --apply   # a sample of 40 scans first
+docker compose cp sample.txt worker:/tmp/sample.txt
+docker compose exec worker python -m app.cli reextract --hashes-file /tmp/sample.txt --apply
+```
+
+The dry run prints, per selector, how many hashes it found, how many are eligible (and how many of those are published), and how many it leaves alone, counted by reason: no previous extract job (there is no payload to copy and none is guessed), an `extract.doc` job already active, rejected, superseded, approved by a reviewer, edited by a reviewer (any T3 evidence), reopened by a reviewer, published without `--include-published`, or already chosen by an earlier selector. Then the total to enqueue, how many `--limit` held back, and the first 12 hashes it would send. "Approved by a reviewer" means an `approve`, `bind-manufacturer` or `production-write` audit row by anyone but a machine actor (`gate`, `system`, `ops:*`, `tool:*`); those documents are never re-read, flag or no flag.
+
+The new job carries the payload of the hash's most recent `extract.doc` job (group, source URL, companion file) under the usual key `extract:<hash>`, so a terminal job never blocks it. One field is replaced: when the registry holds the document, its `archive_url` goes in instead of the old job's, because GATE prefers the payload's handle and an old one would undo a re-homed archive (`repair-archive-urls`). The dry run counts these. A hash that the new read still leaves null, or still refuses, stays selected, so a second run reads it again.
+
+**What a re-read does to a published document today.** GATE has no guard for this yet, which is why published documents need `--include-published`. `gate._upsert_document` keeps the status (`production` is sticky) but overwrites `type`, `regulation`, both validity dates, `coverage_scope`, `basic_udi_di`, `cert_number`, `stated_class` and `archive_url` with the new read, whatever the new read's own disposition. `supersedes`, `referenced_doc_id`, `cert_doc_id`, `source_url` and `canonical_manufacturer` keep their stored values when the new read has none. Production and rejected links stay as they are; links the new read proposes on top land `staged` unless the new read itself clears production, and only staged links can be retracted. Evidence is appended for the new `extract_rev`. If the new read comes out `manual`, `gate._push_manual` opens a review task on the published document, and Review never lists it because Review lists only staged documents. A changed `type` or `regulation` is not re-checked against a supersession chain the document already sits in.
+
+**Sync mode only.** In batch mode (`DENTALIA_EXTRACT_MODE=batch`) the command refuses, dry run included: `batch_ref` is keyed `(content_hash, tier)` without a revision, so a resolved row returns the old results and the re-read would change nothing. The same holds for jobs already queued: if the worker is switched to batch while they wait, a hash with a resolved `batch_ref` row gets its old results written again as a new `extract_rev`. The server runs sync. Read the review queue before and after. **Row:** `app/reextract.py`; the mode is read by `batching.extract_mode()`, which the `extract.doc` dispatcher uses too.
+
 ### Komet coverage map (`komet-coverage`)
 
 Komet's compliance bundle ships no parseable per-article REF list on its PDFs, but it ships two indexes of its own — a spreadsheet and a Word table — mapping article numbers to the declaration that covers them. `backfill.scan` archives both alongside every PDF; `komet-coverage` reads the archived copies and links items from them instead of paying an LLM to parse 186 PDFs. Run in order:
