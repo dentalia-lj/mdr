@@ -116,7 +116,7 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | 2 checks, page classes | done: built (Sonnet), reviewed and fixed (Opus), merged | b9cd734 |
 | 3 scans | done: built (Opus), reviewed and fixed (Opus), merged; full suite 4820 passed, 5 skipped; decision 3 ruled by Denis (item identifiers asked on filename-typed scanned DoCs) | merge 0c891c8 |
 | 4 text ladder | building (Opus) | worktree el-text |
-| 5a gate side: combined score, migration, published guard, wording | built (Opus); Opus review: merge after fixes; fixes and Denis's rulings being applied (Opus) | worktree el-gate |
+| 5a gate side: combined score, migration, published guard, wording | built, reviewed, fixed (Opus) bc39e5b + a78bae6, full suite 4910 passed; second Opus review running | worktree el-gate |
 | 5b extraction side: second reads stamp the contract keys | waiting for 4 and 5a | |
 | 6 prompt caching | done: built (Sonnet), reviewed and fixed (Opus), merged; cache hits to confirm on the first real run | merge of bbc461d |
 | 7 re-extract command | done: built (Sonnet), reviewed and fixed (Opus), merged | c39bb77 |
