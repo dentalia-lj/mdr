@@ -586,6 +586,24 @@ docker compose exec worker python -m app.cli revalidate --name "botiss biomateri
 
 It refuses a name that does not resolve to exactly one manufacturer yet (step 2 not done). It sends only documents whose last validation flagged the name, that are staged or filed and that nobody touched: published, rejected, superseded, grouped, reviewer-edited, reopened, never-validated and still-validating documents are left alone and counted. What GATE then does is its usual rule: REFs match and the score clears `gate.high` with no capping flag → production, task closed; no REF matches and the score clears `gate.med` with no blocking flag → `filed` (C15, out of catalogue); otherwise staged or manual. A document that stays on Review keeps its task's old payload (`gate._push_manual` never refreshes an open task), so Review may still show `manufacturer-unresolved`; the card reads the latest validation instead and drops the row. **Row:** `app/revalidate_name.py`; the grouping is `app/unmatched_names.py`.
 
+### Documents need reading again after a model or prompt change (`reextract`)
+
+Invariant 6 says unchanged content is never re-parsed, and it keys on the bytes. After a model or prompt change the reader is no longer the same input, so a file read under the old one can hold a value the new one finds, and nothing else would send it back. `reextract` is the deliberate operator exception: it queues `extract.doc` again for chosen documents. Each re-read **appends** a new `extract_rev` (the old attempts stay), costs real model calls, and runs only with `--apply`. Selectors, combinable:
+
+- `--doc-cert-null`: DoCs whose latest read gave `cert_number` from T1 and left it null (T1 used to be told DoCs carry none).
+- `--dropped-scans`: scans with no text layer and no document, whose latest `extract.doc` result was `not-a-compliance-document`.
+- `--hashes a,b,c` or `--hashes-file path`: an explicit list of content hashes (one per line, `#` comments allowed).
+
+```bash
+docker compose exec worker python -m app.cli reextract --doc-cert-null                 # dry run
+docker compose exec worker python -m app.cli reextract --doc-cert-null --apply
+docker compose exec worker python -m app.cli reextract --hashes-file /tmp/sample.txt --apply   # e.g. a sample of 40 scans first
+```
+
+The dry run prints, per selector, how many it found, how many it would enqueue, and every hash it leaves alone by reason: no previous extract job (there is no payload to copy and none is guessed), an `extract.doc` job already active, rejected, superseded, edited by a reviewer (any T3 evidence), reopened by a reviewer, or already chosen by an earlier selector. Published documents are not excluded: a DoC missing its certificate number is the point. The new job carries the payload of the hash's most recent `extract.doc` job unchanged (group, source URL, companion file), under the usual key `extract:<hash>`, so a terminal job never blocks it.
+
+**Sync mode only.** In batch mode (`DENTALIA_EXTRACT_MODE=batch`) the command refuses, dry run included: `batch_ref` is keyed `(content_hash, tier)` without a revision, so a resolved row returns the old results and the re-read would change nothing. The server runs sync. Read the review queue before and after. **Row:** `app/reextract.py`.
+
 ### Komet coverage map (`komet-coverage`)
 
 Komet's compliance bundle ships no parseable per-article REF list on its PDFs, but it ships two indexes of its own — a spreadsheet and a Word table — mapping article numbers to the declaration that covers them. `backfill.scan` archives both alongside every PDF; `komet-coverage` reads the archived copies and links items from them instead of paying an LLM to parse 186 PDFs. Run in order:

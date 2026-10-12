@@ -21,6 +21,7 @@ from app import (
     repair_archive_urls, repair_document_manufacturer, repair_label_dates,
     repair_mfr_overbind,
     repair_mfr_task_reason, repair_ref_list, repair_stated_class,
+    reextract,
     revalidate_name,
     vendor_master, version,
 )
@@ -1008,6 +1009,41 @@ def cmd_revalidate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_reextract(args: argparse.Namespace) -> int:
+    """Re-enqueue extract.doc for chosen documents after a model or prompt
+    change. Dry run by default; sync mode only."""
+    hashes = None
+    if args.hashes is not None or args.hashes_file is not None:
+        hashes = [h.strip() for h in (args.hashes or "").split(",") if h.strip()]
+        if args.hashes_file:
+            with open(args.hashes_file) as fh:
+                hashes += [ln.strip() for ln in fh if ln.strip() and not ln.startswith("#")]
+    if not (args.doc_cert_null or args.dropped_scans or hashes is not None):
+        print("choose at least one of --doc-cert-null, --dropped-scans, --hashes, "
+              "--hashes-file", file=sys.stderr)
+        return 2
+    reason = reextract.refusal()
+    if reason:
+        print(f"Refused: {reason}.", file=sys.stderr)
+        return 1
+    with db.connect() as conn:
+        plan = reextract.plan(conn, doc_cert_null=args.doc_cert_null,
+                              dropped_scans=args.dropped_scans, hashes=hashes)
+        for line in reextract.render(plan):
+            print(line)
+        if not plan.send:
+            return 0
+        if not args.apply:
+            print(f"Dry run. Nothing queued. Add --apply to queue "
+                  f"{len(plan.send)} extract.doc job(s).")
+            return 0
+        stats = reextract.apply(conn, plan)
+        conn.commit()
+    print(f"queued: {stats['queued']} extract.doc job(s); "
+          f"already queued: {stats['already_queued']}")
+    return 0
+
+
 def cmd_komet_coverage(args: argparse.Namespace) -> int:
     """Link items from a manufacturer's own document index. Dry run by default."""
     with db.connect() as conn:
@@ -1323,6 +1359,20 @@ def build_parser() -> argparse.ArgumentParser:
     rv.add_argument("--name", required=True, help="the printed manufacturer name")
     rv.add_argument("--apply", action="store_true", help="queue; without it, dry run")
     rv.set_defaults(func=cmd_revalidate)
+
+    rx = sub.add_parser(
+        "reextract",
+        help="read chosen documents again after a model or prompt change; sync "
+             "mode only (dry run by default)",
+    )
+    rx.add_argument("--doc-cert-null", action="store_true",
+                    help="DoCs whose certificate number T1 left null")
+    rx.add_argument("--dropped-scans", action="store_true",
+                    help="scans refused as not-a-compliance-document before the gate")
+    rx.add_argument("--hashes", help="comma-separated content hashes")
+    rx.add_argument("--hashes-file", help="file with one content hash per line")
+    rx.add_argument("--apply", action="store_true", help="queue; without it, dry run")
+    rx.set_defaults(func=cmd_reextract)
 
     rmo = sub.add_parser(
         "repair-mfr-overbind",
