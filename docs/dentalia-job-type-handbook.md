@@ -763,11 +763,16 @@ def handle_gate_candidate(job):
     else:
         doc_status = "manual"
 
-    # 2026-10-12: a published document is replaced only by a candidate that is
-    # itself production; anything else writes nothing and reports
-    # published_kept + published_differences on the job result.
-    if db.document.status_by_hash(p["content_hash"]) == "production" and doc_status != "production":
-        return kept_published(...)
+    # 2026-10-12: a published or superseded document is replaced only by a
+    # candidate that is itself production; anything else keeps it, stages its
+    # links (never production, never retracted) and reports kept +
+    # kept_differences. A production candidate that would re-identify a chain
+    # member is kept too (chain_identity_changed), and reviewer-edited fields
+    # are held on every write (reviewer_edits_kept). Row read FOR UPDATE.
+    prev = db.document.get_by_hash_for_update(p["content_hash"])
+    if chain_identity_change(prev, ext) or (prev.status in ("production", "superseded")
+                                            and doc_status != "production"):
+        stage_links(p["links"]); return kept(prev, ext)
 
     with db.tx():                                 # single transaction: claim+write+audit
         doc = db.document.upsert_by_hash(ext, status=

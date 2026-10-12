@@ -114,6 +114,72 @@ def test_calibration_applies_to_each_read_before_combining():
     assert gh._gate_confidence({"type": ev}, "type", calib, MIN) == pytest.approx(0.45)
 
 
+# --------------------------------------------------------------------------- #
+# what evidence stores: one decision with the score, the raw numbers
+# --------------------------------------------------------------------------- #
+STORED = [
+    # id, field, evidence, calibration map, stored confidence
+    ("agreement-stores-the-raw-combination", "type", _agreed("DoC", 0.85, 0.90), {},
+     1 - 0.15 * 0.10),
+    ("no-agreement-stores-own", "type", _ev("DoC", 0.85), {}, 0.85),
+    ("under-the-floor-stores-own", "type", _agreed("DoC", 0.95, 0.60), {}, 0.95),
+    ("citation-proven-regulation-stores-one", "regulation",
+     _ev("MDR", 0.80, proven="citation"), {}, 1.0),
+    ("t0-stores-own", "type", _t0("DoC", 0.85, agreed_model_id="m-second",
+                                  agreed_conf=0.95), {}, 0.85),
+    # F3: whether the agreement counts is the SCORE's decision, on calibrated
+    # numbers (0.9 x 0.5 = 0.45, under the floor), so the row stores the
+    # first read's own raw number, never a combination the score refused.
+    ("the-floor-is-tested-calibrated", "type", _agreed("DoC", 0.90, 0.90),
+     {"m-first": {"*": 0.5}}, 0.90),
+    # ... and when the calibrated numbers do clear it, the RAW pair is combined.
+    ("calibrated-pass-combines-raw", "type", _agreed("DoC", 0.90, 0.90),
+     {"m-first": {"*": 0.9}}, 1 - 0.1 * 0.1),
+]
+
+
+@pytest.mark.parametrize("field,ev,calib,expected", [c[1:] for c in STORED],
+                         ids=[c[0] for c in STORED])
+def test_stored_confidence(field, ev, calib, expected):
+    assert gh._stored_confidence(ev, field, calib, MIN) == pytest.approx(expected)
+
+
+AGREED_COLUMNS = [
+    # id, evidence, (agreed_model_id, agreed_confidence) written
+    ("both-halves-on-a-read", _agreed("DoC", 0.95, 0.60), ("m-second", 0.60)),
+    ("conf-without-model", _ev("DoC", 0.9, agreed_conf=0.95), (None, None)),
+    ("model-without-conf", _ev("DoC", 0.9, agreed_model_id="m-second"), (None, None)),
+    ("unparseable-conf", _ev("DoC", 0.9, agreed_model_id="m-second", agreed_conf="0.9"),
+     (None, None)),
+    ("t0-row", _t0("DoC", 0.9, agreed_model_id="m-second", agreed_conf=0.95), (None, None)),
+]
+
+
+@pytest.mark.parametrize("ev,expected", [c[1:] for c in AGREED_COLUMNS],
+                         ids=[c[0] for c in AGREED_COLUMNS])
+def test_the_agreed_columns_need_both_halves_on_a_model_read(ev, expected):
+    """F4: migration 071 and the schema sketch say T0, T3 and single-read rows
+    hold NULL. Half a pair, or a pair on a row no model read, is not an
+    agreeing read."""
+    assert gh._agreed_columns(ev) == expected
+
+
+@pytest.mark.parametrize("conf", ["0.97", "sure", True, None])
+def test_a_confidence_that_is_not_a_number_is_incomplete_evidence(conf):
+    """F6: a numeric string is not a number either. Accepting one in the score
+    while the evidence insert passes it through as text is how a malformed
+    record could score as if it were well formed."""
+    fields = {"type": _ev("DoC", conf), "regulation": _ev("MDR"),
+              "coverage_scope": _ev("group")}
+    with pytest.raises(ValueError, match="evidence incomplete"):
+        gh._require_complete_evidence(fields)
+
+
+def test_an_integer_confidence_is_a_number():
+    fields = {"type": _ev("DoC", 1), "regulation": _ev("MDR"), "coverage_scope": _ev("group")}
+    assert gh._require_complete_evidence(fields) == []
+
+
 def test_the_own_reader_never_sees_the_agreement():
     """`_field_confidence` is the one-field reader for the guards; it must stay
     the first read's own number even when a second read agreed."""
@@ -214,14 +280,14 @@ def test_an_agreement_under_the_floor_is_recorded_but_not_combined(conn):
     assert float(ev["agreed_confidence"]) == pytest.approx(0.60)
 
 
-def test_a_citation_proven_regulation_stores_its_own_confidence(conn):
-    """The stored number is the model's own, or two agreeing reads combined
-    (the page note says exactly that). The citation proof is GATE's reading of
-    the extraction record, not a number any read stated."""
+def test_a_citation_proven_regulation_stores_the_one_it_scored(conn):
+    """R3 (Denis, 2026-10-12): the stored number is the one GATE scored, so the
+    row explains the disposition. The page note says a 1.0 can come from the
+    printed citation."""
     ch = "agree-evidence-citation"
     _seed(conn, ch, _fields(conf=0.95, regulation=_ev("MDR", 0.80, proven="citation")))
     r = gh.handle_gate_candidate(conn, _job(ch, ref_gate=True, flags=[], links=[]))
-    assert float(_evidence(conn, r["doc_id"])["regulation"]["confidence"]) == pytest.approx(0.80)
+    assert float(_evidence(conn, r["doc_id"])["regulation"]["confidence"]) == pytest.approx(1.0)
 
 
 def test_t0_evidence_is_stored_as_read(conn):
@@ -231,7 +297,8 @@ def test_t0_evidence_is_stored_as_read(conn):
     r = gh.handle_gate_candidate(conn, _job(ch, ref_gate=True, flags=[], links=[]))
     ev = _evidence(conn, r["doc_id"])["type"]
     assert float(ev["confidence"]) == pytest.approx(0.85)
-    assert ev["agreed_model_id"] == "m-second"         # recorded as read, never combined
+    # F4: no model read this row, so it names no agreeing read (migration 071)
+    assert ev["agreed_model_id"] is None and ev["agreed_confidence"] is None
 
 
 def test_a_human_edit_names_no_agreeing_read(conn):

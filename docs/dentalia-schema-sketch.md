@@ -10,7 +10,7 @@ Each table is annotated with the **queue tags** (job types) that write it / read
 
 **Sync 2026-07-24 (drift-check; migrations 010–013):** `report.weekly` tag (013) · `extraction_cost` + `extraction_spend` view (010, §4) · `item_mirror.mirror_rev` sequence default (011) · `scheduler_run` restart-safety ledger (013, §5c) · dedupe-key extensions beyond the PRD table (§1 note) · C5 CHECK is live in 005, no longer just intent.
 
-**Sync 2026-10-12 (migration 071):** `evidence.agreed_model_id` / `evidence.agreed_confidence`, nullable: the second read that agreed on a field's value and its own confidence; `evidence.confidence` then stores the two combined (§5 evidence table). No grant: 007's table-level SELECT covers new columns, and `dentalia_api` keeps zero write grant on `evidence`.
+**Sync 2026-10-12 (migration 071):** `evidence.agreed_model_id` / `evidence.agreed_confidence`, nullable: the second read that agreed on a field's value and its own confidence; `evidence.confidence` then stores the two combined, or 1.0 for a citation-proven regulation (§5 evidence table). No grant: 007's table-level SELECT covers new columns, and `dentalia_api` keeps zero write grant on `evidence`.
 
 **Sync 2026-09-15 (migration 069):** `email_draft.kind` gains `review-confirm` — a fifth letter, asking whether a declaration past Dentalia's own five-year review horizon (`document_effective_expiry.basis='staleness'`) is still current. Never a renewal demand: these documents have not expired, and a class I declaration has no certificate, so this horizon is the only trigger it will ever produce. Vocabulary only; nothing sends.
 
@@ -671,11 +671,14 @@ CREATE TABLE evidence (
   agreed_model_id   text,                     -- 071: the read that agreed with this
   agreed_confidence numeric                   -- one on the same value, and its own raw
                                               -- confidence. `model_id`/`verbatim`/`page`
-                                              -- stay the first read's; `confidence` then
-                                              -- holds 1-(1-c1)(1-c2), uncalibrated, when
-                                              -- both are >= gate.agreement_min. NULL on
-                                              -- T0, T3 and single-read rows (PRD v3 §5,
-                                              -- §7, amended 2026-10-12)
+                                              -- stay the first read's. `confidence` is
+                                              -- what GATE scored, uncalibrated: the raw
+                                              -- 1-(1-c1)(1-c2) when the agreement counted
+                                              -- (both >= gate.agreement_min calibrated),
+                                              -- 1.0 for a citation-proven regulation,
+                                              -- else the read's own. NULL on T0, T3 and
+                                              -- single-read rows (PRD v3 §5, §7,
+                                              -- amended 2026-10-12)
 );
 
 -- append-only; no UPDATE/DELETE grants

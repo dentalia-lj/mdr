@@ -140,7 +140,9 @@ one well-formed value, each at least this sure, settle the field without
 Sonnet. GATE (`gate._agreed_confidence`, extraction-ladder plan Task 5): a
 required field two reads agreed on counts `1 - (1 - c1)(1 - c2)` in the score
 only when both calibrated numbers are at least this, and `evidence.confidence`
-stores that combination under the same test on the raw numbers. Blast radius:
+stores the raw combination when it counted. The confidence note under both
+evidence tables and on `/api-reference` quotes this value, read at web
+start-up. Blast radius:
 lower lets two weak cheap reads settle a scan field Sonnet would have read,
 and lets two weak reads combine past `gate.high` and publish a document and
 its trusted links without a person (0.6 + 0.85 combines to 0.94, the case the

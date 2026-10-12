@@ -30,7 +30,7 @@ documents nobody approved are left alone too unless `include_published` is
 set: re-reading one is a decision, not a default. Since 2026-10-12 GATE
 replaces a published document only with a read that itself reaches production
 and otherwise keeps it as it was, counting the fields the read saw differently
-(`gate._kept_published`).
+(`gate._kept`).
 Also left alone: a hash with an `extract.doc` job already active, and one with
 no earlier `extract.doc` job (there is no payload to copy and none is guessed).
 Every exclusion is counted by reason, per selector.

@@ -150,35 +150,36 @@ the full evaluation order). Two outcomes matter most:
 
 **7. `gate.candidate` — the only place the registry gets written (besides
 `gate.apply`).**
-A stale extraction revision is a silent no-op, decided before any read or
-write (`app/handlers/gate.py:915-929`) — prevents an old rev's stale field
+A stale extraction revision is a silent no-op on both routes, decided before
+any read or write (`app/handlers/gate.py:1381-1383`, and `:1172-1174` on the
+manufacturer-binding route since 2026-10-12) — prevents an old rev's stale field
 from re-triggering a permanent dead-letter loop. Otherwise, two dispositions
 run in parallel:
    - **Document-level**, a 5-way if/elif chain checked in this priority
-     order (`app/handlers/gate.py:980-994`): the narrow **auto-supersede
+     order (`app/handlers/gate.py:1448-1462`): the narrow **auto-supersede
      fast path** → `superseded` directly, skipping every disposition below
      it, when all four hold — `superseded_by_doc_id` present, no *other*
      blocking flag survives, `date-insane` absent, and `validity_from`'s
      own calibrated confidence clears `cfg.gate.high`
-     (`app/handlers/gate.py:945-979`) — then `production` (score/ref_gate/no
+     (`app/handlers/gate.py:1412-1447`) — then `production` (score/ref_gate/no
      blocking flags clear high), then `filed` (C15: correctly read,
      correctly attributed, covers nothing we sell), then `staged`, else
      `manual`. Any guard failure on the fast path falls through to the
      ordinary chain, where
      `older-than-current` (still in `BLOCKING_FLAGS`,
-     `app/handlers/gate.py:65-66`) forces `manual` — **never** production,
+     `app/handlers/gate.py:75-76`) forces `manual` — **never** production,
      never a silent downgrade (invariant 4). Tests:
      `test_auto_superseded_candidate_files_without_a_manual_task`
-     (`tests/test_gate_candidate_handler.py:1487`),
-     `test_auto_superseded_still_blocked_by_no_item_identifier` (`:1549`),
-     `test_auto_supersede_never_stamps_a_production_document` (`:1774`).
+     (`tests/test_gate_candidate_handler.py:1490`),
+     `test_auto_superseded_still_blocked_by_no_item_identifier` (`:1552`),
+     `test_auto_supersede_never_stamps_a_production_document` (`:1777`).
    - **Link-level, independently**, each by its own `match_basis`:
      `name-family`/`fetch-context`/`ref-catalogue` cap at `staged`
-     *structurally* — `TRUSTED_BASES` (`app/handlers/gate.py:47`) plus a DB
+     *structurally* — `TRUSTED_BASES` (`app/handlers/gate.py:54`) plus a DB
      CHECK (migrations 005, 021) — no approval ever lifts them; only a C17
      human link decision can.
    - **The mfr-binding route** (`_handle_mfr_binding`,
-     `app/handlers/gate.py:743-908`) resolves the document's manufacturer
+     `app/handlers/gate.py:1134-1349`) resolves the document's manufacturer
      string against the curated canonical table and takes one of three
      paths: exactly one canonical + at least one MD-flagged item →
      `production`, linked to every MD item under every BC code of that
@@ -197,13 +198,22 @@ run in parallel:
      citation-proven `regulation` counts 1.0; T0 keeps its number
      (`gate._gate_confidence`). The auto-bind's scope and name checks and
      the fast path's `validity_from` keep the first read's own number.
-   - **A published document read again** (2026-10-12): when the document is
-     already `production` and the new candidate does not itself reach
-     production, on either route, GATE writes nothing at all (fields,
-     evidence, links, task and chain pointer stay as they were), and the job
-     result says `published_kept` and counts the fields the read saw
-     differently (`gate._kept_published`). Checked after the stale-rev no-op
-     and before the first write.
+   - **A published or superseded document read again** (2026-10-12): when
+     the document is `production` or `superseded` and the new candidate does
+     not itself reach production, on either route, GATE keeps it (fields,
+     evidence, status, task and chain pointer stay as they were) and still
+     upserts the candidate's links at `staged` only, never retracting one
+     (`gate._kept`, `app/handlers/gate.py:1489`). The job result says `kept`
+     and counts the fields the read saw differently. On both routes this is
+     decided after the stale-rev no-op and before the first write, on a
+     document row read `FOR UPDATE`.
+   - **Three holds on a production re-read** (2026-10-12): it goes to
+     `manual` and is kept if it would change `type`, `regulation` or
+     `coverage_scope` of a document in a supersession chain
+     (`chain_identity_changed`, invariant 5); a field a reviewer edited (T3
+     evidence) keeps its column and evidence (`reviewer_edits_kept`,
+     invariant 2); and the row lock above stops a decision committing
+     between the status read and the write from being overwritten.
 
 **8. Visible on a product.** A `production` document is now servable:
 `/item/{item_ref}?k=` (the BC hyperlink target, `docs/runbook.md`'s Web UI
