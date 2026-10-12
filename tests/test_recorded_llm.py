@@ -44,3 +44,34 @@ def test_fill_missing_produces_wellformed_evidence(fixture_pdf):
     ev = out["cert_number"]
     assert_extractor_evidence(ev, expected_tier="T1", llm=True)
     assert ev["conf"] == 0.97
+
+
+# --- ladder labels (plan 2026-10-12): the label keys the recording, the read's
+# kind stamps the evidence tier, exactly as AnthropicLlm does. -----------------
+
+SCAN = "DENSTPLY/IMP - DOC - ATIS TX SURGICAL INSTRUMENTS - DEC-00101190.pdf"
+
+
+def test_a_ladder_label_is_its_own_key_and_stamps_the_evidence_tier(fixture_pdf):
+    from tests.fixtures.llm import hash_file
+
+    path = fixture_pdf(EMAX)
+    llm = RecordedLlm()
+    llm.register(hash_file(path), "T2-first",
+                 {"type": {"value": "DoC", "conf": 0.9, "verbatim": "x", "page": 1}},
+                 model_id="haiku-5.5")
+
+    ev = llm.extract("T2-first", None, path, ["type"])["type"]
+
+    assert_extractor_evidence(ev, expected_tier="T2", llm=True)
+    assert ev["model_id"] == "haiku-5.5"
+    assert llm.extract("T2", None, path, ["type"]) == {}   # a different key
+
+
+def test_a_second_text_read_reads_nothing_off_a_scan(fixture_pdf):
+    """Same rule as T1: the text kind sees no text on a scanned page."""
+    from app.extract import pdf as pdfutil
+
+    path = fixture_pdf(SCAN)
+    llm = RecordedLlm.from_dir(fill_missing=True)
+    assert llm.extract("T1-second", pdfutil.open_doc(path), path, ["regulation"]) == {}

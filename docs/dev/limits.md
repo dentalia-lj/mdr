@@ -34,18 +34,25 @@ delete the row.
 |---|---|
 | `fetch.robots_ttl_hours` | `app/robots.py::check` is wired since 2026-09-03 — called from the crawl rung (`app/handlers/discover.py:491`) and the probe (`app/handlers/playbook_probe.py:136`) — and neither of those passes `ttl_hours`, so for them the cache uses `robots.py`'s own 24-hour default. Since 2026-09-11 `fetch.url` consults it too and does pass the key (`app/handlers/fetch.py`), so the key now configures FETCH's reads and nothing else; the `refused_host` list remains the operator ruling that survives a permissive robots.txt |
 | Five scheduler features | Default off: the email discovery rung, expiry emails, failure re-onboarding, mailbox polling (switched on in production since 2026-10-06), the EUDAMED certificate register. See [config-reference.md](config-reference.md#scheduler) |
+| The extraction ladder's newer read steps | Since 2026-10-12 `app/extract/llm.py` `READ_STEPS` holds seven labels, and the live ladder sends three: `doc-class`, `T1`, `T2`. `doc-class-image`, `T1-second`, `T2-first` and `T2-second` are resolvable and tested, and nothing sends them; so `models.vision_first`, `models.second_read`, `extract.image_settle` and `gate.agreement_min` change nothing yet. Extraction-ladder plan Tasks 3-5 wire them. An explicit page list for an image read works on the sync path only: `AnthropicBatchClient.build_requests` refuses one, because `batch_ref` does not store the pages sent and the cited image index could not be translated back on a later poll. Delete this row when the ladder sends the new labels and `batch_ref` keeps the page list |
 
 ## Looks configurable, is not
 
-Nine config keys have no effect. Full detail and the two distinct failure modes
-in [config-reference.md](config-reference.md#keys-that-do-nothing).
+Nine config keys have no effect (counted 2026-10-12): four never read
+(`email.send_policy`, `mfr_binding.auto_link`, `mfr_binding.per_manufacturer`,
+`scheduler.failure_monitor_interval_hours`), two added for the extraction
+ladder and not wired yet (`extract.image_settle`, `gate.agreement_min`), two
+read only by ladder steps nothing sends yet (`models.vision_first`,
+`models.second_read`), and `queue.max_attempts`, shadowed. Full detail and the
+failure modes in [config-reference.md](config-reference.md#keys-that-do-nothing).
 
-The one worth repeating here: **all four `queue.*` keys are shadowed.**
-`app/queue.py` declares parameters with the same names and the same defaults, and
-no caller passes the config section in. Setting `QUEUE_MAX_ATTEMPTS` or any
-`QUEUE_*` variable changes nothing. It has never produced a visible bug because
-the numbers happen to match — it would surface during an incident, which is the
-worst time to discover it.
+The one worth repeating here: **`queue.max_attempts` is shadowed.**
+`queue.enqueue` declares `max_attempts=5`, the same default, and no caller
+passes the config value in, so setting `QUEUE_MAX_ATTEMPTS` changes nothing. It
+has never produced a visible bug because the numbers happen to match; it would
+surface during an incident, which is the worst time to discover it. The other
+three `queue.*` keys reach the queue since 2026-09-04 (`run_forever` passes
+`cfg.queue` to `run_once`, `app/workers/runner.py`).
 
 **Alerting reaches exactly one place.** `app/alerts.py` POSTs to
 `alerts.webhook_url` when a job dead-letters, and nothing else calls it. There is

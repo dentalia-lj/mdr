@@ -2783,6 +2783,7 @@ tbody tr:last-child td{border-bottom:0}
 <p>Ploščica <strong>30d of €…</strong> prikazuje znesek, porabljen v zadnjih 30 dneh, glede na mesečno omejitev. Zavihek <strong>Spend</strong> doda še drugo številko: skupno porabo doslej, glede na ločeno, celokupno omejitev.</p>
 <p><strong>Nobena od omejitev ničesar samodejno ne ustavi.</strong> Prekoračitev katerekoli od njiju sistema ne ustavi pri delu. To je številka, ki jo velja opaziti in omeniti razvijalcu, ne alarm.</p>
 <p>Če zavihek prikaže opombo, da nekaterim klicem ni zabeležena cena, gre za vrzel v lastnem knjigovodstvu sistema — razvijalčev problem, ne vaš.</p>
+<p>Pod številkama razpredelnica razdeli porabo po modelu, po vrsti branja (<strong>Tier</strong>) in po tem, ali je šlo po cenejši, počasnejši skupinski poti (<strong>Batch</strong>). Šteje branja vsake datoteke, katere branje se je končalo. Če je branje plačano, opravilo pa nato spodleti, ta strošek ni zabeležen in štejejo se branja ponovnega poskusa, zato je dejanski račun lahko nekoliko višji od razpredelnice.</p>
 <hr>
 <h2 id="pages/status--kaj-lahko-gre-narobe">Kaj lahko gre narobe</h2>
 <div class="tw"><table><thead><tr>
@@ -2875,6 +2876,10 @@ tbody tr:last-child td{border-bottom:0}
 <tr>
 <td><strong>unpriced calls (pricing gap)</strong></td>
 <td>Poraba, ki ji sistem ni znal določiti cene. Vrzel v knjigovodstvu, ne strošek, ki bi ga dolgovali</td>
+</tr>
+<tr>
+<td><strong>Tier</strong> v zavihku Spend: <code>doc-class</code>, <code>T1</code>, <code>T2</code></td>
+<td>Katero branje je plačala vrstica stroškov: <code>doc-class</code> je hitro preverjanje, kaj datoteka je, <code>T1</code> prebere besedilo dokumenta, <code>T2</code> njegove slike strani. Imena, kot je <code>T2-first</code>, se pojavijo, ko bodo vklopljeni novi koraki branja. Od 12. oktobra 2026 ima hitro preverjanje svojo vrstico; prej je bilo vpisano pod <code>T1</code> in pri datotekah, za katere je sistem moral vprašati, je eno od obeh branj izpadlo iz seštevkov</td>
 </tr>
 </tbody></table></div>
 <hr>

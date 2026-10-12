@@ -108,6 +108,33 @@ def test_extract_doc_end_to_end(conn, fixture_pdf):
     assert v["dedupe_key"] == "validate:sha-iso-1:1:42"
 
 
+class _NullingLlm(StubLlm):
+    """As StubLlm, plus the running total `AnthropicLlm` keeps of cites it had
+    to null (an image read citing an image it was not sent)."""
+
+    cited_pages_nulled = 2
+
+
+def test_a_nulled_cite_is_counted_on_the_job_result(conn, fixture_pdf):
+    """`llm._cited_pages` nulls a cite outside the images sent. Never silent: the
+    total rides the job result's counts."""
+    job = {"payload": {"archive_url": fixture_pdf(ISO_CERT),
+                       "content_hash": "sha-nulled-cite", "group_id": 1}}
+
+    result = eh.handle_extract_doc(conn, job, llm=_NullingLlm())
+
+    assert result["counts"] == {"cited_page_outside_images": 2}
+
+
+def test_no_nulled_cite_leaves_the_job_result_as_it_was(conn, fixture_pdf):
+    job = {"payload": {"archive_url": fixture_pdf(ISO_CERT),
+                       "content_hash": "sha-no-nulled-cite", "group_id": 1}}
+
+    result = eh.handle_extract_doc(conn, job, llm=StubLlm())
+
+    assert "counts" not in result
+
+
 def test_extract_opens_the_archived_pdf_once(conn, fixture_pdf, monkeypatch):
     """One execution, one open. The sidecar text capture and the tier ladder
     both need the same document, and it is the same immutable archived file for

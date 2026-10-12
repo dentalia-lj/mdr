@@ -23,7 +23,7 @@ never clobber a real handler.
 | `resolve.group` | `handlers/resolve.py:278` | `discover.group` | `test_resolve_handler.py` |
 | `discover.group` | `handlers/discover.py:908` | `fetch.url` ×k, `email.request`, `validate.doc` | `test_discover_handler.py` |
 | `fetch.url` | `handlers/fetch.py:145` | `extract.doc` or `validate.doc`, **or nothing** when the body is not a document | `test_fetch_handler.py` |
-| `extract.doc` | `handlers/extract.py:278` | `validate.doc`, **or nothing** when the doc-class call answers `not-a-compliance-document` | `test_extract_handler.py`, `test_extract_cost.py`, `test_doc_class_gate.py` |
+| `extract.doc` | `handlers/extract.py:296` | `validate.doc`, **or nothing** when the doc-class call answers `not-a-compliance-document` | `test_extract_handler.py`, `test_extract_cost.py`, `test_doc_class_gate.py` |
 | `validate.doc` | `handlers/validate.py:780` | `gate.candidate` | `test_validate_handler.py` |
 | `gate.candidate` | `handlers/gate.py:1002` | nothing (terminal) | `test_gate_candidate_handler.py` |
 | `gate.apply` | `handlers/gate.py:1525` | `discover.group` on reject | `test_gate_apply_handler.py` |
@@ -93,8 +93,10 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 - consumes: `content_hash`, `archive_url`, `group_id?`, `companion_archive_url?`
 - writes: `extraction_attempt`, `extraction_cost`, `document_text`, `batch_ref`
 - emits: `validate.doc`, `validate:{hash}:{rev}:{group_id}`
-- fails how: an unopenable PDF is a counted, non-raising result and emits nothing. Batch mode self-defers per tier until the Anthropic batch is done
+- fails how: an unopenable PDF is a counted, non-raising result and emits nothing. Batch mode self-defers per tier until the Anthropic batch is done. A read label sent twice in one extraction raises `ValueError` before anything is written (the cost ledger keeps one row per label)
 - note: batch state lives in `batch_ref`, never in the payload (invariant 9)
+- note: one `extraction_cost` row per paid call, its `tier` the read's label (`doc-class`, `T1`, `T2`, ...; `llm.READ_STEPS`). Since 2026-10-12: before, the doc-class call and the T1 read both wrote `T1` and the ledger's unique key dropped one of them. `batch_ref.tier` holds the same label
+- note: `counts.cited_page_outside_images` on the result (sync path, absent when zero): cites an image read with an explicit page list made to an image it was not sent; the page is stored as null (`llm._cited_pages`)
 
 ### `validate.doc`
 - consumes: `content_hash`, `extract_rev`, `group_id?`, `archive_url?`

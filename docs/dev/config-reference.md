@@ -38,6 +38,7 @@ adapter that raises.
 | `ingest.process_md_unknown` | `False` silently drops rows with a blank device class — possibly medical devices — out of the pipeline |
 | `email.zip_*` | Zip-bomb guards. Raising any of them re-opens a measured 42 KB → 4.5 GB expansion |
 | `models.t1` / `models.t2` | A tier swap requires the Phase 0 diff protocol to be re-run |
+| `models.vision_first` / `models.second_read` | Same rule once the extraction ladder's Tasks 3-5 wire them (plan 2026-10-12). Today no live read uses either |
 | `adapters.storage` | `"gdrive"` makes every archive write raise until gap G7 lands |
 | `storage.local_root` | A relative path means archived files are lost on container restart |
 | `budget.*` | **Displayed, never enforced.** `sweep_cap_eur` and `monthly_cap_eur` appear only in the status board's display dict. No code in `app/` stops or throttles anything when spend passes either. They read like safety valves and are labels |
@@ -68,10 +69,11 @@ Full list, the placement rule, and the implementation traps:
 
 ### Keys that do nothing
 
-Two kinds. The second kind is the dangerous one.
+Two kinds, and a pair of keys read only by steps nothing sends yet. The second
+kind is the dangerous one.
 
 **Never referenced anywhere.** The identifier does not appear in `app/`, `web/`
-or `tools/` at all.
+or `tools/` at all (outside `app/config.py`, which loads it).
 
 | Key | Env var | Note |
 |---|---|---|
@@ -80,6 +82,16 @@ or `tools/` at all.
 | `mfr_binding.per_manufacturer` | *(TOML only)* | — |
 | `fetch.robots_ttl_hours` | `FETCH_ROBOTS_TTL_HOURS` | read by `fetch.url` only (since 2026-09-11): how long a host's robots.txt answer is reused before FETCH asks again. The crawl rung and the probe (`discover.py`, `playbook_probe.py`) still pass nothing and get the module's own `24`. Blast radius: longer means a host that tightens its robots.txt is obeyed later; a transport failure is cached 5 minutes regardless |
 | `scheduler.failure_monitor_interval_hours` | `SCHEDULER_FAILURE_MONITOR_INTERVAL_HOURS` | The tick runs daily regardless |
+| `extract.image_settle` | `EXTRACT_IMAGE_SETTLE` | **Not yet wired** (2026-10-12). Plan Task 3 reads it |
+| `gate.agreement_min` | `GATE_AGREEMENT_MIN` | **Not yet wired** (2026-10-12). Plan Tasks 3 and 5 read it |
+
+**Read, but only by steps nothing sends yet.** `models.vision_first` and
+`models.second_read` (`MODELS_VISION_FIRST`, `MODELS_SECOND_READ`, 2026-10-12)
+are read: `app/extract/llm.py` `READ_STEPS` names them for the labels
+`doc-class-image`, `T2-first`, `T1-second` and `T2-second`, and `resolve_read`
+looks them up. No live ladder step sends any of those labels, so changing
+either key changes nothing today. Extraction-ladder plan Tasks 3-5 wire them;
+see [limits.md](limits.md#built-but-not-wired).
 
 **Shadowed by an identical function default.** The name exists in the code, so a
 casual grep looks reassuring — but the config value never reaches it.
@@ -120,9 +132,20 @@ name shown, unless noted.
 |---|---|---|---|
 | `gate.high` | float | `0.92` | `GATE_THRESHOLD_HIGH` |
 | `gate.med` | float | `0.75` | `GATE_THRESHOLD_MED` |
+| `gate.agreement_min` | float | `0.70` | `GATE_AGREEMENT_MIN` |
 
 TOML paths are `gate.threshold_high` / `gate.threshold_med` — the only section
-whose TOML names differ from its field names.
+whose TOML names differ from its field names. `gate.agreement_min` is
+`gate.agreement_min` in TOML too.
+
+`agreement_min` (rulings of 2026-10-12) is the confidence each of two agreeing
+reads must state before their agreement counts: for GATE's combined score
+`1 - (1 - c1)(1 - c2)`, and for a scan field settled by two cheap image reads.
+It sits under `gate` because PRD v3 § 11 names it `gate.agreement_min` and GATE
+is where the combined number is used; the plan's Task 1 had put it under
+`extract`. Not read by anything yet. Blast radius once wired: lower lets two
+weak reads combine past `gate.high` and publish without a person; higher sends
+more agreeing reads to review and more scan fields to Sonnet.
 
 Not to be confused with the extraction escalation threshold, which is a hardcoded
 `0.95` parameter of `tiers.run_extraction` and is not config at all.
@@ -175,9 +198,40 @@ Not to be confused with the extraction escalation threshold, which is a hardcode
 | `models.t2` | str | `claude-sonnet-5-5` | `MODELS_T2` |
 | `models.rank` | str | `claude-haiku-4-5` | `MODELS_RANK` |
 | `models.email_summary` | str | `claude-haiku-4-5` | `MODELS_EMAIL_SUMMARY` |
+| `models.vision_first` | str | `claude-haiku-5-5` | `MODELS_VISION_FIRST` |
+| `models.second_read` | str | `claude-haiku-5-5` | `MODELS_SECOND_READ` |
 
 `email_summary` is its own key so a tier swap cannot drag it along with `rank`.
 Invariant 12 caps it at the cheap tier.
+
+`vision_first` and `second_read` (2026-10-12) name the models of the extraction
+ladder's newer read steps, `app/extract/llm.py` `READ_STEPS`: `vision_first`
+serves `T2-first` (the cheap image read before Sonnet) and `doc-class-image`
+(the scan doc-class call); `second_read` serves `T1-second` and `T2-second`,
+both sent with thinking off. No live step sends any of these yet, so neither
+key changes anything today. Blast radius once wired: every scan and most text
+documents take a `vision_first` read, so pointing it at a Sonnet-class model
+multiplies the image-read bill roughly twentyfold (Haiku 5.5 $0.10 / $0.50 per
+MTok against Sonnet 5.5's $2 / $10); `second_read` decides the agreement that
+settles gate fields, so a model swap there needs the eval re-run.
+
+None of the `models.*` keys is in any compose service's `environment:` block,
+so on a deployed stack every one of them runs on its code default (see "Keys
+that cannot be set on a deployed stack").
+
+### `extract`: the extraction ladder
+
+| Key | Type | Default | Env var |
+|---|---|---|---|
+| `extract.image_settle` | float | `0.85` | `EXTRACT_IMAGE_SETTLE` |
+
+On a scan, a field the cheap image read (`T2-first`) states at or above this
+confidence is settled and goes no further. 0.85 is the measured setting
+(`tools/ladder_probe.py`). Not read by anything yet (plan Task 3). Blast radius
+once wired: lower lets a less certain cheap read stand on a scan; higher sends
+more scan fields to the second read and to Sonnet. `EXTRACT_MODE` is a
+different thing: a compose variable that becomes `DENTALIA_EXTRACT_MODE`, the
+sync / batch transport switch, and is not part of this section.
 
 ### `batch` and `fetch`
 

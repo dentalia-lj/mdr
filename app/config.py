@@ -28,6 +28,7 @@ __all__ = [
     "Discovery",
     "Adapters",
     "Models",
+    "Extract",
     "Batch",
     "Fetch",
     "Budget",
@@ -65,10 +66,20 @@ class GateThresholds:
     makes a change here wider than it looks: `coverage_scope` confidence, the
     supersession fast path's `validity_from`, the document-level production
     disposition, and per-link production. `med` is untouched.
+
+    `agreement_min` (PRD §11 and Denis's rulings of 2026-10-12): the confidence
+    EACH of two agreeing reads must state before their agreement counts -- for
+    GATE's combined score `1 - (1 - c1)(1 - c2)`, and for a scan field settled
+    by two cheap image reads. Read by nothing yet (extraction-ladder plan, Task
+    1 is plumbing; Tasks 3 and 5 wire it). It lives here, not under `extract`,
+    because the PRD names it `gate.agreement_min` and GATE is where the
+    combined number is used; one key keeps the scan rule and the score on the
+    same floor.
     """
 
     high: float = 0.92
     med: float = 0.75
+    agreement_min: float = 0.70
 
 
 @dataclass(frozen=True)
@@ -228,7 +239,8 @@ class Storage:
 
 @dataclass(frozen=True)
 class Models:
-    """models.t1 / models.t2 / models.rank / models.email_summary"""
+    """models.t1 / models.t2 / models.rank / models.email_summary /
+    models.vision_first / models.second_read"""
 
     t1: str = "claude-haiku-4-5"
     t2: str = "claude-sonnet-5-5"
@@ -238,6 +250,27 @@ class Models:
     # reusing `rank`: the two would otherwise move together in a tier swap that
     # only one of them was diffed for.
     email_summary: str = "claude-haiku-4-5"
+    # The extraction ladder of 2026-10-12 (plan "Read steps and their labels",
+    # `app.extract.llm.READ_STEPS`): `vision_first` is the cheap image read
+    # before Sonnet (`T2-first`, and the scan doc-class call); `second_read` is
+    # the agreement read, thinking off (`T1-second`, `T2-second`). Separate keys
+    # from `t1` so a swap of one is diffed on its own. Read by no live step yet.
+    vision_first: str = "claude-haiku-5-5"
+    second_read: str = "claude-haiku-5-5"
+
+
+@dataclass(frozen=True)
+class Extract:
+    """extract.image_settle (PRD §11, 2026-10-12). Not wired yet: Task 3 of the
+    extraction-ladder plan reads it.
+
+    `image_settle`: on a scan, a field the cheap image read (`T2-first`) states
+    at or above this confidence is settled and goes no further up the ladder.
+    0.85 is the measured setting (`tools/ladder_probe.py` HAIKU_IMAGE_SETTLE).
+    Raising it sends more scan fields to the second read and to Sonnet; lowering
+    it lets a less certain cheap read stand."""
+
+    image_settle: float = 0.85
 
 
 @dataclass(frozen=True)
@@ -683,6 +716,7 @@ class Config:
     adapters: Adapters
     storage: Storage
     models: Models
+    extract: Extract
     batch: Batch
     fetch: Fetch
     budget: Budget
@@ -789,6 +823,8 @@ def load_config() -> Config:
                     GateThresholds.high),
         med=_float("GATE_THRESHOLD_MED", _dig(t, "gate", "threshold_med"),
                    GateThresholds.med),
+        agreement_min=_float("GATE_AGREEMENT_MIN", _dig(t, "gate", "agreement_min"),
+                             GateThresholds.agreement_min),
     )
 
     resolve = ResolveThresholds(
@@ -881,6 +917,21 @@ def load_config() -> Config:
         email_summary=_str(
             "MODELS_EMAIL_SUMMARY", _dig(t, "models", "email_summary"),
             Models.email_summary,
+        ),
+        vision_first=_str(
+            "MODELS_VISION_FIRST", _dig(t, "models", "vision_first"),
+            Models.vision_first,
+        ),
+        second_read=_str(
+            "MODELS_SECOND_READ", _dig(t, "models", "second_read"),
+            Models.second_read,
+        ),
+    )
+
+    extract = Extract(
+        image_settle=_float(
+            "EXTRACT_IMAGE_SETTLE", _dig(t, "extract", "image_settle"),
+            Extract.image_settle,
         ),
     )
 
@@ -1222,6 +1273,7 @@ def load_config() -> Config:
         adapters=adapters,
         storage=storage,
         models=models,
+        extract=extract,
         batch=batch,
         fetch=fetch,
         budget=budget,

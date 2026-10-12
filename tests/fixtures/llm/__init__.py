@@ -8,7 +8,10 @@ are deterministic and need no API key.
 
 Responses are keyed by ``(content_hash, tier)`` where ``content_hash`` is the
 sha256 of the file at ``filename`` — the same digest the pipeline uses — so a
-recorded answer follows its fixture. Every ``extract`` call is recorded in
+recorded answer follows its fixture. ``tier`` is the read step's label
+(``app.extract.llm.READ_STEPS``: ``T1``, ``T2``, ``T2-first``, ...), and the
+evidence it returns is stamped with the read's evidence tier (``T1`` for a text
+read, ``T2`` for an image read), as ``AnthropicLlm`` stamps it. Every ``extract`` call is recorded in
 ``.calls`` for escalation assertions (only-missing-fields-are-asked).
 
 ``fill_missing=True`` returns a generic well-formed evidence for any requested
@@ -31,6 +34,7 @@ import json
 import pathlib
 
 from app.extract import pdf as pdfutil
+from app.extract.llm import READ_STEPS, TEXT
 
 RESPONSES_DIR = pathlib.Path(__file__).parent / "responses"
 
@@ -63,9 +67,13 @@ class RecordedLlm:
         """Real tier interface. Returns evidence for requested `missing` fields:
         recorded values where present, generic fill otherwise (if enabled)."""
         self.calls.append((tier, tuple(missing)))
-        # A text tier reads nothing off a scanned page — model that so scans fall
+        # The label keys the recording; the step's kind stamps the evidence. A
+        # label with no READ_STEPS row keeps its own name, as before.
+        step = READ_STEPS.get(tier)
+        ev_tier = tier if step is None else ("T1" if step.kind == TEXT else "T2")
+        # A text read sees nothing on a scanned page; model that so scans fall
         # through to T2 (matches AnthropicLlm T1 getting empty full_text).
-        if tier == "T1" and doc is not None and pdfutil.is_scan(doc):
+        if ev_tier == "T1" and doc is not None and pdfutil.is_scan(doc):
             return {}
         key = (hash_file(filename), tier)
         recorded = self._fields.get(key, {})
@@ -74,13 +82,13 @@ class RecordedLlm:
         for field in missing:
             if field in recorded:
                 ev = dict(recorded[field])
-                ev["tier"] = tier
+                ev["tier"] = ev_tier
                 ev["model_id"] = model_id
                 ev.setdefault("page", None)
                 out[field] = ev
             elif self.fill_missing:
                 out[field] = {
-                    "value": f"<{tier}:{field}>", "conf": self.fill_conf, "tier": tier,
+                    "value": f"<{tier}:{field}>", "conf": self.fill_conf, "tier": ev_tier,
                     "verbatim": f"stub {tier} {field}", "page": None, "model_id": model_id,
                 }
         return out

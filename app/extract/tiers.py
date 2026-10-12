@@ -437,7 +437,12 @@ def write_extraction_cost(conn, content_hash: str, extract_rev: int, call) -> No
     """Persist one LLM call's measured cost (the economics ledger, migration 010).
     `call` is an economics.CallCost. Idempotent per (content_hash, tier,
     extract_rev) so a batch retry that re-fetches results is a no-op. cost_usd is
-    null when the model is unpriced -- tokens are recorded regardless."""
+    null when the model is unpriced -- tokens are recorded regardless.
+
+    The `tier` column holds the call's read LABEL (`llm.READ_STEPS`), so every
+    paid call of one revision has its own row. Until 2026-10-12 the doc-class
+    call and the T1 read both wrote `T1`, and the conflict clause below dropped
+    the second of them without a word."""
     try:
         cost = call.cost
     except economics.UnknownModelPricing:
