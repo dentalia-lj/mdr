@@ -129,13 +129,15 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
       confidence only") to escalation on failed evidence checks and disagreement; the
       ladder of the steps table above. Flag list: add informational `pages-unread`.
       Evidence tuple: the agreeing read's model and confidence.
-- [ ] `docs/dentalia-v3-v4-system-design.md` tier table (lines 73-80), and
-      `docs/dev/extraction.md` (lines 1, 67, 194-197 describe T2 as forced for scans).
+- [ ] `docs/dentalia-v3-v4-system-design.md` tier table (lines 73-80).
+      `docs/dev/extraction.md` describes the code as built, so it changes with Tasks 3
+      and 4 (lines 1, 67, 194-197 describe T2 as forced for scans), not here.
 - **Done when:** Denis has approved the PRD wording. Tasks 1-5 start only after that.
 
 ### Task 1. Read plumbing and the ledger - 10 h / 1.0 h
 
-- [ ] `app/extract/llm.py`: a read names its kind (text / image), model and thinking;
+- [ ] `app/extract/llm.py`: a read names its kind (text / image), model, thinking and,
+      for image reads, an explicit page list (default pages 1-4, still at most 4);
       `_params` routes by kind, not by label (today any label but `T1` goes to
       `models.t2`, line 218). Overrides pass as conditional kwargs, like `hints`, so
       the protocol stubs (`extract(tier, doc, filename, missing)`) keep working.
@@ -198,7 +200,7 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
 - **Done when:** a scan with an empty text layer reaches the gate with fields; no
   doc-class call is ever made on empty text.
 
-### Task 4. Text ladder: T-3 with Haiku 5.5 - 24 h / 2.4 h
+### Task 4. Text ladder: T-3 with Haiku 5.5 - 27 h / 2.7 h
 
 - [ ] `app/extract/prompts/t1_text.md`: the ruling-A `cert_number` line, verbatim as
       measured (`tools/haiku_compare.py` PROMPT_VARIANTS `ruling-a`); update the
@@ -213,6 +215,12 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
       first image read -> settled by check, check-valid UDI or agreement with T1 ->
       Sonnet image for what remains (multi-UDI lists included). Image pages of a
       mixed PDF and text beyond the budget count as unread for the null rule.
+- [ ] Page-aware image reads (Denis, 2026-10-12): the image read renders, in this
+      order, the pages T1 cited for the open fields, the pages where an open field's
+      label occurs, the image pages of a mixed PDF, then page 1 onward, at most 4.
+      Cost-neutral. Measured on the eval: 1 of 72 open fields pointed past page 4
+      (neodent `cert_number`, page 26). Sonnet on the whole text was not reintroduced
+      (T-2: 77% of an image call, closed 22% of documents, 0 of 72 answers past page 4).
 - [ ] Hints go to every read, as today's T1 and T2 get them.
 - [ ] Disagreements counted: the extract job result lists each field where reads
       disagreed (field, steps, values), and the extraction record keeps every read.
@@ -325,7 +333,7 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
 
 | | human h | Claude Code h |
 |---|---|---|
-| Tasks 0-9 | 110 | 11.0 |
+| Tasks 0-9 | 113 | 11.3 |
 
 Neither column covers Denis's review, the deploy, or the post-deploy runs.
 Order: 0, then 1, 2, then 3 and 4 (both need 1 and 2), then 5 (needs 3 and 4), 6, 7,
