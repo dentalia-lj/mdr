@@ -103,7 +103,7 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 |---|---|---|
 | 0 contract (PRD, design doc) | done, approved | 4811151 |
 | 1 read plumbing, ledger | built (Opus) 7ae1269, full suite 4491 passed; Opus review running | worktree el-plumbing |
-| 2 checks, page classes | built (Sonnet) 9849a9d; Opus review running | worktree el-checks |
+| 2 checks, page classes | built (Sonnet) 9849a9d; Opus review: merge after fixes (live T0 date bug on Ivoclar stamp, OCR class, null rule); fixes being applied (Opus) | worktree el-checks |
 | 3 scans | waiting for 1 and 2 | |
 | 4 text ladder | waiting for 1 and 2 | |
 | 5 gate, guard, migration | waiting for 3 and 4 | |
@@ -248,7 +248,12 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
       `docs/dev/deployment.md` (EXTRACT_MODE, cost), `CLAUDE.md` models line,
       `docs/dentalia-job-type-handbook.md` extract section.
 - **Done when:** on the eval set the built ladder sends 7 +/- 1 of 79 text documents
-  to Sonnet (Task 8).
+  to Sonnet (Task 8). The cached image reads were not asked `type`, `coverage_scope`
+  or a both-citations `regulation`, so this cannot be confirmed from the cache; Task 8
+  measures it with real reads (Task 2 review, 2026-10-12).
+- Settle rules ruled 2026-10-12: `type` and `coverage_scope` settle on a T1 quote found
+  on the cited page; two empty reads settle any field except a Basic UDI-DI with a UDI
+  label, never on unread pages or truncated text (PRD corrected the same day).
 
 ### Task 5. Gate: agreement as confidence - 21 h / 2.1 h
 
