@@ -109,8 +109,9 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | 1 read plumbing, ledger | done: built (Opus), reviewed and fixed (Opus), merged; full suite 4674 passed, 5 skipped | merge of f843948 |
 | 2 checks, page classes | done: built (Sonnet), reviewed and fixed (Opus), merged | b9cd734 |
 | 3 scans | done: built (Opus), reviewed and fixed (Opus), merged; full suite 4820 passed, 5 skipped; decision 3 ruled by Denis (item identifiers asked on filename-typed scanned DoCs) | merge 0c891c8 |
-| 4 text ladder | starting (Opus) | worktree el-text |
-| 5 gate, guard, migration | waiting for 3 and 4 | |
+| 4 text ladder | building (Opus) | worktree el-text |
+| 5a gate side: combined score, migration, published guard, wording | building (Opus), alongside 4 | worktree el-gate |
+| 5b extraction side: second reads stamp the contract keys | waiting for 4 and 5a | |
 | 6 prompt caching | done: built (Sonnet), reviewed and fixed (Opus), merged; cache hits to confirm on the first real run | merge of bbc461d |
 | 7 re-extract command | done: built (Sonnet), reviewed and fixed (Opus), merged | c39bb77 |
 | 8 quality and parity | waiting for 1-6 | |
@@ -271,6 +272,15 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
   label, never on unread pages or truncated text (PRD corrected the same day).
 
 ### Task 5. Gate: agreement as confidence - 21 h / 2.1 h
+
+Split 2026-10-12 so the GATE half runs alongside Task 4: **5a** (GATE: combined score,
+migration, published-document guard, 2026-09-16 wording) and **5b** (extraction: the
+second reads that stamp the keys). Evidence contract between them, on `fields[f]`:
+`conf` stays the first read's own raw confidence; `agreed_model_id` / `agreed_conf`
+(raw) when a second read agreed on the same well-formed value; `proven: "citation"` on
+a `regulation` the checks proved. GATE calibrates both and combines when each is at
+least `gate.agreement_min`; `scope_stated`, the supersede guard and the manufacturer
+guard read `conf` alone.
 
 - [ ] Second read only where a gate field is neither T0 nor citation-proven: text
       documents get `T1-second`; scans ask the unproven gate fields in the second image
