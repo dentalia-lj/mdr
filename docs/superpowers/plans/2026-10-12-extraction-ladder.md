@@ -103,7 +103,7 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 |---|---|---|
 | 0 contract (PRD, design doc) | done, approved | 4811151 |
 | 1 read plumbing, ledger | built (Opus) 7ae1269, full suite 4491 passed; Opus review: merge (requests byte-identical on 24 fixtures); 5 small fixes being applied | worktree el-plumbing |
-| 2 checks, page classes | built (Sonnet) 9849a9d; Opus review: merge after fixes (live T0 date bug on Ivoclar stamp, OCR class, null rule); fixes being applied (Opus) | worktree el-checks |
+| 2 checks, page classes | done: built (Sonnet), reviewed and fixed (Opus), merged | merge after 1cc130d |
 | 3 scans | waiting for 1 and 2 | |
 | 4 text ladder | waiting for 1 and 2 | |
 | 5 gate, guard, migration | waiting for 3 and 4 | |
@@ -174,10 +174,10 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
 
 ### Task 2. Evidence checks and page classes (pure functions) - 12 h / 1.2 h
 
-- [ ] `app/extract/pdf.py`: per-page classes (text / image / OCR layer over a page
+- [x] `app/extract/pdf.py`: per-page classes (text / image / OCR layer over a page
       image / sparse), ported from `tools/ladder_probe.py` `page_classes`; `is_scan`
       becomes "no text page at all".
-- [ ] New `app/extract/checks.py`, `settled(field, evidence, ctx)`:
+- [x] New `app/extract/checks.py`, `settled(field, evidence, ctx)`:
       quote on the cited page; value literally in the text; dates parsed from the quote;
       REF codes 95% present; Basic UDI-DI check pair not invalid, and a check-valid
       UDI from an image read settles even when the text layer differs;
@@ -187,9 +187,9 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
       Null rule: settled only when no label for the field occurs (UDI label as a word,
       not inside "including"), no page is image, OCR-layer or unread, and the text
       was not truncated.
-- [ ] `app/extract/t0_templates.py` `_DATE_RE` / `_parse_date`: "25. 08. 2025",
+- [x] `app/extract/t0_templates.py` `_DATE_RE` / `_parse_date`: "25. 08. 2025",
       "30-Apr-2025", "June 24th, 2021", "fev. 18, 2026", "Jul 14, 2025".
-- [ ] Tests: `tests/test_checks.py` (new), `tests/test_pdf*.py`, `tests/test_t0_templates*.py`,
+- [x] Tests: `tests/test_checks.py` (new), `tests/test_pdf*.py`, `tests/test_t0_templates*.py`,
       table-driven from the eval cases (the 10 dates, `0482`, Ceramill `OOIYC`,
       "including", both-citations, a mixed PDF, a truncated text).
 
@@ -253,7 +253,8 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
       `docs/dev/deployment.md` (EXTRACT_MODE, cost), `CLAUDE.md` models line,
       `docs/dentalia-job-type-handbook.md` extract section.
 - **Done when:** on the eval set the built ladder sends 7 +/- 1 of 79 text documents
-  to Sonnet (Task 8). The cached image reads were not asked `type`, `coverage_scope`
+  to Sonnet (Task 8); 7-10 if the image read disagrees on a both-citations regulation
+  (3 Ivoclar documents; kept unproven by Denis's no-fabrication rule). The cached image reads were not asked `type`, `coverage_scope`
   or a both-citations `regulation`, so this cannot be confirmed from the cache; Task 8
   measures it with real reads (Task 2 review, 2026-10-12).
 - Settle rules ruled 2026-10-12: `type` and `coverage_scope` settle on a T1 quote found
