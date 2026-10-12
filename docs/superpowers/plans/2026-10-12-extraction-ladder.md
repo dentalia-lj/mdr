@@ -104,7 +104,7 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | 0 contract (PRD, design doc) | done, approved | 4811151 |
 | 1 read plumbing, ledger | done: built (Opus), reviewed and fixed (Opus), merged; full suite 4674 passed, 5 skipped | merge of f843948 |
 | 2 checks, page classes | done: built (Sonnet), reviewed and fixed (Opus), merged | b9cd734 |
-| 3 scans | building (Opus) | worktree el-scans |
+| 3 scans | built (Opus) a287be6, 1653 tests; Opus review running (replays the scan ladder against the eval cache) | worktree el-scans |
 | 4 text ladder | waiting for 1 and 2 | |
 | 5 gate, guard, migration | waiting for 3 and 4 | |
 | 6 prompt caching | done: built (Sonnet), reviewed and fixed (Opus), merged; cache hits to confirm on the first real run | merge of bbc461d |
