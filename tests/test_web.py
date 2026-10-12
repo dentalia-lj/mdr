@@ -7476,7 +7476,8 @@ def test_a_page_lights_the_menu_entry_it_is_reached_from(client, path, entry, la
 # agreeing reads. Both evidence tables say so, under the table, inside
 # Technical details where the column is.
 CONFIDENCE_NOTE = ("Confidence is the model's own number and is not calibrated. "
-                   "Where two reads agreed on a value, it combines the two.")
+                   "Where two reads agreed on a value, each at least 0.70 sure, it "
+                   "combines the two. It is 1.0 when the printed citation proves the value.")
 
 
 def _seed_evidenced_doc(conn, status):
@@ -7526,3 +7527,33 @@ def test_no_confidence_note_without_a_confidence_column(client, conn, status, pa
     text = client.get(path.format(doc_id)).text
     assert "No evidence recorded." in text
     assert CONFIDENCE_NOTE not in text
+
+
+def test_the_confidence_note_names_the_configured_agreement_floor(monkeypatch, conn,
+                                                                   test_db_url, tmp_path):
+    """The 0.70 in the note is `gate.agreement_min`, read from config, so the
+    page cannot go on saying 0.70 after the floor moves."""
+    monkeypatch.setenv("GATE_AGREEMENT_MIN", "0.8")
+    moved = TestClient(create_app(Web(api_database_url=API_TEST_URL,
+                                      imports_dir=str(tmp_path))))
+    doc_id = _seed_evidenced_doc(conn, "production")
+    text = moved.get(f"/documents/{doc_id}").text
+    assert "each at least 0.80 sure" in text
+    assert "each at least 0.70 sure" not in text
+
+
+def test_the_api_names_the_agreeing_read_on_each_evidence_row(client, conn):
+    """F7: `/api/documents/{id}` serves the two migration-071 columns, so a
+    consumer can see that a confidence combines two reads, and which."""
+    doc_id = _seed_evidenced_doc(conn, "production")
+    body = client.get(f"/api/documents/{doc_id}").json()
+    (row,) = body["evidence"]
+    assert row["agreed_model_id"] == "m-second"
+    assert float(row["agreed_confidence"]) == pytest.approx(0.85)
+    assert float(row["confidence"]) == pytest.approx(0.9775)
+
+
+def test_the_api_reference_says_what_confidence_is(client):
+    text = client.get("/api-reference").text
+    assert "<code>agreed_model_id</code>" in text
+    assert "printed citation" in text

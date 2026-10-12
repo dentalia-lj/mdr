@@ -2886,6 +2886,10 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         return f"/static/{rel}?v={version}" if version else f"/static/{rel}"
 
     templates.env.globals["static_url"] = static_url
+    # The agreement floor the evidence tables' confidence note names (PRD v3
+    # section 7, 2026-10-12): read from config, so the page cannot go on
+    # quoting 0.70 after `gate.agreement_min` moves.
+    templates.env.globals["agreement_min"] = load_config().gate.agreement_min
 
     def _duration(seconds: int | None) -> str:
         """Seconds as something a person reads at a glance.
@@ -6142,8 +6146,12 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             ).fetchone()
             if doc is None:
                 raise HTTPException(status_code=404, detail=f"production document {doc_id} not found")
+            # `agreed_model_id` / `agreed_confidence` (migration 071): the
+            # second read that agreed on the value, when `confidence` combines
+            # two reads. NULL on every other row.
             evidence = conn.execute(
-                "SELECT field, value, tier, model_id, confidence, verbatim, page, archive_url, extracted_at "
+                "SELECT field, value, tier, model_id, confidence, agreed_model_id, "
+                "agreed_confidence, verbatim, page, archive_url, extracted_at "
                 "FROM evidence WHERE doc_id=%s ORDER BY field",
                 (doc_id,),
             ).fetchall()

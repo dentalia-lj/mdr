@@ -116,7 +116,7 @@ prazno, če želite brskati po vsem.
 | **Coverage scope**, shown as *manufacturer* | Ta dokument pokriva celoten program tega dobavitelja |
 | **Cited certificate** | Certifikat priglašenega organa, na katerega se ta izjava sklicuje, če obstaja |
 | A date marked *(review)* or *(inherited)* | Ni resničen datum poteka, natisnjen na dokumentu — glejte [petletno pravilo](../glossary.sl.md) |
-| **Where every value came from** | Dokazi za vsako dejstvo, zloženi pod **Technical details** skupaj s prstnim odtisom datoteke in podlago, na kateri je bila narejena vsaka povezava do izdelka. Odprite, kadar vpraša presojevalec; pri vsakdanjem delu spreglejte. Stolpec **Confidence** je lastna ocena programa, ki je prebral stran, in ni preverjena na dokumentih, ki jih je pregledal človek; kjer sta se dve branji ujemali glede vrednosti, združuje obe |
+| **Where every value came from** | Dokazi za vsako dejstvo, zloženi pod **Technical details** skupaj s prstnim odtisom datoteke in podlago, na kateri je bila narejena vsaka povezava do izdelka. Odprite, kadar vpraša presojevalec; pri vsakdanjem delu spreglejte. Stolpec **Confidence** pove, koliko je bil program, ki je prebral stran, po lastni oceni prepričan; ni umerjena na dokumentih, ki jih je preveril človek. Kjer sta se dve ločeni branji ujemali glede vrednosti, vsako vsaj 0,70, združuje oceni obeh branj; 1,0 pomeni, da vrednost dokazuje natisnjeni sklic na predpis |
 | **Reopen this document** | Vrne zavrnjen dokument na Review. Edini način, da se zavrnitev razveljavi |
 
 ---
