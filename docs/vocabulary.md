@@ -253,8 +253,8 @@ since 2026-10-13, `T1-second` (confirming the gate fields); the scan ladder (a
 document with no text page, `tiers.run_scan_ladder`) sends `doc-class-image`,
 `T2-first`, `T2-second` and `T2`. A read's evidence also carries the label it came from as `step`, which is how `tiers.merge`
 lets the stronger read prevail (Sonnet over a cheap image read over the text
-read over a T0 guess); of two reads giving the same value, the surer one's
-evidence is stored and the other is its **agreeing read**
+read over a T0 guess); of two reads giving the same value, one the checks
+verify is stored first, then the surer one, and the other is its **agreeing read**
 (`agreed_model_id` / `agreed_conf`, which GATE combines).
 
 | `doc_class` | effect |

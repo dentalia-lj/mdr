@@ -241,7 +241,21 @@ def _agree(field: str, a, b) -> bool:
     return _is_read(a) and _is_read(b) and checks.agree(field, a, b, 0.0)
 
 
-def merge(base: dict, new: dict, *, by_strength: bool = True) -> dict:
+def _stores_over(field: str, challenger: dict, incumbent: dict, ctx) -> bool:
+    """Of two reads that agree (`_agree`), whether the challenger's evidence
+    is stored in place of the incumbent's (Denis, 2026-10-13, ruling D1):
+    a read the checks verify first (`checks.settled`: its quote on its cited
+    page, its value in the text), then the surer one, the held one on a tie.
+    With no text to check against (`ctx` None: a scan, or `merge` called
+    outside a ladder) only the surer-read rule applies."""
+    if ctx is not None:
+        mine, held = checks.settled(field, challenger, ctx), checks.settled(field, incumbent, ctx)
+        if mine != held:
+            return mine
+    return _conf(challenger) > _conf(incumbent)
+
+
+def merge(base: dict, new: dict, *, by_strength: bool = True, ctx=None) -> dict:
     """The stronger read wins for the fields it returned; earlier hits are
     preserved.
 
@@ -293,14 +307,18 @@ def merge(base: dict, new: dict, *, by_strength: bool = True) -> dict:
     `_pages_unread`: records about the extraction, not fields) is copied as
     given.
 
-    **Two reads that agree** (plan Task 5b, review finding 9): when the new
-    read gives the same well-formed value as the read the field holds
-    (`_agree`; T0 and the doc-class answer are not reads), the SURER read's
-    evidence is stored (value, quote, page, model, confidence), the one held
-    on a tie, and the other becomes the agreeing read GATE combines with it
-    (`_stamp_agreement`). Strength decides only between different values: an
-    image read agreeing with T1 at 0.5 used to replace T1's 0.9 by strength
-    alone, and `scope_stated` and the supersede guard read that number.
+    **Two reads that agree** (plan Task 5b, review finding 9; Denis's ruling
+    D1, 2026-10-13): when the new read gives the same well-formed value as the
+    read the field holds (`_agree`; T0 and the doc-class answer are not
+    reads), the stored evidence (value, quote, page, model, confidence) is a
+    read the checks verify against `ctx`, the text the ladder read, and the
+    surer of those, the one held on a tie; with neither verified, or no `ctx`
+    (a scan), simply the surer (`_stores_over`). The other becomes the
+    agreeing read GATE combines with it (`_stamp_agreement`). Strength
+    decides only between different values: an image read agreeing with T1 at
+    0.5 used to replace T1's 0.9 by strength alone, whether or not its quote
+    was on the page, and `scope_stated` and the supersede guard read that
+    number.
 
     `by_strength=False` is the rule as it stood before 2026-10-12 (later wins,
     with the blank and shrink guards), for `app/repair_ref_list.py`: it replays
@@ -317,7 +335,7 @@ def merge(base: dict, new: dict, *, by_strength: bool = True) -> dict:
         if _is_blank(evidence) and not _is_blank(incumbent):
             continue
         if by_strength and _agree(field, incumbent, evidence):
-            if _conf(evidence) > _conf(incumbent):
+            if _stores_over(field, evidence, incumbent, ctx):
                 out[field] = evidence
             continue
         if field in _ENUMERATED_FIELDS and isinstance(incumbent, dict):
@@ -520,6 +538,13 @@ GATE_FIELDS = ("type", "regulation", "coverage_scope")
 AGREED_MODEL_KEY, AGREED_CONF_KEY = "agreed_model_id", "agreed_conf"
 PROVEN_KEY, CITATION = "proven", "citation"
 
+#: A `coverage_scope` type to scope derived (`_scope_from_type`) says so:
+#: `follows: "type"`. GATE leaves such a scope out of the score, since the
+#: type is already in it, combined when a second read confirmed it (Denis,
+#: ruling D3, 2026-10-13). The scope keeps the type's own number, which is
+#: what `scope_stated` reads.
+FOLLOWS_KEY, FOLLOWS_TYPE = "follows", "type"
+
 #: Types whose coverage scope follows from the type alone
 #: (`t0_templates.derive_coverage_scope`: EC and ISO are manufacturer-wide, an
 #: IFU is for a product or a family).
@@ -647,11 +672,11 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
        printed citation proves is marked `proven: "citation"`
        (`checks.citation_proven`), and a read agreeing with the stored value
        is stamped as its agreeing read (`_stamp_agreement`). A gate field a
-       read holds that neither proves nor confirms with an agreement GATE
-       will count (`_to_confirm`) is asked of `T1-second`
-       (`models.second_read`, thinking off), one call for all of them. That
-       read confirms or not: it is stamped when it agrees, counted as a
-       disagreement when it does not, and its value is never stored.
+       read holds at `agreement_min` or more that neither proves nor confirms
+       with an agreement GATE will count (`_to_confirm`) is asked of
+       `T1-second` (`models.second_read`, thinking off), one call for all of
+       them. That read confirms or not: it is stamped when it agrees, counted
+       as a disagreement when it does not, and its value is never stored.
 
     A read that failed answered nothing, which is not an empty answer: its
     fields stay open and the read is named in `READS_KEY` (`failed_reads`).
@@ -712,7 +737,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     rendered: set[int] = set()
 
     t1 = _read_step(read, used, reads, TEXT_READ, open_fields)
-    fields = merge(fields, _asked(t1, open_fields))
+    fields = merge(fields, _asked(t1, open_fields), ctx=text_ctx)
     known |= {f for f in open_fields if _text_settles(f, fields, t1, text_ctx)}
     _scope_from_type(fields, known)
     _drop_ifu_certificate_reads(fields, known, t0, threshold)
@@ -726,7 +751,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     if open_fields:
         sel = choose(open_fields)
         first = _read_step(read, used, reads, FIRST_IMAGE, open_fields, pages=sel)
-        fields = merge(fields, _asked(first, open_fields))
+        fields = merge(fields, _asked(first, open_fields), ctx=text_ctx)
         rendered |= set(sel or range(1, min(doc.page_count, _max_vision_pages()) + 1))
         image_ctx = checks.Ctx(pages=pages, classes=classes, truncated=truncated,
                                unread_pages=frozenset(set(image_pages) - rendered))
@@ -740,7 +765,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     if open_fields:
         sel = choose(open_fields)
         sonnet = _read_step(read, used, reads, SONNET_IMAGE, open_fields, pages=sel)
-        fields = merge(fields, _asked(sonnet, open_fields))
+        fields = merge(fields, _asked(sonnet, open_fields), ctx=text_ctx)
         rendered |= set(sel or range(1, min(doc.page_count, _max_vision_pages()) + 1))
         # The last read closes what it was asked, an empty answer included, as
         # on a scan: what the field holds is a value no rule settled.
@@ -837,9 +862,13 @@ def _to_confirm(fields: dict, agreement_min: float) -> list[str]:
     """The gate fields a second read is asked to confirm, in `GATE_FIELDS`
     order: held by a read (`_is_read`: T0 at 0.95 is GATE's own number, and a
     row with no model id is never combined), with a well-formed value (nothing
-    else can be agreed with), and not `_confirmed` already."""
+    else can be agreed with), held at `agreement_min` or more (review 2026-10-13,
+    F4: the stored read's own number is half of any combination, and no later
+    read can raise it, so under the floor a second read cannot count), and not
+    `_confirmed` already."""
     return [f for f in GATE_FIELDS
             if _is_read(fields.get(f)) and checks.well_formed(f, fields[f].get("value"))
+            and _conf(fields[f]) >= agreement_min
             and not _confirmed(fields[f], agreement_min)]
 
 
@@ -922,9 +951,9 @@ def _text_settles(f: str, fields: dict, answer: dict, ctx) -> bool:
 def _proven(f: str, fields: dict, own: dict | None, ctx) -> bool:
     """The field is proven by the text: the value it holds passes
     `checks.settled`, or the read's OWN value does (review 2026-10-13). The two
-    differ for an enumeration, where `merge` lets the longer list win, and for
-    two reads that agree, where `merge` stored the surer one's evidence (plan
-    Task 5b): the value proven is the same, and that evidence stays.
+    differ only for an enumeration, where `merge` lets the longer list win:
+    of two reads that agree, `merge` has already stored a verified one where
+    either is (ruling D1, 2026-10-13).
 
     When the read's own list settles it, the field takes that list if the list
     it holds was written by a read: a longer read list that fails the check (a
@@ -938,7 +967,7 @@ def _proven(f: str, fields: dict, own: dict | None, ctx) -> bool:
     if checks.settled(f, held, ctx):
         return True
     if own is not None and not _is_blank(own) and checks.settled(f, own, ctx):
-        if not (isinstance(held, dict) and held.get("tier") == "T0") and not _agree(f, held, own):
+        if not (isinstance(held, dict) and held.get("tier") == "T0"):
             fields[f] = own
         return True
     return False
@@ -955,7 +984,7 @@ def _from_t1(fields: dict, known: set[str], t1: dict, reads: dict, ctx) -> dict:
     if not pulled:
         return fields
     asked.extend(pulled)
-    fields = merge(fields, _asked(t1, pulled))
+    fields = merge(fields, _asked(t1, pulled), ctx=ctx)
     known |= {f for f in pulled if _text_settles(f, fields, t1, ctx)}
     _scope_from_type(fields, known)
     return fields
@@ -1082,14 +1111,20 @@ def _scope_from_type(fields: dict, known: set[str]) -> None:
     a certificate's manufacturer scope follows from its type). Measured on the
     eval scans: without this, two EC certificates whose first read stated the
     scope at 0.6 and 0.8 fell from production to review once T0 stopped
-    holding the scope at 1.0. Either way the scope is then known."""
+    holding the scope at 1.0. Either way the scope is then known.
+
+    A derived scope is marked `follows: "type"` (`FOLLOWS_KEY`, ruling D3,
+    2026-10-13), an IFU's included: GATE scores the type, not the scope, so a
+    certificate whose type a second read confirmed is not held back by a
+    scope that can be no surer than the type's own number. A read's scope
+    kept because it agrees is not marked: it is a read, scored as one."""
     doc_type = fields.get("type") or {}
     value = doc_type.get("value")
     if "type" not in known or value not in _SCOPE_FROM_TYPE:
         return
     type_conf = float(doc_type.get("conf") or 0.0)
     derived = derive_coverage_scope(value, False, type_conf=type_conf)
-    derived = {**derived, "conf": min(type_conf, derived["conf"])}
+    derived = {**derived, "conf": min(type_conf, derived["conf"]), FOLLOWS_KEY: FOLLOWS_TYPE}
     scope = fields.get("coverage_scope") or {}
     if checks.normalized("coverage_scope", scope.get("value")) != checks.normalized(
             "coverage_scope", derived["value"]) or float(scope.get("conf") or 0.0) < derived["conf"]:

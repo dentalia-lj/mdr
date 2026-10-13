@@ -223,11 +223,15 @@ def test_regulation_is_proven_by_the_printed_citation_alone(text, value, ok):
     ("MDR", {"unread": (2,)}, False),
     ("MDR", {"classes": ["text"]}, False),                    # classes do not match the pages
     ("MDR", {"classes": ["text", "sparse"]}, True),           # a cover page is read as text
+    # a proof by absence over a sparse page: it may be the unreadable one (F7)
+    ("n.a.", {"text": "Nothing cited here", "classes": ["text", "sparse"]}, False),
     ("n.a.", {"text": "", "classes": ["sparse", "sparse"]}, False),   # no text layer at all
+    ("mdr", {}, False),                                       # well-formed values only (F7)
+    ("MDR (EU) 2017/745", {}, False),
     (None, {}, False),
 ], ids=["mdr", "na", "mdd", "wrong-citation", "both", "truncated", "image-page",
-        "ocr-page", "na-ocr", "unread-page", "classes-unknown", "sparse-page", "no-text-page",
-        "empty"])
+        "ocr-page", "na-ocr", "unread-page", "classes-unknown", "sparse-page", "na-sparse",
+        "no-text-page", "lower-case", "not-a-value", "empty"])
 def test_a_citation_proves_the_regulation_only_where_every_page_was_read_as_text(value, kw, ok):
     text = kw.get("text", "Regulation (EU) 2017/745")
     c = Ctx(pages=[LONG + text, LONG], classes=kw.get("classes", ["text", "text"]),

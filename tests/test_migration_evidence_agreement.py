@@ -2,7 +2,7 @@
 2026-10-12).
 
 When two reads agreed on a field, the evidence row names the agreeing read's
-model and its own confidence beside the first read's, and `confidence` holds
+model and its own confidence beside the stored read's, and `confidence` holds
 the combined number. Both columns are nullable: every row written before this
 migration, every T0 and T3 row, and every field one read settled has no
 agreeing read.

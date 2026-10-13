@@ -140,8 +140,9 @@ one well-formed value, each at least this sure, settle the field without
 Sonnet. The text ladder settles on T1 and the cheap image read agreeing at any
 confidence (ruling 4, "as measured, no per-read minimum"); both ladders read
 the key since 2026-10-13 (plan Task 5b) only to decide whether a gate field's
-agreement already counts at GATE, which spares it the confirming read
-(`tiers._to_confirm`: `T1-second`, or the gate fields in `T2-second`). GATE
+agreement already counts at GATE, which spares it the confirming read, and
+whether the stored read reaches it at all, without which no agreement can
+count (`tiers._to_confirm`: `T1-second`, or the gate fields in `T2-second`). GATE
 (`gate._confidences`, extraction-ladder plan Task 5): a
 required field two reads agreed on counts `1 - (1 - c1)(1 - c2)` in the score
 only when both calibrated numbers are at least this, and `evidence.confidence`
@@ -152,12 +153,13 @@ lower lets two weak cheap reads settle a scan field Sonnet would have read,
 and lets two weak reads combine past `gate.high` and publish a document and
 its trusted links without a person (0.6 + 0.85 combines to 0.94, the case the
 floor was set to keep out); higher sends more scan fields to Sonnet and holds
-more agreed documents at `staged`, and asks the confirming read for more
-gate fields (an agreement under it does not count, so it confirms nothing).
+more agreed documents at `staged`, and changes which gate fields get the
+confirming read: more where an existing agreement now falls under it, fewer
+where the stored read itself does (no agreement could count then).
 GATE's half acts on fields whose evidence names an agreeing read, which both
 ladders stamp since 2026-10-13 (plan Task 5b). It never moves the manufacturer
 auto-bind, the manufacturer-name check or the supersede fast path: those read
-the first read's own number.
+the stored read's own number.
 
 Not to be confused with the extraction escalation threshold, which is a hardcoded
 `0.95` parameter of `tiers.run_extraction` and is not config at all.
@@ -245,7 +247,7 @@ first read settled everything else. Blast radius: every scan and every text
 document T1 does not settle (31 of 79 on the eval) takes a `vision_first` read,
 so pointing it at a Sonnet-class model multiplies the image-read bill roughly
 twentyfold (Haiku 5.5 $0.10 / $0.50 per MTok against Sonnet 5.5's $2 / $10);
-`second_read` reads 37 of 79 text documents a second time (a whole-text read)
+`second_read` reads 35 of 79 text documents a second time (a whole-text read)
 and every scan, and decides the agreement GATE combines into the gate fields'
 score, so a model swap there needs the eval re-run.
 

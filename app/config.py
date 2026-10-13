@@ -72,7 +72,7 @@ class GateThresholds:
     GATE's combined score `1 - (1 - c1)(1 - c2)`, and for a scan field settled
     by two cheap image reads. Read by the scan ladder (Task 3) and by GATE
     (`gate._confidences`, Task 5); the one-field guards in GATE never
-    read it, they stay on the first read's own number. It lives here, not
+    read it, they stay on the stored read's own number. It lives here, not
     under `extract`, because the PRD names it `gate.agreement_min` and GATE is
     where the combined number is used; one key keeps the scan rule and the
     score on the same floor. The text ladder's agreement between T1 and the

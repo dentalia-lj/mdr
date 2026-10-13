@@ -30,8 +30,8 @@ table exists only to anchor the walkthrough below.
 | `fetch.url` | `app/handlers/fetch.py:114` |
 | `extract.doc` | `app/handlers/extract.py:359` |
 | `validate.doc` | `app/handlers/validate.py:759` |
-| `gate.candidate` | `app/handlers/gate.py:1401` |
-| `gate.apply` | `app/handlers/gate.py:1974` |
+| `gate.candidate` | `app/handlers/gate.py:1414` |
+| `gate.apply` | `app/handlers/gate.py:1987` |
 | `email.request` / `email.reminder` (renewal) | `app/handlers/email_request.py:407` / `:525` |
 
 ## Input → Output: the walkthrough
@@ -127,8 +127,8 @@ get what confirms them beyond one read's number (since 2026-10-13, plan Task
 gave the same value is named as the agreeing read, and a gate field nothing
 proves or confirms is asked of one more cheap read, thinking off, that only
 confirms (`T1-second` on text; on a scan it rides in `T2-second`, which is
-then made even when nothing else is open). Of two agreeing reads the surer
-one's evidence is stored. In batch mode the same job self-defers via
+then made even when nothing else is open). Of two agreeing reads the stored
+evidence is one the checks verify, the surer of those, else the surer. In batch mode the same job self-defers via
 `queue.defer` across polling cycles until the Anthropic batch completes —
 no second job type, batch state lives in `batch_ref`, never in the payload
 (invariant 9; `app/handlers/extract.py:1-14` module docstring). Emits
@@ -206,8 +206,9 @@ run in parallel:
      `coverage_scope` at their combined confidence: two agreeing reads,
      each at least `gate.agreement_min`, count `1 - (1 - c1)(1 - c2)`; a
      citation-proven `regulation` counts 1.0; T0 keeps its number
-     (`gate._gate_confidence`). The auto-bind's scope and name checks and
-     the fast path's `validity_from` keep the first read's own number.
+     (`gate._gate_confidence`); a scope derived from the type is left out,
+     the type being in it (2026-10-13). The auto-bind's scope and name checks and
+     the fast path's `validity_from` keep the stored read's own number.
    - **A published, superseded or rejected document read again**
      (2026-10-12 and -13): GATE keeps a `production` document from a
      candidate that does not itself reach production, and a `superseded` or

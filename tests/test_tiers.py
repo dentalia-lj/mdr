@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.extract import pdf, t0_templates, tiers
+from app.extract import checks, pdf, t0_templates, tiers
 
 ISO_CERT = "IVOCLAR/Ivoclar ISO certifikat do 30_10_2027.pdf"
 
@@ -196,6 +196,45 @@ def test_of_two_agreeing_reads_the_surer_ones_evidence_is_stored(field, incumben
                                                                  stored):
     merged = tiers.merge({field: read_ev(*incumbent)}, {field: read_ev(*challenger)})
     assert merged[field]["step"] == stored
+
+
+#: The text the ladder read, for ruling D1: a read the checks verify (its
+#: quote on its cited page) is stored before a surer one they do not.
+D1_CTX = checks.Ctx(
+    pages=["EU Declaration of Conformity\nManufacturer: GC EUROPE N.V." + " filler" * 40],
+    classes=["text"])
+
+
+def quoted(value, conf, step, verbatim):
+    return {**read_ev(value, conf, step), "verbatim": verbatim}
+
+
+@pytest.mark.parametrize("incumbent, challenger, stored", [
+    # only the challenger verified: it is stored though less sure
+    (quoted("DoC", 0.95, "T1", "printed elsewhere"),
+     quoted("DoC", 0.5, "T2-first", "EU Declaration of Conformity"), "T2-first"),
+    # only the incumbent verified: it stays though less sure
+    (quoted("DoC", 0.5, "T1", "EU Declaration of Conformity"),
+     quoted("DoC", 0.95, "T2", "printed elsewhere"), "T1"),
+    # both verified, or neither: the surer, the held one on a tie
+    (quoted("DoC", 0.8, "T1", "EU Declaration of Conformity"),
+     quoted("DoC", 0.9, "T2-first", "EU Declaration of Conformity"), "T2-first"),
+    (quoted("DoC", 0.9, "T1", "EU Declaration of Conformity"),
+     quoted("DoC", 0.9, "T2-first", "EU Declaration of Conformity"), "T1"),
+    (quoted("DoC", 0.9, "T1", "printed elsewhere"),
+     quoted("DoC", 0.5, "T2-first", "nowhere either"), "T1"),
+], ids=["challenger-verified", "incumbent-verified", "both-surer", "both-tie", "neither"])
+def test_of_two_agreeing_reads_a_verified_one_is_stored_first(incumbent, challenger, stored):
+    """Ruling D1 (Denis, 2026-10-13): verified quote first, then surer."""
+    merged = tiers.merge({"type": incumbent}, {"type": challenger}, ctx=D1_CTX)
+    assert merged["type"]["step"] == stored
+
+
+def test_without_text_to_check_the_surer_read_is_stored():
+    """A scan has no text layer to verify a quote against: the surer read."""
+    merged = tiers.merge({"type": quoted("DoC", 0.5, "T2-first", "EU Declaration of Conformity")},
+                         {"type": quoted("DoC", 0.9, "T2", "printed elsewhere")})
+    assert merged["type"]["step"] == "T2"
 
 
 @pytest.mark.parametrize("incumbent", [

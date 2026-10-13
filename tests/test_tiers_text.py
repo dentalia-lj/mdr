@@ -919,19 +919,91 @@ def test_a_regulation_with_both_citations_printed_is_never_proven(t0):
 ], ids=["second-read-agrees", "second-read-failed"])
 def test_an_image_read_agreeing_under_the_floor_does_not_spare_the_second_read(
         t0, second, agreed):
-    """Review finding 9: T1 reads `type` at 0.9 with a quote that is not on the
-    page, the image read agrees at 0.5. T1's evidence stays (the surer of two
-    agreeing reads), the image read is stamped as agreeing, and since GATE will
-    not count a 0.5, `T1-second` is still asked. The agreeing read stamped is
-    the surest one."""
+    """Review finding 9: T1 reads `type` at 0.9, the image read agrees at 0.5,
+    and neither quote is on the page. T1's evidence stays (the surer of two
+    agreeing reads neither of which the checks verify), the image read is
+    stamped as agreeing, and since GATE will not count a 0.5, `T1-second` is
+    still asked. The agreeing read stamped is the surest one."""
     t0(_only_open("type"))
     llm = TextLlm({"T1": {"type": ("DoC", "a declaration elsewhere", 1, 0.9)},
-                   "T2-first": {"type": ("DoC", "EU Declaration of Conformity", 1, 0.5)},
+                   "T2-first": {"type": ("DoC", "a declaration printed nowhere", 1, 0.5)},
                    "T1-second": second if second == FAILED else {"type": second}})
     _, fields, used = run(_doc(DOC_PAGE), llm)
     assert used == ["T0", "T1", "T2-first", "T1-second"]
     assert (fields["type"]["conf"], fields["type"]["step"]) == (0.9, "T1")
     assert _agreement(fields, "type") == agreed
+
+
+@pytest.mark.parametrize("field, t1, image, agreed", [
+    # the reviewer's scenario A: the surer read's quote is not on its page
+    ("type", ("DoC", "Declaration printed somewhere else", 1, 0.95),
+     ("DoC", "EU Declaration of Conformity", 1, 0.8), ("model-T1", 0.95)),
+    ("coverage_scope", ("group", "covers the products listed in annex B", 1, 0.95),
+     ("group", "REF 003477 003478", 1, 0.85), ("model-T1", 0.95)),
+    ("manufacturer", ("GC EUROPE N.V.", "GC Europe NV, Leuven, Belgium", 1, 0.95),
+     ("GC EUROPE N.V.", "Manufacturer: GC EUROPE N.V.", 1, 0.85), (None, None)),
+], ids=["type", "coverage-scope", "manufacturer"])
+def test_of_two_agreeing_reads_the_verified_one_is_stored(t0, field, t1, image, agreed):
+    """Ruling D1 (Denis, 2026-10-13): of two reads that agree, the stored
+    evidence is one the checks verify (its quote on its cited page), the
+    surer of those; only where neither is verified does the surer read win.
+    T1 is surer here, but its quote is nowhere on the page."""
+    t0(_only_open(field))
+    llm = TextLlm({"T1": {field: t1}, "T2-first": {field: image}})
+    _, fields, used = run(_doc(DOC_PAGE), llm)
+    ev_ = fields[field]
+    assert (ev_["step"], ev_["conf"], ev_["verbatim"]) == ("T2-first", image[3], image[1])
+    assert _agreement(fields, field) == agreed
+    assert "T1-second" not in used        # 0.85 / 0.8 with 0.95 agreeing: it counts
+
+
+def test_sonnet_agreeing_with_an_unverified_t1_is_stored(t0):
+    """The reviewer's scenario B: the image read finds nothing, Sonnet gives
+    T1's value less surely, and only Sonnet's quote is on the page. Sonnet's
+    evidence is stored and T1 is the agreeing read (ruling D1 applies after
+    Sonnet too)."""
+    t0(_only_open("type"))
+    llm = TextLlm({"T1": {"type": ("DoC", "Declaration printed somewhere else", 1, 0.95)},
+                   "T2-first": {"type": (None, "", None, 0.0)},
+                   "T2": {"type": ("DoC", "EU Declaration of Conformity", 1, 0.9)}})
+    _, fields, used = run(_doc(DOC_PAGE), llm)
+    assert used == ["T0", "T1", "T2-first", "T2"]
+    assert (fields["type"]["step"], fields["type"]["conf"]) == ("T2", 0.9)
+    assert _agreement(fields, "type") == ("model-T1", 0.95)
+
+
+@pytest.mark.parametrize("answers, stored", [
+    # one read, verified, under the floor
+    ({"T1": {"type": ("DoC", "EU Declaration of Conformity", 1, 0.6)}}, ("T1", 0.6)),
+    # the verified read stored is the less sure one, 0.5: no read can raise it
+    ({"T1": {"type": ("DoC", "a declaration elsewhere", 1, 0.9)},
+      "T2-first": {"type": ("DoC", "EU Declaration of Conformity", 1, 0.5)}}, ("T2-first", 0.5)),
+], ids=["one-read", "verified-but-unsure"])
+def test_no_second_read_for_a_stored_read_under_the_floor(t0, answers, stored):
+    """Review 2026-10-13, F4: GATE combines only when each read is at least
+    `gate.agreement_min`, and the stored read's own number is one of the two.
+    Under the floor a second read cannot count, so it is not asked."""
+    t0(_only_open("type"))
+    llm = TextLlm(answers)
+    _, fields, used = run(_doc(DOC_PAGE), llm)
+    assert "T1-second" not in used
+    assert (fields["type"]["step"], fields["type"]["conf"]) == stored
+
+
+def test_a_read_never_asked_the_field_is_not_its_agreeing_read(t0):
+    """Review 2026-10-13, F5: a read answers every field, asked or not. Only a
+    read that was asked the field is stamped: here the image read was asked the
+    certificate number alone, answered `type` the same anyway, and is not the
+    type's agreeing read; the failed `T1-second` leaves none."""
+    t0(_only_open("type", "cert_number"))
+    llm = TextLlm({"T1": {"type": DECLARATION, "cert_number": ("X-1", "X-1")},
+                   "T2-first": {"type": ("DoC", "EU Declaration of Conformity", 1, 0.99),
+                                "cert_number": ("G1 021108 0031", "Certificate G1 021108 0031")},
+                   "T1-second": FAILED})
+    _, fields, used = run(_doc(DOC_PAGE), llm)
+    assert llm.asked("T2-first") == {"cert_number"}
+    assert used == ["T0", "T1", "T2-first", "T1-second"]
+    assert _agreement(fields, "type") == (None, None)
 
 
 def test_an_agreement_gate_will_count_needs_no_second_read(t0):
@@ -968,6 +1040,9 @@ def test_a_scope_that_follows_the_type_is_not_asked_of_the_second_read(t0):
     llm = TextLlm({"T1": {"type": ("EC", "EC Certificate", 1, 0.9)}})
     _, fields, _ = run(_doc(page), llm)
     assert fields["coverage_scope"]["tier"] == "T0"
+    # marked for GATE, which scores the type in its place (ruling D3)
+    assert fields["coverage_scope"]["follows"] == "type"
+    assert fields["coverage_scope"]["conf"] == 0.9          # the type's own number
     assert llm.asked("T1-second") == {"type"}
 
 

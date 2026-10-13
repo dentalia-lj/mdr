@@ -395,8 +395,10 @@ def test_a_known_type_decides_a_disagreeing_or_empty_scope(t0, doc_type, read_sc
         assert fields["coverage_scope"]["tier"] == "T0"
         assert fields["coverage_scope"]["verbatim"] == f"type={doc_type}"
         assert fields["coverage_scope"]["conf"] == 0.90
+        assert fields["coverage_scope"]["follows"] == "type"     # ruling D3, IFU too
     else:                        # agrees: the read keeps its own evidence
         assert fields["coverage_scope"]["step"] == "T2-first"
+        assert "follows" not in fields["coverage_scope"]          # a read, scored as one
 
 
 def test_a_doc_keeps_the_scope_its_reads_give(t0):

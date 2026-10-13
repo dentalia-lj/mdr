@@ -13,7 +13,7 @@ Calibration (G2) is applied HERE: score = min effective confidence over the
 required fields, effective = raw x factor(model_id, field) (identity default).
 Since 2026-10-12 a field two reads agreed on, each at least gate.agreement_min,
 counts 1 - (1 - c1)(1 - c2), and a citation-proven regulation 1.0
-(`_gate_confidence`); the one-field guards keep the first read's own number.
+(`_gate_confidence`); the one-field guards keep the stored read's own number.
 A published or superseded document is replaced only by a reading that itself
 reaches production, a chain member never re-identified, and a reviewer's edit
 never overwritten by a machine read (`_kept`, `_chain_identity_change`,
@@ -327,7 +327,7 @@ def _calibrated(ev, conf_key: str, model_key: str, field: str,
 
 
 def _field_confidence(fields: dict, name: str, calib_map: dict) -> float | None:
-    """The FIRST read's OWN calibrated confidence for one field, for the guards
+    """The STORED read's OWN calibrated confidence for one field, for guards
     that hinge on a single value rather than on the whole candidate's score.
 
     Three such guards read it, and all three stay on the own number when a
@@ -379,7 +379,7 @@ def _confidences(ev, field: str, calib_map: dict,
       * two agreeing reads (`_agreed_columns`), each at least `agreement_min`
         AFTER calibration: scored `1 - (1 - own)(1 - agreed)` on the
         calibrated numbers, stored as the same combination of the RAW numbers;
-      * otherwise the first read's own: calibrated scored, raw stored.
+      * otherwise the stored read's own: calibrated scored, raw stored.
 
     The per-read floor is what keeps two unsure models agreeing on a wrong type
     out of production (measured 0.6 + 0.85 -> 0.94 on the eval). The thresholds
@@ -427,9 +427,22 @@ def _score(fields: dict, calib_map: dict, agreement_min: float) -> float:
     It decides the disposition and, through `score >= high`, per-link
     production. Every required field's confidence is a number by the time this
     runs (`_require_complete_evidence` raises otherwise); the `or 0.0` only
-    keeps a future caller that skips that check from passing a document."""
+    keeps a future caller that skips that check from passing a document.
+
+    A `coverage_scope` the extraction derived from the type (`follows:
+    "type"`, `tiers._scope_from_type`) is left out (Denis, ruling D3,
+    2026-10-13): the type is already in the minimum, combined when a second
+    read confirmed it, and the scope carries only the type's own number. The
+    scope's evidence and `scope_stated` still read that own number."""
     return min(_gate_confidence(fields, f, calib_map, agreement_min) or 0.0
-               for f in REQUIRED_FIELDS)
+               for f in REQUIRED_FIELDS if not _follows_type(fields, f))
+
+
+def _follows_type(fields: dict, name: str) -> bool:
+    """Whether `name` is a `coverage_scope` derived from the type (ruling D3)."""
+    ev = fields.get(name)
+    return (name == "coverage_scope" and isinstance(ev, dict)
+            and ev.get(tiers.FOLLOWS_KEY) == tiers.FOLLOWS_TYPE)
 
 
 def _source_url_for(conn, content_hash: str) -> str | None:
@@ -854,7 +867,7 @@ def _insert_evidence(conn, doc_id, extract_rev, fields, archive_url, *,
     `agreed_model_id` and its own raw `agreed_confidence` (`_agreed_columns`:
     NULL on any row no model read), and `confidence` holds what GATE scored,
     uncalibrated (`_stored_confidence`). `model_id`, `verbatim` and `page` stay
-    the first read's, the one whose value is stored.
+    the stored read's, the one whose value is stored.
 
     `held` names fields a reviewer edited (`_reviewer_held`): no machine row is
     written or healed for them, so their T3 row stays current and keeps
@@ -1219,7 +1232,7 @@ def _handle_mfr_binding(conn, job) -> dict:
     # there already names this exact hazard ("a wrong `manufacturer` links the
     # doc to the entire catalogue"). Held to `high`, not `med`: this is the
     # guard standing between an unparsed REF list and a catalogue-wide write.
-    # Both this and the name check below read the first read's OWN number,
+    # Both this and the name check below read the stored read's OWN number,
     # never two agreeing reads combined (PRD v3 section 7, 2026-10-12): the
     # agreement evidence was measured on the production disposition, not on
     # this catalogue-wide write.
@@ -1473,7 +1486,7 @@ def handle_gate_candidate(conn, job: dict) -> dict:
     # Any failure falls through to the normal chain, where "older-than-current"
     # (back in BLOCKING_FLAGS) forces manual exactly as it did before this task
     # — never production, never a silent downgrade.
-    #   validity_from's number in (3) is the first read's OWN, never two agreeing
+    #   validity_from's number in (3) is the stored read's OWN, never two agreeing
     #   reads combined (PRD v3 section 7, 2026-10-12): `_field_confidence`.
     auto_superseded = p.get("superseded_by_doc_id")
     auto_supersede_ok = (
