@@ -125,8 +125,18 @@ def test_no_doc_certificate_label_is_overridden_since_ruling_a():
 
 def test_every_basic_udi_override_passes_its_check_pair():
     from app.extract.udi import INVALID, validate_basic_udi
-    udis = {doc: v for (doc, f), v in hc.LABEL_OVERRIDES.items() if f == "basic_udi_di"}
-    assert udis["533068_RA_812_Liste_DoC.pdf"] == "++E2265330681KSCH"
-    assert all(validate_basic_udi(v).status != INVALID for v in udis.values())
-    assert hc.corrected_gt("x/533068_RA_812_Liste_DoC.pdf",
-                           {"basic_udi_di": "++E2265330681"})["basic_udi_di"] == "++E2265330681KSCH"
+    udis = [u for (doc, f), v in hc.LABEL_OVERRIDES.items() if f == "basic_udi_di"
+            for u in (v if isinstance(v, hc.AnyOf) else (v,))]
+    assert len(udis) == 6
+    assert all(validate_basic_udi(u).status != INVALID for u in udis)
+
+
+def test_533068_scores_any_of_the_four_printed_udis():
+    """Page 1 prints four check-valid Basic UDI-DIs (Denis, 2026-10-13): any one
+    is right; the old label, their shared prefix, is not."""
+    gt = hc.corrected_gt("x/533068_RA_812_Liste_DoC.pdf", {"basic_udi_di": "++E2265330681"})
+    label = hc._gt_value("basic_udi_di", gt)
+    for udi in ("++E2265330681KSCH", "++E2265330681StSEF", "++E2265330682PQ", "++E2265330683PS"):
+        assert hc._correct("basic_udi_di", udi, label) is True
+    assert hc._correct("basic_udi_di", "++E2265330681", label) is False
+    assert hc._correct("basic_udi_di", None, label) is False
