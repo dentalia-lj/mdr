@@ -260,7 +260,7 @@ read over a T0 guess).
 | `compliance-doc` | proceed with extraction |
 | `business-doc` | short-circuit, no LLM (invoices, delivery notes) |
 | `msds` | short-circuit, no LLM (safety data sheets) |
-| `unknown` | ask the doc-class call (`doc-class` on the page 1-2 text, `doc-class-image` on the page 1-2 images of a scan); without one, proceed — a missed classification costs money, a wrong skip costs a document |
+| `unknown` | ask the doc-class call (`doc-class` on the page 1-2 text, `doc-class-image` on the page 1-2 images of a scan, or of a document whose pages 1-2 hold no text); without one, proceed: a missed classification costs money, a wrong skip costs a document |
 | `not-a-compliance-document` | the doc-class call's refusal: terminal, the attempt is written and nothing is emitted |
 
 | `document.type` | `DoC` · `EC` · `ISO` · `IFU` · `SPP` · `other` |

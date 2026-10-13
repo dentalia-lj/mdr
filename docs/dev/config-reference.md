@@ -208,9 +208,13 @@ T1 read and the text doc-class call (`doc-class`, sent with thinking off since
 then: Haiku 5.5 thinks by default and the call answers in 256 tokens). Blast
 radius: every text document T0 does not settle; Haiku 5.5 costs a tenth of
 Haiku 4.5 per token ($0.10 / $0.50 against $1 / $5 per MTok) but thinks by
-default, so its output tokens per call are higher. Putting `claude-haiku-4-5`
-back is a model swap like any other, and the eval of 2026-10-08 measured it
-lower (87% against 90% of 130 labelled fields).
+default, so its output tokens per call are higher. Rollback (Denis,
+2026-10-13): no `MODELS_*` key is added on the server, and going back means
+redeploying the previous commit, not pointing `models.t1` at
+`claude-haiku-4-5` under the new ladder, because the ladder's settle and
+agreement thresholds were measured on Haiku 5.5 (plan commit 74d5814). The
+eval of 2026-10-08 also measured Haiku 4.5 lower (87% against 90% of 130
+labelled fields).
 
 `vision_first` and `second_read` (2026-10-12) name the models of the extraction
 ladder's newer read steps, `app/extract/llm.py` `READ_STEPS`: `vision_first`

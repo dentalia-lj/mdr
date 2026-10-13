@@ -34,17 +34,17 @@ itself.
 | Module | Lines | Owns |
 |---|---|---|
 | `app/extract/target.py` | 35 | `TARGET` — the 11-field schema, alone, importing nothing (see Gotchas) |
-| `app/extract/t0_templates.py` | 1267 | T0: doc-class classification, keyword tables, REF-list extraction, `field_ev()` evidence shape |
+| `app/extract/t0_templates.py` | 1546 | T0: doc-class classification, keyword tables, REF-list extraction, `field_ev()` evidence shape |
 | `app/extract/t0_layout.py` | 307 | The T0 REF-list layout-template engine (anchors + text-relative regions, read from playbooks) |
-| `app/extract/udi.py` | 148 | Offline Basic UDI-DI check-character validation (HIBCC + GS1, MOD 1021/32) |
-| `app/extract/tiers.py` | 1132 | The ladder itself: `needs_escalation`, `merge` (stronger read prevails), `calibrate`, `run_extraction` (splits text / scan), `run_text_ladder` (T-3) and `_image_pages` (its page choice), `run_scan_ladder` (S-2), `read_disagreements`, `failed_reads`, `extraction_attempt`/`extraction_cost` writers |
-| `app/extract/checks.py` | 323 | Evidence checks, pure: `settled` / `null_settled` / `both_null_settled` against the text layer; `well_formed`, `normalized` and `agree` (shape and agreement between two reads) |
-| `app/extract/llm.py` | 758 | T1/T2 Anthropic clients (sync `AnthropicLlm`, batch `AnthropicBatchClient`), `READ_STEPS`, the JSON schema, per-field evidence construction, the doc-class calls (`classify` on page 1-2 text, `classify_image` on page 1-2 images) |
-| `app/extract/batching.py` | 56 | Batch API state machine (`advance_batch`) over the `batch_ref` side table |
-| `app/extract/economics.py` | 110 | Token usage → USD, per-model `PRICES`, `UnknownModelPricing` |
+| `app/extract/udi.py` | 159 | Offline Basic UDI-DI check-character validation (HIBCC + GS1, MOD 1021/32); `is_word` (no agency shape, no digit) |
+| `app/extract/tiers.py` | 1214 | The ladder itself: `needs_escalation`, `merge` (stronger read prevails), `calibrate`, `run_extraction` (splits text / scan), `run_text_ladder` (T-3) and `_image_pages` (its page choice), `run_scan_ladder` (S-2), `read_disagreements`, `failed_reads`, `extraction_attempt`/`extraction_cost` writers |
+| `app/extract/checks.py` | 331 | Evidence checks, pure: `settled` / `null_settled` / `both_null_settled` against the text layer; `well_formed`, `normalized` and `agree` (shape and agreement between two reads); a Basic UDI-DI that is a word never passes (`udi.is_word`) |
+| `app/extract/llm.py` | 766 | T1/T2 Anthropic clients (sync `AnthropicLlm`, batch `AnthropicBatchClient`), `READ_STEPS`, the JSON schema, per-field evidence construction, the doc-class calls (`classify` on page 1-2 text, `classify_image` on page 1-2 images) |
+| `app/extract/batching.py` | 66 | Batch API state machine (`advance_batch`) over the `batch_ref` side table |
+| `app/extract/economics.py` | 153 | Token usage → USD, per-model `PRICES`, `UnknownModelPricing` |
 | `app/extract/pdf.py` | 240 | The only module touching PyMuPDF directly: text, rasterization, `is_scan`, `bounded_text`, per-page classes (`page_classes`; `has_text_page` decides text ladder or scan ladder) |
 | `app/extract/text_store.py` | 77 | `document_text` sidecar — what was actually read, independent of the tier ladder |
-| `app/handlers/extract.py` | 466 | `handle_extract_doc`: sync/batch dispatch, hint assembly, `_finalize` (writes + emits `validate.doc`) |
+| `app/handlers/extract.py` | 472 | `handle_extract_doc`: sync/batch dispatch, hint assembly, `_finalize` (writes + emits `validate.doc`) |
 | `app/handlers/gate.py` | — | `_insert_evidence` (622-678), `_require_complete_evidence` (238-266), `_apply_edits` (1118-1139) — see Rules and Gotchas |
 
 ## Input → Output
@@ -92,11 +92,15 @@ re-fetched, never resubmitted).
 Task 4). Steps and labels from `llm.READ_STEPS`:
 
 1. T0 left the file `unknown`: the doc-class call on the page 1-2 text
-   (`classify`, `doc-class`, `models.t1`, thinking off, 256 tokens; pages 1-2
-   with no text are refused without a call). `not-a-compliance-document` is
-   terminal. The answer becomes `type` evidence (step `doc-class`, ranked below
-   every field read). Batch mode makes the same call since Task 4 (it made none
-   before, so an `unknown` text document was read as a compliance document).
+   (`classify`, `doc-class`, `models.t1`, thinking off, 256 tokens). When pages
+   1-2 hold no text (a mixed PDF that opens with scanned pages; the review of
+   2026-10-13 found 2 real compliance documents like this in the mirror), their
+   images are asked instead (`classify_image`, `doc-class-image`), as on a scan;
+   a client with no image call keeps the old refusal without a call.
+   `not-a-compliance-document` is terminal. The answer becomes `type` evidence
+   (step `doc-class` or `doc-class-image`, ranked below every field read). Batch
+   mode makes the same calls since Task 4 (it made none before, so an `unknown`
+   text document was read as a compliance document).
 2. `T1` (`models.t1`, Haiku 5.5 since Task 4, the whole text up to
    `pdf.LLM_TEXT_BUDGET_CHARS`) for every pursued field T0 does not hold at
    0.95. A field is settled when the value it then holds passes
@@ -108,20 +112,28 @@ Task 4). Steps and labels from `llm.READ_STEPS`:
    for it in the text, no image or OCR page, text not cut). A T0 value under
    0.95 settles the same way when the field still holds it (T1 read nothing
    better): never against a different value T1 read, which the image read then
-   decides (eval: Ceramill's T0 read the word "Document" after its UDI label).
+   decides. A REF list stores the list that settled it (`_proven`, review
+   2026-10-13): `merge` lets a longer list win, but a longer one that fails the
+   check (a code not printed) is not kept over a read's own shorter list that
+   passes; when both pass, the longer one stays. T0 at 0.95 is never asked.
 3. Fields pursued only after T1 (a scope T1 changed from `manufacturer` brings
    the item identifiers in) are taken from T1's answer, which carries every
    field, and settle as in step 2; recorded as T1's.
 4. `T2-first` (`models.vision_first`) for what is open, on the pages
    `_image_pages` picks (below). A field settles when its own value passes the
-   checks, when it is a Basic UDI-DI whose check pair verifies
+   checks (and then holds that value, as in step 2), when it is a Basic UDI-DI whose check pair verifies
    (`checks.udi_check_valid`; the text layer may be an OCR misread, "OOIYC" for
    "001YC"), when it agrees with T1 (`checks.agree` with no per-read minimum:
    ruling 4, "as measured"), or when both reads ANSWERED it empty and
    `checks.both_null_settled` allows it: never a Basic UDI-DI the text labels
    (a multi-UDI list goes to Sonnet), never with an image page no read rendered
    or text past the budget.
-5. Type to scope after each read, as on a scan (step 5 below).
+5. Type to scope after each read, as on a scan (step 5 below). And once the
+   type is known to be an IFU, the certificate fields a read wrote before the
+   type was known are dropped (`_drop_ifu_certificate_reads`, review
+   2026-10-13): T1 is asked `validity_from` while the type is still open, and on
+   an IFU it reads one off a revision code. T0's own value comes back where it
+   had one; the read stays in `_reads`.
 6. `T2` (`models.t2`, Sonnet) for what is still open, on the pages
    `_image_pages` picks for those fields. Its answer closes what it was asked,
    an empty answer included, with the scan ladder's guards (`_sonnet_closes`).
@@ -177,8 +189,11 @@ Steps and labels from `llm.READ_STEPS`:
    from it (`t0_templates.derive_coverage_scope`) and replaces a scope that
    disagrees or is empty, as T0 evidence ("type=EC") at the type's confidence
    where lower. An agreeing scope keeps its evidence unless the derivation is
-   surer (Task 4): T0's own derivation from a guessed type (0.6), or a read that
-   stated the same scope at less. Runs after each read, so a type the first read
+   surer (Task 4, accepted by Denis 2026-10-13): T0's own derivation from a
+   guessed type (0.6), or a read that stated the same scope at less. So a
+   confirmed EC or ISO certificate's `manufacturer` scope carries the type's
+   confidence, and that is what GATE's manufacturer auto-bind reads
+   (`scope_stated`, PRD v3 §7: at least `gate.high`). Runs after each read, so a type the first read
    settles spares the second read the scope. Measured: two cheap reads agreed on
    `group` for an MDD certificate in the eval; this caught it.
 6. `T2` (`models.t2`, Sonnet) for what is still open, never when nothing is.
@@ -442,11 +457,15 @@ schema enforces it.
   branch did; type to scope derives the scope again once a read settles the type.
   On the eval this changed T0's scope on 7 of 79 text documents and 5 of 34
   scans, and no routing or disposition (cached replay, 2026-10-12).
-- **A T0 Basic UDI-DI can be a word.** T0's UDI regex takes the token after the
-  label, and `udi.validate_basic_udi` calls a plain word "unscorable", not
-  invalid, so `checks.settled` lets it pass. On the eval END-DoC-Aryane holds
-  `PRODUCT` (0.9) and T1 answered nothing: the text ladder keeps it, as the old
-  ladder's blank guard did. Not fixed in Task 4 (the checks are Task 2's).
+- **A word after a Basic UDI-DI label is not a Basic UDI-DI** (review
+  2026-10-13). T0's UDI regex took the token after the label, and
+  `udi.validate_basic_udi` calls a plain word "unscorable", not invalid, so the
+  checks let it pass: on the SFTP mirror 12 documents held a word (`PRODUCT`,
+  `Thermaprep`, `Document`, ...; END-DoC-Aryane on the eval). Now `udi.is_word`
+  (no agency's shape and no digit) refuses it in three places: T0 skips such a
+  match and tries the next label (`extract_basic_udi`), and `checks.settled` and
+  `checks.well_formed` never pass it. GS1, HIBCC and EUDAMED-assigned values,
+  and unscorable codes with digits, are judged as before.
 - **`models.rank` is read by nothing.** `app/config.py:206-216` defines
   `models.t1` / `.t2` / `.rank` / `.email_summary`; grepping `app/` for
   `.rank` (2026-08-31) turns up only that docstring and no code reading

@@ -28,7 +28,7 @@ table exists only to anchor the walkthrough below.
 | `resolve.group` | `app/handlers/resolve.py:278` |
 | `discover.group` | `app/handlers/discover.py:373` |
 | `fetch.url` | `app/handlers/fetch.py:114` |
-| `extract.doc` | `app/handlers/extract.py:353` |
+| `extract.doc` | `app/handlers/extract.py:356` |
 | `validate.doc` | `app/handlers/validate.py:759` |
 | `gate.candidate` | `app/handlers/gate.py:910` |
 | `gate.apply` | `app/handlers/gate.py:1311` |
@@ -108,7 +108,7 @@ Then, in order (`app/handlers/fetch.py:114-184`):
 Opens the archived file once and hands it to both the text-store sidecar and
 the tier ladder. An unopenable PDF is counted (`unreadable_pdf`) and
 **nothing downstream is emitted** — there's nothing to validate
-(`app/handlers/extract.py:378-396`). Otherwise: T0 (deterministic,
+(`app/handlers/extract.py:381-399`). Otherwise: T0 (deterministic,
 playbook-templated or pdfplumber) runs first; any field it leaves blank or
 under 0.95 goes per-field to T1 (Haiku 5.5, the whole text); what the text
 does not prove (`checks.settled`, the null rule) goes to a cheap image read
