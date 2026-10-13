@@ -73,6 +73,11 @@ After the Task 5a review (Denis): the guard covers superseded documents too; a k
 candidate still stages its links; fix now the three existing gate problems the review
 confirmed (a production re-read changing type or regulation inside a supersession
 chain, the reviewer-edit revision clash, no stale-revision check on the binding route).
+2026-10-13 (Denis): a rejected document is final for the machine; a production reading
+of a superseded document is kept; a confirmed EC/ISO certificate's scope carries the
+type's confidence (Task 4 departure 2). Task 5b also: `tiers.next_extract_rev` counts
+evidence revisions too (the shared counter the 5a review found); on text, which read is
+"first" when the image read agrees with T1.
 
 **Defaults taken (no ruling, say if wrong):** mixed PDFs take the text branch; a
 scan is a document with no text page at all; T0 fields under 0.95 count as settled
@@ -115,8 +120,8 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | 1 read plumbing, ledger | done: built (Opus), reviewed and fixed (Opus), merged; full suite 4674 passed, 5 skipped | merge of f843948 |
 | 2 checks, page classes | done: built (Sonnet), reviewed and fixed (Opus), merged | b9cd734 |
 | 3 scans | done: built (Opus), reviewed and fixed (Opus), merged; full suite 4820 passed, 5 skipped; decision 3 ruled by Denis (item identifiers asked on filename-typed scanned DoCs) | merge 0c891c8 |
-| 4 text ladder | building (Opus) | worktree el-text |
-| 5a gate side: combined score, migration, published guard, wording | built, reviewed, fixed (Opus) bc39e5b + a78bae6, full suite 4910 passed; second Opus review running | worktree el-gate |
+| 4 text ladder | built (Opus) 4bdd528 + 8ed2b4c, full suite 4917 passed; Opus review: merge after fixes (UDI word, REF list, mixed PDF doc-class, tools filter); fixes running | worktree el-text |
+| 5a gate side: combined score, migration, published guard, wording | second Opus review: merge after fixes; rejected final for the machine and superseded kept (Denis 2026-10-13); fixes running | worktree el-gate |
 | 5b extraction side: second reads stamp the contract keys | waiting for 4 and 5a | |
 | 6 prompt caching | done: built (Sonnet), reviewed and fixed (Opus), merged; cache hits to confirm on the first real run | merge of bbc461d |
 | 7 re-extract command | done: built (Sonnet), reviewed and fixed (Opus), merged | c39bb77 |
