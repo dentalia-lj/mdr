@@ -120,8 +120,8 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | 1 read plumbing, ledger | done: built (Opus), reviewed and fixed (Opus), merged; full suite 4674 passed, 5 skipped | merge of f843948 |
 | 2 checks, page classes | done: built (Sonnet), reviewed and fixed (Opus), merged | b9cd734 |
 | 3 scans | done: built (Opus), reviewed and fixed (Opus), merged; full suite 4820 passed, 5 skipped; decision 3 ruled by Denis (item identifiers asked on filename-typed scanned DoCs) | merge 0c891c8 |
-| 4 text ladder | built (Opus) 4bdd528 + 8ed2b4c, full suite 4917 passed; Opus review: merge after fixes (UDI word, REF list, mixed PDF doc-class, tools filter); fixes running | worktree el-text |
-| 5a gate side: combined score, migration, published guard, wording | second Opus review: merge after fixes; rejected final for the machine and superseded kept (Denis 2026-10-13); fixes running | worktree el-gate |
+| 4 text ladder | review fixes in (6c5c592, 10f6537, 67f630a; full suite 4960 passed; agree replay 7 of 79 = measured); IFU drop on scans running, then Opus check | worktree el-text |
+| 5a gate side: combined score, migration, published guard, wording | done in branch: 3 Opus review rounds, verdict merge; 16be330 | worktree el-gate, merge with 4 |
 | 5b extraction side: second reads stamp the contract keys | waiting for 4 and 5a | |
 | 6 prompt caching | done: built (Sonnet), reviewed and fixed (Opus), merged; cache hits to confirm on the first real run | merge of bbc461d |
 | 7 re-extract command | done: built (Sonnet), reviewed and fixed (Opus), merged | c39bb77 |
