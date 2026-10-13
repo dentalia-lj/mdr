@@ -133,7 +133,7 @@ Task 4). Steps and labels from `llm.READ_STEPS`:
    type was known are dropped (`_drop_ifu_certificate_reads`, review
    2026-10-13): T1 is asked `validity_from` while the type is still open, and on
    an IFU it reads one off a revision code. T0's own value comes back where it
-   had one; the read stays in `_reads`.
+   had one; the read stays in `_reads`. The scan ladder applies the same rule.
 6. `T2` (`models.t2`, Sonnet) for what is still open, on the pages
    `_image_pages` picks for those fields. Its answer closes what it was asked,
    an empty answer included, with the scan ladder's guards (`_sonnet_closes`).
@@ -193,7 +193,10 @@ Steps and labels from `llm.READ_STEPS`:
    guessed type (0.6), or a read that stated the same scope at less. So a
    confirmed EC or ISO certificate's `manufacturer` scope carries the type's
    confidence, and that is what GATE's manufacturer auto-bind reads
-   (`scope_stated`, PRD v3 §7: at least `gate.high`). Runs after each read, so a type the first read
+   (`scope_stated`, PRD v3 §7: at least `gate.high`).
+   Once the type is known to be an IFU, the certificate fields a read wrote
+   before that are dropped, as on text (`_drop_ifu_certificate_reads`, review
+   2026-10-13): the first image read is asked them while the type is open. Runs after each read, so a type the first read
    settles spares the second read the scope. Measured: two cheap reads agreed on
    `group` for an MDD certificate in the eval; this caught it.
 6. `T2` (`models.t2`, Sonnet) for what is still open, never when nothing is.

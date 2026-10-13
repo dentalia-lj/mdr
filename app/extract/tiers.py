@@ -731,7 +731,7 @@ def _asked(answer: dict, wanted) -> dict:
 def _drop_ifu_certificate_reads(fields: dict, known: set[str], t0: dict) -> None:
     """Once the type is known to be an IFU (`_NO_CERTIFICATE_TYPES`), the
     certificate fields a read wrote before the type was known are dropped
-    (review 2026-10-13): the suppression exists because a model asked for a
+    (review 2026-10-13; both ladders): the suppression exists because a model asked for a
     date an IFU cannot hold finds one anyway (STRAUMANN, "701593/M/12 04/26"
     read as 2026-04-26), and that is as true of an answer given before the
     type was known as after. T0's own read of the field comes back where there
@@ -1026,7 +1026,9 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
        pages), recorded under `PAGES_UNREAD_KEY` (flag `pages-unread`).
     5. Type to scope (`_scope_from_type`), as soon as the type is known:
        after each read, so a type the first read settles spares the second
-       read the scope.
+       read the scope. Once the type is known to be an IFU, the certificate
+       fields a read wrote before that are dropped
+       (`_drop_ifu_certificate_reads`, as on text).
     6. `T2` (`models.t2`, Sonnet) for what is still open, and only then; its
        answer closes every field it was asked, an empty answer included
        (`_sonnet_closes`), and type to scope runs again on the type it leaves.
@@ -1052,9 +1054,9 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
             fields["type"] = {"value": answer, "conf": T1_DOC_CLASS_CONF, "tier": "T2",
                               "verbatim": quote, "page": 1, "step": DOC_CLASS_IMAGE}
 
-    known = {f for f, ev in fields.items()
-             if isinstance(ev, dict) and ev.get("tier") == "T0"
-             and float(ev.get("conf") or 0.0) >= threshold}
+    t0 = {f: dict(ev) for f, ev in fields.items()
+          if isinstance(ev, dict) and ev.get("tier") == "T0"}
+    known = {f for f, ev in t0.items() if float(ev.get("conf") or 0.0) >= threshold}
     open_fields = _scan_pursued(fields, known)
     if not open_fields:
         return doc_class, fields
@@ -1072,6 +1074,7 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     fields = merge(fields, _asked(first, open_fields))
     known |= {f for f in open_fields if _image_settles(f, first.get(f), image_settle)}
     _scope_from_type(fields, known)
+    _drop_ifu_certificate_reads(fields, known, t0)
 
     unread: list[str] = []
     open_fields = _scan_pursued(fields, known)
@@ -1099,6 +1102,7 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
                     unread.append(f)
 
     _scope_from_type(fields, known)
+    _drop_ifu_certificate_reads(fields, known, t0)
 
     open_fields = [f for f in _scan_pursued(fields, known) if f not in unread]
     if open_fields:
@@ -1113,6 +1117,7 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
                 fields[f] = sonnet[f]
         known |= set(open_fields)
         _scope_from_type(fields, known)
+        _drop_ifu_certificate_reads(fields, known, t0)
 
     if unread:
         fields[PAGES_UNREAD_KEY] = unread

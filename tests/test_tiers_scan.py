@@ -720,3 +720,21 @@ def test_an_agreeing_scope_keeps_its_read_unless_the_derivation_is_surer(t0, rea
         assert (scope["step"], scope["conf"]) == ("T2-first", read_conf)
     else:
         assert (scope["tier"], scope["conf"], scope["verbatim"]) == ("T0", 0.95, "type=EC")
+
+
+def test_certificate_fields_a_read_wrote_before_the_type_was_an_ifu_are_dropped(t0):
+    """The text ladder's rule on a scan (review 2026-10-13): the first image
+    read is asked the certificate fields while the type is still open, and on
+    an IFU it finds a date anyway (a revision code). Once the type is known to
+    be an IFU they are dropped; T0's own value comes back, the read stays in
+    the record."""
+    t0("compliance-doc", {"validity_to": t0ev("2030-01-01", 0.6)})
+    first = dict(EVERYTHING, type=("IFU", 0.95), validity_from=("2026-04-26", 0.9),
+                 validity_to=("2031-01-01", 0.9), cert_number=("701593/M/12", 0.9))
+    llm = ScanLlm({"T2-first": first})
+    _, fields, _ = run(_scan(1), llm)
+    assert {"validity_from", "cert_number"} <= llm.asked("T2-first")
+    assert "validity_from" not in fields and "cert_number" not in fields
+    assert (fields["validity_to"]["value"], fields["validity_to"]["tier"]) == ("2030-01-01", "T0")
+    record = next(r for r in fields[tiers.READS_KEY] if r["step"] == "T2-first")
+    assert record["fields"]["validity_from"]["value"] == "2026-04-26"
