@@ -128,8 +128,8 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | 5b extraction side: second reads stamp the contract keys | done: built (Opus), 2 Opus review rounds + final check, merged; full suite 5173 passed, 5 skipped; replay (GATE's _score) text 65 of 79 production, 0 wrong gate fields; scans 25 of 34 | merge b03bda7 |
 | 6 prompt caching | done: built (Sonnet), reviewed and fixed (Opus), merged; cache hits to confirm on the first real run | merge of bbc461d |
 | 7 re-extract command | done: built (Sonnet), reviewed and fixed (Opus), merged | c39bb77 |
-| 8 quality and parity | preparing (Opus, no API): label fixes, real-read batch harness with a $0.90 cap, report script, dry-run estimate; paid run after 5b merges | worktree el-quality |
-| 9 production replay | waiting for 1-6 | |
+| 8 quality and parity | harness and label fixes built (4bf2c87, 064803c); paid run going (estimate $0.71 + baseline fill, cap $0.99) | worktree el-quality |
+| 9 production replay | running (Opus): read-only selection and PDF copy from the server, then real reads, cap $0.95 | worktree el-replay |
 
 ## Who builds what, and in parallel (Denis, 2026-10-12)
 
