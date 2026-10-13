@@ -323,6 +323,7 @@ _Retired from this index when they were ruled or closed, all six with their full
 - [ ] 2026-10-13 [human-cert-edit-backresolve] A reviewer's `cert_number` edit through `gate.apply` does not back-resolve the declarations citing the corrected number; they wait for the next machine read of that certificate (Task 5a review, round 3)
 - [ ] 2026-10-13 [udi-two-in-one-value] A read can return two Basic UDI-DIs as one `basic_udi_di` string ("++J01111115560I34, ++J01111115555I3E", TD_11, Sonnet, Task 8 run); it fails the check pair and VALIDATE flags it. Multi-value UDI is out of the extraction-ladder scope; decide whether to split and keep the first valid one or store a list
 - [ ] 2026-10-13 [cert-number-normalize] Sonnet returned `cert_number` "No. G1 101021 0003 Rev. 01" on 533161 (Task 8 run). GATE's back-resolution matches `document.cert_number` literally, so a prefix or suffix can keep a declaration from linking to its certificate. Decide a normalization (strip "No.", keep or drop the revision)
+- [ ] 2026-10-13 [verbatim-with-commentary] The Haiku 5.5 image read appended its own note to a verbatim quote: "Cuxhaven, 14.01.2026 (signature block, place-and-date line; no explicit 'Valid from' phrase)" (VOCO Ceramic Bond, `validity_from`, paid confirmation read). For a value settled by `extract.image_settle` the quote is not checked against text, so the note would be stored as evidence. Measure how often reads add commentary, then tighten the image prompt or strip a trailing parenthetical
 
 ## Waiting on a ruling
 

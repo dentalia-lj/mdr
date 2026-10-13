@@ -129,6 +129,7 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | 6 prompt caching | done: built (Sonnet), reviewed and fixed (Opus), merged; cache hits to confirm on the first real run | merge of bbc461d |
 | 7 re-extract command | done: built (Sonnet), reviewed and fixed (Opus), merged | c39bb77 |
 | 8 quality and parity | done: real reads $0.60, all deploy blockers pass; text 121/130 fields right (today 112), scans 25/26 (today 24); report docs/private/2026-10-13-extraction-ladder-quality.md | el-quality 3b2b6b0 |
+| 8a date only an image shows (VOCO stamps) | done: built (Opus), checked, merged 6eeef62; ruling recorded c24b7f7; full suite 5214 passed; eval Sonnet 9 to 8, quality unchanged; confirmation read $0.0009 | merged |
 | 9 production replay | partial: stopped at its cap after round 2 ($0.22); 50 of 145 finished; found 4 regressions (mixed PDF and IFU refused by doc-class, a DoC scope 0.6 manufacturer, Komet MDD at 0.6); Denis approved up to $1.00 more (2026-10-13): fix, then finish | worktree el-replay; fixes in el-regress |
 
 ## Who builds what, and in parallel (Denis, 2026-10-12)
