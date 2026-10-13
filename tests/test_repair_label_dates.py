@@ -289,3 +289,25 @@ def test_the_report_prints_both_quotes_in_full(conn):
     assert "'Expiry Date 2030-04-16'" in text
     assert "'Expiry Date: 2030-04-16'" in text
     assert "repaired 1" in text
+
+
+def test_the_report_and_the_job_carry_the_rev_written(conn):
+    """Review 2026-10-13, F6: after a reviewer's edit at rev 2 (`tiers.
+    next_extract_rev` counts evidence revs since Task 5b) the repair writes
+    rev 3; the report shows "rev1 -> 3" and `validate.doc` points at rev 3."""
+    _seed(conn, _fields())
+    conn.execute(
+        "INSERT INTO evidence (doc_id, field, value, archive_url, verbatim, tier, "
+        "confidence, extracted_at, extract_rev) "
+        "SELECT doc_id, 'type', 'EC', archive_url, 'EC', 'T3', 1.0, now(), 2 "
+        "FROM document WHERE content_hash=%s", (HASH,))
+    repairs, counts, skipped = rld.plan(
+        conn, playbooks=(),
+        reread=_reader({"validity_to": _ev("2030-04-16", "Expiry Date: 2030-04-16")}))
+    assert "rev1 -> 3" in "\n".join(rld.render(repairs, counts, skipped))
+    stats = rld.apply(conn, repairs)
+    assert stats["revs_moved"] == 0
+    assert conn.execute("SELECT max(extract_rev) m FROM extraction_attempt "
+                        "WHERE content_hash=%s", (HASH,)).fetchone()["m"] == 3
+    job = conn.execute("SELECT payload FROM job WHERE type='validate.doc'").fetchone()
+    assert job["payload"]["extract_rev"] == 3

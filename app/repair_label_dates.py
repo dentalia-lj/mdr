@@ -185,7 +185,8 @@ def plan(conn, playbooks=None, reread=None) -> tuple[list[dict], dict, list[dict
         if changed:
             counts["repaired"] += len(changed)
             repairs.append({**row, "fields_new": {**old, **changed},
-                            "changed": changed})
+                            "changed": changed,
+                            "new_rev": tiers.next_extract_rev(conn, row["content_hash"])})
     return repairs, counts, skipped
 
 
@@ -196,10 +197,17 @@ def apply(conn, repairs: list[dict]) -> dict:
     `playbook_slug`/`playbook_rev`/`tier`/`model_id` are carried forward from
     the attempt being copied, never recomputed: the old fields were shaped by
     that playbook and invariant 2 needs the attribution to stay with them.
+
+    The rev is allocated again here (`tiers.next_extract_rev`, past every
+    attempt and every evidence row of the document), never assumed to be the
+    planned `new_rev` the report printed: `revs_moved` counts the repairs
+    written at another rev than that, which only a reading committed in
+    between causes.
     """
-    deleted = emitted = 0
+    deleted = emitted = moved = 0
     for r in repairs:
         rev = tiers.next_extract_rev(conn, r["content_hash"])
+        moved += rev != r.get("new_rev", rev)
         tiers.write_extraction_attempt(
             conn, r["content_hash"], [r["tier"]], r["fields_new"],
             extract_rev=rev, model_id=r["model_id"],
@@ -231,7 +239,7 @@ def apply(conn, repairs: list[dict]) -> dict:
         ) is not None:
             emitted += 1
     return {"appended": len(repairs), "jobs_deleted": deleted,
-            "jobs_emitted": emitted}
+            "jobs_emitted": emitted, "revs_moved": moved}
 
 
 def render(repairs: list[dict], counts: dict, skipped: list[dict],
@@ -244,7 +252,7 @@ def render(repairs: list[dict], counts: dict, skipped: list[dict],
         for name, ev in r["changed"].items():
             was = (r["fields"][name].get("verbatim") or "")
             out.append(f"  doc {r['doc_id']:<5} {r['status']:<10} rev"
-                       f"{r['extract_rev']} -> {r['extract_rev'] + 1}  {name}")
+                       f"{r['extract_rev']} -> {r['new_rev']}  {name}")
             out.append(f"        was: {was!r}")
             out.append(f"        now: {ev['verbatim']!r}")
     if len(repairs) > limit:

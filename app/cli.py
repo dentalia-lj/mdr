@@ -890,6 +890,9 @@ def cmd_repair_stated_class(args: argparse.Namespace) -> int:
 
     print(f"\nrepaired: {stats['appended']} extraction_attempt row(s) appended, "
           f"0 jobs emitted (by design — nothing is re-adjudicated)")
+    if stats.get("revs_moved"):
+        print(f"note: {stats['revs_moved']} written at a later rev than shown above "
+              f"(a reading committed in between)")
     return 0
 
 
@@ -982,6 +985,9 @@ def cmd_repair_label_dates(args: argparse.Namespace) -> int:
     print(f"\nrepaired: {stats['appended']} extraction_attempt row(s) appended, "
           f"{stats['jobs_deleted']} stale validate.doc deleted, "
           f"{stats['jobs_emitted']} emitted")
+    if stats.get("revs_moved"):
+        print(f"note: {stats['revs_moved']} written at a later rev than shown above "
+              f"(a reading committed in between)")
     return 0
 
 

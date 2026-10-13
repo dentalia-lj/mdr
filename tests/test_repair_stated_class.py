@@ -315,3 +315,41 @@ def test_cmd_on_a_clean_database_is_a_no_op(test_db_url, monkeypatch, capsys):
 
     assert rc == 0
     assert "scanned 0" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------- #
+# the rev written is the rev shown (review 2026-10-13, F6)
+# --------------------------------------------------------------------------- #
+def _edit_at_rev(conn, rev, content_hash=HASH):
+    """A reviewer's edit: T3 evidence at a rev no attempt holds."""
+    conn.execute(
+        "INSERT INTO evidence (doc_id, field, value, archive_url, verbatim, tier, "
+        "confidence, extracted_at, extract_rev) "
+        "SELECT doc_id, 'type', 'DoC', archive_url, 'DoC', 'T3', 1.0, now(), %s "
+        "FROM document WHERE content_hash=%s", (rev, content_hash))
+
+
+def test_the_report_shows_the_rev_the_repair_writes(conn):
+    """`tiers.next_extract_rev` counts the document's evidence revs too (Task
+    5b), so after a reviewer's edit at rev 2 the repair writes rev 3, and the
+    report says so instead of "rev1 -> 2"."""
+    _seed(conn)
+    _edit_at_rev(conn, 2)
+    repairs, counts = rsc.plan(conn)
+    assert "rev1 -> 3" in "\n".join(rsc.render(repairs, counts))
+    stats = rsc.apply(conn, repairs)
+    assert sorted(_revs(conn)) == [1, 3]
+    assert stats["revs_moved"] == 0
+
+
+def test_a_reading_committed_between_plan_and_apply_is_counted(conn):
+    """The rev is allocated again at apply, never assumed: a reading that took
+    the planned rev in between moves the repair to the next one, counted."""
+    _seed(conn)
+    repairs, counts = rsc.plan(conn)
+    assert repairs[0]["new_rev"] == 2
+    conn.execute("INSERT INTO extraction_attempt (content_hash, tier, fields, extract_rev) "
+                 "VALUES (%s,'T0','{}',2)", (HASH,))
+    stats = rsc.apply(conn, repairs)
+    assert stats["revs_moved"] == 1
+    assert sorted(_revs(conn)) == [1, 2, 3]
