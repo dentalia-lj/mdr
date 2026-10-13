@@ -38,7 +38,7 @@ adapter that raises.
 | `ingest.process_md_unknown` | `False` silently drops rows with a blank device class — possibly medical devices — out of the pipeline |
 | `email.zip_*` | Zip-bomb guards. Raising any of them re-opens a measured 42 KB → 4.5 GB expansion |
 | `models.t1` / `models.t2` | A tier swap requires the Phase 0 diff protocol to be re-run |
-| `models.vision_first` / `models.second_read` | Same rule. Every scan is read by them since 2026-10-12 (the scan ladder, plan Task 3) |
+| `models.vision_first` / `models.second_read` | Same rule. Every scan is read by them since 2026-10-12 (the scan ladder, plan Task 3), and every text document T1 leaves a field open on reads `vision_first` (plan Task 4) |
 | `adapters.storage` | `"gdrive"` makes every archive write raise until gap G7 lands |
 | `storage.local_root` | A relative path means archived files are lost on container restart |
 | `budget.*` | **Displayed, never enforced.** `sweep_cap_eur` and `monthly_cap_eur` appear only in the status board's display dict. No code in `app/` stops or throttles anything when spend passes either. They read like safety valves and are labels |
@@ -137,7 +137,9 @@ is where the combined number is used; the plan's Task 1 had put it under
 `extract`. Read since 2026-10-12 by the scan ladder only (`tiers.
 run_scan_ladder`, `checks.agree`): two cheap image reads of a scan that give
 one well-formed value, each at least this sure, settle the field without
-Sonnet. GATE's combined score is plan Task 5 and not built. Blast radius
+Sonnet. The text ladder (plan Task 4) does not read it: T1 and the cheap image
+read agreeing settles a text field at any confidence (ruling 4, "as measured,
+no per-read minimum"). GATE's combined score is plan Task 5 and not built. Blast radius
 today: lower lets two weak cheap reads settle a scan field Sonnet would have
 read; higher sends more scan fields to Sonnet. Once GATE reads it: lower lets
 two weak reads combine past `gate.high` and publish without a person.
@@ -189,7 +191,7 @@ Not to be confused with the extraction escalation threshold, which is a hardcode
 
 | Key | Type | Default | Env var |
 |---|---|---|---|
-| `models.t1` | str | `claude-haiku-4-5` | `MODELS_T1` |
+| `models.t1` | str | `claude-haiku-5-5` | `MODELS_T1` |
 | `models.t2` | str | `claude-sonnet-5-5` | `MODELS_T2` |
 | `models.rank` | str | `claude-haiku-4-5` | `MODELS_RANK` |
 | `models.email_summary` | str | `claude-haiku-4-5` | `MODELS_EMAIL_SUMMARY` |
@@ -199,14 +201,26 @@ Not to be confused with the extraction escalation threshold, which is a hardcode
 `email_summary` is its own key so a tier swap cannot drag it along with `rank`.
 Invariant 12 caps it at the cheap tier.
 
+`t1` moved from `claude-haiku-4-5` to `claude-haiku-5-5` on 2026-10-12
+(extraction-ladder ruling 1, plan Task 4), the dataclass default and the
+loader's fallback both (`tests/test_config.py` guards the pair). It serves the
+T1 read and the text doc-class call (`doc-class`, sent with thinking off since
+then: Haiku 5.5 thinks by default and the call answers in 256 tokens). Blast
+radius: every text document T0 does not settle; Haiku 5.5 costs a tenth of
+Haiku 4.5 per token ($0.10 / $0.50 against $1 / $5 per MTok) but thinks by
+default, so its output tokens per call are higher. Putting `claude-haiku-4-5`
+back is a model swap like any other, and the eval of 2026-10-08 measured it
+lower (87% against 90% of 130 labelled fields).
+
 `vision_first` and `second_read` (2026-10-12) name the models of the extraction
 ladder's newer read steps, `app/extract/llm.py` `READ_STEPS`: `vision_first`
 serves `T2-first` (the cheap image read before Sonnet) and `doc-class-image`
 (the scan doc-class call); `second_read` serves `T1-second` and `T2-second`,
 both sent with thinking off. Since 2026-10-12 the scan ladder sends
-`doc-class-image`, `T2-first` and `T2-second`; `T1-second` is not sent yet
-(plan Task 5). Blast radius: every scan (and, once plan Task 4 lands, most text
-documents) takes a `vision_first` read, so pointing it at a Sonnet-class model
+`doc-class-image`, `T2-first` and `T2-second`, and the text ladder (plan Task 4)
+`T2-first` for what T1 leaves unproven; `T1-second` is not sent yet (plan Task
+5). Blast radius: every scan and every text document T1 does not settle (31 of
+79 on the eval) takes a `vision_first` read, so pointing it at a Sonnet-class model
 multiplies the image-read bill roughly twentyfold (Haiku 5.5 $0.10 / $0.50 per
 MTok against Sonnet 5.5's $2 / $10); `second_read` decides the agreement that
 settles gate fields, so a model swap there needs the eval re-run.
@@ -224,7 +238,9 @@ that cannot be set on a deployed stack").
 On a scan, a field the cheap image read (`T2-first`) states at or above this
 confidence is settled and goes no further. 0.85 is the measured setting
 (`tools/ladder_probe.py`). Read by the scan ladder (`tiers.run_scan_ladder`,
-2026-10-12; the extract handler passes it on every extraction). The value must
+2026-10-12; the extract handler passes it on every extraction). Not by the text
+ladder: a text document's image read settles a field by the evidence checks, a
+check-valid Basic UDI-DI or agreement with T1, never by its confidence. The value must
 also be well-formed (`checks.well_formed`: an ISO date, a type, scope or
 regulation from its vocabulary, a certificate that is not a notified-body
 number) whatever the confidence. Blast radius: lower lets a less certain cheap

@@ -1,7 +1,8 @@
 # Extraction, as built: T0 → T1 → T2 → T3
 
 **Status:** live. Measured against the tree at 2026-08-31; the scan ladder
-(a document with no text page) added 2026-10-12, extraction-ladder plan Task 3.
+(a document with no text page) added 2026-10-12, extraction-ladder plan Task 3;
+the text ladder rebuilt the same day (T-3 on Haiku 5.5, plan Task 4).
 
 Covers `app/extract/` and the parts of `app/handlers/extract.py` and
 `app/handlers/gate.py` that finish what `extract/` starts. Does not restate
@@ -14,11 +15,15 @@ does, and where the surprises are.
 Four tiers read one document's fields, cheapest first, escalating per field
 rather than per document: T0 is free deterministic parsing (regex, keyword
 tables, pdfplumber tables, manufacturer-authored layout templates), T1/T2 are
-Anthropic structured-output calls (text, then vision) gated by confidence, and
-T3 is a human correction made through `gate.apply` — it never touches
-`app/extract/` at all. A document with no text page at all (a scan) skips T1
-and takes its own ladder of image reads: a cheap read, a second cheap read for
-what that leaves open, Sonnet only for what the two do not settle. `extract.doc` (`app/handlers/extract.py`)
+Anthropic structured-output calls (text, then vision), and T3 is a human
+correction made through `gate.apply`; it never touches `app/extract/` at all.
+Since 2026-10-12 a field moves up the ladder while it is not SETTLED (the
+evidence checks prove it, two reads agree, or the null rule holds), not while a
+model calls itself unsure. A text document takes T1 (Haiku 5.5), a cheap image
+read for what T1 leaves unproven, and Sonnet only for what those two do not
+settle. A document with no text page at all (a scan) skips T1 and takes its own
+ladder of image reads: a cheap read, a second cheap read for what that leaves
+open, Sonnet only for what the two do not settle. `extract.doc` (`app/handlers/extract.py`)
 is the handler that drives the ladder and writes its two audit tables
 (`extraction_attempt`, `extraction_cost`); GATE is what turns the ladder's
 output into `evidence` rows, and constructs several fields of those rows
@@ -32,14 +37,14 @@ itself.
 | `app/extract/t0_templates.py` | 1267 | T0: doc-class classification, keyword tables, REF-list extraction, `field_ev()` evidence shape |
 | `app/extract/t0_layout.py` | 307 | The T0 REF-list layout-template engine (anchors + text-relative regions, read from playbooks) |
 | `app/extract/udi.py` | 148 | Offline Basic UDI-DI check-character validation (HIBCC + GS1, MOD 1021/32) |
-| `app/extract/tiers.py` | 893 | The ladder itself: `needs_escalation`, `merge` (stronger read prevails), `calibrate`, `run_extraction` (text ladder), `run_scan_ladder` (scans), `read_disagreements`, `failed_reads`, `extraction_attempt`/`extraction_cost` writers |
-| `app/extract/checks.py` | 323 | Evidence checks, pure: `settled` / `null_settled` / `both_null_settled` against the text layer; for scans `well_formed`, `normalized` and `agree` (shape and agreement, no text needed) |
-| `app/extract/llm.py` | 720 | T1/T2 Anthropic clients (sync `AnthropicLlm`, batch `AnthropicBatchClient`), `READ_STEPS`, the JSON schema, per-field evidence construction, the doc-class calls (`classify` on page 1-2 text, `classify_image` on page 1-2 images) |
+| `app/extract/tiers.py` | 1132 | The ladder itself: `needs_escalation`, `merge` (stronger read prevails), `calibrate`, `run_extraction` (splits text / scan), `run_text_ladder` (T-3) and `_image_pages` (its page choice), `run_scan_ladder` (S-2), `read_disagreements`, `failed_reads`, `extraction_attempt`/`extraction_cost` writers |
+| `app/extract/checks.py` | 323 | Evidence checks, pure: `settled` / `null_settled` / `both_null_settled` against the text layer; `well_formed`, `normalized` and `agree` (shape and agreement between two reads) |
+| `app/extract/llm.py` | 758 | T1/T2 Anthropic clients (sync `AnthropicLlm`, batch `AnthropicBatchClient`), `READ_STEPS`, the JSON schema, per-field evidence construction, the doc-class calls (`classify` on page 1-2 text, `classify_image` on page 1-2 images) |
 | `app/extract/batching.py` | 56 | Batch API state machine (`advance_batch`) over the `batch_ref` side table |
 | `app/extract/economics.py` | 110 | Token usage → USD, per-model `PRICES`, `UnknownModelPricing` |
 | `app/extract/pdf.py` | 240 | The only module touching PyMuPDF directly: text, rasterization, `is_scan`, `bounded_text`, per-page classes (`page_classes`; `has_text_page` decides text ladder or scan ladder) |
 | `app/extract/text_store.py` | 77 | `document_text` sidecar — what was actually read, independent of the tier ladder |
-| `app/handlers/extract.py` | 374 | `handle_extract_doc` — sync/batch dispatch, hint assembly, `_finalize` (writes + emits `validate.doc`) |
+| `app/handlers/extract.py` | 466 | `handle_extract_doc`: sync/batch dispatch, hint assembly, `_finalize` (writes + emits `validate.doc`) |
 | `app/handlers/gate.py` | — | `_insert_evidence` (622-678), `_require_complete_evidence` (238-266), `_apply_edits` (1118-1139) — see Rules and Gotchas |
 
 ## Input → Output
@@ -58,24 +63,84 @@ itself.
 threshold)` returns fields absent or below `threshold`. `_ESCALATE_ALWAYS`
 (type, regulation, validity_from, validity_to, coverage_scope, cert_number,
 manufacturer) always pursues; `_ESCALATE_ITEM_ID` (ref_list, basic_udi_di) is
-suppressed once `coverage_scope` is confidently `manufacturer`
+suppressed once `coverage_scope` is `manufacturer`
 (`tiers.py:122-124`); `_ESCALATE_CERTIFICATE` (validity_from, validity_to,
 cert_number) is suppressed once `type` is confidently one of
 `_NO_CERTIFICATE_TYPES = ("IFU",)` (`tiers.py:75, 118-120`) — an IFU asked
 for a validity date returns a fabricated one, not a blank (two STRAUMANN
 cases, `tiers.py:57-69`). `referenced_docs` and `stated_class` never force
-escalation.
+escalation. The two ladders apply the same sets with "confidently" read as
+KNOWN (T0 at 0.95 or more, or settled by a read): `_text_pursued` keeps the
+scope suppression by the scope's VALUE, as before (decisions 2026-10-12, "the
+text ladder keeps today's suppression"); `_scan_pursued` only once the scope is
+known. A read answers every field (the response schema requires them all, and
+`llm.extract` returns them all since Task 4); a ladder merges only the fields
+it pursues, so an IFU's certificate fields and `stated_class` never come from a
+read.
 
 **The ladder** (`run_extraction`): T0 always runs first; business-doc/msds
 classes short-circuit with no LLM call at all. Then `pdf.has_text_page(doc)`
 splits it: a document with any text page (an OCR layer over a scan counts, so
-does a mixed PDF) takes the **text ladder** — T1 runs when anything is
-missing; T2 (Sonnet) runs when anything is *still* missing **or**
-`pdf.is_scan(doc)` is true, which on this branch now means a mixed PDF whose
-page 1 has no text (see Gotchas). The batch transport (`_handle_batch`,
-`app/handlers/extract.py`) re-implements the text gating by hand per tier, one
-poll cycle per tier-attempt. A document with no text page takes the **scan
-ladder** below, on both transports through the same function.
+does a mixed PDF) takes the **text ladder**, a document with none the **scan
+ladder**. Both transports run the same two functions: the batch path
+(`_handle_batch`, `app/handlers/extract.py`) hands them a `read` that submits
+each step as a batch-of-1 under its label and raises `tiers.Deferred` while it
+runs, and re-runs the ladder from the top on every poll (a resolved step is
+re-fetched, never resubmitted).
+
+**The text ladder, T-3** (`run_text_ladder`; PRD v3 §5 amended 2026-10-12, plan
+Task 4). Steps and labels from `llm.READ_STEPS`:
+
+1. T0 left the file `unknown`: the doc-class call on the page 1-2 text
+   (`classify`, `doc-class`, `models.t1`, thinking off, 256 tokens; pages 1-2
+   with no text are refused without a call). `not-a-compliance-document` is
+   terminal. The answer becomes `type` evidence (step `doc-class`, ranked below
+   every field read). Batch mode makes the same call since Task 4 (it made none
+   before, so an `unknown` text document was read as a compliance document).
+2. `T1` (`models.t1`, Haiku 5.5 since Task 4, the whole text up to
+   `pdf.LLM_TEXT_BUDGET_CHARS`) for every pursued field T0 does not hold at
+   0.95. A field is settled when the value it then holds passes
+   `checks.settled` (quote on the cited page, value in the text, dates parsed
+   from the quote, regulation proven by the one citation printed, a Basic
+   UDI-DI whose check pair is not invalid, a `cert_number` that is not a
+   notified-body number; `type` and `coverage_scope` by a quote on the cited
+   page), or when T1 ANSWERED it empty and `checks.null_settled` holds (no label
+   for it in the text, no image or OCR page, text not cut). A T0 value under
+   0.95 settles the same way when the field still holds it (T1 read nothing
+   better): never against a different value T1 read, which the image read then
+   decides (eval: Ceramill's T0 read the word "Document" after its UDI label).
+3. Fields pursued only after T1 (a scope T1 changed from `manufacturer` brings
+   the item identifiers in) are taken from T1's answer, which carries every
+   field, and settle as in step 2; recorded as T1's.
+4. `T2-first` (`models.vision_first`) for what is open, on the pages
+   `_image_pages` picks (below). A field settles when its own value passes the
+   checks, when it is a Basic UDI-DI whose check pair verifies
+   (`checks.udi_check_valid`; the text layer may be an OCR misread, "OOIYC" for
+   "001YC"), when it agrees with T1 (`checks.agree` with no per-read minimum:
+   ruling 4, "as measured"), or when both reads ANSWERED it empty and
+   `checks.both_null_settled` allows it: never a Basic UDI-DI the text labels
+   (a multi-UDI list goes to Sonnet), never with an image page no read rendered
+   or text past the budget.
+5. Type to scope after each read, as on a scan (step 5 below).
+6. `T2` (`models.t2`, Sonnet) for what is still open, on the pages
+   `_image_pages` picks for those fields. Its answer closes what it was asked,
+   an empty answer included, with the scan ladder's guards (`_sonnet_closes`).
+
+A failed read (no answer at all) is never an empty answer: its fields stay
+open, it is marked `failed` in `_reads`, and the job result counts it, as on a
+scan. The text ladder writes `_reads` and the job result's `disagreements`
+exactly as the scan ladder does (below).
+
+**Page-aware image reads** (`_image_pages`, Denis 2026-10-12). A text
+document's image read renders, chosen in this order: the pages T1 cited for the
+open fields, the first page where each open field's label occurs
+(`checks.LABELS`), the image pages of a mixed PDF, then page 1 onward; at most
+4, each clamped to the page count. They are sent in document order, so a choice
+of pages 1-4 is the old request byte for byte and no page list is passed at all
+then. On the eval one open field pointed past page 4 (neodent's certificate,
+cited on page 26). **Sync only**: a batch image read is always pages 1-4,
+because `batch_ref` does not store a page list
+([limits.md](limits.md#built-but-not-wired)).
 
 **The scan ladder, S-2** (`run_scan_ladder`; PRD v3 §5 amended 2026-10-12).
 Steps and labels from `llm.READ_STEPS`:
@@ -111,9 +176,11 @@ Steps and labels from `llm.READ_STEPS`:
 5. Type to scope: once the type is known to be EC, ISO or IFU, the scope follows
    from it (`t0_templates.derive_coverage_scope`) and replaces a scope that
    disagrees or is empty, as T0 evidence ("type=EC") at the type's confidence
-   where lower. Runs after each read, so a type the first read settles spares
-   the second read the scope. Measured: two cheap reads agreed on `group` for an
-   MDD certificate in the eval; this caught it.
+   where lower. An agreeing scope keeps its evidence unless the derivation is
+   surer (Task 4): T0's own derivation from a guessed type (0.6), or a read that
+   stated the same scope at less. Runs after each read, so a type the first read
+   settles spares the second read the scope. Measured: two cheap reads agreed on
+   `group` for an MDD certificate in the eval; this caught it.
 6. `T2` (`models.t2`, Sonnet) for what is still open, never when nothing is.
    Its answer closes what it was asked, an **empty answer included**
    (`tiers._sonnet_closes`): the field held a value no rule settled, and the
@@ -150,8 +217,8 @@ GATE ignores and `merge` ranks by.
 guess under 0.95; T0 at 0.95 or more is never overwritten; equal strength,
 later wins. On the text ladder each read is stronger than the one before, so
 there it is exactly the old later-wins rule. A blank later answer never erases
-an earlier hit (one exception, outside `merge`: Sonnet's empty answer on the
-scan ladder closes the field, step 6 above)
+an earlier hit (one exception, outside `merge`: Sonnet's empty answer closes
+the field on both ladders, step 6 above)
 (`_is_blank`, `tiers.py:128-136`); one shrink guard applies only to
 `_ENUMERATED_FIELDS = {"ref_list"}` (`tiers.py:142,145-154`) — a later tier
 may not replace a longer list with a shorter one, because an LLM `ref_list`
@@ -210,11 +277,12 @@ holds the call's label from `llm.READ_STEPS` (`doc-class`, `doc-class-image`,
 that the doc-class call (`AnthropicLlm.classify`) and the T1 read both logged
 `T1`, so on every document T0 could not type the conflict clause dropped one of
 the two rows without a word. `/status` → **Spend** shows the breakdown per
-model, label and transport. The text ladder sends `doc-class`, `T1` and `T2`;
-the scan ladder `doc-class-image`, `T2-first`, `T2-second` and `T2`;
-`T1-second` belongs to plan Task 5. A doc-class answer cut at `max_tokens`
-raises (`llm._classify_answer`) instead of reading as a refusal; so does a
-batch `doc-class-image` result that carries no answer
+model, label and transport. The text ladder sends `doc-class`, `T1`,
+`T2-first` and `T2`; the scan ladder `doc-class-image`, `T2-first`, `T2-second`
+and `T2`; `T1-second` belongs to plan Task 5. Both doc-class calls send thinking
+off. A doc-class answer cut at `max_tokens` raises (`llm._classify_answer`)
+instead of reading as a refusal, on text since Task 4 too (the job retries, then
+lands in dead jobs); so does a batch doc-class result that carries no answer
 (`app/handlers/extract.py` `_batch_classifier`).
 
 **Read steps** (`app/extract/llm.py`, `READ_STEPS` / `resolve_read`). A read is
@@ -264,21 +332,21 @@ make up the 1,174-token difference, about 2.7 characters a token. Whether the
 format instructions the API adds for structured output fall inside the cached
 prefix is not documented. The minimum cacheable prefix is 512 tokens on Haiku 5.5
 and Sonnet 5.5 and 4,096 on Haiku 4.5; below it the API ignores the marker, with
-no error. So today only the image reads on Sonnet 5.5 (`models.t2`) cache; T1 on
-Haiku 4.5 (`models.t1`) does not, and starts to when Task 4 moves `models.t1` to
-Haiku 5.5. A hit needs another call with the same label and model within 5
+no error. Since Task 4 (`models.t1` on Haiku 5.5) T1 and every image read clear
+the minimum; on Haiku 4.5 T1 did not. A hit needs another call with the same label and model within 5
 minutes: T1 and T2 never share an entry (different prompt, different model), so
 reads come from the next document, as in a backfill, and a lone document pays the
 write (1.25x on the prefix) and reads nothing. Batch requests carry the same
 marker; hits there are best-effort. The doc-class prompt (2,738 characters) is
-not marked: it clears Haiku 5.5's minimum but not Haiku 4.5's, and would save
-about $0.0001 a call on Haiku 5.5 (estimated the same way). `Usage` records cache
+not marked: it would save about $0.0001 a call on Haiku 5.5 (estimated the
+same way), and on Haiku 4.5, which `models.t1` named until Task 4, it falls
+under the minimum. `Usage` records cache
 read and write tokens but cannot tell a 1-hour write from a 5-minute one, which
 is why only the default cache is used. `tools/haiku_compare.request_key` drops
 `cache_control` before hashing, and turns a one-block system back into its text,
 so responses cached before Task 6 still replay. Whether
 `cache_read_input_tokens` rises above 0 is read off the first real run's ledger
-rows (expect 0 on `T1` rows until Task 4); it is not provable offline.
+rows; it is not provable offline.
 
 **T0 template engine** ("engine-agnostic data", `app/extract/t0_layout.py`).
 A `Template` (`t0_layout.py:37-43`) is `slug`, `manufacturer`, `anchors`
@@ -342,9 +410,11 @@ schema enforces it.
 - **The escalation threshold is a hardcoded default parameter, and it is
   NOT `cfg.gate.high`.** `run_extraction(..., threshold: float = 0.95, ...)`
   (`tiers.py:265`) is never called with an explicit `threshold=` anywhere in
-  `app/handlers/extract.py` (`extract.py:169` for sync; the batch path calls
-  `tiers.needs_escalation(fields)` directly at three call sites of its own,
-  `extract.py:202, 209, 212`, same unpassed default). `cfg.gate.high` is a
+  `app/handlers/extract.py` (the sync path calls `run_extraction`, the batch
+  path the two ladders, all with the unpassed default). Since 2026-10-12 it
+  decides only which T0 fields are KNOWN; a read's own confidence no longer
+  moves a field up the ladder (the scan ladder's `extract.image_settle` aside).
+  `cfg.gate.high` is a
   *separate* number, `0.92` (`app/config.py:57-70`), read only inside
   `app/handlers/gate.py` to gate four unrelated GATE-time decisions
   (coverage-scope confidence, the supersession fast path, document- and
@@ -359,17 +429,24 @@ schema enforces it.
   ladder: no T1 read of empty text, no forced T2. `pdf.is_scan` (page 1 under
   20 characters) still has two callers: `text_store.store_text`, whose
   `document_text.source = 'none'` (and so the `no_text_layer` anomaly and
-  `reextract --dropped-scans`) still means "page 1 has no text"; and the text
-  ladder's `if missing or pdf.is_scan(doc):`, which now fires only on a mixed
-  PDF (an image page 1, text later) and still skips the call when nothing is
-  left to ask. A document whose every page is short (`sparse`, under 200
-  characters) has no text page either, so it is read off its images too.
-- **`T0` scope on a filename-typed scan.** `derive_coverage_scope` gives EC and
-  ISO `manufacturer` at 1.0 whatever the type's confidence, so a scan T0 typed
-  `EC` off its file name ("...Certificate...") carries a KNOWN manufacturer
-  scope and its item identifiers are never asked, unless a read types it
-  otherwise and type to scope replaces the scope. Unchanged from before the
-  scan ladder; noted for plan Tasks 4-5.
+  `reextract --dropped-scans`) still means "page 1 has no text". The text
+  ladder no longer reads it (Task 4): a mixed PDF's image pages are what the
+  page choice renders and what the null rule counts as unread. A document whose
+  every page is short (`sparse`, under 200 characters) has no text page either,
+  so it is read off its images too.
+- **`T0` scope on a filename-typed certificate.** Until Task 4
+  `derive_coverage_scope` gave EC and ISO `manufacturer` at 1.0 whatever the
+  type's confidence, so a scan T0 typed `EC` off its file name carried a KNOWN
+  scope and its item identifiers were never asked. The EC, ISO and IFU branches
+  now carry the type's confidence below 0.95 (`_follows_type`), as the DoC
+  branch did; type to scope derives the scope again once a read settles the type.
+  On the eval this changed T0's scope on 7 of 79 text documents and 5 of 34
+  scans, and no routing or disposition (cached replay, 2026-10-12).
+- **A T0 Basic UDI-DI can be a word.** T0's UDI regex takes the token after the
+  label, and `udi.validate_basic_udi` calls a plain word "unscorable", not
+  invalid, so `checks.settled` lets it pass. On the eval END-DoC-Aryane holds
+  `PRODUCT` (0.9) and T1 answered nothing: the text ladder keeps it, as the old
+  ladder's blank guard did. Not fixed in Task 4 (the checks are Task 2's).
 - **`models.rank` is read by nothing.** `app/config.py:206-216` defines
   `models.t1` / `.t2` / `.rank` / `.email_summary`; grepping `app/` for
   `.rank` (2026-08-31) turns up only that docstring and no code reading
@@ -402,6 +479,7 @@ schema enforces it.
 | File | Pins |
 |---|---|
 | `tests/test_tiers.py` | Escalation gating, `merge`/shrink-guard, `run_extraction`, `test_a_scan_takes_the_image_ladder_and_never_a_text_read` |
+| `tests/test_tiers_text.py` | The text ladder: T0 settled fields never asked, what the text proves after T1, T1's empty answer and the null rule (labels, image pages, truncation), a failed read, T0 under 0.95, the image read's check / check-valid UDI / agreement / both empty, Sonnet prevailing and closing, the two suppressions, T1's pool, type to scope, the page choice, the reads record, hints, the text doc-class call |
 | `tests/test_tiers_scan.py` | The scan ladder: routing (a mixed PDF stays text), the image doc-class call, 1/3/6-page scans and `pages-unread`, settle at 0.85, agreement at 0.70, both-null except the UDI, failed reads (never an empty answer, counted), type to scope, Sonnet only for what is open and its empty answer closing a field, the reads record, disagreements, `merge` by strength |
 | `tests/test_checks.py` | `checks.py` — the text checks, page classes, and the scan shape / agreement checks |
 | `tests/test_tiers_corpus.py` | Ladder behaviour against the seed corpus |
