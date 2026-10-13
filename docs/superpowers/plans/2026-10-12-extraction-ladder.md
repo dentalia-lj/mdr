@@ -78,6 +78,9 @@ of a superseded document is kept; a confirmed EC/ISO certificate's scope carries
 type's confidence (Task 4 departure 2). Task 5b also: `tiers.next_extract_rev` counts
 evidence revisions too (the shared counter the 5a review found); on text, which read is
 "first" when the image read agrees with T1.
+2026-10-13 after the Task 5b review (Denis): when two reads agree, a read whose quote the
+checks verify is stored, the surer of those; the guards read the stored read's own number;
+GATE's score leaves out a scope derived from the type.
 
 **Defaults taken (no ruling, say if wrong):** mixed PDFs take the text branch; a
 scan is a document with no text page at all; T0 fields under 0.95 count as settled
@@ -122,7 +125,7 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | 3 scans | done: built (Opus), reviewed and fixed (Opus), merged; full suite 4820 passed, 5 skipped; decision 3 ruled by Denis (item identifiers asked on filename-typed scanned DoCs) | merge 0c891c8 |
 | 4 text ladder | done: built (Opus), 2 Opus review rounds, merged; full suite on the merge 5071 passed + 1 citation test fixed after (comment-only change); replays: text 10 of 79 cached, 7 of 79 agree (= measured), scans 24 of 34 | merge 09a6044, 4539373 |
 | 5a gate side: combined score, migration, published guard, wording | done: built (Opus), 3 Opus review rounds, merged; full suite 4921 passed, 5 skipped | merge 7b9abc4 |
-| 5b extraction side: second reads stamp the contract keys | built (Opus) 0fca060, full suite 5133 passed; replay text 65 of 79 production (82.3%, target 84 +/- 2), scans 25 of 34; Opus review running | worktree el-second |
+| 5b extraction side: second reads stamp the contract keys | built (Opus) 0fca060; Opus review: merge after fixes; three rulings (verified quote first, guards read the stored read, derived scope out of the score); fixes running | worktree el-second |
 | 6 prompt caching | done: built (Sonnet), reviewed and fixed (Opus), merged; cache hits to confirm on the first real run | merge of bbc461d |
 | 7 re-extract command | done: built (Sonnet), reviewed and fixed (Opus), merged | c39bb77 |
 | 8 quality and parity | waiting for 1-6 | |
@@ -299,7 +302,7 @@ guard read `conf` alone.
       added here).
 - [ ] From the Task 3 review: the 24 of 34 scan gate figure holds only if the unproven
       gate fields are asked in `T2-second` even where `T2-first` settled every open field
-      (Task 3 makes no second call then); Task 3 alone gives 7 production.
+      (Task 3 makes no second call then); Task 3 alone gives 6 production (7 was an earlier, rougher replay).
 - [ ] One call per label per extraction: the unproven gate fields ride in the same
       `T2-second` call as Task 3's open fields, or that call's cost row is lost.
 - [x] Combined confidence `1 - (1 - c1)(1 - c2)` when both reads agree and each is at
