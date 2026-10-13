@@ -128,7 +128,7 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | 5b extraction side: second reads stamp the contract keys | built (Opus), 2 Opus review rounds (verdict merge); last fixes running: confirming reads under the stored-read rule (Denis), sparse scanned pages and citation proof, repair race | worktree el-second |
 | 6 prompt caching | done: built (Sonnet), reviewed and fixed (Opus), merged; cache hits to confirm on the first real run | merge of bbc461d |
 | 7 re-extract command | done: built (Sonnet), reviewed and fixed (Opus), merged | c39bb77 |
-| 8 quality and parity | waiting for 1-6 | |
+| 8 quality and parity | preparing (Opus, no API): label fixes, real-read batch harness with a $0.90 cap, report script, dry-run estimate; paid run after 5b merges | worktree el-quality |
 | 9 production replay | waiting for 1-6 | |
 
 ## Who builds what, and in parallel (Denis, 2026-10-12)
