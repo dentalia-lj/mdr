@@ -675,8 +675,11 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
        read holds at `agreement_min` or more that neither proves nor confirms
        with an agreement GATE will count (`_to_confirm`) is asked of
        `T1-second` (`models.second_read`, thinking off), one call for all of
-       them. That read confirms or not: it is stamped when it agrees, counted
-       as a disagreement when it does not, and its value is never stored.
+       them. That read confirms or not: it is counted as a disagreement when
+       it does not agree, and its value never replaces the stored one. When
+       it agrees, the stored evidence is chosen as `merge` chooses it (ruling
+       D1: a verified read first, then the surer; `_prefer_confirming`), and
+       the other is the agreeing read.
 
     A read that failed answered nothing, which is not an empty answer: its
     fields stay open and the read is named in `READS_KEY` (`failed_reads`).
@@ -794,7 +797,8 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     _stamp_agreement(fields, reads)
     confirm = _to_confirm(fields, agreement_min)
     if confirm:
-        _read_step(read, used, reads, SECOND_TEXT, confirm)
+        second = _read_step(read, used, reads, SECOND_TEXT, confirm)
+        _prefer_confirming(fields, known, second, confirm, text_ctx)
         _stamp_agreement(fields, reads)
 
     fields[READS_KEY] = _reads_record(reads)
@@ -844,6 +848,28 @@ def _stamp_agreement(fields: dict, reads: dict) -> None:
         if best is not None:
             ev[AGREED_MODEL_KEY], ev[AGREED_CONF_KEY] = best["model_id"], _conf(best)
         fields[f] = ev
+
+
+def _prefer_confirming(fields: dict, known: set[str], answer: dict, confirmed: list[str],
+                       ctx) -> None:
+    """Ruling D1 for a confirming read (Denis, 2026-10-13: one rule for every
+    read). `T1-second`, or `T2-second` on the gate fields the first image read
+    settled, is never merged, so its value never replaces the stored one; but
+    where it gave the same value and `merge` would have stored it
+    (`_stores_over`: verified where the stored read is not, or surer among
+    verified or unverified alike), its evidence is stored and the former
+    stored read becomes the agreeing read (`_stamp_agreement`, called after).
+    The value stays the same, since agreeing well-formed gate values are
+    identical. Where the type's stored read changes, type to scope runs again,
+    so a derived scope carries the stored type's own number."""
+    swapped_type = False
+    for f in confirmed:
+        held, mine = fields.get(f), answer.get(f)
+        if _agree(f, held, mine) and _stores_over(f, mine, held, ctx):
+            fields[f] = mine
+            swapped_type |= f == "type"
+    if swapped_type:
+        _scope_from_type(fields, known, rederive=True)
 
 
 def _confirmed(evidence: dict, agreement_min: float) -> bool:
@@ -1095,7 +1121,7 @@ def _pursued(fields: dict, known: set[str], *, skip_item_ids: bool) -> list[str]
     return [f for f in pursued if f not in known]
 
 
-def _scope_from_type(fields: dict, known: set[str]) -> None:
+def _scope_from_type(fields: dict, known: set[str], *, rederive: bool = False) -> None:
     """Type to scope (measured 2026-10-12): once the type is known to be EC,
     ISO or an IFU, the scope follows from it (`derive_coverage_scope`), and a
     scope that disagrees with that, or is empty, is replaced. Two cheap reads
@@ -1117,7 +1143,12 @@ def _scope_from_type(fields: dict, known: set[str]) -> None:
     2026-10-13), an IFU's included: GATE scores the type, not the scope, so a
     certificate whose type a second read confirmed is not held back by a
     scope that can be no surer than the type's own number. A read's scope
-    kept because it agrees is not marked: it is a read, scored as one."""
+    kept because it agrees is not marked: it is a read, scored as one.
+
+    `rederive` (after a confirming read took the type's place, ruling D1 for
+    every read): a scope this derived before follows the new stored type's
+    own number whether that is higher or lower, so the marker, the score and
+    the auto-bind's input all read the type GATE reads."""
     doc_type = fields.get("type") or {}
     value = doc_type.get("value")
     if "type" not in known or value not in _SCOPE_FROM_TYPE:
@@ -1126,8 +1157,10 @@ def _scope_from_type(fields: dict, known: set[str]) -> None:
     derived = derive_coverage_scope(value, False, type_conf=type_conf)
     derived = {**derived, "conf": min(type_conf, derived["conf"]), FOLLOWS_KEY: FOLLOWS_TYPE}
     scope = fields.get("coverage_scope") or {}
-    if checks.normalized("coverage_scope", scope.get("value")) != checks.normalized(
-            "coverage_scope", derived["value"]) or float(scope.get("conf") or 0.0) < derived["conf"]:
+    if ((rederive and scope.get(FOLLOWS_KEY) == FOLLOWS_TYPE)
+            or checks.normalized("coverage_scope", scope.get("value")) != checks.normalized(
+                "coverage_scope", derived["value"])
+            or float(scope.get("conf") or 0.0) < derived["conf"]):
         fields["coverage_scope"] = derived
     known.add("coverage_scope")
 
@@ -1203,8 +1236,10 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
        is not an empty one: its fields stay open (`failed_reads`). The gate
        fields the first read settled (`_to_confirm`, plan Task 5b) ride in the
        same call, so it is made even when nothing else is open: for those it
-       only confirms, as `T1-second` does on text (stamped when it agrees,
-       counted when it does not, never stored, never sent on to Sonnet).
+       only confirms, as `T1-second` does on text (a counted disagreement
+       when it does not agree, never sent on to Sonnet, its value never
+       replacing the stored one; when it agrees and is surer, its evidence is
+       stored and the first read's becomes the agreeing one, ruling D1).
     4. On a scan longer than the pages read, a field both cheap reads answered
        empty is UNREAD: not settled, not sent to Sonnet (who sees the same
        pages), recorded under `PAGES_UNREAD_KEY` (flag `pages-unread`).
@@ -1292,6 +1327,9 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
                     known.add(f)
                 elif ctx.unread_pages:
                     unread.append(f)
+        # The gate fields it only confirmed: no text to verify a quote
+        # against on a scan, so the surer read's evidence is stored (D1).
+        _prefer_confirming(fields, known, second, confirm, None)
 
     _scope_from_type(fields, known)
     _drop_ifu_certificate_reads(fields, known, t0, threshold)

@@ -801,19 +801,21 @@ def test_open_fields_and_gate_confirmations_ride_in_one_second_read(t0):
         "type", "regulation", "coverage_scope", "cert_number")
 
 
-@pytest.mark.parametrize("second, value, agreed", [
-    ({"type": ("EC", 0.99)}, "DoC", (None, None)),     # disagrees: nothing stamped, nor sent on
-    ({"type": ("DoC", 0.99)}, "DoC", ("stub-model", 0.99)),   # surer, agrees: still only confirms
-    (FAILED, "DoC", (None, None)),
-], ids=["disagrees", "agrees-surer", "failed"])
-def test_a_confirming_read_never_replaces_the_value_the_first_read_settled(t0, second, value,
+@pytest.mark.parametrize("second, stored, agreed", [
+    ({"type": ("EC", 0.99)}, ("T2-first", 0.95), (None, None)),   # disagrees: nor sent on
+    # agrees and surer: its evidence is stored, the first read agrees (ruling D1)
+    ({"type": ("DoC", 0.99)}, ("T2-second", 0.99), ("stub-model", 0.95)),
+    ({"type": ("DoC", 0.90)}, ("T2-first", 0.95), ("stub-model", 0.90)),
+    (FAILED, ("T2-first", 0.95), (None, None)),
+], ids=["disagrees", "agrees-surer", "agrees-less-sure", "failed"])
+def test_a_confirming_read_never_replaces_the_value_the_first_read_settled(t0, second, stored,
                                                                            agreed):
     t0()
     llm = ScanLlm({"T2-first": EVERYTHING, "T2-second": second, "T2": {}})
     _, fields, used = run(_scan(1), llm)
     assert "T2" not in used
     assert (fields["type"]["value"], fields["type"]["step"], fields["type"]["conf"]) == (
-        value, "T2-first", 0.95)
+        "DoC", *stored)
     assert _agreed(fields, "type") == agreed
     if second == FAILED:
         assert tiers.failed_reads(fields) == ["T2-second"]
@@ -880,3 +882,30 @@ def test_a_scan_regulation_is_never_citation_proven(t0):
     _, fields, _ = run(_scan(1), llm)
     assert "proven" not in fields["regulation"]
     assert "regulation" in llm.asked("T2-second")
+
+
+def test_a_surer_confirming_read_is_stored_on_a_scan(t0):
+    """Ruling D1 for a confirming read (2026-10-13): no text to verify against
+    on a scan, so the surer of the two agreeing reads is stored. `T2-second`
+    at 0.97 over the first read's 0.95; the first becomes the agreeing read,
+    and the value stays."""
+    t0()
+    llm = ScanLlm({"T2-first": EVERYTHING, "T2-second": {"type": ("DoC", 0.97)}})
+    _, fields, _ = run(_scan(1), llm)
+    assert (fields["type"]["value"], fields["type"]["step"], fields["type"]["conf"]) == (
+        "DoC", "T2-second", 0.97)
+    assert _agreed(fields, "type") == ("stub-model", 0.95)
+    assert fields["regulation"]["step"] == "T2-first"     # nothing confirmed it: unchanged
+
+
+def test_a_scope_derived_from_a_type_a_confirming_read_took_follows_it(t0):
+    """The type's stored read changes (0.90 to 0.95), so type to scope runs
+    again and the derived scope carries the stored type's own number."""
+    t0()
+    first = dict(EVERYTHING, type=("EC", 0.90))
+    first.pop("coverage_scope")
+    llm = ScanLlm({"T2-first": first, "T2-second": {"type": ("EC", 0.95)}})
+    _, fields, _ = run(_scan(1), llm)
+    assert (fields["type"]["step"], fields["type"]["conf"]) == ("T2-second", 0.95)
+    scope = fields["coverage_scope"]
+    assert (scope["value"], scope["conf"], scope["follows"]) == ("manufacturer", 0.95, "type")

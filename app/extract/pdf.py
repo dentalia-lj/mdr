@@ -202,9 +202,16 @@ def page_classes(doc: pymupdf.Document) -> list[str]:
     - "text":   a real text layer (200+ characters) that is not hidden behind
                 an image; a background image under visible text stays "text"
     - "ocr":    a text layer hidden behind a large image (an OCR layer over a scan)
-    - "image":  no usable text layer (under 20 characters) and the content is a
-                scanned image or vector drawing (text converted to outlines)
-    - "sparse": little text and nothing drawn (cover, blank, divider)
+    - "image":  no usable text layer and the content is a scanned image or
+                vector drawing (text converted to outlines): under 20
+                characters, or under 200 over a page images cover at least
+                `IMAGE_COVERAGE` of (a scan with a short visible overlay, a
+                stamp or a scanner's caption; review 2026-10-13, F7: as
+                "sparse" its scanned content counted as read, which let a
+                regulation be proven by citation over it; none such in the
+                eval or the 1,336 PDFs of the SFTP mirror on 2026-10-13)
+    - "sparse": little text and nothing drawn (cover, blank, divider, a
+                signature page)
     """
     out = []
     for page in doc:
@@ -214,8 +221,8 @@ def page_classes(doc: pymupdf.Document) -> list[str]:
             out.append("ocr")
         elif chars >= TEXT_PAGE_CHARS:
             out.append("text")
-        elif chars < NO_TEXT_CHARS and (
-                _image_coverage(page) >= IMAGE_COVERAGE or paths >= VECTOR_PAGE_PATHS):
+        elif (_image_coverage(page) >= IMAGE_COVERAGE
+              or (chars < NO_TEXT_CHARS and paths >= VECTOR_PAGE_PATHS)):
             out.append("image")
         else:
             out.append("sparse")

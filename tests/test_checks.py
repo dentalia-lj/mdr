@@ -223,8 +223,8 @@ def test_regulation_is_proven_by_the_printed_citation_alone(text, value, ok):
     ("MDR", {"unread": (2,)}, False),
     ("MDR", {"classes": ["text"]}, False),                    # classes do not match the pages
     ("MDR", {"classes": ["text", "sparse"]}, True),           # a cover page is read as text
-    # a proof by absence over a sparse page: it may be the unreadable one (F7)
-    ("n.a.", {"text": "Nothing cited here", "classes": ["text", "sparse"]}, False),
+    # a sparse page (a signature page, LUMIWHITE's) is read as text (F7, round 2)
+    ("n.a.", {"text": "Nothing cited here", "classes": ["text", "sparse"]}, True),
     ("n.a.", {"text": "", "classes": ["sparse", "sparse"]}, False),   # no text layer at all
     ("mdr", {}, False),                                       # well-formed values only (F7)
     ("MDR (EU) 2017/745", {}, False),
@@ -429,6 +429,12 @@ def _build(kinds: list[str]) -> pymupdf.Document:
             pass
         elif kind == "sparse":
             page.insert_text((72, 72), "Cover")
+        elif kind == "overlay":  # a scan with a short visible caption over it
+            page.insert_image(page.rect, stream=_png())
+            page.insert_text((72, 72), "Scanned 2025-08-25 by the quality office")
+        elif kind == "signature":  # a short page, no image: a signature block
+            page.insert_text((72, 72), "Leuven, 25 August 2025")
+            page.insert_text((72, 92), "Signed: J. Peeters, Quality Manager")
         elif kind == "logo":  # small image + a real text layer
             page.insert_image(pymupdf.Rect(72, 700, 132, 780), stream=_png())
             for i in range(12):
@@ -450,6 +456,9 @@ def _build(kinds: list[str]) -> pymupdf.Document:
     # no characters, drawn content: classed with scans
     (["vector"], ["image"]),
     (["blank"], ["sparse"]),
+    # a scan with a short visible overlay: its content is the image (F7)
+    (["overlay"], ["image"]),
+    (["signature"], ["sparse"]),
     (["text", "image", "ocr", "sparse"], ["text", "image", "ocr", "sparse"]),
 ])
 def test_page_classes(kinds, expected):
@@ -581,3 +590,21 @@ def test_codes_with_an_agency_or_a_digit_are_untouched(udi):
     c = ctx(LONG + quote)
     assert checks.settled("basic_udi_di", ev(udi, quote), c) is True
     assert checks.well_formed("basic_udi_di", udi) is True
+
+
+@pytest.mark.parametrize("kinds, value, proven", [
+    # the LUMIWHITE shape: a declaration and a short signature page, no image
+    (["text", "signature"], "n.a.", True),
+    # a scan with a short caption over it: what it prints is in the image (F7)
+    (["text", "overlay"], "n.a.", False),
+    (["text", "overlay"], "MDR", False),
+])
+def test_a_citation_proof_over_a_real_document(kinds, value, proven):
+    """Review 2026-10-13, F7 round 2: the root cause was the page class, not
+    the absence proof. A signature page is read as text and stops nothing; a
+    scanned page with a caption is an image page and stops every proof."""
+    doc = _build(kinds)
+    if value == "MDR":
+        doc[0].insert_text((72, 400), "Regulation (EU) 2017/745")
+    c = Ctx(pages=pdf.page_texts(doc), classes=pdf.page_classes(doc))
+    assert checks.citation_proven(ev(value), c) is proven

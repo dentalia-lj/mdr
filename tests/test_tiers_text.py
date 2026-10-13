@@ -833,16 +833,19 @@ def _agreement(fields, f):
 DECLARATION = ("DoC", "EU Declaration of Conformity", 1, 0.9)
 
 
-@pytest.mark.parametrize("second, agreed", [
-    (("DoC", "EU Declaration of Conformity", 1, 0.95), ("model-T1-second", 0.95)),
-    (("EC", "EC Certificate", 1, 0.95), (None, None)),        # disagrees: nothing stamped
-    ((None, "", None, 0.0), (None, None)),                    # found nothing
-    (FAILED, (None, None)),                                   # no answer at all
-], ids=["agrees", "disagrees", "empty", "failed"])
-def test_the_second_text_read_confirms_an_unproven_gate_field(t0, second, agreed):
+@pytest.mark.parametrize("second, stored, agreed", [
+    # agrees, verified and surer: its evidence is stored, T1 agrees (ruling D1)
+    (("DoC", "EU Declaration of Conformity", 1, 0.95), (0.95, "T1-second"), ("model-T1", 0.9)),
+    (("DoC", "EU Declaration of Conformity", 1, 0.85), (0.9, "T1"), ("model-T1-second", 0.85)),
+    (("EC", "EC Certificate", 1, 0.95), (0.9, "T1"), (None, None)),   # disagrees: nothing
+    ((None, "", None, 0.0), (0.9, "T1"), (None, None)),               # found nothing
+    (FAILED, (0.9, "T1"), (None, None)),                              # no answer at all
+], ids=["agrees-surer", "agrees", "disagrees", "empty", "failed"])
+def test_the_second_text_read_confirms_an_unproven_gate_field(t0, second, stored, agreed):
     """T1 settles `type` by a quote on the page, but a quote is not a second
     read, and GATE scores T1's 0.9 alone. `T1-second` is asked that field
-    only, after the ladder; its value never replaces T1's."""
+    only, after the ladder; its value never replaces T1's. Of the two when
+    they agree, the stored evidence is chosen as `merge` chooses it (D1)."""
     t0(_only_open("type"))
     llm = TextLlm({"T1": {"type": DECLARATION},
                    "T1-second": second if second == FAILED else {"type": second}})
@@ -850,7 +853,7 @@ def test_the_second_text_read_confirms_an_unproven_gate_field(t0, second, agreed
     assert used == ["T0", "T1", "T1-second"]
     assert llm.asked("T1-second") == {"type"}
     assert (fields["type"]["value"], fields["type"]["conf"], fields["type"]["step"]) == (
-        "DoC", 0.9, "T1")
+        "DoC", *stored)
     assert _agreement(fields, "type") == agreed
     record = [r["step"] for r in fields[tiers.READS_KEY]]
     assert record == ["T1", "T1-second"]
@@ -913,12 +916,13 @@ def test_a_regulation_with_both_citations_printed_is_never_proven(t0):
     assert "T1-second" not in used        # an agreement GATE counts: proven
 
 
-@pytest.mark.parametrize("second, agreed", [
-    (("DoC", "EU Declaration of Conformity", 1, 0.95), ("model-T1-second", 0.95)),
-    (FAILED, ("model-T2-first", 0.5)),
+@pytest.mark.parametrize("second, stored, agreed", [
+    # verified and surer: stored (ruling D1); T1, the surest other, agrees
+    (("DoC", "EU Declaration of Conformity", 1, 0.95), (0.95, "T1-second"), ("model-T1", 0.9)),
+    (FAILED, (0.9, "T1"), ("model-T2-first", 0.5)),
 ], ids=["second-read-agrees", "second-read-failed"])
 def test_an_image_read_agreeing_under_the_floor_does_not_spare_the_second_read(
-        t0, second, agreed):
+        t0, second, stored, agreed):
     """Review finding 9: T1 reads `type` at 0.9, the image read agrees at 0.5,
     and neither quote is on the page. T1's evidence stays (the surer of two
     agreeing reads neither of which the checks verify), the image read is
@@ -930,7 +934,7 @@ def test_an_image_read_agreeing_under_the_floor_does_not_spare_the_second_read(
                    "T1-second": second if second == FAILED else {"type": second}})
     _, fields, used = run(_doc(DOC_PAGE), llm)
     assert used == ["T0", "T1", "T2-first", "T1-second"]
-    assert (fields["type"]["conf"], fields["type"]["step"]) == (0.9, "T1")
+    assert (fields["type"]["conf"], fields["type"]["step"]) == stored
     assert _agreement(fields, "type") == agreed
 
 
@@ -1057,3 +1061,52 @@ def test_a_gate_field_no_read_holds_is_not_asked(t0, t0_type):
     llm = TextLlm({"T1": {}, "T2-first": {}, "T2": {}})
     _, _, used = run(_doc(DOC_PAGE), llm)
     assert "T1-second" not in used
+
+
+# --- ruling D1 for a confirming read: one rule for every read (2026-10-13) --------
+
+def test_a_verified_surer_second_read_is_stored_over_an_unverified_t1(t0):
+    """The 533048 RA_810 `coverage_scope` shape from the eval: T1 at 0.9 and the
+    image read at 0.5 agree, neither quote on the page, so T1 is stored and
+    the 0.5 cannot count; `T1-second` agrees at 0.97 with its quote on the
+    page. Its evidence is stored now, and T1 becomes the agreeing read."""
+    t0(_only_open("coverage_scope"))
+    llm = TextLlm({"T1": {"coverage_scope": ("group", "covers the products in annex B", 1, 0.9)},
+                   "T2-first": {"coverage_scope": ("group", "products of annex B", 1, 0.5)},
+                   "T1-second": {"coverage_scope": ("group", "REF 003477 003478", 1, 0.97)}})
+    _, fields, used = run(_doc(DOC_PAGE), llm)
+    assert used == ["T0", "T1", "T2-first", "T1-second"]
+    scope = fields["coverage_scope"]
+    assert (scope["value"], scope["step"], scope["conf"]) == ("group", "T1-second", 0.97)
+    assert _agreement(fields, "coverage_scope") == ("model-T1", 0.9)
+
+
+def test_a_less_sure_unverified_second_read_changes_nothing(t0):
+    t0(_only_open("type"))
+    llm = TextLlm({"T1": {"type": ("DoC", "EU Declaration of Conformity", 1, 0.9)},
+                   "T1-second": {"type": ("DoC", "a declaration elsewhere", 1, 0.85)}})
+    _, fields, _ = run(_doc(DOC_PAGE), llm)
+    assert (fields["type"]["step"], fields["type"]["conf"]) == ("T1", 0.9)
+    assert _agreement(fields, "type") == ("model-T1-second", 0.85)
+
+
+def test_a_confirmed_certificate_type_carries_its_scope_and_passes_scope_stated(t0):
+    """An EC certificate T1 types at 0.90, `T1-second` confirms at 0.95, both
+    quotes on the page: the surer is stored (0.95), type to scope runs again,
+    so the derived scope carries 0.95, which clears GATE's `scope_stated`
+    (`gate.high`, 0.92) on the stored type's own number."""
+    from app.config import GateThresholds
+    from app.handlers import gate
+
+    t0({"regulation": t0ev("MDR", 1.0), "manufacturer": t0ev("GC EUROPE N.V.", 0.97),
+        "validity_from": t0ev("2025-08-25", 1.0), "validity_to": t0ev(None, 1.0),
+        "cert_number": t0ev("G1 021108 0031", 1.0)})
+    page = "EC Certificate\nCertificate G1 021108 0031\nRegulation (EU) 2017/745"
+    llm = TextLlm({"T1": {"type": ("EC", "EC Certificate", 1, 0.90)},
+                   "T1-second": {"type": ("EC", "EC Certificate", 1, 0.95)}})
+    _, fields, _ = run(_doc(page), llm)
+    assert (fields["type"]["step"], fields["type"]["conf"]) == ("T1-second", 0.95)
+    assert _agreement(fields, "type") == ("model-T1", 0.90)
+    scope = fields["coverage_scope"]
+    assert (scope["value"], scope["conf"], scope["follows"]) == ("manufacturer", 0.95, "type")
+    assert gate._field_confidence(fields, "coverage_scope", {}) >= GateThresholds().high

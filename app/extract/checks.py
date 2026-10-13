@@ -233,9 +233,10 @@ def citation_proven(evidence: dict | None, ctx: Ctx) -> bool:
     The last half is what makes it a proof. "Only one citation printed" is
     also a claim that the other is NOT printed, and that is unknown where part
     of the document has no text to read: a scanned page of a mixed PDF, an
-    unread page, text cut at the budget. `n.a.` is a proof by absence alone,
-    so a sparse page (little text, nothing drawn: possibly an unreadable one)
-    stops it too (review 2026-10-13, F7). An OCR layer is read as text here,
+    unread page, text cut at the budget. A scan with a short visible overlay
+    is an image page too (`pdf.page_classes`, review 2026-10-13, F7), so it
+    stops every citation proof; a sparse page (a cover, a signature page) is
+    text and stops none. An OCR layer is read as text here,
     as `settled` reads it and as the measured route counted it (on the eval,
     one OCR-layer declaration, Celalux 3, is proven `n.a.` this way). Fails
     closed when the page classes are missing or do not match the pages, and
@@ -247,8 +248,6 @@ def citation_proven(evidence: dict | None, ctx: Ctx) -> bool:
     if ctx.truncated or ctx.unread_pages or not _classes_known(ctx):
         return False
     if "image" in ctx.classes or not any(c in TEXT_BEARING for c in ctx.classes):
-        return False
-    if value == "n.a." and "sparse" in ctx.classes:
         return False
     return settled("regulation", evidence, ctx)
 
