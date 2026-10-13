@@ -700,6 +700,12 @@ def _schema_problems(data: dict) -> list[str]:
     return probs
 
 
+class AnyOf(tuple):
+    """A label with several right answers: a value equal to any of them scores
+    right (`_correct`). For a document that prints more than one value of a
+    single-value field."""
+
+
 #: Scoring corrections to `tests/fixtures/corpus_manifest.py` ground truth, applied
 #: here and never written back (the fixture fix is `[corpus-manifest-label-errors]`).
 #: The labels date from 2026-07-06 and the prompt's field definitions moved since;
@@ -708,14 +714,15 @@ LABEL_OVERRIDES: dict[tuple[str, str], object] = {
     # printed in the document, check pair valid (validate_basic_udi)
     ("Izjava o skladnosti za vsadke TL SP.pdf", "basic_udi_di"): "0763003170058QZ",   # pages 3-8
     ("everX_Posterior_12022026.pdf", "basic_udi_di"): "++J022MD0126K9",                 # page 2
-    # t1_text.md: "the certificate number (EC / ISO certs), or null (DoCs themselves have none)"
-    ("VOCO_DoC_MDR_Ceramic Bond_2026-1-signed.pdf", "cert_number"): None,
-    ("Unifast_III_23042025.pdf", "cert_number"): None,
-    ("Izjava o skladnosti za vsadke TL SP.pdf", "cert_number"): None,
-    ("Viso G1 MDR EN.pdf", "cert_number"): None,
-    ("neodent izjava o skaldnosti za T-baze.pdf", "cert_number"): None,
-    ("532862_RA_810_DoC_EU_MDR_SIGNED.pdf", "cert_number"): None,
-    ("IPS e.max Ceram.pdf", "cert_number"): None,
+    # The label `++E2265330681` fails its check pair; it is the prefix the page's
+    # UDIs share. Page 1 prints four, each check pair valid: KSCH (rows 1-4 and
+    # 11-14), StSEF (10 rows), PQ and PS (one row each). A multi-value basic_udi_di
+    # is out of scope, so a read naming any one of them is right (Denis,
+    # 2026-10-13; research doc section 13, the 15th label error).
+    ("533068_RA_812_Liste_DoC.pdf", "basic_udi_di"): AnyOf((
+        "++E2265330681KSCH", "++E2265330681StSEF", "++E2265330682PQ", "++E2265330683PS")),
+    # The 7 DoC cert_number entries that stood here are gone: ruling A (2026-10-12)
+    # says a DoC's cert_number is the certificate it cites, so the labels are right.
     # t1_text.md: "a declaration naming one product is still `group`"
     ("Viso G1 MDR EN.pdf", "coverage_scope"): "group",
     ("VOCO_DoC_(EU)2023-1542_Celalux 3.pdf", "coverage_scope"): "group",
@@ -832,6 +839,8 @@ SKIP = object()
 def _correct(field: str, model_value, gt_value) -> bool | None:
     if gt_value is SKIP:
         return None
+    if isinstance(gt_value, AnyOf):
+        return any(_correct(field, model_value, g) for g in gt_value)
     if field == "ref_list" and isinstance(gt_value, str):
         m = re.match(r"(~?)(\d+)\s+codes?", gt_value)
         if not m:
