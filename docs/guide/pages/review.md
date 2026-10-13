@@ -242,7 +242,7 @@ other screen says the word in the third column, and the
 | **A link** | The connection between one document and one item. A document can have many | |
 | **A group** | Items we treat as one family, because one document usually covers all of them | |
 | **C5**, **C17** and similar codes | Internal rule numbers. Ignore them | |
-| **Confidence**, under **Technical details** | How sure the program that read the page was, in its own estimate; not calibrated against documents a person has verified. Where two separate reads agreed on a value, each at least 0.70 sure, it combines the two. It is 1.0 when the printed citation proves the value | |
+| **Confidence**, under **Technical details** | Confidence is the model's own number and is not calibrated. Where two reads agreed on a value, each at least 0.70 sure, it combines the two. It is 1.0 for a regulation that the citation printed on the document proves | |
 
 ---
 

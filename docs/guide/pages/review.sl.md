@@ -243,7 +243,7 @@ interno. Vsi drugi zasloni povedo besedo iz tretjega stolpca,
 | **A link** | Povezava med enim dokumentom in enim artiklom. En dokument jih ima lahko več | |
 | **A group** | Artikli, ki jih obravnavamo kot eno družino, ker jih en dokument običajno pokriva vse | |
 | **C5**, **C17** in podobne kode | Interne številke pravil. Prezrite jih | |
-| **Confidence**, pod **Technical details** | Koliko je bil program, ki je prebral stran, po lastni oceni prepričan; ni umerjena na dokumentih, ki jih je preveril človek. Kjer sta se dve ločeni branji ujemali glede vrednosti, vsako vsaj 0,70, združuje oceni obeh branj; 1,0 pomeni, da vrednost dokazuje natisnjeni sklic na predpis | |
+| **Confidence**, pod **Technical details** | Koliko je bil program, ki je prebral stran, po lastni oceni prepričan; ta ocena ni umerjena na dokumentih, ki jih je preveril človek. Kjer sta se dve ločeni branji ujemali glede vrednosti in je bilo vsako prepričano vsaj 0,70, združuje oceni obeh branj. Za predpis je 1,0, kadar natisnjeni sklic na predpis dokazuje vrednost | |
 
 ---
 

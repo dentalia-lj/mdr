@@ -7477,7 +7477,8 @@ def test_a_page_lights_the_menu_entry_it_is_reached_from(client, path, entry, la
 # Technical details where the column is.
 CONFIDENCE_NOTE = ("Confidence is the model's own number and is not calibrated. "
                    "Where two reads agreed on a value, each at least 0.70 sure, it "
-                   "combines the two. It is 1.0 when the printed citation proves the value.")
+                   "combines the two. It is 1.0 for a regulation that the citation printed "
+                   "on the document proves.")
 
 
 def _seed_evidenced_doc(conn, status):
