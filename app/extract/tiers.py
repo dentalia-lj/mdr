@@ -649,7 +649,8 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
        is settled when the value it then holds passes `checks.settled` (T0's
        own included, where T1 read nothing better), or T1 answered it empty and
        `checks.null_settled` holds (no label for it in the text, no image or
-       OCR page, text not cut).
+       OCR page, no page where an annotation paints an image
+       (`pdf.annotation_image_pages`), text not cut).
     3. Fields pursued only after T1 (a scope T1 changed brings the item
        identifiers in) are taken from T1's answer, which carries every field,
        and settle as in step 2.
@@ -660,8 +661,9 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
        agrees with T1 (`checks.agree`, no per-read minimum: ruling 4, "as
        measured"), or when both reads ANSWERED it empty and
        `checks.both_null_settled` allows it (never a Basic UDI-DI the text
-       labels: multi-UDI lists go to Sonnet). Image pages of a mixed PDF the
-       read did not render, and text beyond the budget, count as unread.
+       labels: multi-UDI lists go to Sonnet). Image pages of a mixed PDF and
+       pages where an annotation paints an image, when the read did not
+       render them, and text beyond the budget, count as unread.
     5. Type to scope (`_scope_from_type`) after each read, as on a scan; and
        once the type is known to be an IFU, the certificate fields a read
        wrote before that are dropped (`_drop_ifu_certificate_reads`).
@@ -685,8 +687,9 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     fields stay open and the read is named in `READS_KEY` (`failed_reads`).
     Every read is recorded there; `read_disagreements` counts where they
     differ. Where part of the document was read by nobody (text past the
-    budget, a scanned page no image read rendered), a field Sonnet also
-    answered empty is recorded under `PAGES_UNREAD_KEY` (`pages-unread`)."""
+    budget, a scanned page or an annotation's image no image read rendered),
+    a field Sonnet also answered empty is recorded under `PAGES_UNREAD_KEY`
+    (`pages-unread`)."""
     # T0 declined to type this file. Ask, rather than guess.
     #
     # `unknown` used to proceed into the full ladder and, worse, be promoted to
@@ -729,11 +732,17 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
 
     pages = pdfutil.page_texts(doc)
     classes = pdfutil.page_classes(doc)
-    image_pages = tuple(n for n, c in enumerate(classes, start=1) if c == "image")
+    # The pages a text read does not see in full: a scanned page of a mixed
+    # PDF, and a page where an annotation paints an image (VOCO's e-signature,
+    # the only print of its issue date; Task 8, 2026-10-13).
+    image_pages = tuple(sorted({n for n, c in enumerate(classes, start=1) if c == "image"}
+                               | set(pdfutil.annotation_image_pages(doc))))
     # Read at call time, not as `bounded_text`'s default: T1 reads exactly this
     # budget, and the checks must judge the same cut.
     truncated = pdfutil.bounded_text(doc, pdfutil.LLM_TEXT_BUDGET_CHARS)[1] > 0
-    # T1 sees no image page: an empty answer there proves nothing.
+    # T1 does not see those pages in full: an empty answer proves nothing, nor
+    # does a citation's absence (`checks.citation_proven` judges this text).
+    # An image read that renders them counts them read (`image_ctx`).
     text_ctx = checks.Ctx(pages=pages, classes=classes, truncated=truncated,
                           unread_pages=frozenset(image_pages))
     reads: dict[str, tuple[list[str], dict]] = {}
@@ -780,9 +789,10 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
         _scope_from_type(fields, known)
         _drop_ifu_certificate_reads(fields, known, t0, threshold)
         # Part of the document no read saw: text past the budget, or a scanned
-        # page of a mixed PDF no image read rendered. A field every read left
-        # empty there is unread, not absent (PRD v3 section 7, `pages-unread`).
-        # A field Sonnet gave no answer for failed, which says nothing.
+        # page of a mixed PDF or an annotation's image no image read rendered.
+        # A field every read left empty there is unread, not absent (PRD v3
+        # section 7, `pages-unread`). A field Sonnet gave no answer for
+        # failed, which says nothing.
         if truncated or set(image_pages) - rendered:
             unread = [f for f in open_fields
                       if f in sonnet and _is_blank(sonnet[f]) and _is_blank(fields.get(f))]
@@ -1039,10 +1049,11 @@ def _image_pages(page_count: int, open_fields: list[str], t1: dict, pages: list[
                  image_pages=()) -> tuple[int, ...] | None:
     """The pages a text document's image read renders (Denis, 2026-10-12),
     chosen in this order: the pages T1 cited for the open fields, the first
-    page where each open field's label occurs (`checks.LABELS`), the image
-    pages of a mixed PDF, then page 1 onward; at most `MAX_VISION_PAGES`, each
-    clamped to the page count (`llm._vision_content` refuses a page past the
-    end). Sent in document order, so the model reads the document as it runs
+    page where each open field's label occurs (`checks.LABELS`), the pages
+    no text read sees in full (`image_pages`: the image pages of a mixed PDF,
+    the pages where an annotation paints an image), then page 1 onward; at
+    most `MAX_VISION_PAGES`, each clamped to the page count
+    (`llm._vision_content` refuses a page past the end). Sent in document order, so the model reads the document as it runs
     and a choice of pages 1-4 is today's request byte for byte: then this
     returns None, the read's default. Measured on the eval: 1 of 72 open
     fields pointed past page 4."""

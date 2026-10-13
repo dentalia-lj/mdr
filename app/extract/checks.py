@@ -98,7 +98,9 @@ class Ctx:
     classes: list[str] = field(default_factory=list)
     #: The text handed to the reader was cut (`pdf.bounded_text` dropped chars).
     truncated: bool = False
-    #: 1-based pages no read looked at (e.g. a scan over the page cap).
+    #: 1-based pages no read looked at (e.g. a scan over the page cap), or
+    #: saw only in part: for a text read, a scanned page of a mixed PDF and a
+    #: page where an annotation paints an image (`pdf.annotation_image_pages`).
     unread_pages: frozenset[int] = frozenset()
 
     @property
@@ -208,9 +210,11 @@ def _classes_known(ctx: Ctx) -> bool:
 def null_settled(field_name: str, ctx: Ctx) -> bool:
     """ONE read's null is proven only when the text could not hold the field:
     no label for it occurs, no page is an image (a scan or a vector-drawn page)
-    / OCR layer / unread, and the text was not cut. Fails closed when the page
-    classes are missing or do not match the pages, and when no page carries a
-    text layer: an empty text layer holds no label, which proves nothing."""
+    / OCR layer / unread (a page where an annotation paints an image, VOCO's
+    e-signature holding the issue date, is unread to a text read), and the
+    text was not cut. Fails closed when the page classes are missing or do not
+    match the pages, and when no page carries a text layer: an empty text
+    layer holds no label, which proves nothing."""
     pat = LABELS.get(field_name)
     if pat is None:
         return False
@@ -233,10 +237,12 @@ def citation_proven(evidence: dict | None, ctx: Ctx) -> bool:
     The last half is what makes it a proof. "Only one citation printed" is
     also a claim that the other is NOT printed, and that is unknown where part
     of the document has no text to read: a scanned page of a mixed PDF, an
-    unread page, text cut at the budget. A scan with a short visible overlay
-    is an image page too (`pdf.page_classes`, review 2026-10-13, F7), so it
-    stops every citation proof; a sparse page (a cover, a signature page) is
-    text and stops none. An OCR layer is read as text here,
+    unread page (the text ladder counts a page where an annotation paints an
+    image as one, `pdf.annotation_image_pages`), text cut at the budget. A
+    scan with a short visible overlay is an image page too
+    (`pdf.page_classes`, review 2026-10-13, F7), so it stops every citation
+    proof; a sparse page (a cover, a signature page with no such annotation)
+    is text and stops none. An OCR layer is read as text here,
     as `settled` reads it and as the measured route counted it (on the eval,
     one OCR-layer declaration, Celalux 3, is proven `n.a.` this way). Fails
     closed when the page classes are missing or do not match the pages, and

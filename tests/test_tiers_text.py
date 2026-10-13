@@ -19,6 +19,7 @@ import pytest
 
 from app.extract import pdf, tiers
 from app.extract.tiers import NOT_A_DOCUMENT
+from tests.fixtures.annotated_pdf import SIGNED_AT, annotate
 
 # --- documents ---------------------------------------------------------------
 
@@ -1110,3 +1111,126 @@ def test_a_confirmed_certificate_type_carries_its_scope_and_passes_scope_stated(
     scope = fields["coverage_scope"]
     assert (scope["value"], scope["conf"], scope["follows"]) == ("manufacturer", 0.95, "type")
     assert gate._field_confidence(fields, "coverage_scope", {}) >= GateThresholds().high
+
+
+# --- content only an image read sees: an annotation painting an image ----------
+#
+# Task 8, 2026-10-13: VOCO Ceramic Bond prints its issue date only inside the
+# e-signature field's appearance, an image on a sparse page 3. T1's empty
+# `validity_from` passed the null rule (no date label in the text) and settled,
+# no image read was made, and the date was lost. A page whose annotation paints
+# an image is a page T1 did not see in full: unread for the null rule, and the
+# image read renders it, as it renders a scanned page of a mixed PDF.
+
+#: DOC_PAGE with no issue date: nothing on it labels `validity_from`.
+UNDATED_PAGE = DOC_PAGE.replace("\nDate of issue: 2025-08-25", "")
+SIGNATURES = "Signatures\nThis document has been electronically signed by:"
+SIGNED_DATE = ("2026-01-14", SIGNED_AT, 6, 0.9)
+
+
+def test_a_null_beside_a_signature_image_goes_to_an_image_read_of_that_page(t0):
+    t0(_only_open("validity_from"))
+    doc = annotate(_doc(UNDATED_PAGE, FILLER, FILLER, FILLER, FILLER, SIGNATURES))
+    llm = TextLlm({"T1": {}, "T2-first": {"validity_from": SIGNED_DATE},
+                   "T2": {"validity_from": SIGNED_DATE}})
+    _, fields, used = run(doc, llm)
+    # The date is in no text, so the cheap image read cannot prove it: Sonnet
+    # decides, as for a value read off a scanned page of a mixed PDF.
+    assert used == ["T0", "T1", "T2-first", "T2"]
+    assert llm.options("T2-first") == {"pages": (1, 2, 3, 6)}
+    assert llm.asked("T2") == {"validity_from"}
+    assert fields["validity_from"]["value"] == "2026-01-14"
+    assert tiers.PAGES_UNREAD_KEY not in fields
+
+
+def test_two_empty_reads_settle_once_the_signature_page_was_rendered(t0):
+    t0(_only_open("validity_from"))
+    llm = TextLlm({"T1": {}, "T2-first": {}, "T2": {}})
+    _, fields, used = run(annotate(_doc(UNDATED_PAGE, SIGNATURES)), llm)
+    assert used == ["T0", "T1", "T2-first"]
+    assert tiers.PAGES_UNREAD_KEY not in fields
+
+
+@pytest.mark.parametrize("kw", [
+    None,                                                    # no annotation at all
+    {"appearance": "text", "text": "Digitally signed"},      # its text is in the layer
+    {"appearance": None},                                    # an invisible signature
+], ids=["no-annotation", "text-appearance", "no-appearance"])
+def test_a_signature_painting_no_image_leaves_the_null_rule_as_it_was(t0, kw):
+    t0(_only_open("validity_from"))
+    doc = _doc(UNDATED_PAGE, SIGNATURES)
+    llm = TextLlm({"T1": {}, "T2-first": {}, "T2": {}})
+    _, _, used = run(doc if kw is None else annotate(doc, **kw), llm)
+    assert used == ["T0", "T1"]
+
+
+def test_without_page_lists_a_signature_image_past_page_four_is_unread():
+    llm = TextLlm({"T1": {}, "T2-first": {}, "T2": {}})
+    doc = annotate(_doc(UNDATED_PAGE, FILLER, FILLER, FILLER, FILLER, SIGNATURES))
+    used = ["T0"]
+
+    def read(label, missing, **kw):
+        return llm.extract(label, doc, "d.pdf", missing, **kw)
+
+    _, out = tiers.run_text_ladder(doc, "d.pdf", "compliance-doc",
+                                   dict(_only_open("validity_from")), used, read,
+                                   page_aware=False)
+    assert used == ["T0", "T1", "T2-first", "T2"]
+    assert out[tiers.PAGES_UNREAD_KEY] == ["validity_from"]
+
+
+@pytest.mark.parametrize("painted, proven", [(False, tiers.CITATION), (True, None)],
+                         ids=["signature-page", "signature-image"])
+def test_a_citation_proves_a_regulation_only_where_the_text_holds_every_page(
+        t0, painted, proven):
+    """`checks.citation_proven` claims the other citation is NOT printed; an
+    image a text read cannot see leaves that unknown, as a scanned page does."""
+    t0(_only_open("regulation"))
+    page = UNDATED_PAGE.replace("Regulation (EU) 2017/745", "Regulation (EC) No 1223/2009")
+    doc = _doc(page, SIGNATURES)
+    llm = TextLlm({"T1": {"regulation": ("n.a.", "Regulation (EC) No 1223/2009", 1, 0.85)}})
+    _, fields, _ = run(annotate(doc) if painted else doc, llm)
+    assert fields["regulation"]["value"] == "n.a."
+    assert fields["regulation"].get(tiers.PROVEN_KEY) == proven
+
+
+# --- the two real documents ------------------------------------------------------
+
+VOCO_SIGNED = "VOCO/VOCO_DoC_MDR_Ceramic Bond_2026-1-signed.pdf"
+LUMIWHITE = "LUMIWHITE/Declaration_of_Conformity_LUMIWHITE_OU.pdf"
+
+
+def _run_fixture(path, llm):
+    with pdf.open_doc(path) as doc:
+        return tiers.run_extraction(doc, path, llm=llm, threshold=0.95)
+
+
+def test_voco_ceramic_bond_reads_its_issue_date_off_the_signature_image(fixture_pdf):
+    """The Task 8 case on the document itself: T0 real, the reads stubbed with
+    what the run's reads answered (T1: the two REF codes on page 2, no date;
+    Sonnet: 2026-01-14, "Cuxhaven, 14.01.2026", page 3)."""
+    date = ("2026-01-14", SIGNED_AT, 3, 0.9)
+    llm = TextLlm({"T1": {"ref_list": (["1106", "1107"], "1106 Bottle 5 ml 1107", 2, 0.85)},
+                   "T2-first": {"validity_from": date}, "T2": {"validity_from": date}})
+    _, fields, used = _run_fixture(fixture_pdf(VOCO_SIGNED), llm)
+    assert llm.asked("T1") == {"validity_from", "ref_list"}
+    assert used == ["T0", "T1", "T2-first", "T2"]
+    # Three pages: the image read renders all of them, the default request.
+    assert llm.asked("T2-first") == {"validity_from"} and llm.options("T2-first") == {}
+    assert fields["validity_from"]["value"] == "2026-01-14"
+
+
+def test_lumiwhites_sparse_signature_page_keeps_its_citation_proof_and_null_rule(fixture_pdf):
+    """A signature page with no annotation stays a page the text reads in full:
+    `n.a.` is proven by the citation alone, and the empty fields settle on T1."""
+    quote = ("LUMI SOOTHE Desensitising Gel", 1)
+    llm = TextLlm({"T1": {"regulation": ("n.a.", "Regulation (EC) No. 1223/2009", 1, 0.85),
+                          "validity_from": ("2025-04-20", "Date: 20 April 2025", 1, 0.9),
+                          "coverage_scope": ("group", *quote, 0.85),
+                          # a read answers every field: these two, pursued once
+                          # T1's scope is `group`, it answered empty
+                          "ref_list": ([], "", 1, 0.6), "basic_udi_di": (None, "", 1, 0.9)},
+                   "T1-second": {"coverage_scope": ("group", *quote, 0.9)}})
+    _, fields, used = _run_fixture(fixture_pdf(LUMIWHITE), llm)
+    assert fields["regulation"][tiers.PROVEN_KEY] == tiers.CITATION
+    assert used == ["T0", "T1", "T1-second"]
