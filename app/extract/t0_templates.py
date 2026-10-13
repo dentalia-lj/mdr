@@ -923,6 +923,12 @@ COVERAGE_DEDUCED_CONF = 0.97
 _TYPE_SETTLED_CONF = 0.95
 
 
+def _follows_type(conf: float, type_conf: float) -> float:
+    """A scope deduced from the type alone: `conf` when the type is settled,
+    otherwise the type's own confidence where that is lower."""
+    return conf if type_conf >= _TYPE_SETTLED_CONF else min(conf, type_conf)
+
+
 def derive_coverage_scope(type_value: str, has_ref_list: bool,
                           type_conf: float = 0.0) -> dict | None:
     """Coverage scope from the document type and whether T0 enumerated articles.
@@ -942,9 +948,16 @@ def derive_coverage_scope(type_value: str, has_ref_list: bool,
     document could sit at high confidence on `group` from a premise the ladder
     had already discarded, and an EC/ISO at manufacturer scope is precisely what
     routes to the C4 binding flow.
+
+    The EC, ISO and IFU branches carry the type's confidence the same way
+    (extraction-ladder plan Task 4, 2026-10-12): below `_TYPE_SETTLED_CONF` the
+    scope is no surer than the type it follows from. Until then a certificate
+    typed off its file name (0.6) got `manufacturer` at 1.0, which the scan
+    ladder reads as a settled scope, so the item identifiers were never asked
+    even when the reads found a declaration.
     """
     if type_value in ("ISO", "EC"):
-        return field_ev("manufacturer", 1.0, f"type={type_value}")
+        return field_ev("manufacturer", _follows_type(1.0, type_conf), f"type={type_value}")
     if type_value == "IFU":
         # Instructions for use are written for a product or a family and never
         # for a company: there is no such thing as an IFU for a manufacturer.
@@ -957,7 +970,8 @@ def derive_coverage_scope(type_value: str, has_ref_list: bool,
         # that was already determined. On STRAUMANN's two 109- and 143-page IFUs
         # that escalation is what met the context ceiling and dead-lettered
         # them, having spent a vision call to learn nothing.
-        return field_ev("group", COVERAGE_DEDUCED_CONF, f"type={type_value}")
+        return field_ev("group", _follows_type(COVERAGE_DEDUCED_CONF, type_conf),
+                        f"type={type_value}")
     if type_value == "DoC":
         if has_ref_list:
             settled = type_conf >= _TYPE_SETTLED_CONF

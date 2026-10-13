@@ -103,6 +103,35 @@ def test_the_cap_fits_the_token_budget():
     assert worst_case_tokens < llm.DEFAULT_MAX_TOKENS / 2
 
 
+#: The T1 prompt's `cert_number` line, verbatim as measured: the `ruling-a`
+#: prompt variant of `tools/haiku_compare.py` (arm h55a, 2026-10-12), which put
+#: 11 of 15 labelled DoC certificate numbers right against 8 of 15 for the old
+#: line. Pinned whole, because the measurement holds for these words only.
+RULING_A_CERT_LINE = (
+    "- `cert_number` \u2014 for an EC / ISO certificate, its own number. For a DoC, the\n"
+    "  number of the notified-body certificate the declaration cites (e.g.\n"
+    "  `G1 021108 0031`), or `null` if it cites none. Never a notified body's\n"
+    "  four-digit identification number (e.g. `0482`)."
+)
+
+
+def test_t1_asks_a_doc_for_the_certificate_it_cites():
+    """Ruling 2026-10-12 (docs/decisions.md, "Certificate number on a DoC"): a
+    DoC's `cert_number` holds the certificate it cites, in every tier. The old
+    line told T1 to leave it empty ("DoCs themselves have none"), and 654
+    production DoCs lost the certificate they cite."""
+    assert llm.T1_SYSTEM.count(RULING_A_CERT_LINE) == 1
+    assert "DoCs\n  themselves have none" not in llm.T1_SYSTEM
+    assert "themselves have none" not in llm.T1_SYSTEM
+
+
+def test_the_image_prompt_already_asks_for_the_cited_certificate():
+    """The ruling needed no image-prompt change: it names `cert_number` with no
+    DoC exception, which is why T0 and the image reads already stored it."""
+    assert "themselves have none" not in llm.T2_SYSTEM
+    assert "`cert_number`" in llm.T2_SYSTEM
+
+
 def test_manufacturer_is_in_the_structured_output_schema():
     # SCHEMA is generated from _FIELD_VALUE so both tiers stay in step; a field
     # in TARGET but not here would be requested and never returned.

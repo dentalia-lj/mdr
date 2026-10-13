@@ -80,6 +80,9 @@ def test_queue_visibility_timeout_still_reads_env(monkeypatch):
 
 #: (section, field, env var, TOML table, TOML key, plan default, override)
 LADDER_KEYS = [
+    # Task 4: T1 and the text doc-class call move to Haiku 5.5 (ruling 1).
+    ("models", "t1", "MODELS_T1", "models", "t1",
+     "claude-haiku-5-5", "claude-haiku-4-5"),
     ("models", "vision_first", "MODELS_VISION_FIRST", "models", "vision_first",
      "claude-haiku-5-5", "claude-sonnet-5-5"),
     ("models", "second_read", "MODELS_SECOND_READ", "models", "second_read",

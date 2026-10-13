@@ -911,6 +911,44 @@ def test_coverage_scope_certificates_are_unaffected():
         assert ev["conf"] == 1.0
 
 
+@pytest.mark.parametrize("type_value, type_conf, value, conf", [
+    # A type T0 settled (title marker, 0.95 or more): the scope as before.
+    ("EC", 1.0, "manufacturer", 1.0),
+    ("ISO", 0.95, "manufacturer", 1.0),
+    ("IFU", 1.0, "group", t0.COVERAGE_DEDUCED_CONF),
+    # A type T0 only guessed (file name, or a marker past the title region):
+    # the scope is no surer than the type it follows from (extraction-ladder
+    # plan Task 4, from the Task 3 review). At 1.0 it read as settled, so on a
+    # scan the item identifiers were never asked even when the reads retyped
+    # the file as a declaration.
+    ("EC", t0.FILENAME_CONF, "manufacturer", t0.FILENAME_CONF),
+    ("ISO", t0._TYPE_MENTION_CONF, "manufacturer", t0._TYPE_MENTION_CONF),
+    ("IFU", t0.FILENAME_CONF, "group", t0.FILENAME_CONF),
+    ("EC", 0.94, "manufacturer", 0.94),
+])
+def test_a_scope_from_the_type_carries_the_types_confidence(type_value, type_conf, value, conf):
+    ev = t0.derive_coverage_scope(type_value, has_ref_list=False, type_conf=type_conf)
+    assert (ev["value"], ev["conf"]) == (value, conf)
+    assert ev["verbatim"] == f"type={type_value}"
+
+
+def test_a_filename_typed_certificate_keeps_its_scope_below_the_threshold(tmp_path):
+    """End to end through `t0_extract`: a certificate typed off its file name
+    alone gets `manufacturer` at the file name's confidence, so the ladder
+    still treats the scope as open."""
+    import pymupdf
+
+    path = tmp_path / "EC Certificate 2024.pdf"
+    doc = pymupdf.open()
+    doc.new_page().insert_text((72, 72), "Page with no type marker at all " * 8)
+    doc.save(path)
+    with pymupdf.open(path) as d:
+        _, fields = t0.t0_extract(d, str(path))
+    assert fields["type"]["conf"] == t0.FILENAME_CONF
+    assert fields["coverage_scope"]["value"] == "manufacturer"
+    assert fields["coverage_scope"]["conf"] == t0.FILENAME_CONF
+
+
 def test_t0_never_deduces_item_scope():
     # `item` has no deterministic producer and the ground truth never uses it.
     values = {

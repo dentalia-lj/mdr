@@ -31,12 +31,16 @@ class Models:
     t1 = "claude-haiku-4-5"
     t2 = "claude-sonnet-4-6"
     rank = "claude-haiku-4-5"
+    vision_first = "claude-haiku-5-5"
+    second_read = "claude-haiku-5-5"
 
 
 class UnpricedModels:
     t1 = "some-unpriced-model"
     t2 = "some-unpriced-model"
     rank = "some-unpriced-model"
+    vision_first = "some-unpriced-model"
+    second_read = "some-unpriced-model"
 
 
 def _usage(i, o):
@@ -48,11 +52,16 @@ def _resp(payload, usage):
     return SimpleNamespace(content=[SimpleNamespace(type="text", text=payload)], usage=usage)
 
 
-def _payload(fields, conf=0.99):
-    """Structured-output JSON for the given fields (arrays for list fields)."""
+def _payload(fields, conf=0.99, regulation="n.a."):
+    """Structured-output JSON for the given fields (arrays for list fields).
+    `regulation` is `n.a.` by default: the ISO fixture, where T0 leaves only
+    that field open, cites neither regulation, so the text proves it
+    (`checks.settled`) and the text ladder stops at T1."""
     d = {}
     for f in fields:
         val = [] if f in ("ref_list", "referenced_docs") else f"v_{f}"
+        if f == "regulation":
+            val = regulation
         d[f] = {"value": val, "confidence": conf, "verbatim": f"verb {f}", "page": 1}
     return json.dumps(d)
 
@@ -76,7 +85,7 @@ class _SyncClient:
 
 
 def test_sync_writes_one_cost_row_per_llm_tier(conn, fixture_pdf):
-    # ISO cert (text) -> T0 then T1 fills the rest (payload covers all fields -> no T2).
+    # ISO cert (text) -> T0 then T1 proves the one field left (no image read).
     tier_client = llm.AnthropicLlm(_SyncClient(_payload(tiers_mod.TARGET), _usage(1500, 400)),
                                    Models())
     job = {"payload": {"archive_url": fixture_pdf(ISO_CERT),
@@ -130,7 +139,9 @@ def _untyped_pdf(tmp_path) -> str:
 def test_doc_class_and_t1_write_a_row_each(conn, tmp_path):
     """The regression. Both calls logged tier `T1` and the ledger is unique on
     (content_hash, tier, extract_rev), so `ON CONFLICT DO NOTHING` silently
-    dropped the T1 read on every document T0 could not type."""
+    dropped the T1 read on every document T0 could not type. Since Task 4 the
+    generic answers this client gives are not proven by the text, so the
+    image reads run too: every paid call, one row each."""
     tier_client = llm.AnthropicLlm(_RoutingClient(), Models())
     job = {"payload": {"archive_url": _untyped_pdf(tmp_path),
                        "content_hash": "sha-cost-docclass", "group_id": 9}}
@@ -139,11 +150,14 @@ def test_doc_class_and_t1_write_a_row_each(conn, tmp_path):
     conn.commit()
 
     assert result["doc_class"] == "compliance-doc"
+    assert result["tiers_used"] == ["T0", "doc-class", "T1", "T2-first", "T2"]
     rows = _rows(conn, "sha-cost-docclass")
-    assert len(rows) == 2
+    assert len(rows) == 4
     assert {(r["tier"], r["model_id"], r["input_tokens"]) for r in rows} == {
         ("T1", "claude-haiku-4-5", 1500),
         ("doc-class", "claude-haiku-4-5", 300),
+        ("T2-first", "claude-haiku-5-5", 1500),
+        ("T2", "claude-sonnet-4-6", 1500),
     }
 
 
@@ -288,12 +302,17 @@ def test_batch_writes_cost_row_at_batch_rate(conn, fixture_pdf):
     assert float(row["cost_usd"]) == 0.00175
 
 
-def test_batch_two_tiers_two_rows_idempotent(conn, fixture_pdf):
+def test_batch_three_reads_three_rows_idempotent(conn, fixture_pdf):
     # The ISO cert is manufacturer-scope, so item-ids aren't chased; regulation is
-    # the always-escalated field T0 misses. T1 leaves it -> it escalates to T2. Across
-    # the polls T1 is re-visited via the resolved branch; the row must stay unique.
+    # the always-escalated field T0 misses. T1 answers it empty (the word
+    # "Regulation" is printed, so that settles nothing), the cheap image read
+    # answers MDD (not proven: neither citation is printed), Sonnet n.a. Across
+    # the polls each resolved read is re-visited; its row must stay unique.
     items = {
-        "T1": [_item("T1", "sha-cost-b2", _payload([]), _usage(1500, 400))],
+        "T1": [_item("T1", "sha-cost-b2", _payload(["regulation"], regulation=None),
+                     _usage(1500, 400))],
+        "T2-first": [_item("T2-first", "sha-cost-b2",
+                           _payload(["regulation"], regulation="MDD"), _usage(2000, 100))],
         "T2": [_item("T2", "sha-cost-b2", _payload(["regulation"]), _usage(8000, 500))],
     }
     job = _enqueue(conn, "sha-cost-b2", 6, fixture_pdf(ISO_CERT))
@@ -301,13 +320,15 @@ def test_batch_two_tiers_two_rows_idempotent(conn, fixture_pdf):
 
     r = _drive_batch(conn, job, bc)
 
-    assert r["tiers_used"] == ["T0", "T1", "T2"]
+    assert r["tiers_used"] == ["T0", "T1", "T2-first", "T2"]
     rows = _rows(conn, "sha-cost-b2")
-    assert [x["tier"] for x in rows] == ["T1", "T2"]         # exactly one row each
-    t1, t2 = rows
-    assert float(t1["cost_usd"]) == 0.00175                  # Haiku batch
+    assert [x["tier"] for x in rows] == ["T1", "T2", "T2-first"]   # one row each
+    t1, t2, first = rows
+    assert float(t1["cost_usd"]) == 0.00175                  # Haiku 4.5 batch
     # Sonnet batch: (8000*3 + 500*15)/1e6 / 2 = 0.0315 / 2 = 0.01575
     assert float(t2["cost_usd"]) == 0.01575
+    # Haiku 5.5 batch: (2000*0.10 + 100*0.50)/1e6 / 2 = 0.000125
+    assert float(first["cost_usd"]) == 0.000125
 
 
 def test_spend_view_sums_measured_cost(conn, fixture_pdf):

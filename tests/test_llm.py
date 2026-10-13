@@ -53,7 +53,12 @@ class Models:
     rank = "claude-haiku-4-5"
 
 
-def test_t1_parses_and_filters_to_requested_fields(fixture_pdf):
+def test_t1_parses_every_field_it_was_given(fixture_pdf):
+    """Every parsed field comes back, not only the asked ones (extraction-ladder
+    plan Task 4): the response schema makes a read answer every field, and the
+    text ladder keeps the rest in its pool for fields that become pursued after
+    the read (a scope the read changes brings the item identifiers in). The
+    ladder decides what to merge; `stated_class` stays T0's alone there."""
     payload = (
         '{"regulation": {"value": "MDR", "confidence": 0.96, '
         '"verbatim": "(EU) 2017/745", "page": 1}, '
@@ -67,7 +72,7 @@ def test_t1_parses_and_filters_to_requested_fields(fixture_pdf):
 
     got = tier.extract("T1", doc, "f.pdf", missing=["regulation", "validity_from"])
 
-    assert set(got) == {"regulation", "validity_from"}  # 'type' filtered out
+    assert set(got) == {"regulation", "validity_from", "type"}  # 'type' was not asked
     ev = got["regulation"]
     assert ev["value"] == "MDR"
     assert ev["conf"] == 0.96
@@ -395,12 +400,13 @@ class LadderModels:
 
 THINKING_OFF = {"type": "disabled"}
 
-#: The plan's "Read steps and their labels" table, transcribed. One row
-#: differs from it: `doc-class-image` sends thinking off (Task 3), so a model
-#: thinking by default cannot spend the 256-token answer budget first.
+#: The plan's "Read steps and their labels" table, transcribed. Two rows
+#: differ from it: both doc-class calls send thinking off (`doc-class-image`
+#: in Task 3, `doc-class` in Task 4 when `models.t1` moved to Haiku 5.5), so a
+#: model thinking by default cannot spend the 256-token answer budget first.
 PLAN_STEPS = [
     # label,            kind,    model,                thinking
-    ("doc-class",       "text",  "model-t1",           None),
+    ("doc-class",       "text",  "model-t1",           THINKING_OFF),
     ("doc-class-image", "image", "model-vision-first", THINKING_OFF),
     ("T1",              "text",  "model-t1",           None),
     ("T1-second",       "text",  "model-second-read",  THINKING_OFF),
@@ -623,11 +629,13 @@ def test_an_image_read_cites_document_pages_not_image_positions():
     assert _images(client.messages.kwargs) == [_png(doc, 5), _png(doc, 2)]
 
 
-def test_only_the_fields_returned_count_as_nulled():
-    """`type` cites image 9 of 2, but nobody asked for it: nothing to count."""
+def test_only_the_fields_asked_count_as_nulled():
+    """`type` cites image 9 of 2, but nobody asked for it: nothing to count. It
+    is returned (every parsed field is), with its cite nulled all the same."""
     tier = llm.AnthropicLlm(StubClient(_THREE_FIELDS), LadderModels())
-    tier.extract("T2-first", _probe_pdf(6), "f.pdf", ["regulation"], pages=[5, 2])
+    got = tier.extract("T2-first", _probe_pdf(6), "f.pdf", ["regulation"], pages=[5, 2])
     assert tier.cited_pages_nulled == 0
+    assert got["type"]["page"] is None and got["regulation"]["page"] == 5
 
 
 def test_the_default_pages_keep_the_cited_page_as_it_was():
@@ -646,6 +654,82 @@ def test_classify_logs_its_own_label():
 
     assert tier.classify(_probe_pdf(1), "f.pdf") == ("DoC", "EU DoC")
     assert [(c.tier, c.model_id) for c in tier.usage_log] == [("doc-class", Models.t1)]
+
+
+# --- the text doc-class call on Haiku 5.5 (Task 4, from the Task 1 review) ---
+#
+# `models.t1` moved to Haiku 5.5, which thinks by default; the doc-class call
+# answers in 256 tokens. A thinking model can spend that budget before it
+# answers, and a truncated answer read as `not-a-compliance-document` drops the
+# file for good. So the call sends thinking off, and a `max_tokens` stop raises.
+
+def test_classify_asks_models_t1_with_thinking_off_in_256_tokens():
+    client = _StopClient('{"doc_class": "DoC", "quote": "EU Declaration"}')
+    tier = llm.AnthropicLlm(client, LadderModels())
+
+    assert tier.classify(_probe_pdf(3), "f.pdf") == ("DoC", "EU Declaration")
+
+    p = client.kwargs
+    assert p["model"] == LadderModels.t1
+    assert p["thinking"] == THINKING_OFF
+    assert p["max_tokens"] == llm.DOC_CLASS_MAX_TOKENS == 256
+    assert p["system"] == llm.DOC_CLASS_SYSTEM
+    assert p["output_config"]["format"]["schema"] == llm.DOC_CLASS_SCHEMA
+    sent = p["messages"][0]["content"]
+    assert "Probe page 1" in sent and "Probe page 2" in sent
+    assert "Probe page 3" not in sent                       # pages 1-2 only
+
+
+def test_a_classify_answer_cut_at_max_tokens_fails_rather_than_refuses():
+    tier = llm.AnthropicLlm(_StopClient('{"doc_class": "D', stop_reason="max_tokens"),
+                            LadderModels())
+    with pytest.raises(RuntimeError, match="max_tokens"):
+        tier.classify(_probe_pdf(1), "f.pdf")
+
+
+def test_a_malformed_classify_answer_still_refuses():
+    """Only the truncation raises. An answer outside the five classes is a
+    refusal, as it always was."""
+    tier = llm.AnthropicLlm(_StopClient('{"doc_class": "Invoice", "quote": "INVOICE"}'),
+                            LadderModels())
+    assert tier.classify(_probe_pdf(1), "f.pdf") == (llm.NOT_A_DOCUMENT, "INVOICE")
+
+
+def test_classify_on_empty_text_refuses_without_a_call():
+    import pymupdf
+    doc = pymupdf.open()
+    doc.new_page()
+    client = _StopClient("{}")
+    tier = llm.AnthropicLlm(client, LadderModels())
+    assert tier.classify(doc, "f.pdf") == (llm.NOT_A_DOCUMENT, "")
+    assert client.kwargs is None and tier.usage_log == []
+
+
+def test_batch_text_classify_sends_the_sync_request_and_reads_its_answer():
+    payload = '{"doc_class": "EC", "quote": "EC Certificate"}'
+    sync_client = _StopClient(payload)
+    llm.AnthropicLlm(sync_client, LadderModels()).classify(_probe_pdf(2), "f.pdf")
+    bc = llm.AnthropicBatchClient(StubBatchSdk(payload, custom_id="doc-class_abc123"),
+                                  LadderModels())
+
+    req = bc.build_classify_requests("abc123", _probe_pdf(2), "f.pdf", label="doc-class")
+    got = bc.results("batch_123")
+
+    assert req[0]["custom_id"] == "doc-class_abc123"
+    assert req[0]["params"] == sync_client.kwargs
+    assert got == {"doc_class": "EC", "quote": "EC Certificate"}
+    assert [(c.tier, c.model_id, c.batch) for c in bc.usage_log] == [
+        ("doc-class", LadderModels.t1, True)]
+
+
+def test_batch_text_classify_on_empty_text_builds_no_request():
+    """The sync call refuses empty text without a call; the batch one submits
+    nothing for it either, and says so with an empty request list."""
+    import pymupdf
+    doc = pymupdf.open()
+    doc.new_page()
+    bc = llm.AnthropicBatchClient(StubBatchSdk("{}"), LadderModels())
+    assert bc.build_classify_requests("abc123", doc, "f.pdf", label="doc-class") == []
 
 
 # --- the batch read ----------------------------------------------------------

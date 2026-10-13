@@ -70,8 +70,10 @@ class GateThresholds:
     `agreement_min` (PRD §11 and Denis's rulings of 2026-10-12): the confidence
     EACH of two agreeing reads must state before their agreement counts -- for
     GATE's combined score `1 - (1 - c1)(1 - c2)`, and for a scan field settled
-    by two cheap image reads. Read by nothing yet (extraction-ladder plan, Task
-    1 is plumbing; Tasks 3 and 5 wire it). It lives here, not under `extract`,
+    by two cheap image reads. Read today by the scan ladder's agreement rule
+    (extraction-ladder plan Task 3); GATE's combined score is Task 5. The text
+    ladder's agreement between T1 and the image read takes no floor (ruling 4,
+    "as measured, no per-read minimum"). It lives here, not under `extract`,
     because the PRD names it `gate.agreement_min` and GATE is where the
     combined number is used; one key keeps the scan rule and the score on the
     same floor.
@@ -242,7 +244,11 @@ class Models:
     """models.t1 / models.t2 / models.rank / models.email_summary /
     models.vision_first / models.second_read"""
 
-    t1: str = "claude-haiku-4-5"
+    # Haiku 5.5 since 2026-10-12 (extraction-ladder ruling 1, plan Task 4): the
+    # T1 read and the text doc-class call. Measured on the eval set in place of
+    # the Phase 0 diff protocol (ruling 7): 90% field accuracy against 87% for
+    # Haiku 4.5. `rank` and `email_summary` stay on Haiku 4.5, never diffed.
+    t1: str = "claude-haiku-5-5"
     t2: str = "claude-sonnet-5-5"
     rank: str = "claude-haiku-4-5"
     # Inbound email-body summarisation (S2.4, invariant 12 widened + ratified
@@ -254,15 +260,19 @@ class Models:
     # `app.extract.llm.READ_STEPS`): `vision_first` is the cheap image read
     # before Sonnet (`T2-first`, and the scan doc-class call); `second_read` is
     # the agreement read, thinking off (`T1-second`, `T2-second`). Separate keys
-    # from `t1` so a swap of one is diffed on its own. Read by no live step yet.
+    # from `t1` so a swap of one is diffed on its own. `vision_first` is read by
+    # both ladders, `second_read` by the scan ladder's `T2-second`; nothing sends
+    # `T1-second` yet (plan Task 5).
     vision_first: str = "claude-haiku-5-5"
     second_read: str = "claude-haiku-5-5"
 
 
 @dataclass(frozen=True)
 class Extract:
-    """extract.image_settle (PRD §11, 2026-10-12). Not wired yet: Task 3 of the
-    extraction-ladder plan reads it.
+    """extract.image_settle (PRD §11, 2026-10-12). Read by the scan ladder
+    (`tiers.run_scan_ladder`, extraction-ladder plan Task 3) through the
+    extract handler; the text ladder does not use it (a text document's image
+    read settles by the evidence checks or by agreeing with T1).
 
     `image_settle`: on a scan, a field the cheap image read (`T2-first`) states
     at or above this confidence is settled and goes no further up the ladder.
@@ -911,7 +921,7 @@ def load_config() -> Config:
         )
 
     models = Models(
-        t1=_str("MODELS_T1", _dig(t, "models", "t1"), "claude-haiku-4-5"),
+        t1=_str("MODELS_T1", _dig(t, "models", "t1"), Models.t1),
         t2=_str("MODELS_T2", _dig(t, "models", "t2"), "claude-sonnet-5-5"),
         rank=_str("MODELS_RANK", _dig(t, "models", "rank"), "claude-haiku-4-5"),
         email_summary=_str(
