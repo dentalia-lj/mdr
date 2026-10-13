@@ -144,15 +144,17 @@ def test_a_scan_never_reaches_a_text_read(t0):
 
 
 def test_a_mixed_pdf_takes_the_text_branch(t0):
-    """A text page anywhere makes it a text document; page 1 being a scan still
-    forces the Sonnet read there, as before (Task 4 rebuilds that branch)."""
+    """A text page anywhere makes it a text document: T1 reads the text, and
+    the cheap image read sees the scanned page, which T1 could not (Task 4,
+    the text ladder; `tests/test_tiers_text.py`). Two empty answers settle
+    once every page has been read by one of them."""
     doc = _mixed()
     assert pdf.has_text_page(doc) and pdf.is_scan(doc)
     t0()
-    llm = ScanLlm({"T1": {}, "T2": {}})
+    llm = ScanLlm({"T1": {}, "T2-first": {}})
     _, _, used = run(doc, llm)
-    assert used == ["T0", "T1", "T2"]
-    assert "T2-first" not in llm.labels
+    assert used == ["T0", "T1", "T2-first"]
+    assert "T2-second" not in llm.labels
 
 
 # --- the doc-class call on page images ---------------------------------------
@@ -662,3 +664,87 @@ def test_item_ids_brought_in_by_type_to_scope_are_read_once_then_sonnet(t0):
     assert llm.asked("T2") == {"basic_udi_di"}         # ref_list settled at 0.9
     assert fields["coverage_scope"]["value"] == "group"
     assert tiers.PAGES_UNREAD_KEY not in fields
+
+
+def test_a_read_answering_more_than_it_was_asked_merges_only_the_asked_fields(t0):
+    """`llm.extract` returns every parsed field since Task 4 (the text ladder
+    keeps them for fields it pursues later). The scan ladder merges only what
+    it asked: an IFU's certificate fields stay out (a model asked for a date an
+    IFU cannot hold finds a revision code), and `stated_class` is T0's alone."""
+    t0("compliance-doc", {"type": t0ev("IFU", 1.0)})
+
+    class Wide(ScanLlm):
+        def extract(self, label, doc, filename, missing, **kw):
+            out = super().extract(label, doc, filename, missing, **kw)
+            out["validity_from"] = ev("2026-04-26", 0.95)
+            out["stated_class"] = ev("IIa", 0.95)
+            return out
+
+    llm = Wide({"T2-first": EVERYTHING})
+    _, fields, _ = run(_scan(1), llm)
+    assert "validity_from" not in llm.asked("T2-first")
+    assert "validity_from" not in fields and "stated_class" not in fields
+
+
+def test_a_scope_t0_derived_from_a_guessed_type_is_rederived_once_the_type_settles(t0):
+    """Task 4: T0's scope follows its type's confidence, so a certificate typed
+    off its file name holds `manufacturer` at 0.6. When the reads settle the
+    type (EC at 0.95 here), the scope is derived again at that confidence: an
+    agreeing value alone must not keep T0's 0.6, which GATE would read as a
+    scope nobody stated (`manual`)."""
+    t0("compliance-doc", {"type": t0ev("EC", 0.6),
+                          "coverage_scope": {**t0ev("manufacturer", 0.6), "verbatim": "type=EC"}})
+    first = dict(EVERYTHING, type=("EC", 0.95))
+    first.pop("coverage_scope")
+    llm = ScanLlm({"T2-first": first})
+    _, fields, _ = run(_scan(1), llm)
+    assert fields["coverage_scope"]["value"] == "manufacturer"
+    assert fields["coverage_scope"]["conf"] == 0.95
+    assert fields["coverage_scope"]["verbatim"] == "type=EC"
+
+
+@pytest.mark.parametrize("read_conf, kept", [
+    (0.95, True),     # as sure as the derivation: the read's evidence (its quote) stays
+    (0.97, True),
+    (0.60, False),    # 533216_CECertificate in the eval: the derivation is the surer claim
+])
+def test_an_agreeing_scope_keeps_its_read_unless_the_derivation_is_surer(t0, read_conf, kept):
+    t0("compliance-doc", {"type": t0ev("EC", 0.6),
+                          "coverage_scope": {**t0ev("manufacturer", 0.6), "verbatim": "type=EC"}})
+    first = dict(EVERYTHING, type=("EC", 0.95), coverage_scope=("manufacturer", read_conf))
+    llm = ScanLlm({"T2-first": first})
+    _, fields, _ = run(_scan(1), llm)
+    scope = fields["coverage_scope"]
+    assert scope["value"] == "manufacturer"
+    if kept:
+        assert (scope["step"], scope["conf"]) == ("T2-first", read_conf)
+    else:
+        assert (scope["tier"], scope["conf"], scope["verbatim"]) == ("T0", 0.95, "type=EC")
+
+
+def test_certificate_fields_a_read_wrote_before_the_type_was_an_ifu_are_dropped(t0):
+    """The text ladder's rule on a scan (review 2026-10-13): the first image
+    read is asked the certificate fields while the type is still open, and on
+    an IFU it finds a date anyway (a revision code). Once the type is known to
+    be an IFU they are dropped; T0's own value comes back, the read stays in
+    the record."""
+    t0("compliance-doc", {"validity_to": t0ev("2030-01-01", 0.6)})
+    first = dict(EVERYTHING, type=("IFU", 0.95), validity_from=("2026-04-26", 0.9),
+                 validity_to=("2031-01-01", 0.9), cert_number=("701593/M/12", 0.9))
+    llm = ScanLlm({"T2-first": first})
+    _, fields, _ = run(_scan(1), llm)
+    assert {"validity_from", "cert_number"} <= llm.asked("T2-first")
+    assert "validity_from" not in fields and "cert_number" not in fields
+    assert (fields["validity_to"]["value"], fields["validity_to"]["tier"]) == ("2030-01-01", "T0")
+    record = next(r for r in fields[tiers.READS_KEY] if r["step"] == "T2-first")
+    assert record["fields"]["validity_from"]["value"] == "2026-04-26"
+
+
+def test_a_file_name_guess_of_ifu_drops_nothing_on_a_scan(t0):
+    t0("compliance-doc", {"type": t0ev("IFU", 0.6)})
+    first = dict(EVERYTHING, validity_to=("2030-05-26", 0.6))
+    first.pop("type")
+    llm = ScanLlm({"T2-first": first, "T2-second": {}})
+    _, fields, _ = run(_scan(1), llm)
+    assert (fields["type"]["value"], fields["type"]["tier"]) == ("IFU", "T0")
+    assert fields["validity_to"]["value"] == "2030-05-26"

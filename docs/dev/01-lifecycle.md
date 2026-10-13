@@ -28,7 +28,7 @@ table exists only to anchor the walkthrough below.
 | `resolve.group` | `app/handlers/resolve.py:278` |
 | `discover.group` | `app/handlers/discover.py:373` |
 | `fetch.url` | `app/handlers/fetch.py:114` |
-| `extract.doc` | `app/handlers/extract.py:258` |
+| `extract.doc` | `app/handlers/extract.py:356` |
 | `validate.doc` | `app/handlers/validate.py:759` |
 | `gate.candidate` | `app/handlers/gate.py:1401` |
 | `gate.apply` | `app/handlers/gate.py:1974` |
@@ -108,13 +108,16 @@ Then, in order (`app/handlers/fetch.py:114-184`):
 Opens the archived file once and hands it to both the text-store sidecar and
 the tier ladder. An unopenable PDF is counted (`unreadable_pdf`) and
 **nothing downstream is emitted** — there's nothing to validate
-(`app/handlers/extract.py:283-300`). Otherwise: T0 (deterministic,
+(`app/handlers/extract.py:381-399`). Otherwise: T0 (deterministic,
 playbook-templated or pdfplumber) runs first; any field it leaves blank or
-low-confidence escalates per-field to T1 (Haiku), then T2 (Sonnet vision) —
-never per-document (`app/extract/tiers.py` `run_extraction`; `merge()`: a
-later read only ever fills a gap or grows a value, never shrinks or erases
-one, and a weaker read never replaces a stronger one's; on a scan, Sonnet's
-empty answer closes a field the cheap reads left open). A document with no
+under 0.95 goes per-field to T1 (Haiku 5.5, the whole text); what the text
+does not prove (`checks.settled`, the null rule) goes to a cheap image read
+(Haiku 5.5, the pages that point at the open fields), and only what that
+neither proves nor agrees with T1 on goes to T2 (Sonnet vision), never
+per-document (`app/extract/tiers.py` `run_text_ladder`, since 2026-10-12;
+`merge()`: a later read only ever fills a gap or grows a value, never shrinks
+or erases one, and a weaker read never replaces a stronger one's; Sonnet's
+empty answer closes a field the cheaper reads left open). A document with no
 text page skips T1: it is classified off its page images when T0 cannot type
 it, then read by a cheap image read, a second cheap read for what that leaves
 open, and Sonnet only for what still is (`tiers.run_scan_ladder`, since

@@ -515,3 +515,35 @@ def test_agree_reads_dates_and_codes_in_their_normal_form():
                         _r("G10082649 0004", 0.8), 0.70)
     # Well-formed means ISO for a date, so a non-ISO answer never settles one.
     assert not checks.agree("validity_from", _r("2025-08-25", 0.9), _r("25.08.2025", 0.9), 0.70)
+
+
+# --------------------------------------------------------------------------- #
+# A Basic UDI-DI with no digit is a word, not a code (review 2026-10-13)
+# --------------------------------------------------------------------------- #
+#: What T0 read after a "Basic UDI-DI" label on the SFTP mirror: 12 documents,
+#: every value the word that follows the label in a table header or a column.
+#: `udi.validate_basic_udi` calls each UNSCORABLE (unknown agency), not
+#: INVALID, so the checks let them pass until the digit rule.
+MIRROR_WORDS = ["PRODUCT", "Thermaprep", "Intended", "Classification", "Document",
+                "VivaScan", "Update", "Terminology", "Grandio", "Phasor"]
+
+
+@pytest.mark.parametrize("word", MIRROR_WORDS)
+def test_a_digitless_word_is_never_a_basic_udi_di(word):
+    quote = f"Basic UDI-DI {word}"
+    c = ctx(LONG + quote)
+    assert checks.settled("basic_udi_di", ev(word, quote), c) is False
+    assert checks.well_formed("basic_udi_di", word) is False
+
+
+@pytest.mark.parametrize("udi", [
+    "76152081XSCAN001YC",       # GS1, check-valid
+    "++J022MD0098KV",           # HIBCC, check-valid
+    "B-12345",                  # EUDAMED-assigned: unscorable, left as it was
+    "A040500000300",            # unknown agency, unscorable, but it has digits
+])
+def test_codes_with_an_agency_or_a_digit_are_untouched(udi):
+    quote = f"Basic UDI-DI {udi}"
+    c = ctx(LONG + quote)
+    assert checks.settled("basic_udi_di", ev(udi, quote), c) is True
+    assert checks.well_formed("basic_udi_di", udi) is True

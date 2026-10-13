@@ -36,7 +36,7 @@ ingest.run → resolve.group → discover.group → fetch.url → extract.doc �
 | `resolve.group` | Cluster items into `item_group` by manufacturer + name | INGEST |
 | `discover.group` | Find candidate document URLs for a group | RESOLVE |
 | `fetch.url` | Download and archive a document (httpx, Playwright fallback) | DISCOVER |
-| `extract.doc` | T0 → T1 → T2 field extraction, writes `extraction_attempt` | FETCH, BACKFILL |
+| `extract.doc` | T0 → T1 → cheap image read → T2 field extraction (a scan: T0 → two cheap image reads → T2), writes `extraction_attempt` | FETCH, BACKFILL |
 | `validate.doc` | Apply the rules, compute flags and links, emit a candidate | EXTRACT |
 | `gate.candidate` | **The only writer of `document` / `item_document` / `evidence`** | VALIDATE |
 | `gate.apply` | Apply a human decision (approve / reject / edit / bind-manufacturer) | review UI |
@@ -208,7 +208,7 @@ a *defect*.
 | `auto-superseded` | fast-path signal that this candidate files itself into the supersession chain |
 | `ref-list-possibly-truncated` | a T1/T2 `ref_list` came back at exactly the prompt cap (`tiers.REF_LIST_PROMPT_CAP`), so it may be a partial reading of a longer list. It **reports**, it never prunes: the list is stored and linked in full, and a T0 or T3 list of the same length is not flagged because neither is subject to the prompt cap |
 | `iso-without-standard-number` | `type` is `ISO` but no ISO standard number (13485 or 9001) appears in any of the document's evidence verbatims. It **reports**, it never re-types: the document keeps the type it was given and a reviewer sees that nothing supports it. Extends the 2026-08-20 ruling that `iso 13485` is the ONLY ISO signal from T0, where it was enforced, to whatever tier produced the type — doc 967 is an MDR Annex IX quality-management certificate T1 typed `ISO`. Deliberately **not** a `type`-versus-`regulation` check: a real ISO 13485 certificate may cite MDR in its scope, so that rule would fire on correct documents |
-| `pages-unread` | part of the document was not read, so a field left empty there is **unread**, not absent (PRD v3 §5, added 2026-10-12). Raised today for a scan longer than the four pages its image reads see: a field both cheap image reads (`T2-first`, `T2-second`) answered empty is not settled and not sent to Sonnet, who sees the same four pages. The ladder records the fields under `tiers.PAGES_UNREAD_KEY` (`_pages_unread`) on the extraction attempt and `tiers.integrity_flags` turns that into the flag. It **reports**: the fields that were read stand on their own evidence, and a missing required field stops the document through the rules that test for it. The PRD also names text beyond the LLM text budget; that half is not built yet ([limits.md](dev/limits.md#built-but-not-wired)) |
+| `pages-unread` | part of the document was not read, so a field left empty there is **unread**, not absent (PRD v3 §5, added 2026-10-12). Raised today for a scan longer than the four pages its image reads see: a field both cheap image reads (`T2-first`, `T2-second`) answered empty is not settled and not sent to Sonnet, who sees the same four pages. Raised on a text document (since the text ladder, same day) when its text ran past the LLM text budget or a scanned page of a mixed PDF was rendered by no image read, for a field every read, Sonnet included, left empty. The ladder records the fields under `tiers.PAGES_UNREAD_KEY` (`_pages_unread`) on the extraction attempt and `tiers.integrity_flags` turns that into the flag. It **reports**: the fields that were read stand on their own evidence, and a missing required field stops the document through the rules that test for it |
 | `date-label-not-adjacent` | T0 found a date label, refused to pair it with the date that followed because real content sat between them, and then read no value for that field by any other route. It **reports**, it caps nothing and blocks nothing: it is a note about our parser, not about the document. Records that the page has a layout T0 cannot read — the signal that would justify authoring a `t0_layout` template, and the cost signal too, since the field either escalates to a paid tier or goes unread. A refusal a LATER LABEL then satisfied is never flagged (doc 317, bilingual, English label a bare heading and German label carrying the value): that is the fall-through working as designed, and a flag that fires on correct behaviour teaches people to ignore flags. Unlike every other flag here it cannot be computed from the stored fields — a refusal is a non-event — so `extract_dates` records it under `t0_templates.DATE_LABEL_REFUSED_KEY` and `tiers.integrity_flags` only reads it |
 
 **An unrecognised flag gates.** `gate.py` `_gates_disposition` tests membership
@@ -237,8 +237,8 @@ flags are. That is deliberate — a document linking nothing is not "production"
 | tier | what it is | cost |
 |---|---|---|
 | `T0` | deterministic: regex, pdfplumber tables, playbook templates | free |
-| `T1` | text LLM (`models.t1`) | cheap |
-| `T2` | an image read: the cheap ones (`models.vision_first`, `models.second_read`) and Sonnet's (`models.t2`). Every read of a scan (no text page), and what T1 could not answer | cheap to expensive |
+| `T1` | text LLM (`models.t1`, Haiku 5.5 since 2026-10-12) | cheap |
+| `T2` | an image read: the cheap ones (`models.vision_first`, `models.second_read`) and Sonnet's (`models.t2`). Every read of a scan (no text page), and what the text does not prove on a text document | cheap to expensive |
 | `T3` | a human, via `gate.apply` edits | — |
 
 These are **evidence** tiers. The cost ledger (`extraction_cost.tier`, the
@@ -248,10 +248,10 @@ These are **evidence** tiers. The cost ledger (`extraction_cost.tier`, the
 whole text), `T1-second` (a second text read, thinking off), `T2-first` (a cheap
 image read), `T2-second` (a second image read, thinking off), `T2` (the Sonnet
 image read). A text label's evidence is `T1`, an image label's `T2`. The text
-ladder sends `doc-class`, `T1` and `T2`; the scan ladder (a document with no
-text page, `tiers.run_scan_ladder`) sends `doc-class-image`, `T2-first`,
-`T2-second` and `T2`; `T1-second` is not sent yet. A scan field's evidence
-also carries the label it came from as `step`, which is how `tiers.merge`
+ladder (`tiers.run_text_ladder`) sends `doc-class`, `T1`, `T2-first` and `T2`;
+the scan ladder (a document with no text page, `tiers.run_scan_ladder`) sends
+`doc-class-image`, `T2-first`, `T2-second` and `T2`; `T1-second` is not sent
+yet. A read's evidence also carries the label it came from as `step`, which is how `tiers.merge`
 lets the stronger read prevail (Sonnet over a cheap image read over the text
 read over a T0 guess).
 
@@ -260,7 +260,7 @@ read over a T0 guess).
 | `compliance-doc` | proceed with extraction |
 | `business-doc` | short-circuit, no LLM (invoices, delivery notes) |
 | `msds` | short-circuit, no LLM (safety data sheets) |
-| `unknown` | ask the doc-class call (`doc-class` on the page 1-2 text, `doc-class-image` on the page 1-2 images of a scan); without one, proceed — a missed classification costs money, a wrong skip costs a document |
+| `unknown` | ask the doc-class call (`doc-class` on the page 1-2 text, `doc-class-image` on the page 1-2 images of a scan, or of a document whose pages 1-2 hold no text); without one, proceed: a missed classification costs money, a wrong skip costs a document |
 | `not-a-compliance-document` | the doc-class call's refusal: terminal, the attempt is written and nothing is emitted |
 
 | `document.type` | `DoC` · `EC` · `ISO` · `IFU` · `SPP` · `other` |

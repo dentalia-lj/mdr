@@ -4,8 +4,11 @@ The Anthropic client is INJECTED, so the tier is unit-tested with a stub and the
 live path is exercised in S0.4 once ANTHROPIC_API_KEY is present (live calls are
 deferred until then). Both kinds ask for the full target schema as structured
 output and return per-field evidence `{value, conf, tier, verbatim, page,
-model_id}`, filtered to the fields the ladder actually requested (per-field
-escalation). Prompts (gap G1) live in `prompts/t1_text.md` and
+model_id}` for every field the response carries. The prompt names only the
+fields the ladder asks (per-field escalation), but the response schema requires
+them all, and since 2026-10-12 (extraction-ladder plan Task 4) the ladder keeps
+the rest for fields that become pursued after the read; what it merges is the
+ladder's decision (`tiers`). Prompts (gap G1) live in `prompts/t1_text.md` and
 `prompts/t2_vision.md`.
 
 Every call is a READ STEP with a label (`READ_STEPS`, the extraction-ladder
@@ -77,13 +80,14 @@ class ReadStep:
 #: `T1-second` is plumbing for Task 5. The two `doc-class` rows label the
 #: classify calls, never an `extract`.
 #:
-#: `doc-class-image` sends thinking off (Task 3, 2026-10-12): its answer is one
-#: word and a quote in 256 tokens, and a Haiku 5.5 thinking by default could
-#: spend the budget before answering, which `_classify_answer` would then have
-#: to fail on. The plan's table names no thinking setting for it; this row is
-#: the one place that differs.
+#: Both doc-class calls send thinking off (`doc-class-image` since Task 3,
+#: `doc-class` since Task 4 moved `models.t1` to Haiku 5.5, 2026-10-12): the
+#: answer is one word and a quote in 256 tokens, and a Haiku 5.5 thinking by
+#: default could spend the budget before answering, which `_classify_answer`
+#: would then have to fail on. The plan's table names no thinking setting for
+#: either; these two rows are the places that differ.
 READ_STEPS: dict[str, ReadStep] = {
-    "doc-class": ReadStep(TEXT, "t1"),
+    "doc-class": ReadStep(TEXT, "t1", THINKING_OFF),
     "doc-class-image": ReadStep(IMAGE, "vision_first", THINKING_OFF),
     "T1": ReadStep(TEXT, "t1"),
     "T1-second": ReadStep(TEXT, "second_read", THINKING_OFF),
@@ -520,6 +524,36 @@ def _classify_image_request(read: Read, doc, filename: str) -> dict:
     return params
 
 
+def doc_class_text(doc) -> str:
+    """The text the text doc-class call reads: pages 1..`DOC_CLASS_PAGES`,
+    stripped. Empty means that call would see nothing: the text ladder then
+    asks the page images instead (`tiers.run_text_ladder`)."""
+    return "\n".join(pdfutil.page_texts(doc)[:DOC_CLASS_PAGES]).strip()
+
+
+def _classify_text_request(read: Read, doc, filename: str) -> dict | None:
+    """The messages.create() body for the text doc-class call: the file name and
+    the text of pages 1..`DOC_CLASS_PAGES`. None when those pages hold no text:
+    the call would see nothing, and the file is refused without one (the text
+    ladder asks the page images first, so this is reached only by a client
+    with no image call). Shared by the sync call and the batch client so both
+    send the same request."""
+    text = doc_class_text(doc)
+    if not text:
+        return None
+    params = {
+        "model": read.model,
+        "max_tokens": DOC_CLASS_MAX_TOKENS,
+        # A plain string: the doc-class prompt stays uncached (Task 6).
+        "system": DOC_CLASS_SYSTEM,
+        "messages": [{"role": "user", "content": f"File name: {filename}\n\n{text}"}],
+        "output_config": {"format": {"type": "json_schema", "schema": DOC_CLASS_SCHEMA}},
+    }
+    if read.thinking is not None:
+        params["thinking"] = dict(read.thinking)
+    return params
+
+
 def _classify_answer(message, label: str) -> tuple[str, str]:
     """`(doc_class, quote)` from a doc-class response.
 
@@ -569,13 +603,17 @@ class AnthropicLlm:
         resp = self.client.messages.create(**params)
         _capture(self.usage_log, read.label, read.model, resp, batch=False)
         parsed = _fields_from_json(_response_json(resp), read.evidence_tier, read.model)
-        out = {f: parsed[f] for f in missing if f in parsed}
-        nulled = _cited_pages(out, read)
+        # Every parsed field is returned (Task 4): the ladder keeps the ones it
+        # did not ask in its pool. Only an asked field's nulled cite is counted:
+        # the rest are not used unless the ladder pursues them later.
+        asked = {f: parsed[f] for f in missing if f in parsed}
+        nulled = _cited_pages(asked, read)
+        _cited_pages({f: ev for f, ev in parsed.items() if f not in asked}, read)
         if nulled:
             self.cited_pages_nulled += nulled
             _log.warning("extract.cited_page_outside_images label=%s pages=%s nulled=%d",
                          read.label, list(read.pages), nulled)
-        return out
+        return parsed
 
     def classify(self, doc, filename: str) -> tuple[str, str]:
         """Decide what this file is when T0 could not (`doc_class == "unknown"`).
@@ -590,37 +628,28 @@ class AnthropicLlm:
         first two pages announce this to be", which is exactly what Haiku is
         good at, and it runs on every document T0 declined.
 
-        A malformed or truncated answer degrades to `NOT_A_DOCUMENT` rather than
-        to a guess. That direction is not arbitrary -- a document wrongly
-        refused is reviewed by a person, while one wrongly admitted becomes a
-        fabricated compliance record, which is the failure this whole path
-        exists to prevent (four of them reached the registry on 2026-09-02, one
-        into `production`).
+        A malformed answer degrades to `NOT_A_DOCUMENT` rather than to a
+        guess. That direction is not arbitrary -- a document wrongly refused is
+        reviewed by a person, while one wrongly admitted becomes a fabricated
+        compliance record, which is the failure this whole path exists to
+        prevent (four of them reached the registry on 2026-09-02, one into
+        `production`). A TRUNCATED answer (stop reason `max_tokens`) is the
+        exception and raises (`_classify_answer`): a refusal is final, and an
+        answer the model never finished is not one. The call sends thinking
+        off (`READ_STEPS`), so Haiku 5.5 cannot spend the 256 tokens thinking.
         """
-        pages = pdfutil.page_texts(doc)[:DOC_CLASS_PAGES]
-        text = "\n".join(pages).strip()
-        if not text:
-            return NOT_A_DOCUMENT, ""
         read = resolve_read(DOC_CLASS_LABEL, self.models)
-        params = {
-            "model": read.model,
-            "max_tokens": 256,
-            "system": DOC_CLASS_SYSTEM,
-            "messages": [{"role": "user", "content":
-                          f"File name: {filename}\n\n{text}"}],
-            "output_config": {"format": {"type": "json_schema",
-                                         "schema": DOC_CLASS_SCHEMA}},
-        }
+        params = _classify_text_request(read, doc, filename)
+        if params is None:
+            return NOT_A_DOCUMENT, ""
         resp = self.client.messages.create(**params)
         # Its own label: logged as `T1` it collided with the T1 read of the same
         # document on the ledger's (content_hash, tier, extract_rev) key, and
         # `ON CONFLICT DO NOTHING` dropped the second row.
         _capture(self.usage_log, read.label, read.model, resp, batch=False)
-        payload = _response_json(resp)
-        answer = payload.get("doc_class")
-        if answer not in ("DoC", "EC", "ISO", "IFU", "SPP"):
-            return NOT_A_DOCUMENT, str(payload.get("quote") or "")
-        return answer, str(payload.get("quote") or "")
+        # A response cut at max_tokens raises rather than refusing (Task 4,
+        # from the Task 1 review): `models.t1` is Haiku 5.5 since 2026-10-12.
+        return _classify_answer(resp, read.label)
 
     def classify_image(self, doc, filename: str) -> tuple[str, str]:
         """`classify` for a file with no text page (`tiers.run_scan_ladder`):
@@ -688,15 +717,26 @@ class AnthropicBatchClient:
             "params": _request(read, doc, missing, self.max_tokens, hints),
         }]
 
-    def build_classify_requests(self, content_hash: str, doc, filename: str) -> list[dict]:
-        """The scan doc-class call as a batch-of-1 under `doc-class-image`, the
-        same request `AnthropicLlm.classify_image` sends. `results` answers it
-        with `{"doc_class": ..., "quote": ...}`."""
-        read = resolve_read(DOC_CLASS_IMAGE_LABEL, self.models)
+    def build_classify_requests(self, content_hash: str, doc, filename: str,
+                                label: str = DOC_CLASS_IMAGE_LABEL) -> list[dict]:
+        """A doc-class call as a batch-of-1 under its label: `doc-class-image`
+        (the default, the scan call `AnthropicLlm.classify_image` sends) or
+        `doc-class` (the text call `AnthropicLlm.classify` sends, Task 4).
+        `results` answers it with `{"doc_class": ..., "quote": ...}`. An empty
+        list for a text call on pages with no text: the sync call refuses that
+        without a call, and the batch caller does the same."""
+        read = resolve_read(label, self.models)
+        if read.label not in _CLASSIFY_LABELS:
+            raise ValueError(f"{label!r} is not a doc-class label")
+        if read.kind == TEXT:
+            params = _classify_text_request(read, doc, filename)
+            if params is None:
+                return []
+        else:
+            params = _classify_image_request(read, doc, filename)
         custom_id = _custom_id(content_hash, read.label)
         self._reads[custom_id] = read
-        return [{"custom_id": custom_id,
-                 "params": _classify_image_request(read, doc, filename)}]
+        return [{"custom_id": custom_id, "params": params}]
 
     def submit(self, requests) -> str:
         return self.client.messages.batches.create(requests=requests).id

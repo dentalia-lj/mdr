@@ -5,9 +5,13 @@ unreadable REF list escalates only the REF list. LLM tiers are injected (an
 object with `extract(tier, doc, filename, missing) -> {field: evidence}`), so
 the ladder is testable with a stub and the real Anthropic client drops in later.
 
-A document with no text page takes its own ladder of image reads instead
-(`run_scan_ladder`, S-2, 2026-10-12): no text read, a doc-class call on the
-page images, two cheap image reads, Sonnet only for what they leave open.
+Since 2026-10-12 (PRD v3 section 5, amended; extraction-ladder plan Tasks 3
+and 4) a field leaves a rung when it is SETTLED, not when a model says it is
+sure: the evidence checks (`checks`) prove it, two reads agree, or the null
+rule holds. A text document takes `run_text_ladder` (T-3: T1, a cheap image
+read, Sonnet only for what those leave open); a document with no text page
+takes `run_scan_ladder` (S-2: a doc-class call on the page images, two cheap
+image reads, Sonnet only for what they leave open).
 
 Calibration (gap G2): extraction stores each field's RAW self-reported
 confidence. `calibrate()` is the mechanism applied later at GATE time —
@@ -18,6 +22,8 @@ without re-extraction.
 """
 
 from __future__ import annotations
+
+import re
 
 from psycopg.types.json import Json
 
@@ -341,10 +347,12 @@ DATE_LABEL_NOT_ADJACENT_FLAG = "date-label-not-adjacent"
 
 #: Part of the document was not read, so a field left empty there is unread,
 #: not absent (PRD v3 section 5, added 2026-10-12). Informational (Denis,
-#: 2026-10-12): it caps nothing and blocks nothing. Raised today for a scan
-#: longer than the pages its image reads see (`MAX_VISION_PAGES`): a field both
-#: cheap image reads left empty is not settled and not sent to Sonnet, which
-#: sees the same pages. The same shape as `date-label-not-adjacent`: the ladder
+#: 2026-10-12): it caps nothing and blocks nothing. Raised for a scan longer
+#: than the pages its image reads see (`MAX_VISION_PAGES`): a field both cheap
+#: image reads left empty is not settled and not sent to Sonnet, which sees the
+#: same pages. And, since Task 4, for a text document whose text ran past the
+#: budget or whose scanned pages no image read rendered: a field Sonnet also
+#: answered empty. The same shape as `date-label-not-adjacent`: the ladder
 #: records the fields under `PAGES_UNREAD_KEY` at the time, because an unread
 #: field stores nothing to compute the flag from later.
 PAGES_UNREAD_FLAG = "pages-unread"
@@ -450,8 +458,11 @@ NOT_A_DOCUMENT = "not-a-compliance-document"
 IMAGE_SETTLE = _ExtractDefaults.image_settle
 AGREEMENT_MIN = _GateDefaults.agreement_min
 
-#: The scan ladder's steps (`llm.READ_STEPS` labels).
-DOC_CLASS_IMAGE = "doc-class-image"
+#: The ladders' steps (`llm.READ_STEPS` labels). The text ladder sends
+#: `doc-class`, `T1`, `T2-first` and `T2`; the scan ladder `doc-class-image`,
+#: `T2-first`, `T2-second` and `T2`.
+DOC_CLASS_TEXT, DOC_CLASS_IMAGE = "doc-class", "doc-class-image"
+TEXT_READ = "T1"
 FIRST_IMAGE, SECOND_IMAGE, SONNET_IMAGE = "T2-first", "T2-second", "T2"
 
 #: Types whose coverage scope follows from the type alone
@@ -461,9 +472,9 @@ _SCOPE_FROM_TYPE = ("EC", "ISO", "IFU")
 
 
 class Deferred(Exception):
-    """A batch read has not finished: the batch transport stops the scan ladder
-    at this step and defers its job (`app/handlers/extract.py`). The sync
-    transport never raises it."""
+    """A batch read has not finished: the batch transport stops the ladder (text
+    or scan) at this step and defers its job (`app/handlers/extract.py`). The
+    sync transport never raises it."""
 
     def __init__(self, label: str, state: str):
         super().__init__(f"{label}: {state}")
@@ -474,15 +485,15 @@ def run_extraction(doc, filename: str, llm, threshold: float = 0.95,
                    result=None, companion_url: str | None = None,
                    hints: str | None = None, image_settle: float = IMAGE_SETTLE,
                    agreement_min: float = AGREEMENT_MIN) -> tuple[str, dict, list[str]]:
-    """T0, then the text ladder (T1, then T2) or, for a document with no text
-    page at all, the scan ladder (`run_scan_ladder`). Business/MSDS docs
+    """T0, then the text ladder (`run_text_ladder`) or, for a document with no
+    text page at all, the scan ladder (`run_scan_ladder`). Business/MSDS docs
     short-circuit with no LLM. Returns (doc_class, merged_fields, tiers_used).
 
     The two branches split on `pdf.has_text_page`: a page with a text layer,
     an OCR layer over a scan included, makes it a text document (plan
     2026-10-12, "a scan is a document with no text page at all"), so a mixed
-    PDF takes the text branch, unchanged. `image_settle` and `agreement_min`
-    are the scan ladder's.
+    PDF takes the text branch. `image_settle` and `agreement_min` are the scan
+    ladder's.
 
     `result` is the caller's `app.results.Result`, passed to T0 so a playbook
     template that matched but parsed nothing is counted at the point it happens
@@ -494,7 +505,9 @@ def run_extraction(doc, filename: str, llm, threshold: float = 0.95,
     and every stub implementing it predates this parameter. Passing `hints=`
     unconditionally would break every one of them with a TypeError even when
     nobody asked for a hint; omitting the kwarg entirely when there is nothing
-    to hint keeps every existing caller working unchanged, exactly as today."""
+    to hint keeps every existing caller working unchanged, exactly as today.
+    The same holds for an image read's page list (`pages`), passed only when
+    it is not pages 1-4."""
     doc_class, fields = t0_extract(doc, filename, result=result,
                                    companion_url=companion_url)
     used = ["T0"]
@@ -503,21 +516,81 @@ def run_extraction(doc, filename: str, llm, threshold: float = 0.95,
 
     llm_kwargs = {"hints": hints} if hints is not None else {}
 
+    def read(label, missing, **read_options):
+        return llm.extract(label, doc, filename, missing, **llm_kwargs, **read_options)
+
     # No text page at all: nothing for a text read or the text doc-class call
     # to see. Until 2026-10-12 such a file went to the text doc-class call,
     # which found no text and refused it -- 281 production scans were never
     # read -- or, when T0 typed it off its filename, through a T1 read of empty
     # text into a forced Sonnet image read.
     if not pdfutil.has_text_page(doc):
-        def read(label, missing):
-            return llm.extract(label, doc, filename, missing, **llm_kwargs)
-
         doc_class, fields = run_scan_ladder(
             doc, filename, doc_class, fields, used, read,
             classify=getattr(llm, "classify_image", None), threshold=threshold,
             image_settle=image_settle, agreement_min=agreement_min)
         return doc_class, fields, used
 
+    doc_class, fields = run_text_ladder(
+        doc, filename, doc_class, fields, used, read,
+        classify=getattr(llm, "classify", None),
+        classify_image=getattr(llm, "classify_image", None), threshold=threshold)
+    return doc_class, fields, used
+
+
+def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list[str],
+                    read, classify=None, classify_image=None, *, threshold: float = 0.95,
+                    page_aware: bool = True) -> tuple[str, dict]:
+    """T-3, the text ladder (PRD v3 section 5, amended 2026-10-12; plan Task 4).
+    For a document with at least one text page. Returns (doc_class, fields)
+    and appends each step's label to `used`.
+
+    `read(label, missing, **read_options) -> {field: evidence}` makes one read
+    and returns every field its response carries (`llm.extract`); `pages` is
+    the one read option this ladder passes, and only when the page list is not
+    pages 1-4; `page_aware=False` (the batch transport, which cannot send a
+    page list) keeps every image read on pages 1-4, and the ladder then knows
+    those are the pages read. `classify(doc, filename) -> (doc_class, quote)` is the text
+    doc-class call (optional: absent it, an `unknown` document is read as
+    before). Both are injected so the sync and batch transports share every
+    rule here.
+
+    1. `unknown` to T0: the doc-class call on the page 1-2 text (`doc-class`),
+       or, when pages 1-2 hold no text (a mixed PDF that opens with scanned
+       pages), on their images (`classify_image`, `doc-class-image`, review
+       2026-10-13). A refusal (`not-a-compliance-document`) is terminal.
+    2. `T1` (`models.t1`) on the whole text (`pdf.bounded_text`), asked every
+       pursued field T0 does not hold at the threshold (`_text_pursued`: the
+       IFU and manufacturer-scope suppressions of `needs_escalation`). A field
+       is settled when the value it then holds passes `checks.settled` (T0's
+       own included, where T1 read nothing better), or T1 answered it empty and
+       `checks.null_settled` holds (no label for it in the text, no image or
+       OCR page, text not cut).
+    3. Fields pursued only after T1 (a scope T1 changed brings the item
+       identifiers in) are taken from T1's answer, which carries every field,
+       and settle as in step 2.
+    4. `T2-first` (`models.vision_first`) for what is open, on the pages
+       `_image_pages` picks. A field settles when its value passes the checks,
+       when it is a Basic UDI-DI whose check pair verifies
+       (`checks.udi_check_valid`, the text layer may be corrupt), when it
+       agrees with T1 (`checks.agree`, no per-read minimum: ruling 4, "as
+       measured"), or when both reads ANSWERED it empty and
+       `checks.both_null_settled` allows it (never a Basic UDI-DI the text
+       labels: multi-UDI lists go to Sonnet). Image pages of a mixed PDF the
+       read did not render, and text beyond the budget, count as unread.
+    5. Type to scope (`_scope_from_type`) after each read, as on a scan; and
+       once the type is known to be an IFU, the certificate fields a read
+       wrote before that are dropped (`_drop_ifu_certificate_reads`).
+    6. `T2` (`models.t2`, Sonnet) for what is still open, and only then; its
+       answer closes every field it was asked, an empty answer included
+       (`_sonnet_closes`, the scan ladder's guards).
+
+    A read that failed answered nothing, which is not an empty answer: its
+    fields stay open and the read is named in `READS_KEY` (`failed_reads`).
+    Every read is recorded there; `read_disagreements` counts where they
+    differ. Where part of the document was read by nobody (text past the
+    budget, a scanned page no image read rendered), a field Sonnet also
+    answered empty is recorded under `PAGES_UNREAD_KEY` (`pages-unread`)."""
     # T0 declined to type this file. Ask, rather than guess.
     #
     # `unknown` used to proceed into the full ladder and, worse, be promoted to
@@ -525,42 +598,291 @@ def run_extraction(doc, filename: str, llm, threshold: float = 0.95,
     # how four web pages became registry documents on 2026-09-02. T0 now only
     # classifies from its two-page header window (88% of the real corpus), and
     # everything else comes here for a real answer, including
-    # `not-a-compliance-document`, which is terminal.
-    #
-    # `classify` is optional on the injected llm: the protocol is
-    # `extract(tier, doc, filename, missing)` and every stub predates this.
-    # Absent it, behaviour is exactly what it was before -- an `unknown`
-    # document extracts normally.
-    if doc_class == "unknown":
-        classifier = getattr(llm, "classify", None)
-        if classifier is not None:
-            answer, quote = classifier(doc, filename)
-            used.append("T1")
-            if answer == NOT_A_DOCUMENT:
-                return NOT_A_DOCUMENT, {}, used
-            doc_class = "compliance-doc"
-            # The classifier's answer IS evidence about the type, and it is a
-            # better one than a filename guess. It never overwrites a T0 read.
-            if "type" not in fields:
-                fields["type"] = {"value": answer, "conf": T1_DOC_CLASS_CONF,
-                                  "tier": "T1", "verbatim": quote, "page": 1}
+    # `not-a-compliance-document`, which is terminal. The call is logged under
+    # its own label (`doc-class`, until 2026-10-12 `T1`).
+    # Pages 1-2 with no text: the text call would see nothing and refuse the
+    # file without a call, so their images are asked, as on a scan. A client
+    # with no image call keeps the text call (and its refusal), as before.
+    if doc_class == "unknown" and classify_image is not None:
+        from app.extract.llm import doc_class_text   # `llm` imports this module
+        if not doc_class_text(doc):
+            classify, label, tier = classify_image, DOC_CLASS_IMAGE, "T2"
+        else:
+            label, tier = DOC_CLASS_TEXT, "T1"
+    else:
+        label, tier = DOC_CLASS_TEXT, "T1"
+    if doc_class == "unknown" and classify is not None:
+        answer, quote = classify(doc, filename)
+        used.append(label)
+        if answer == NOT_A_DOCUMENT:
+            return NOT_A_DOCUMENT, {}
+        doc_class = "compliance-doc"
+        # The classifier's answer IS evidence about the type, and a better one
+        # than a filename guess. It never overwrites a T0 read, and any field
+        # read outranks it (`_STEP_RANK`).
+        if "type" not in fields:
+            fields["type"] = {"value": answer, "conf": T1_DOC_CLASS_CONF, "tier": tier,
+                              "verbatim": quote, "page": 1, "step": label}
 
-    missing = needs_escalation(fields, threshold)
-    if missing:
-        fields = merge(fields, llm.extract("T1", doc, filename, missing, **llm_kwargs))
-        used.append("T1")
-        missing = needs_escalation(fields, threshold)
+    t0 = {f: dict(ev) for f, ev in fields.items()
+          if isinstance(ev, dict) and ev.get("tier") == "T0"}
+    known = {f for f, ev in t0.items() if float(ev.get("conf") or 0.0) >= threshold}
+    open_fields = _text_pursued(fields, known)
+    if not open_fields:
+        return doc_class, fields
 
-    # `is_scan` (page 1 has no text) now fires only on a MIXED PDF -- a
-    # document with no text page at all took the scan ladder above. Left as it
-    # was: the text ladder is extraction-ladder plan Task 4's to rebuild.
-    if missing or pdfutil.is_scan(doc):
-        target_fields = missing or needs_escalation(fields, threshold)
-        if target_fields:   # don't pay for a vision call with nothing to extract
-            fields = merge(fields, llm.extract("T2", doc, filename, target_fields, **llm_kwargs))
-            used.append("T2")
+    pages = pdfutil.page_texts(doc)
+    classes = pdfutil.page_classes(doc)
+    image_pages = tuple(n for n, c in enumerate(classes, start=1) if c == "image")
+    # Read at call time, not as `bounded_text`'s default: T1 reads exactly this
+    # budget, and the checks must judge the same cut.
+    truncated = pdfutil.bounded_text(doc, pdfutil.LLM_TEXT_BUDGET_CHARS)[1] > 0
+    # T1 sees no image page: an empty answer there proves nothing.
+    text_ctx = checks.Ctx(pages=pages, classes=classes, truncated=truncated,
+                          unread_pages=frozenset(image_pages))
+    reads: dict[str, tuple[list[str], dict]] = {}
+    rendered: set[int] = set()
 
-    return doc_class, fields, used
+    t1 = _read_step(read, used, reads, TEXT_READ, open_fields)
+    fields = merge(fields, _asked(t1, open_fields))
+    known |= {f for f in open_fields if _text_settles(f, fields, t1, text_ctx)}
+    _scope_from_type(fields, known)
+    _drop_ifu_certificate_reads(fields, known, t0, threshold)
+    fields = _from_t1(fields, known, t1, reads, text_ctx)
+
+    def choose(wanted):
+        return (_image_pages(doc.page_count, wanted, t1, pages, image_pages)
+                if page_aware else None)
+
+    open_fields = _text_pursued(fields, known)
+    if open_fields:
+        sel = choose(open_fields)
+        first = _read_step(read, used, reads, FIRST_IMAGE, open_fields, pages=sel)
+        fields = merge(fields, _asked(first, open_fields))
+        rendered |= set(sel or range(1, min(doc.page_count, _max_vision_pages()) + 1))
+        image_ctx = checks.Ctx(pages=pages, classes=classes, truncated=truncated,
+                               unread_pages=frozenset(set(image_pages) - rendered))
+        known |= {f for f in open_fields
+                  if _image_settles_text(f, fields, t1, first, image_ctx)}
+        _scope_from_type(fields, known)
+        _drop_ifu_certificate_reads(fields, known, t0, threshold)
+        fields = _from_t1(fields, known, t1, reads, text_ctx)
+
+    open_fields = _text_pursued(fields, known)
+    if open_fields:
+        sel = choose(open_fields)
+        sonnet = _read_step(read, used, reads, SONNET_IMAGE, open_fields, pages=sel)
+        fields = merge(fields, _asked(sonnet, open_fields))
+        rendered |= set(sel or range(1, min(doc.page_count, _max_vision_pages()) + 1))
+        # The last read closes what it was asked, an empty answer included, as
+        # on a scan: what the field holds is a value no rule settled.
+        for f in open_fields:
+            if f in sonnet and _is_blank(sonnet[f]) and _sonnet_closes(
+                    f, fields.get(f), threshold):
+                fields[f] = sonnet[f]
+        known |= set(open_fields)
+        _scope_from_type(fields, known)
+        _drop_ifu_certificate_reads(fields, known, t0, threshold)
+        # Part of the document no read saw: text past the budget, or a scanned
+        # page of a mixed PDF no image read rendered. A field every read left
+        # empty there is unread, not absent (PRD v3 section 7, `pages-unread`).
+        # A field Sonnet gave no answer for failed, which says nothing.
+        if truncated or set(image_pages) - rendered:
+            unread = [f for f in open_fields
+                      if f in sonnet and _is_blank(sonnet[f]) and _is_blank(fields.get(f))]
+            if unread:
+                fields[PAGES_UNREAD_KEY] = unread
+
+    fields[READS_KEY] = _reads_record(reads)
+    return doc_class, fields
+
+
+def _max_vision_pages() -> int:
+    # Imported here: `llm` imports this module (NOT_A_DOCUMENT, the REF cap).
+    from app.extract.llm import MAX_VISION_PAGES
+    return MAX_VISION_PAGES
+
+
+def _read_step(read, used: list[str], reads: dict, label: str, missing: list[str],
+               pages=None) -> dict:
+    """One read: its whole answer, each field marked with the step
+    (`_stamp`). Recorded under `reads[label]` with the fields it was asked;
+    `pages` is passed to `read` only when given, so a protocol stub without
+    read options keeps working."""
+    opts = {"pages": pages} if pages is not None else {}
+    answer = _stamp(read(label, missing, **opts), label)
+    used.append(label)
+    reads[label] = (list(missing), answer)
+    return answer
+
+
+def _asked(answer: dict, wanted) -> dict:
+    """The part of a read's answer the ladder merges: the fields it pursues
+    at the time of the read. A read answers every field (the response schema
+    requires them all), and a field nobody pursued stays out: the item
+    identifiers of a manufacturer-wide certificate, `stated_class` (T0's alone,
+    PRD v3 section 5), and the certificate fields of a document already known
+    to be an IFU. A certificate field asked while the type was still open IS
+    merged; if the type then turns out an IFU, `_drop_ifu_certificate_reads`
+    removes it."""
+    return {f: answer[f] for f in wanted if f in answer}
+
+
+def _drop_ifu_certificate_reads(fields: dict, known: set[str], t0: dict,
+                                threshold: float = 0.95) -> None:
+    """Once the type is known to be an IFU (`_NO_CERTIFICATE_TYPES`), the
+    certificate fields a read wrote before the type was known are dropped
+    (review 2026-10-13; both ladders): the suppression exists because a model asked for a
+    date an IFU cannot hold finds one anyway (STRAUMANN, "701593/M/12 04/26"
+    read as 2026-04-26), and that is as true of an answer given before the
+    type was known as after. T0's own read of the field comes back where there
+    was one; otherwise the field is removed. The read stays in `READS_KEY`.
+
+    Only for a type someone read (review round 2): T0 at or above the
+    threshold, or a read's value (the doc-class call or a field read). A T0
+    guess under it (a file named "IFU") becomes known when both reads answer
+    `type` empty, and that is no evidence the document is an IFU, so nothing
+    the reads found is dropped for it."""
+    type_ev = fields.get("type") or {}
+    if "type" not in known or type_ev.get("value") not in _NO_CERTIFICATE_TYPES:
+        return
+    if type_ev.get("tier") == "T0" and float(type_ev.get("conf") or 0.0) < threshold:
+        return
+    for f in _ESCALATE_CERTIFICATE:
+        ev = fields.get(f)
+        if not isinstance(ev, dict) or ev.get("tier") == "T0":
+            continue
+        if f in t0:
+            fields[f] = dict(t0[f])
+        else:
+            del fields[f]
+
+
+def _text_pursued(fields: dict, known: set[str]) -> list[str]:
+    """`needs_escalation` for the text ladder, with "confident" meaning KNOWN
+    (T0 at or above the threshold, or settled). The two suppressions as they
+    stand (decisions 2026-10-12: "the text ladder keeps today's suppression"):
+    no certificate fields once the type is known to be an IFU; no item
+    identifiers while the scope's VALUE is `manufacturer`, known or not. T1
+    reads the scope from the whole text, so after T1 that value is a read's,
+    not T0's guess; unlike `_scan_pursued`, the set can grow when a read
+    changes the scope, which is what `_from_t1` is for."""
+    return _pursued(fields, known, skip_item_ids=(
+        (fields.get("coverage_scope") or {}).get("value") == "manufacturer"))
+
+
+def _text_settles(f: str, fields: dict, answer: dict, ctx) -> bool:
+    """Step 2 of `run_text_ladder` for one field, after T1: the value the field
+    holds is proven by the text; or T1 ANSWERED the field empty, the field
+    holds nothing, and the null rule holds. A field missing from T1's answer
+    was not answered (a failed read) and stays open.
+
+    The value the field holds is `merge`'s: T1's, or T0's where T1 answered
+    nothing better (empty, or a shorter list). So a T0 value under the
+    threshold settles when the text proves it (plan default, "T0 fields under
+    0.95 count as settled when they pass the checks"), but never against a
+    different value T1 read: then the two disagree and the image read decides.
+    Measured on the eval: Ceramill's T0 read the word after its UDI label
+    ("Document", unscorable, 0.9) and T1 the OCR layer's invalid code; the
+    image read's check-valid code settles it."""
+    ev = fields.get(f)
+    if _proven(f, fields, answer.get(f), ctx):
+        return True
+    return (f in answer and _is_blank(answer[f]) and _is_blank(ev)
+            and checks.null_settled(f, ctx))
+
+
+def _proven(f: str, fields: dict, own: dict | None, ctx) -> bool:
+    """The field is proven by the text: the value it holds passes
+    `checks.settled`, or the read's OWN value does (review 2026-10-13). The two
+    differ only for an enumeration, where `merge` lets the longer list win.
+
+    When the read's own list settles it, the field takes that list if the list
+    it holds was written by a read: a longer read list that fails the check (a
+    code not printed) is not stored over a shorter one that passes. A list T0
+    wrote is never replaced (review round 2): T0's is the deterministic
+    enumeration, and where it fails the check it is because its codes are
+    elsewhere, a companion annex (Komet's RA_812 list beside the RA_810
+    declaration, 63 of 63 on the mirror). When both pass, the longer list the
+    field holds stays. T0 at or above the threshold is never asked at all."""
+    held = fields.get(f)
+    if checks.settled(f, held, ctx):
+        return True
+    if own is not None and not _is_blank(own) and checks.settled(f, own, ctx):
+        if not (isinstance(held, dict) and held.get("tier") == "T0"):
+            fields[f] = own
+        return True
+    return False
+
+
+def _from_t1(fields: dict, known: set[str], t1: dict, reads: dict, ctx) -> dict:
+    """Fields pursued only now, after a read changed the scope or the type:
+    T1 answered them anyway (its response carries every field), so they take
+    T1's answer and settle as T1's asked fields do, before any image read is
+    asked them. Recorded as T1's, so the record and the disagreement count see
+    them. Returns the merged fields."""
+    asked = reads.get(TEXT_READ, ([], {}))[0]
+    pulled = [f for f in _text_pursued(fields, known) if f not in asked and f in t1]
+    if not pulled:
+        return fields
+    asked.extend(pulled)
+    fields = merge(fields, _asked(t1, pulled))
+    known |= {f for f in pulled if _text_settles(f, fields, t1, ctx)}
+    _scope_from_type(fields, known)
+    return fields
+
+
+def _image_settles_text(f: str, fields: dict, t1: dict, image: dict, ctx) -> bool:
+    """Step 4 of `run_text_ladder` for one field: the image read's own value
+    passes the checks (`_proven`: the field then holds the value that settled
+    it), or is a check-valid Basic UDI-DI, or agrees with T1's; or both reads
+    answered it empty and `checks.both_null_settled` allows it. No answer from
+    the image read (a failed read) settles nothing."""
+    b = image.get(f)
+    if b is None:
+        return False
+    if not _is_blank(b):
+        if _proven(f, fields, b, ctx):
+            return True
+        if f == "basic_udi_di" and checks.udi_check_valid(b.get("value")):
+            return True
+        return checks.agree(f, t1.get(f), b, 0.0)
+    a = t1.get(f)
+    return a is not None and _is_blank(a) and checks.both_null_settled(f, ctx)
+
+
+def _image_pages(page_count: int, open_fields: list[str], t1: dict, pages: list[str],
+                 image_pages=()) -> tuple[int, ...] | None:
+    """The pages a text document's image read renders (Denis, 2026-10-12),
+    chosen in this order: the pages T1 cited for the open fields, the first
+    page where each open field's label occurs (`checks.LABELS`), the image
+    pages of a mixed PDF, then page 1 onward; at most `MAX_VISION_PAGES`, each
+    clamped to the page count (`llm._vision_content` refuses a page past the
+    end). Sent in document order, so the model reads the document as it runs
+    and a choice of pages 1-4 is today's request byte for byte: then this
+    returns None, the read's default. Measured on the eval: 1 of 72 open
+    fields pointed past page 4."""
+    limit = _max_vision_pages()
+    chosen: list[int] = []
+
+    def add(n) -> None:
+        if (isinstance(n, int) and not isinstance(n, bool) and 1 <= n <= page_count
+                and n not in chosen and len(chosen) < limit):
+            chosen.append(n)
+
+    for f in open_fields:
+        add((t1.get(f) or {}).get("page"))
+    for f in open_fields:
+        pat = checks.LABELS.get(f)
+        if pat is not None:
+            add(next((n for n, text in enumerate(pages, start=1)
+                      if re.search(pat, text, re.IGNORECASE)), None))
+    for n in image_pages:
+        add(n)
+    for n in range(1, page_count + 1):
+        add(n)
+    out = tuple(sorted(chosen))
+    return None if out == tuple(range(1, min(page_count, limit) + 1)) else out
 
 
 def _stamp(answer: dict, label: str) -> dict:
@@ -594,13 +916,23 @@ def _scan_pursued(fields: dict, known: set[str]) -> list[str]:
     replacing a known `manufacturer` scope (an IFU): the item identifiers it
     brings in are asked of the next read and settle there as a first read
     would, or go to Sonnet."""
+    scope = (fields.get("coverage_scope") or {}).get("value")
+    return _pursued(fields, known, skip_item_ids=(
+        "coverage_scope" in known and scope == "manufacturer"))
+
+
+def _pursued(fields: dict, known: set[str], *, skip_item_ids: bool) -> list[str]:
+    """The fields a ladder still pursues: the always-escalated set (without
+    the certificate fields once the type is known to be an IFU), plus the item
+    identifiers unless `skip_item_ids`, minus what is known. The two ladders
+    differ only in when the item identifiers are skipped (`_scan_pursued`,
+    `_text_pursued`)."""
     doc_type = (fields.get("type") or {}).get("value")
     always = _ESCALATE_ALWAYS
     if "type" in known and doc_type in _NO_CERTIFICATE_TYPES:
         always = [f for f in always if f not in _ESCALATE_CERTIFICATE]
     pursued = list(always)
-    scope = (fields.get("coverage_scope") or {}).get("value")
-    if not ("coverage_scope" in known and scope == "manufacturer"):
+    if not skip_item_ids:
         pursued += _ESCALATE_ITEM_ID
     return [f for f in pursued if f not in known]
 
@@ -612,18 +944,27 @@ def _scope_from_type(fields: dict, known: set[str]) -> None:
     agreed on `group` for an MDD certificate in the eval; this is the rule that
     caught it. The replacement is the derivation's own evidence (T0, no page,
     "type=EC"), at the type's confidence where that is lower: the scope is no
-    surer than the type it follows from. A scope that already agrees keeps its
-    read's evidence. Either way the scope is then known."""
+    surer than the type it follows from. A scope that already agrees keeps
+    its evidence unless the derivation is surer (Task 4): T0's scope follows
+    T0's type, so a certificate typed off its file name holds `manufacturer`
+    at 0.6, and once a read settles the type at 0.95 the scope is no longer
+    that guess; and a read that states the same scope at less than the
+    derivation is the weaker claim of the two (PRD v3 section 7, `scope_stated`:
+    a certificate's manufacturer scope follows from its type). Measured on the
+    eval scans: without this, two EC certificates whose first read stated the
+    scope at 0.6 and 0.8 fell from production to review once T0 stopped
+    holding the scope at 1.0. Either way the scope is then known."""
     doc_type = fields.get("type") or {}
     value = doc_type.get("value")
     if "type" not in known or value not in _SCOPE_FROM_TYPE:
         return
     type_conf = float(doc_type.get("conf") or 0.0)
     derived = derive_coverage_scope(value, False, type_conf=type_conf)
-    current = (fields.get("coverage_scope") or {}).get("value")
-    if checks.normalized("coverage_scope", current) != checks.normalized(
-            "coverage_scope", derived["value"]):
-        fields["coverage_scope"] = {**derived, "conf": min(type_conf, derived["conf"])}
+    derived = {**derived, "conf": min(type_conf, derived["conf"])}
+    scope = fields.get("coverage_scope") or {}
+    if checks.normalized("coverage_scope", scope.get("value")) != checks.normalized(
+            "coverage_scope", derived["value"]) or float(scope.get("conf") or 0.0) < derived["conf"]:
+        fields["coverage_scope"] = derived
     known.add("coverage_scope")
 
 
@@ -701,7 +1042,9 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
        pages), recorded under `PAGES_UNREAD_KEY` (flag `pages-unread`).
     5. Type to scope (`_scope_from_type`), as soon as the type is known:
        after each read, so a type the first read settles spares the second
-       read the scope.
+       read the scope. Once the type is known to be an IFU, the certificate
+       fields a read wrote before that are dropped
+       (`_drop_ifu_certificate_reads`, as on text).
     6. `T2` (`models.t2`, Sonnet) for what is still open, and only then; its
        answer closes every field it was asked, an empty answer included
        (`_sonnet_closes`), and type to scope runs again on the type it leaves.
@@ -727,36 +1070,33 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
             fields["type"] = {"value": answer, "conf": T1_DOC_CLASS_CONF, "tier": "T2",
                               "verbatim": quote, "page": 1, "step": DOC_CLASS_IMAGE}
 
-    # Imported here: `llm` imports this module (NOT_A_DOCUMENT, the REF cap).
-    from app.extract.llm import MAX_VISION_PAGES
-
-    known = {f for f, ev in fields.items()
-             if isinstance(ev, dict) and ev.get("tier") == "T0"
-             and float(ev.get("conf") or 0.0) >= threshold}
+    t0 = {f: dict(ev) for f, ev in fields.items()
+          if isinstance(ev, dict) and ev.get("tier") == "T0"}
+    known = {f for f, ev in t0.items() if float(ev.get("conf") or 0.0) >= threshold}
     open_fields = _scan_pursued(fields, known)
     if not open_fields:
         return doc_class, fields
 
     ctx = checks.Ctx(pages=pdfutil.page_texts(doc), classes=pdfutil.page_classes(doc),
-                     unread_pages=frozenset(range(MAX_VISION_PAGES + 1, doc.page_count + 1)))
+                     unread_pages=frozenset(range(_max_vision_pages() + 1, doc.page_count + 1)))
     reads: dict[str, tuple[list[str], dict]] = {}
 
     def step(label: str, missing: list[str]) -> dict:
-        answer = _stamp(read(label, missing), label)
-        used.append(label)
-        reads[label] = (list(missing), answer)
-        return answer
+        # The whole answer is kept for the record; only the asked fields are
+        # merged (`_asked`), since a read answers every field.
+        return _read_step(read, used, reads, label, missing)
 
     first = step(FIRST_IMAGE, open_fields)
-    fields = merge(fields, first)
+    fields = merge(fields, _asked(first, open_fields))
     known |= {f for f in open_fields if _image_settles(f, first.get(f), image_settle)}
     _scope_from_type(fields, known)
+    _drop_ifu_certificate_reads(fields, known, t0, threshold)
 
     unread: list[str] = []
     open_fields = _scan_pursued(fields, known)
     if open_fields:
         second = step(SECOND_IMAGE, open_fields)
-        fields = merge(fields, second)
+        fields = merge(fields, _asked(second, open_fields))
         for f in open_fields:
             b = second.get(f)
             if f not in reads[FIRST_IMAGE][0]:
@@ -778,11 +1118,12 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
                     unread.append(f)
 
     _scope_from_type(fields, known)
+    _drop_ifu_certificate_reads(fields, known, t0, threshold)
 
     open_fields = [f for f in _scan_pursued(fields, known) if f not in unread]
     if open_fields:
         sonnet = step(SONNET_IMAGE, open_fields)
-        fields = merge(fields, sonnet)
+        fields = merge(fields, _asked(sonnet, open_fields))
         # The last read closes what it was asked, an empty answer included:
         # `merge` keeps a value against a blank, which is right only for a
         # field Sonnet gave no answer for (absent from `sonnet`).
@@ -792,6 +1133,7 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
                 fields[f] = sonnet[f]
         known |= set(open_fields)
         _scope_from_type(fields, known)
+        _drop_ifu_certificate_reads(fields, known, t0, threshold)
 
     if unread:
         fields[PAGES_UNREAD_KEY] = unread

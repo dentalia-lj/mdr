@@ -60,3 +60,56 @@ def test_keying_never_changes_the_request_it_reads(fixture_pdf):
     hc.request_key(params)
 
     assert params["system"][0]["cache_control"] == {"type": "ephemeral"}
+
+
+
+# --- ruling A is the pipeline prompt now (extraction-ladder Task 4) -------------
+
+def test_the_ruling_a_variant_is_a_no_op_on_the_current_prompt():
+    """The pipeline prompt carries the ruling-A line since Task 4, so the h55a
+    arm sends the default prompt, the system text its responses were cached
+    under."""
+    with hc._prompt_variant("ruling-a"):
+        assert llm.T1_SYSTEM == hc.llm_mod.T1_SYSTEM
+        varied = hc.llm_mod.T1_SYSTEM
+    assert varied == llm.T1_SYSTEM
+
+
+def test_a_variant_that_matches_nothing_still_fails(monkeypatch):
+    monkeypatch.setitem(hc.PROMPT_VARIANTS, "nowhere", [("no such line", "other line")])
+    with pytest.raises(AssertionError, match="exactly once"):
+        with hc._prompt_variant("nowhere"):
+            pass
+
+
+# --- the baseline arms keep the prompt they were measured with (review r2) ------
+
+def test_the_baseline_arms_send_the_pre_ruling_a_prompt():
+    """h45, h55, h55n and h55hi were cached with the T1 prompt before ruling A;
+    the pipeline prompt carries the ruling now, so they put the old line back
+    (a reverse variant) and their requests still key to their responses."""
+    for arm_id in ("h45", "h55", "h55n", "h55hi"):
+        assert hc.ARMS[arm_id].prompt == "pre-ruling-a"
+    (old, new), = hc.PROMPT_VARIANTS["ruling-a"]
+    with hc._prompt_variant("pre-ruling-a"):
+        assert old in hc.llm_mod.T1_SYSTEM and new not in hc.llm_mod.T1_SYSTEM
+    assert new in llm.T1_SYSTEM                     # restored afterwards
+
+
+@pytest.mark.parametrize("arm_id, thinking", [
+    ("h45", None), ("h55", None), ("h55n", {"type": "disabled"}), ("h55hi", None)])
+def test_a_doc_class_request_takes_its_thinking_from_the_arm(fixture_pdf, arm_id, thinking):
+    """The pipeline's doc-class call sends thinking off since Task 4
+    (`READ_STEPS`); an arm's cached classify request carries the arm's own
+    setting, none for an arm that names none."""
+    arm = hc.ARMS[arm_id]
+    doc = pdf.open_doc(fixture_pdf(TEXT_PDF))
+    params = hc._capture(lambda: hc._llm(arm_id, "capture").classify(doc, "f.pdf"))
+    assert params.get("thinking") == thinking
+    assert params["model"] == arm.model
+
+
+def test_an_extract_request_keeps_the_pipelines_thinking_when_the_arm_names_none(fixture_pdf):
+    doc = pdf.open_doc(fixture_pdf(TEXT_PDF))
+    params = hc._capture(lambda: hc._llm("h55", "capture").extract("T1", doc, "f.pdf", ["type"]))
+    assert "thinking" not in params

@@ -120,7 +120,7 @@ def _finalize(conn, content_hash, group_id, doc_class, tiers_used, fields,
     `usage_log` carries the SYNC path's per-call costs -- one invocation holds
     every tier -- and they are written at the same extract_rev as the attempt. The
     BATCH path passes nothing here: it writes each tier's cost row as that tier
-    resolves (_advance_or_defer), because usage only realises per defer cycle. rev
+    resolves (`_batch_step`), because usage only realises per defer cycle. rev
     is stable across a run: no attempt row exists until this finalize, so
     next_extract_rev returns the same value at every mid-run cost write.
 
@@ -240,20 +240,23 @@ def _handle_sync(conn, doc, filename, content_hash, group_id, llm, result=None,
 def _handle_batch(conn, job, doc, filename, content_hash, group_id,
                   batch_client, poll_interval_s, result=None, companion_url=None,
                   hints=None, steering=None) -> dict:
-    """Batch transport: advance one tier's batch per poll, deferring until ended.
+    """Batch transport: the sync path's own ladder (`tiers.run_text_ladder`, or
+    `tiers.run_scan_ladder` for a document with no text page), each read a
+    batch-of-1 under its own label, deferring until that batch has ended.
 
-    T0 runs every poll (deterministic, idempotent); the batch_ref lookup inside
-    advance_batch means a tier that was already submitted is never resubmitted.
-    Per-field escalation is preserved: only fields still missing after a tier are
-    carried to the next tier's batch -- including the page-1-forced T2 of a
-    mixed PDF, which fires only when a field is genuinely still open. The sync
-    ladder has always guarded that (`tiers.run_extraction`); without the same
-    guard here a document T0/T1 already completed would submit a one-request T2
-    batch at vision rates for a field list that is empty.
+    T0 runs every poll (deterministic, idempotent), and the ladder is re-run
+    from the top on every poll: a step whose batch has resolved is re-fetched
+    (`advance_batch`, the batch_ref lookup means it is never resubmitted), and
+    the first one still running raises `tiers.Deferred` here, which defers the
+    job. Every rule the sync path applies (which fields a read is asked, what
+    settles them, what reaches Sonnet) is the ladder's, so the two transports
+    cannot drift.
 
-    A document with no text page runs the scan ladder instead
-    (`tiers.run_scan_ladder`, the sync path's own function), each step a
-    batch of its own label.
+    One difference, documented in `docs/dev/limits.md`: a batch image read is
+    always pages 1-4. `batch_ref` does not store a page list, so the cited image
+    index of a page-aware read could not be translated back on a later poll;
+    the text ladder runs with `page_aware=False`, so its page choice
+    (`tiers._image_pages`) is not made here.
     """
     if poll_interval_s is None:
         poll_interval_s = load_config().batch.poll_interval_s
@@ -265,84 +268,37 @@ def _handle_batch(conn, job, doc, filename, content_hash, group_id,
         return _finalize(conn, content_hash, group_id, doc_class, tiers_used, fields,
                          archive_url=filename, steering=steering, hinted=hints is not None)
 
-    # No text page: the scan ladder, the SAME function the sync path runs
-    # (`tiers.run_scan_ladder`), with each read a batch-of-1 under its own
-    # label. The ladder is re-run from the top on every poll; a step whose
-    # batch has resolved is re-fetched (`advance_batch`), and the first one
-    # still running raises `Deferred` here, which defers the job.
-    if not pdf.has_text_page(doc):
-        bc_kwargs = {"hints": hints} if hints is not None else {}
+    bc_kwargs = {"hints": hints} if hints is not None else {}
 
-        def read(label, missing):
-            requests = batch_client.build_requests(content_hash, label, doc, missing, **bc_kwargs)
-            results = _batch_step(conn, job, batch_client, content_hash, label, requests,
-                                  poll_interval_s)
-            return {f: results[f] for f in missing if f in results}
+    def read(label, missing):
+        requests = batch_client.build_requests(content_hash, label, doc, missing, **bc_kwargs)
+        results = _batch_step(conn, job, batch_client, content_hash, label, requests,
+                              poll_interval_s)
+        # Every field the response carries, as the sync read returns them; the
+        # ladder merges only what it pursues.
+        return {f: ev for f, ev in results.items() if isinstance(ev, dict)}
 
-        try:
+    try:
+        if not pdf.has_text_page(doc):
             doc_class, fields = tiers.run_scan_ladder(
                 doc, filename, doc_class, fields, tiers_used, read,
                 classify=_batch_classifier(conn, job, batch_client, content_hash,
-                                           poll_interval_s),
+                                           poll_interval_s, tiers.DOC_CLASS_IMAGE),
                 **_scan_thresholds())
-        except tiers.Deferred as d:
-            return {"_deferred": True, "waiting_on": d.label, "state": d.state}
-        return _finalize(conn, content_hash, group_id, doc_class, tiers_used, fields,
-                         archive_url=filename, steering=steering, hinted=hints is not None)
-
-    missing = tiers.needs_escalation(fields)
-    if missing:
-        deferred = _advance_or_defer(conn, job, batch_client, content_hash, "T1",
-                                     doc, missing, fields, tiers_used, poll_interval_s,
-                                     hints=hints)
-        if deferred is not None:
-            return deferred
-        missing = tiers.needs_escalation(fields)
-
-    # `is_scan` fires here only on a mixed PDF (page 1 without text); a document
-    # with no text page took the scan ladder above. As the sync text ladder.
-    if missing or pdf.is_scan(doc):
-        target = missing or tiers.needs_escalation(fields)
-        if target:   # don't pay for a vision call with nothing to extract
-            deferred = _advance_or_defer(conn, job, batch_client, content_hash, "T2",
-                                         doc, target, fields, tiers_used, poll_interval_s,
-                                         hints=hints)
-            if deferred is not None:
-                return deferred
-
-    return _finalize(conn, content_hash, group_id, doc_class, tiers_used, fields,
-                     archive_url=filename, steering=steering, hinted=hints is not None)
-
-
-def _advance_or_defer(conn, job, batch_client, content_hash, tier, doc, target,
-                      fields, tiers_used, poll_interval_s, hints=None):
-    """Advance one tier's batch. On `done`, merge results (filtered to the fields
-    this tier escalated) into `fields`, record the tier, and write this tier's
-    cost row NOW (usage was captured by advance_batch's results() call this same
-    invocation; a later invocation would have its own client and lose it). The
-    write is idempotent (ON CONFLICT), so a retry that re-fetches is a no-op.
-    Otherwise defer the job and return the `_deferred` signal; return None on done.
-
-    The merge goes through `tiers.merge`, exactly as the sync ladder does: an
-    empty answer from a later tier reports that tier's failure, not a correction,
-    so it must never erase an earlier hit. `fields` is the caller's dict and is
-    updated in place — merge returns a superset, so updating from it is complete.
-
-    `hints` is forwarded to `build_requests` only as a kwarg when it is not
-    None -- same reasoning as `tiers.run_extraction`'s `llm_kwargs`: the
-    injected `batch_client` is a protocol object, and stubs implementing it
-    predate this parameter, so passing `hints=None` unconditionally would break
-    them with a TypeError even when nobody asked for a hint."""
-    bc_kwargs = {"hints": hints} if hints is not None else {}
-    requests = batch_client.build_requests(content_hash, tier, doc, target, **bc_kwargs)
-    try:
-        results = _batch_step(conn, job, batch_client, content_hash, tier, requests,
-                              poll_interval_s)
+        else:
+            # No page list in batch mode (see the docstring): every image read
+            # is pages 1-4, and the ladder counts those as the pages read.
+            doc_class, fields = tiers.run_text_ladder(
+                doc, filename, doc_class, fields, tiers_used, read,
+                classify=_batch_classifier(conn, job, batch_client, content_hash,
+                                           poll_interval_s, tiers.DOC_CLASS_TEXT),
+                classify_image=_batch_classifier(conn, job, batch_client, content_hash,
+                                                 poll_interval_s, tiers.DOC_CLASS_IMAGE),
+                page_aware=False)
     except tiers.Deferred as d:
         return {"_deferred": True, "waiting_on": d.label, "state": d.state}
-    fields.update(tiers.merge(fields, {f: results[f] for f in target if f in results}))
-    tiers_used.append(tier)
-    return None
+    return _finalize(conn, content_hash, group_id, doc_class, tiers_used, fields,
+                     archive_url=filename, steering=steering, hinted=hints is not None)
 
 
 def _batch_step(conn, job, batch_client, content_hash, label, requests, poll_interval_s):
@@ -362,24 +318,35 @@ def _batch_step(conn, job, batch_client, content_hash, label, requests, poll_int
     return results
 
 
-def _batch_classifier(conn, job, batch_client, content_hash, poll_interval_s):
-    """The scan doc-class call over the batch transport, as the
-    `classify(doc, filename)` `tiers.run_scan_ladder` takes; None when the
+def _batch_classifier(conn, job, batch_client, content_hash, poll_interval_s, label):
+    """A doc-class call over the batch transport, as the `classify(doc,
+    filename)` the ladders take: `doc-class-image` for a scan, `doc-class` for
+    a text document (Task 4; until then an `unknown` text document skipped the
+    call in batch mode and was read as a compliance document). None when the
     injected client has no `build_classify_requests` (every stub that predates
-    it), which reads an `unknown` scan exactly as before.
+    it), which reads an `unknown` document exactly as before.
 
-    A result with no answer -- the batch request errored, so `results()` skips
-    it -- raises instead of reading as a refusal: a scan refused for a failed
-    request would be dropped for good, which is the loss this call ends."""
+    A text document whose pages 1-2 hold no text is asked on their images
+    (the text ladder picks `doc-class-image` then, review 2026-10-13); the
+    empty request list below is reached only by a client with no image call,
+    and refuses as the sync text call does. A result with no answer -- the batch request errored,
+    so `results()` skips it -- raises instead of reading as a refusal: a file
+    refused for a failed request would be dropped for good."""
     build = getattr(batch_client, "build_classify_requests", None)
     if build is None:
         return None
+    # The label rides as a keyword only for the text call, so a client built
+    # for the scan call alone (Task 3) keeps working there.
+    kw = {} if label == tiers.DOC_CLASS_IMAGE else {"label": label}
 
     def classify(doc, filename):
-        results = _batch_step(conn, job, batch_client, content_hash, tiers.DOC_CLASS_IMAGE,
-                              build(content_hash, doc, filename), poll_interval_s)
+        requests = build(content_hash, doc, filename, **kw)
+        if not requests:
+            return tiers.NOT_A_DOCUMENT, ""
+        results = _batch_step(conn, job, batch_client, content_hash, label, requests,
+                              poll_interval_s)
         if "doc_class" not in results:
-            raise RuntimeError(f"extract.doc {content_hash}: the {tiers.DOC_CLASS_IMAGE} batch "
+            raise RuntimeError(f"extract.doc {content_hash}: the {label} batch "
                                f"result carries no answer (the request failed)")
         return results["doc_class"], results.get("quote", "")
 

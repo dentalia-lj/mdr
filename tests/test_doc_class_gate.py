@@ -102,8 +102,11 @@ def _a_text_document(monkeypatch):
     """`_Doc` stands for a TEXT document: its short pages would read as
     `sparse` to `pdf.page_classes` and send it down the scan ladder, which has
     its own doc-class call on page images (`tests/test_tiers_scan.py`). This
-    file is about the text one."""
+    file is about the text one. The text ladder also reads the page classes
+    (an image page is unread for the null rule), which this stub document
+    cannot compute: every page is a text page."""
     monkeypatch.setattr(tiers.pdfutil, "has_text_page", lambda doc: True)
+    monkeypatch.setattr(tiers.pdfutil, "page_classes", lambda doc: ["text"] * doc.page_count)
 
 
 def _run(doc, llm, filename="d.pdf"):
@@ -203,6 +206,17 @@ def test_an_llm_without_classify_behaves_exactly_as_before():
 
     assert doc_class == "unknown"
     assert "T1" in used          # the normal ladder still ran
+    assert "doc-class" not in used
+
+
+def test_the_doc_class_call_is_its_own_step():
+    """Logged under `doc-class`, not `T1` (until 2026-10-12 the two shared the
+    label, and the cost ledger kept one row of the two)."""
+    llm = _Llm(answer="EC", quote="EC Certificate 0123")
+    _, fields, used = _run(_Doc(["scanned image, no text markers here"]), llm)
+
+    assert used[:3] == ["T0", "doc-class", "T1"]
+    assert fields["type"]["step"] == "doc-class"
 
 
 def test_business_and_msds_still_short_circuit_before_the_classifier():

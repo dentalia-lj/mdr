@@ -49,7 +49,11 @@ OUT_ROOT = REPO / "eval" / "ladder-probe"
 T1_ARM = "h55"     # the T1 read the chains start from
 
 PROBE_ARMS = {
-    "s55t": (hc.Arm("claude-sonnet-5-5", None, "Sonnet 5.5, whole text"), "T1"),
+    # The T1 prompt as it stood when this arm was captured (2026-10-08): the
+    # pipeline prompt carries ruling A since the text ladder, and without the
+    # reverse variant its requests miss the cache.
+    "s55t": (hc.Arm("claude-sonnet-5-5", None, "Sonnet 5.5, whole text",
+                    prompt="pre-ruling-a"), "T1"),
     "s55v": (hc.Arm("claude-sonnet-5-5", None, "Sonnet 5.5, page images 1-4 (today's T2)"), "T2"),
     "h55v": (hc.Arm("claude-haiku-5-5", None, "Haiku 5.5, page images 1-4"), "T2"),
     # second cheap image read, for an agreement rule on scans (added 2026-10-12)
@@ -185,7 +189,8 @@ def _capture_reads(h: str, path: str, doc, asked: list[str], hints, arms) -> lis
     for arm_id in arms:
         tier = PROBE_ARMS[arm_id][1]
         llm = _probe_llm(arm_id, "capture")
-        params = hc._capture(lambda: llm.extract(tier, doc, path, asked, **kwargs))
+        with hc._prompt_variant(PROBE_ARMS[arm_id][0].prompt):
+            params = hc._capture(lambda: llm.extract(tier, doc, path, asked, **kwargs))
         blocks = [b for m in params["messages"] for b in m["content"]]
         n_img = sum(b.get("type") == "image" for b in blocks)
         # Text characters only: base64 page images would swamp a chars/token estimate.
@@ -356,7 +361,8 @@ def _read(run_reqs, h, arm, doc, path, asked, hints):
         return None
     tier = PROBE_ARMS[arm][1]
     kwargs = {"hints": hints} if hints is not None else {}
-    answer = _probe_llm(arm, "replay").extract(tier, doc, path, asked, **kwargs)
+    with hc._prompt_variant(PROBE_ARMS[arm][0].prompt):
+        answer = _probe_llm(arm, "replay").extract(tier, doc, path, asked, **kwargs)
     msg = entry["message"]
     return {"answer": answer, "cost": hc._cost(entry["model"], msg["usage"], "batch"),
             "stop": msg["stop_reason"], "out": msg["usage"]["output_tokens"]}

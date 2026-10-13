@@ -36,7 +36,7 @@ from rapidfuzz import fuzz
 
 from app.extract.pdf import TEXT_BEARING
 from app.extract.t0_templates import _DATE_RE, _parse_date
-from app.extract.udi import INVALID, VALID, validate_basic_udi
+from app.extract.udi import INVALID, VALID, is_word, validate_basic_udi
 
 DATE_FIELDS = ("validity_from", "validity_to")
 
@@ -143,6 +143,14 @@ def udi_check_valid(value) -> bool:
     return bool(value) and validate_basic_udi(str(value)).status == VALID
 
 
+def _udi_shaped(value) -> bool:
+    """A Basic UDI-DI whose check pair is not invalid and that is not a word
+    (`udi.is_word`: no agency's shape and no digit; review 2026-10-13: T0 read
+    "PRODUCT" and "Document" after the label, which scored UNSCORABLE and
+    passed). GS1, HIBCC and EUDAMED-assigned values are judged as before."""
+    return validate_basic_udi(str(value)).status != INVALID and not is_word(str(value))
+
+
 def is_notified_body_number(value) -> bool:
     return bool(_NOTIFIED_BODY.match(str(value).strip()))
 
@@ -187,7 +195,7 @@ def settled(field_name: str, evidence: dict | None, ctx: Ctx) -> bool:
     if compact(v) not in full_c:
         return False
     if field_name == "basic_udi_di":
-        return validate_basic_udi(str(v)).status != INVALID
+        return _udi_shaped(v)
     if field_name == "cert_number":
         return not is_notified_body_number(v)
     return True  # manufacturer
@@ -280,8 +288,8 @@ def well_formed(field_name: str, value) -> bool:
     checked on a read with no text layer to hold it against: not empty; a
     date in ISO form that is a real day; `type`, `coverage_scope` and
     `regulation` inside their vocabularies; a Basic UDI-DI whose check pair is
-    not invalid; a `cert_number` that is not a notified-body number; a list
-    holding at least one code."""
+    not invalid and that is not a word (`udi.is_word`); a `cert_number` that is
+    not a notified-body number; a list holding at least one code."""
     if normalized(field_name, value) is None:
         return False
     if field_name in DATE_FIELDS:
@@ -294,7 +302,7 @@ def well_formed(field_name: str, value) -> bool:
     if field_name == "regulation":
         return value in REGULATIONS
     if field_name == "basic_udi_di":
-        return validate_basic_udi(str(value)).status != INVALID
+        return _udi_shaped(value)
     if field_name == "cert_number":
         return not is_notified_body_number(value)
     if field_name in LIST_FIELDS:

@@ -1214,8 +1214,9 @@ def _handle_mfr_binding(conn, job) -> dict:
     # predates identity extraction.
     # Manufacturer scope must be something the document SAYS, not something the
     # extractor fell back to. `derive_coverage_scope` returns manufacturer at
-    # 1.0 on `type=ISO/EC` and at 0.6 for a DoC whose REF list T0 could not
-    # parse -- the field's own confidence is the discriminator, and the comment
+    # the type's confidence on `type=ISO/EC` (1.0 for a type T0 read, the read's
+    # number once a read settles it: Denis 2026-10-13) and at 0.6 for a DoC whose
+    # REF list T0 could not parse -- the field's own confidence is the discriminator, and the comment
     # there already names this exact hazard ("a wrong `manufacturer` links the
     # doc to the entire catalogue"). Held to `high`, not `med`: this is the
     # guard standing between an unparsed REF list and a catalogue-wide write.

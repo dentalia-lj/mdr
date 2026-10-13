@@ -307,8 +307,11 @@ def test_run_extraction_escalates_missing_fields_to_t1(fixture_pdf):
 def test_a_scan_takes_the_image_ladder_and_never_a_text_read(fixture_pdf):
     """No text page: no T1 read of empty text. Two empty cheap reads on this
     two-page scan settle every field but the Basic UDI-DI (never on two nulls on
-    a scan), which is the one field Sonnet is then asked -- here not even that:
-    T0 holds the scope at 1.0 as `manufacturer`, so no item id is pursued."""
+    a scan), which is the one field Sonnet is then asked -- here not even that.
+    T0 types the file `EC` off its name and, since Task 4, holds the scope at
+    that 0.6, not at 1.0, so the item identifiers are asked of both cheap reads;
+    once both answered the type empty it counts as settled with T0's `EC`, the
+    scope follows it (`manufacturer`), and the UDI is no longer pursued."""
     path = fixture_pdf("IVOCLAR/MDR Certificate IV AG 2017_745.pdf")  # a scan
     doc = pdf.open_doc(path)
     # Empty ANSWERS, as a real read gives them: every asked field, value null.

@@ -90,8 +90,10 @@ Field definitions:
 - `basic_udi_di` — the Basic UDI-DI string, or `null`.
 - `referenced_docs` — other documents this one references (e.g. an underlying
   EC certificate number), as strings.
-- `cert_number` — the certificate number (EC / ISO certs), or `null` (DoCs
-  themselves have none).
+- `cert_number` — for an EC / ISO certificate, its own number. For a DoC, the
+  number of the notified-body certificate the declaration cites (e.g.
+  `G1 021108 0031`), or `null` if it cites none. Never a notified body's
+  four-digit identification number (e.g. `0482`).
 - `manufacturer` — the LEGAL ENTITY that manufactures the devices, exactly as
   printed, including its legal form (`GC EUROPE N.V.`, `Gebr. Brasseler GmbH &
   Co. KG`, `Ivoclar Vivadent AG`). This is who DECLARES conformity, normally

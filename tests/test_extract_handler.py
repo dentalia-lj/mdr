@@ -25,10 +25,13 @@ def _ev(value):
 
 
 class StubLlm:
-    """Fills every escalated field so T2 is not reached on a text PDF."""
+    """Answers every asked field so the text proves it on the ISO fixture,
+    and no image read is reached: T0 leaves only `regulation` open there, and
+    the certificate cites neither regulation, so `n.a.` is proven
+    (`checks.settled`). Any other field it is asked is filled."""
 
-    def extract(self, tier, doc, filename, missing):
-        return {f: _ev("filled") for f in missing}
+    def extract(self, tier, doc, filename, missing, **kw):
+        return {f: _ev("n.a." if f == "regulation" else "filled") for f in missing}
 
 
 def _batch_fields(tier, only=None, conf=0.97):
@@ -361,7 +364,7 @@ class _RecordingLLM:
     def __init__(self):
         self.hints_seen = []
 
-    def extract(self, tier, doc, filename, missing, hints=None):
+    def extract(self, tier, doc, filename, missing, hints=None, **read_options):
         self.hints_seen.append(hints)
         return {f: {"value": f"v_{f}", "conf": 0.97, "tier": tier,
                     "verbatim": "stub", "page": 1, "model_id": "stub"}
@@ -467,10 +470,18 @@ def test_guard_3_caller_asserts_when_the_groups_manufacturer_matches_a_playbook(
 # --- Batch path (C9): the same extract.doc job self-defers until its batch_ref
 # batch is ended, then writes the attempt + emits validate.doc. ---------------
 
+def _iso_t1_proven():
+    """A T1 answer the ISO fixture's text proves: `regulation` (the one field
+    T0 leaves open there) is `n.a.`, since the certificate cites neither."""
+    return {"regulation": {"value": "n.a.", "conf": 0.9, "tier": "T1",
+                           "verbatim": "Regulations TÜV SÜD Group", "page": 1,
+                           "model_id": "batchmodel"}}
+
+
 def test_batch_path_submits_then_completes(conn, fixture_pdf):
     path = fixture_pdf(ISO_CERT)
     job = _enqueue_extract(conn, "sha-b1", 5, path)
-    bc = StubBatchClient({"T1": _batch_fields("T1")}, ready_after=0)
+    bc = StubBatchClient({"T1": _iso_t1_proven()}, ready_after=0)
 
     # Pass 1: batch submitted -> job defers, nothing written yet.
     r1 = eh.handle_extract_doc(conn, job, batch_client=bc, poll_interval_s=0)
@@ -488,7 +499,7 @@ def test_batch_path_submits_then_completes(conn, fixture_pdf):
     r2 = eh.handle_extract_doc(conn, job, batch_client=bc, poll_interval_s=0)
     conn.commit()
     assert "_deferred" not in r2
-    assert r2["tiers_used"] == ["T0", "T1"]  # text PDF, no vision tier
+    assert r2["tiers_used"] == ["T0", "T1"]  # the text proves T1: no image read
     row = conn.execute(
         "SELECT tier, fields FROM extraction_attempt WHERE content_hash='sha-b1'"
     ).fetchone()
@@ -505,7 +516,7 @@ def test_batch_path_submits_then_completes(conn, fixture_pdf):
 def test_batch_path_pending_defers_again(conn, fixture_pdf):
     path = fixture_pdf(ISO_CERT)
     job = _enqueue_extract(conn, "sha-b2", 9, path)
-    bc = StubBatchClient({"T1": _batch_fields("T1")}, ready_after=1)
+    bc = StubBatchClient({"T1": _iso_t1_proven()}, ready_after=1)
 
     r1 = eh.handle_extract_doc(conn, job, batch_client=bc, poll_interval_s=0)
     conn.commit()
@@ -524,36 +535,145 @@ def test_batch_path_pending_defers_again(conn, fixture_pdf):
     assert bc.submits == ["sha-b2:T1"]
 
 
-def test_batch_path_escalates_to_second_tier_per_field(conn, fixture_pdf):
+def test_batch_path_takes_the_text_ladders_steps(conn, fixture_pdf):
+    """The batch transport runs `tiers.run_text_ladder`, the sync path's own
+    function: T1, the cheap image read for what T1 leaves unproven, Sonnet for
+    what the two disagree on, each a batch of its own label. The ISO cert is
+    manufacturer-scope, so item ids aren't chased; `regulation` is the field T0
+    misses, and the certificate prints the word "Regulation", so T1's empty
+    answer settles nothing."""
     path = fixture_pdf(ISO_CERT)
     job = _enqueue_extract(conn, "sha-b3", 3, path)
-    # The ISO cert is manufacturer-scope, so item-ids aren't chased; regulation is
-    # the always-escalated field T0 misses. T1 leaves it -> it escalates to T2.
-    t1 = _batch_fields("T1", only=[])            # T1 fills nothing it's asked
-    t2 = _batch_fields("T2", only=["regulation"])
-    bc = StubBatchClient({"T1": t1, "T2": t2}, ready_after=0)
+    t1 = {"regulation": dict(_iso_t1_proven()["regulation"], value=None)}
+    first = _batch_fields("T2", only=["regulation"])          # "v_regulation": unproven
+    sonnet = {"regulation": dict(_iso_t1_proven()["regulation"], tier="T2")}
+    bc = StubBatchClient({"T1": t1, "T2-first": first, "T2": sonnet}, ready_after=0)
 
-    waited_on = set()
-    r = None
-    for _ in range(8):
-        r = eh.handle_extract_doc(conn, job, batch_client=bc, poll_interval_s=0)
-        conn.commit()
-        if isinstance(r, dict) and r.get("_deferred"):
-            waited_on.add(r["waiting_on"])
-            continue
-        break
+    r, waited = _drive(conn, job, bc)
 
-    assert waited_on == {"T1", "T2"}
-    assert r["tiers_used"] == ["T0", "T1", "T2"]
+    assert waited == ["T1", "T2-first", "T2"]
+    assert r["tiers_used"] == ["T0", "T1", "T2-first", "T2"]
+    assert bc.submits == ["sha-b3:T1", "sha-b3:T2-first", "sha-b3:T2"]
     row = conn.execute(
         "SELECT fields FROM extraction_attempt WHERE content_hash='sha-b3'"
     ).fetchone()
-    assert row["fields"]["regulation"]["tier"] == "T2"
+    assert row["fields"]["regulation"]["value"] == "n.a."
+    assert row["fields"]["regulation"]["step"] == "T2"
+    assert [x["step"] for x in row["fields"][tiers_mod.READS_KEY]] == ["T1", "T2-first", "T2"]
+    assert r["disagreements"] == [{"field": "regulation", "steps": ["T1", "T2-first", "T2"],
+                                   "values": [None, "v_regulation", "n.a."]}]
+
+
+class _TextClassifyingBatchClient(StubBatchClient):
+    """`StubBatchClient` that also builds the doc-class call; `results` of the
+    `doc-class` batch are `answer`."""
+
+    def __init__(self, results_by_tier, answer):
+        super().__init__({**results_by_tier, "doc-class": answer}, ready_after=0)
+        self.classify_labels = []
+
+    def build_classify_requests(self, content_hash, doc, filename, label="doc-class-image"):
+        self.classify_labels.append(label)
+        if label == "doc-class" and not "".join(pdf_mod.page_texts(doc)[:2]).strip():
+            return []
+        return [{"custom_id": f"{content_hash}:{label}", "tier": label}]
+
+
+def _untyped_text(tmp_path, text="no markers anywhere in this text") -> str:
+    """A text document T0 cannot type (no header marker)."""
+    import pymupdf
+    doc = pymupdf.open()
+    page = doc.new_page()
+    for i in range(12):
+        page.insert_text((72, 72 + 20 * i), text, fontsize=12)
+    path = tmp_path / "untyped.pdf"
+    doc.save(str(path))
+    doc.close()
+    return str(path)
+
+
+def test_batch_text_unknown_is_classified_and_a_refusal_emits_nothing(conn, tmp_path):
+    """Until Task 4 the batch path made no doc-class call on text: an `unknown`
+    document was read as a compliance document. Now it is asked, under
+    `doc-class`, and a refusal is terminal as on the sync path."""
+    job = _enqueue_extract(conn, "sha-b11", 6, _untyped_text(tmp_path))
+    bc = _TextClassifyingBatchClient({}, {"doc_class": tiers_mod.NOT_A_DOCUMENT, "quote": "x"})
+
+    r, waited = _drive(conn, job, bc)
+
+    assert waited == ["doc-class"]
+    assert bc.classify_labels[0] == "doc-class"
+    assert (r["doc_class"], r["tiers_used"], r["emitted"]) == (
+        tiers_mod.NOT_A_DOCUMENT, ["T0", "doc-class"], None)
+    assert _count(conn, "SELECT count(*) c FROM job WHERE type='validate.doc'") == 0
+
+
+def test_batch_text_unknown_accepted_is_read(conn, tmp_path):
+    job = _enqueue_extract(conn, "sha-b12", 6, _untyped_text(tmp_path))
+    bc = _TextClassifyingBatchClient({}, {"doc_class": "DoC", "quote": "Declaration"})
+
+    r, waited = _drive(conn, job, bc, limit=12)
+
+    assert r["doc_class"] == "compliance-doc"
+    assert r["tiers_used"][:3] == ["T0", "doc-class", "T1"]
+    assert waited[:2] == ["doc-class", "T1"]
+
+
+def test_batch_text_with_no_text_on_pages_one_and_two_asks_the_image_call(conn, tmp_path):
+    """Pages 1-2 empty, text on page 3, and T0 cannot type it: the page 1-2
+    images are asked under `doc-class-image`, as on a scan (review 2026-10-13;
+    before, the batch path refused it without a call, as the sync one did)."""
+    import pymupdf
+    doc = pymupdf.open()
+    doc.new_page()
+    doc.new_page()
+    page = doc.new_page()
+    for i in range(12):
+        page.insert_text((72, 72 + 20 * i), "no markers anywhere in this text", fontsize=12)
+    path = tmp_path / "late.pdf"
+    doc.save(str(path))
+    job = _enqueue_extract(conn, "sha-b13", 6, str(path))
+    bc = _TextClassifyingBatchClient({"doc-class-image": {"doc_class": "DoC", "quote": "x"}},
+                                     {"doc_class": "IFU", "quote": "x"})
+
+    r, waited = _drive(conn, job, bc, limit=12)
+
+    assert set(bc.classify_labels) == {"doc-class-image"}   # rebuilt on every poll
+    assert waited[0] == "doc-class-image"
+    assert r["doc_class"] == "compliance-doc"
+    assert r["tiers_used"][:3] == ["T0", "doc-class-image", "T1"]
+
+
+def test_sync_text_result_counts_disagreements_and_failed_reads(conn, fixture_pdf):
+    """The text path keeps every read and the job result counts where they
+    differ and which failed, as the scan path's does (`_finalize`)."""
+    unproven = {"regulation": {"value": "MDD", "conf": 0.9, "tier": "T1",
+                               "verbatim": "MDD", "page": 1, "model_id": "m"}}
+    llm = _LabelLlm({"T1": unproven, "T2-first": _FAILED,
+                     "T2": {"regulation": dict(unproven["regulation"], value="n.a.")}})
+    job = {"payload": {"archive_url": fixture_pdf(ISO_CERT),
+                       "content_hash": "sha-text-reads", "group_id": 4}}
+
+    r = eh.handle_extract_doc(conn, job, llm=llm)
+    conn.commit()
+
+    assert llm.calls == ["T1", "T2-first", "T2"]
+    assert r["failed_reads"] == ["T2-first"]
+    assert r["counts"]["read_failures"] == 1
+    assert r["disagreements"] == [{"field": "regulation", "steps": ["T1", "T2"],
+                                   "values": ["MDD", "n.a."]}]
+    assert r["counts"]["read_disagreements"] == 1
+    fields = conn.execute("SELECT fields FROM extraction_attempt "
+                          "WHERE content_hash='sha-text-reads'").fetchone()["fields"]
+    assert [x["step"] for x in fields[tiers_mod.READS_KEY]] == ["T1", "T2-first", "T2"]
+    assert fields[tiers_mod.READS_KEY][1]["failed"] is True
 
 
 #: A cheap image read of SCAN_CERT that settles every field T0 leaves open
 #: (well-formed, at 0.9 or more). T0 reads EC/MDR off the file name at 0.6 and
-#: derives the scope at 1.0, so these six are what the ladder asks.
+#: the scope follows the type at 0.6 (Task 4), so the first read is also asked
+#: the item identifiers; it settles the type as EC, the scope follows it, and
+#: the item identifiers are then no longer pursued.
 SCAN_SETTLED = {
     "type": "EC", "regulation": "MDR", "validity_from": "2023-05-26",
     "validity_to": "2028-05-25", "cert_number": "CE 123456", "manufacturer": "Ivoclar Vivadent AG",

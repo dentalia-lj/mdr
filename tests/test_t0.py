@@ -241,8 +241,11 @@ def test_a_basic_udi_that_fails_its_check_pair_is_not_trusted():
 
 def test_an_unverifiable_basic_udi_is_also_not_trusted():
     """Junk the label regex swallowed -- `document.basic_udi_di` holds seven
-    such rows today, every one of them at confidence 1.0."""
-    assert t0.extract_basic_udi("Basic UDI-DI: Document")["conf"] < 0.95
+    such rows today, every one of them at confidence 1.0. A word is no longer
+    taken at all (review 2026-10-13); an unscorable code that has digits is
+    still taken, below the threshold."""
+    assert t0.extract_basic_udi("Basic UDI-DI: Document") is None
+    assert t0.extract_basic_udi("Basic UDI-DI: A040500000300")["conf"] < 0.95
 
 
 def test_a_failed_check_pair_is_reported_as_an_anomaly():
@@ -909,6 +912,44 @@ def test_coverage_scope_certificates_are_unaffected():
         ev = t0.derive_coverage_scope(type_value, has_ref_list=False, type_conf=1.0)
         assert ev["value"] == "manufacturer"
         assert ev["conf"] == 1.0
+
+
+@pytest.mark.parametrize("type_value, type_conf, value, conf", [
+    # A type T0 settled (title marker, 0.95 or more): the scope as before.
+    ("EC", 1.0, "manufacturer", 1.0),
+    ("ISO", 0.95, "manufacturer", 1.0),
+    ("IFU", 1.0, "group", t0.COVERAGE_DEDUCED_CONF),
+    # A type T0 only guessed (file name, or a marker past the title region):
+    # the scope is no surer than the type it follows from (extraction-ladder
+    # plan Task 4, from the Task 3 review). At 1.0 it read as settled, so on a
+    # scan the item identifiers were never asked even when the reads retyped
+    # the file as a declaration.
+    ("EC", t0.FILENAME_CONF, "manufacturer", t0.FILENAME_CONF),
+    ("ISO", t0._TYPE_MENTION_CONF, "manufacturer", t0._TYPE_MENTION_CONF),
+    ("IFU", t0.FILENAME_CONF, "group", t0.FILENAME_CONF),
+    ("EC", 0.94, "manufacturer", 0.94),
+])
+def test_a_scope_from_the_type_carries_the_types_confidence(type_value, type_conf, value, conf):
+    ev = t0.derive_coverage_scope(type_value, has_ref_list=False, type_conf=type_conf)
+    assert (ev["value"], ev["conf"]) == (value, conf)
+    assert ev["verbatim"] == f"type={type_value}"
+
+
+def test_a_filename_typed_certificate_keeps_its_scope_below_the_threshold(tmp_path):
+    """End to end through `t0_extract`: a certificate typed off its file name
+    alone gets `manufacturer` at the file name's confidence, so the ladder
+    still treats the scope as open."""
+    import pymupdf
+
+    path = tmp_path / "EC Certificate 2024.pdf"
+    doc = pymupdf.open()
+    doc.new_page().insert_text((72, 72), "Page with no type marker at all " * 8)
+    doc.save(path)
+    with pymupdf.open(path) as d:
+        _, fields = t0.t0_extract(d, str(path))
+    assert fields["type"]["conf"] == t0.FILENAME_CONF
+    assert fields["coverage_scope"]["value"] == "manufacturer"
+    assert fields["coverage_scope"]["conf"] == t0.FILENAME_CONF
 
 
 def test_t0_never_deduces_item_scope():
@@ -1876,3 +1917,50 @@ def test_the_record_is_a_list_so_gate_can_never_write_it_as_evidence():
     `_date_label_refused`, carrying a value no document contains."""
     got = t0.extract_dates(_TWO_COLUMN)
     assert isinstance(got[t0.DATE_LABEL_REFUSED_KEY], list)
+
+
+# --------------------------------------------------------------------------- #
+# The word after a Basic UDI-DI label is not a Basic UDI-DI (review 2026-10-13)
+# --------------------------------------------------------------------------- #
+#: The label and what follows it, as PyMuPDF reads them, on the 12 mirror
+#: documents where T0 took a word: a table header ("PRODUCT NAME"), a product
+#: name in the next cell ("Thermaprep", "Grandio disc"), the next label
+#: ("Intended purpose", "Document-ID"). Each read UNSCORABLE at 0.9 and passed
+#: the checks; END-DoC-Aryane's "PRODUCT" is the eval case.
+UDI_WORD_CONTEXTS = [
+    ("END-DoC-Aryane", "BASIC UDI-DI (if applicable) \nPRODUCT NAME / TRADE \nNAME \nINTENDED PURPOSE"),
+    ("END-DoC-RADIX-ANKER-STANDARD", "BASIC UDI-DI \n(if applicable) \nPRODUCT NAME / \nTRADE NAME"),
+    ("END-DoC-Endotron", "Basic UDI-DI \nThermaprep \n230V EU plug \nB00THPR230VEU \n872029938"),
+    ("END-DoC-Thermaprep oven", "Basic UDI-DI \nThermaprep \n230V EU plug \nB00THPR230VEU"),
+    ("RES-DoC-MDR-016", "Basic UDI-DI:\nIntended purpose:\nDentsply DeTrey GmbH"),
+    ("HS DoC Dispenser S-System", "Basic UDI-DI \nClassification \nRule \nRegles de"),
+    ("Ceramill map DRS", "Basic-UDI-DI\nDocument-ID\nCeramill map DRS\nIntegration"),
+    ("VivaScan", "Basic-UDI-DI\nVivaScan\nDocument-ID\nOTCSI 25"),
+    ("UTS 3D, UTS CAD", "Basic-UDI-DI\nUpdate of EMDN-term\nMDS1005 added\n3.0"),
+    ("KOMET Manufacturer-Declaration", "Basic UDI-DI \nTerminology of Basic-UDI-DI \nEMDN \nCode"),
+    ("VOCO Grandio disc", "Basic UDI-DI:\nGrandio disc\nRisk class"),
+    ("VOCO VisCalor Dispenser", "Basic UDI-DI \nPhasor Handpiece & VisCalor Handpiece \nHeating"),
+]
+
+
+@pytest.mark.parametrize("doc, text", UDI_WORD_CONTEXTS, ids=[d for d, _ in UDI_WORD_CONTEXTS])
+def test_t0_never_takes_a_word_after_the_udi_label(doc, text):
+    assert t0.extract_basic_udi(text) is None
+
+
+def test_t0_takes_the_next_labelled_code_after_a_word():
+    """The digit rule skips the word, not the document: a later label that
+    carries a code still answers."""
+    text = ("Basic UDI-DI \nThermaprep \n230V EU plug \n"
+            "Basic UDI-DI: ++J00310124DY \nSTATEMENT OF DECLARATION")
+    ev = t0.extract_basic_udi(text)
+    assert ev["value"] == "++J00310124DY" and ev["conf"] == 1.0
+
+
+@pytest.mark.parametrize("text, value", [
+    ("Basic UDI-DI: 76152081XSCAN001YC", "76152081XSCAN001YC"),      # GS1
+    ("Basic UDI-DI ++J022MD0098KV", "++J022MD0098KV"),              # HIBCC
+    ("BASIC UDI-DI (GMN) A040500000300", "A040500000300"),         # unknown, has digits
+])
+def test_t0_still_reads_a_code_after_the_label(text, value):
+    assert t0.extract_basic_udi(text)["value"] == value
