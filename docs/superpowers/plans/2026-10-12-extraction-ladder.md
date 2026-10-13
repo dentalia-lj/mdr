@@ -128,7 +128,7 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | 5b extraction side: second reads stamp the contract keys | done: built (Opus), 2 Opus review rounds + final check, merged; full suite 5173 passed, 5 skipped; replay (GATE's _score) text 65 of 79 production, 0 wrong gate fields; scans 25 of 34 | merge b03bda7 |
 | 6 prompt caching | done: built (Sonnet), reviewed and fixed (Opus), merged; cache hits to confirm on the first real run | merge of bbc461d |
 | 7 re-extract command | done: built (Sonnet), reviewed and fixed (Opus), merged | c39bb77 |
-| 8 quality and parity | harness and label fixes built (4bf2c87, 064803c); paid run going (estimate $0.71 + baseline fill, cap $0.99) | worktree el-quality |
+| 8 quality and parity | done: real reads $0.60, all deploy blockers pass; text 121/130 fields right (today 112), scans 25/26 (today 24); report docs/private/2026-10-13-extraction-ladder-quality.md | el-quality 3b2b6b0 |
 | 9 production replay | running (Opus): read-only selection and PDF copy from the server, then real reads, cap $0.95 | worktree el-replay |
 
 ## Who builds what, and in parallel (Denis, 2026-10-12)
@@ -355,16 +355,16 @@ guard read `conf` alone.
 
 ### Task 8. Quality and parity check against the evaluation - 8 h / 0.8 h
 
-- [ ] `tools/haiku_compare.py`: drop the 7 `cert_number` entries of `LABEL_OVERRIDES`
+- [x] `tools/haiku_compare.py`: drop the 7 `cert_number` entries of `LABEL_OVERRIDES`
       (ruling A restores those labels); add 533068 `basic_udi_di` `++E2265330681KSCH`.
-- [ ] Run the built ladder on the same 79 text documents and 34 scans. New request
+- [x] Run the built ladder on the same 79 text documents and 34 scans. New request
       shapes miss the eval cache, so this calls the API (under $1, Batch API, capped);
       approved by Denis 2026-10-13 at under $1.
-- [ ] Quality first, per field, on the labelled documents: accuracy of the new ladder
+- [x] Quality first, per field, on the labelled documents: accuracy of the new ladder
       against today's ladder (Haiku 4.5 + Sonnet, from the stored and cached reads) and
       against Sonnet reading every open field; every field that ends differently
       listed with its quote.
-- [ ] Then routing and gate: documents decided automatically, wrong gate fields,
+- [x] Then routing and gate: documents decided automatically, wrong gate fields,
       Sonnet calls, disagreement counts, against section 15.
 - **Blocks the deploy:** any gate field (`type`, `regulation`, `coverage_scope`) or
   `ref_list` / `basic_udi_di` less accurate than today's ladder; any wrong gate field
