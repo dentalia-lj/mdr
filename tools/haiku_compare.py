@@ -61,10 +61,14 @@ class Arm:
 
 
 #: In-memory edits of the T1 prompt for an arm. The prompt file is never changed;
-#: each edit must match exactly once or the capture fails.
+#: each edit must match exactly once or the capture fails, unless the prompt
+#: already carries the edit, which then applies as is.
 PROMPT_VARIANTS = {
     # Denis, 2026-10-12 (docs/decisions.md): a DoC's cert_number holds the
-    # certificate it cites, in every tier.
+    # certificate it cites, in every tier. The pipeline prompt carries this
+    # line since extraction-ladder Task 4, so the edit is a no-op now and the
+    # h55a arm sends the default prompt: the same system text it was cached
+    # under, so its request keys still find the cached responses.
     "ruling-a": [(
         "- `cert_number` — the certificate number (EC / ISO certs), or `null` (DoCs\n"
         "  themselves have none).",
@@ -197,6 +201,8 @@ def _prompt_variant(name: str | None):
     original = llm_mod.T1_SYSTEM
     text = original
     for old, new in PROMPT_VARIANTS[name]:
+        if text.count(old) == 0 and text.count(new) == 1:
+            continue          # the prompt already carries this edit
         if text.count(old) != 1:
             raise AssertionError(f"prompt variant {name}: edit does not match exactly once")
         text = text.replace(old, new)
@@ -748,7 +754,11 @@ def _evaluate(run: pathlib.Path, only: set[str] | None = None) -> list[dict]:
                 entry = cached(reqs[h][(arm_id, "extract")]["key"])
                 msg = load_message(entry["request_key"])
                 llm = _llm(arm_id, "replay")
+                # `llm.extract` returns every parsed field since Task 4 of the
+                # extraction ladder; this report is about the fields T1 was
+                # asked, as before, so the rest stays out of `answer` and `merged`.
                 answer = llm.extract("T1", doc, path, d["missing"], **kwargs)
+                answer = {f: ev for f, ev in answer.items() if f in d["missing"]}
                 data = llm_mod._response_json(msg)
                 raw = llm_mod._fields_from_json(data, "T1", ARMS[arm_id].model)
                 merged = tiers.merge(d["t0"], answer)

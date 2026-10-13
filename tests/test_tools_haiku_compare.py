@@ -60,3 +60,23 @@ def test_keying_never_changes_the_request_it_reads(fixture_pdf):
     hc.request_key(params)
 
     assert params["system"][0]["cache_control"] == {"type": "ephemeral"}
+
+
+
+# --- ruling A is the pipeline prompt now (extraction-ladder Task 4) -------------
+
+def test_the_ruling_a_variant_is_a_no_op_on_the_current_prompt():
+    """The pipeline prompt carries the ruling-A line since Task 4, so the h55a
+    arm sends the default prompt, the system text its responses were cached
+    under."""
+    with hc._prompt_variant("ruling-a"):
+        assert llm.T1_SYSTEM == hc.llm_mod.T1_SYSTEM
+        varied = hc.llm_mod.T1_SYSTEM
+    assert varied == llm.T1_SYSTEM
+
+
+def test_a_variant_that_matches_nothing_still_fails(monkeypatch):
+    monkeypatch.setitem(hc.PROMPT_VARIANTS, "nowhere", [("no such line", "other line")])
+    with pytest.raises(AssertionError, match="exactly once"):
+        with hc._prompt_variant("nowhere"):
+            pass
