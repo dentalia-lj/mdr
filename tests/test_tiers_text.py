@@ -651,15 +651,44 @@ def test_a_failing_longer_list_is_never_stored_over_a_passing_shorter_one(t0):
     assert fields["ref_list"]["step"] == "T2-first"
 
 
-def test_t1s_passing_list_is_stored_over_a_failing_longer_t0_guess(t0):
+def test_a_t0_list_is_kept_when_a_read_proves_a_shorter_one(t0):
+    """`_proven` replaces only a list a read wrote, never T0's (review round 2):
+    T0's list is the deterministic enumeration, and where it fails the check
+    it is because its codes sit elsewhere (a companion annex, below). The
+    read's own list passing settles the field; T0's list stays."""
     fields0 = _only_open("ref_list")
     fields0["ref_list"] = t0ev(["003477", "003478", "999999"], 0.9, "3 REF codes", 1)
     t0(fields0)
     llm = TextLlm({"T1": {"ref_list": (["003477", "003478"], "REF 003477 003478")}})
     _, fields, used = run(_doc(DOC_PAGE), llm)
     assert used == ["T0", "T1"]
-    assert fields["ref_list"]["value"] == ["003477", "003478"]
-    assert fields["ref_list"]["step"] == "T1"
+    assert fields["ref_list"]["value"] == ["003477", "003478", "999999"]
+    assert fields["ref_list"]["tier"] == "T0"
+
+
+@pytest.mark.parametrize("answers, used", [
+    # T1 reads the one code the declaration prints: settled there.
+    ({"T1": {"ref_list": (["003477"], "REF 003477")}}, ["T0", "T1"]),
+    # T1 finds none, the image read reads it: settled there.
+    ({"T1": {"ref_list": ([], "")}, "T2-first": {"ref_list": (["003477"], "REF 003477")}},
+     ["T0", "T1", "T2-first"]),
+], ids=["t1-reads-one", "image-reads-one"])
+def test_a_komet_companion_annex_list_is_never_replaced(t0, answers, used):
+    """Komet: the declaration (RA_810) carries its article list in a separate
+    annex (RA_812), which BACKFILL hands T0 as the companion file. T0's list
+    is read there, so its codes are not in the declaration's text and the 95%
+    check fails by construction (63 of 63 on the mirror). A list a read finds
+    in the declaration itself must not replace it."""
+    fields0 = _only_open("ref_list")
+    annex = dict(t0ev(["111111", "222222", "333333", "444444"], 0.9, "4 REF codes", 1),
+                 archive_url="/archive/komet/533156_RA_812_Liste_DoC.pdf")
+    fields0["ref_list"] = annex
+    t0(fields0)
+    llm = TextLlm(answers)
+    _, fields, got = run(_doc(DOC_PAGE), llm)
+    assert got == used
+    assert fields["ref_list"]["value"] == ["111111", "222222", "333333", "444444"]
+    assert fields["ref_list"]["archive_url"].endswith("RA_812_Liste_DoC.pdf")
 
 
 def test_the_longer_list_still_wins_when_both_pass(t0):
@@ -768,3 +797,18 @@ def test_a_client_without_an_image_classifier_keeps_the_text_call(t0):
     llm = TextLlm({"T1": FAILED, "T2-first": FAILED, "T2": FAILED}, text_class="DoC")
     run(_doc(IMAGE, IMAGE, DOC_PAGE), llm)
     assert llm.classified == ["text"]
+
+
+def test_a_file_name_guess_of_ifu_drops_nothing(t0):
+    """Review round 2: a file named "IFU" gives T0 the type at 0.6; both reads
+    answer `type` empty, which settles the field with T0's guess still in it.
+    That guess is not a type anyone read, so the certificate fields the reads
+    found stay."""
+    t0({"type": t0ev("IFU", 0.6, "filename:IFU x.pdf"), "regulation": t0ev("MDR", 1.0),
+        "manufacturer": t0ev("GC EUROPE N.V.", 0.97)})
+    llm = TextLlm({"T1": {"type": (None, "", None, 0.0),
+                          "validity_to": ("2030-01-01", "valid to 2030-01-01", 1, 0.9)},
+                   "T2-first": {"type": (None, "", None, 0.0)}})
+    _, fields, used = run(_doc(DOC_PAGE + "\nvalid until 2030-01-01"), llm)
+    assert (fields["type"]["value"], fields["type"]["tier"]) == ("IFU", "T0")
+    assert fields["validity_to"]["value"] == "2030-01-01"

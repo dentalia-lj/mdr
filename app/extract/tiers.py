@@ -647,7 +647,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     fields = merge(fields, _asked(t1, open_fields))
     known |= {f for f in open_fields if _text_settles(f, fields, t1, text_ctx)}
     _scope_from_type(fields, known)
-    _drop_ifu_certificate_reads(fields, known, t0)
+    _drop_ifu_certificate_reads(fields, known, t0, threshold)
     fields = _from_t1(fields, known, t1, reads, text_ctx)
 
     def choose(wanted):
@@ -665,7 +665,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
         known |= {f for f in open_fields
                   if _image_settles_text(f, fields, t1, first, image_ctx)}
         _scope_from_type(fields, known)
-        _drop_ifu_certificate_reads(fields, known, t0)
+        _drop_ifu_certificate_reads(fields, known, t0, threshold)
         fields = _from_t1(fields, known, t1, reads, text_ctx)
 
     open_fields = _text_pursued(fields, known)
@@ -682,7 +682,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
                 fields[f] = sonnet[f]
         known |= set(open_fields)
         _scope_from_type(fields, known)
-        _drop_ifu_certificate_reads(fields, known, t0)
+        _drop_ifu_certificate_reads(fields, known, t0, threshold)
         # Part of the document no read saw: text past the budget, or a scanned
         # page of a mixed PDF no image read rendered. A field every read left
         # empty there is unread, not absent (PRD v3 section 7, `pages-unread`).
@@ -728,16 +728,25 @@ def _asked(answer: dict, wanted) -> dict:
     return {f: answer[f] for f in wanted if f in answer}
 
 
-def _drop_ifu_certificate_reads(fields: dict, known: set[str], t0: dict) -> None:
+def _drop_ifu_certificate_reads(fields: dict, known: set[str], t0: dict,
+                                threshold: float = 0.95) -> None:
     """Once the type is known to be an IFU (`_NO_CERTIFICATE_TYPES`), the
     certificate fields a read wrote before the type was known are dropped
     (review 2026-10-13; both ladders): the suppression exists because a model asked for a
     date an IFU cannot hold finds one anyway (STRAUMANN, "701593/M/12 04/26"
     read as 2026-04-26), and that is as true of an answer given before the
     type was known as after. T0's own read of the field comes back where there
-    was one; otherwise the field is removed. The read stays in `READS_KEY`."""
-    doc_type = (fields.get("type") or {}).get("value")
-    if "type" not in known or doc_type not in _NO_CERTIFICATE_TYPES:
+    was one; otherwise the field is removed. The read stays in `READS_KEY`.
+
+    Only for a type someone read (review round 2): T0 at or above the
+    threshold, or a read's value (the doc-class call or a field read). A T0
+    guess under it (a file named "IFU") becomes known when both reads answer
+    `type` empty, and that is no evidence the document is an IFU, so nothing
+    the reads found is dropped for it."""
+    type_ev = fields.get("type") or {}
+    if "type" not in known or type_ev.get("value") not in _NO_CERTIFICATE_TYPES:
+        return
+    if type_ev.get("tier") == "T0" and float(type_ev.get("conf") or 0.0) < threshold:
         return
     for f in _ESCALATE_CERTIFICATE:
         ev = fields.get(f)
@@ -785,16 +794,23 @@ def _text_settles(f: str, fields: dict, answer: dict, ctx) -> bool:
 
 def _proven(f: str, fields: dict, own: dict | None, ctx) -> bool:
     """The field is proven by the text: the value it holds passes
-    `checks.settled`, or the read's OWN value does, and then the field takes
-    that value (review 2026-10-13). The two differ only for an enumeration,
-    where `merge` lets the longer list win: a longer list that fails the check
-    (a code not printed) is not stored over a shorter one that passes. When
-    both pass, the longer one the field holds stays. T0 at or above the
-    threshold is never asked, so never replaced here."""
-    if checks.settled(f, fields.get(f), ctx):
+    `checks.settled`, or the read's OWN value does (review 2026-10-13). The two
+    differ only for an enumeration, where `merge` lets the longer list win.
+
+    When the read's own list settles it, the field takes that list if the list
+    it holds was written by a read: a longer read list that fails the check (a
+    code not printed) is not stored over a shorter one that passes. A list T0
+    wrote is never replaced (review round 2): T0's is the deterministic
+    enumeration, and where it fails the check it is because its codes are
+    elsewhere, a companion annex (Komet's RA_812 list beside the RA_810
+    declaration, 63 of 63 on the mirror). When both pass, the longer list the
+    field holds stays. T0 at or above the threshold is never asked at all."""
+    held = fields.get(f)
+    if checks.settled(f, held, ctx):
         return True
     if own is not None and not _is_blank(own) and checks.settled(f, own, ctx):
-        fields[f] = own
+        if not (isinstance(held, dict) and held.get("tier") == "T0"):
+            fields[f] = own
         return True
     return False
 
@@ -1074,7 +1090,7 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     fields = merge(fields, _asked(first, open_fields))
     known |= {f for f in open_fields if _image_settles(f, first.get(f), image_settle)}
     _scope_from_type(fields, known)
-    _drop_ifu_certificate_reads(fields, known, t0)
+    _drop_ifu_certificate_reads(fields, known, t0, threshold)
 
     unread: list[str] = []
     open_fields = _scan_pursued(fields, known)
@@ -1102,7 +1118,7 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
                     unread.append(f)
 
     _scope_from_type(fields, known)
-    _drop_ifu_certificate_reads(fields, known, t0)
+    _drop_ifu_certificate_reads(fields, known, t0, threshold)
 
     open_fields = [f for f in _scan_pursued(fields, known) if f not in unread]
     if open_fields:
@@ -1117,7 +1133,7 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
                 fields[f] = sonnet[f]
         known |= set(open_fields)
         _scope_from_type(fields, known)
-        _drop_ifu_certificate_reads(fields, known, t0)
+        _drop_ifu_certificate_reads(fields, known, t0, threshold)
 
     if unread:
         fields[PAGES_UNREAD_KEY] = unread

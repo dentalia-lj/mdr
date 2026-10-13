@@ -37,7 +37,7 @@ itself.
 | `app/extract/t0_templates.py` | 1546 | T0: doc-class classification, keyword tables, REF-list extraction, `field_ev()` evidence shape |
 | `app/extract/t0_layout.py` | 307 | The T0 REF-list layout-template engine (anchors + text-relative regions, read from playbooks) |
 | `app/extract/udi.py` | 159 | Offline Basic UDI-DI check-character validation (HIBCC + GS1, MOD 1021/32); `is_word` (no agency shape, no digit) |
-| `app/extract/tiers.py` | 1214 | The ladder itself: `needs_escalation`, `merge` (stronger read prevails), `calibrate`, `run_extraction` (splits text / scan), `run_text_ladder` (T-3) and `_image_pages` (its page choice), `run_scan_ladder` (S-2), `read_disagreements`, `failed_reads`, `extraction_attempt`/`extraction_cost` writers |
+| `app/extract/tiers.py` | 1235 | The ladder itself: `needs_escalation`, `merge` (stronger read prevails), `calibrate`, `run_extraction` (splits text / scan), `run_text_ladder` (T-3) and `_image_pages` (its page choice), `run_scan_ladder` (S-2), `read_disagreements`, `failed_reads`, `extraction_attempt`/`extraction_cost` writers |
 | `app/extract/checks.py` | 331 | Evidence checks, pure: `settled` / `null_settled` / `both_null_settled` against the text layer; `well_formed`, `normalized` and `agree` (shape and agreement between two reads); a Basic UDI-DI that is a word never passes (`udi.is_word`) |
 | `app/extract/llm.py` | 766 | T1/T2 Anthropic clients (sync `AnthropicLlm`, batch `AnthropicBatchClient`), `READ_STEPS`, the JSON schema, per-field evidence construction, the doc-class calls (`classify` on page 1-2 text, `classify_image` on page 1-2 images) |
 | `app/extract/batching.py` | 66 | Batch API state machine (`advance_batch`) over the `batch_ref` side table |
@@ -115,7 +115,11 @@ Task 4). Steps and labels from `llm.READ_STEPS`:
    decides. A REF list stores the list that settled it (`_proven`, review
    2026-10-13): `merge` lets a longer list win, but a longer one that fails the
    check (a code not printed) is not kept over a read's own shorter list that
-   passes; when both pass, the longer one stays. T0 at 0.95 is never asked.
+   passes; when both pass, the longer one stays. A list T0 wrote is never
+   replaced (review round 2): it fails the check only where its codes sit in a
+   companion annex (Komet's RA_812 list beside the RA_810 declaration, 63 of 63
+   on the mirror), and a read's passing list then settles the field with T0's
+   list kept. T0 at 0.95 is never asked.
 3. Fields pursued only after T1 (a scope T1 changed from `manufacturer` brings
    the item identifiers in) are taken from T1's answer, which carries every
    field, and settle as in step 2; recorded as T1's.
@@ -134,6 +138,9 @@ Task 4). Steps and labels from `llm.READ_STEPS`:
    2026-10-13): T1 is asked `validity_from` while the type is still open, and on
    an IFU it reads one off a revision code. T0's own value comes back where it
    had one; the read stays in `_reads`. The scan ladder applies the same rule.
+   Only for a type someone read: T0 at 0.95 or more, or a read's value. A T0
+   guess under 0.95 (a file named "IFU") that became known because both reads
+   answered `type` empty drops nothing.
 6. `T2` (`models.t2`, Sonnet) for what is still open, on the pages
    `_image_pages` picks for those fields. Its answer closes what it was asked,
    an empty answer included, with the scan ladder's guards (`_sonnet_closes`).

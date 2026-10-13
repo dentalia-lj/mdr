@@ -738,3 +738,13 @@ def test_certificate_fields_a_read_wrote_before_the_type_was_an_ifu_are_dropped(
     assert (fields["validity_to"]["value"], fields["validity_to"]["tier"]) == ("2030-01-01", "T0")
     record = next(r for r in fields[tiers.READS_KEY] if r["step"] == "T2-first")
     assert record["fields"]["validity_from"]["value"] == "2026-04-26"
+
+
+def test_a_file_name_guess_of_ifu_drops_nothing_on_a_scan(t0):
+    t0("compliance-doc", {"type": t0ev("IFU", 0.6)})
+    first = dict(EVERYTHING, validity_to=("2030-05-26", 0.6))
+    first.pop("type")
+    llm = ScanLlm({"T2-first": first, "T2-second": {}})
+    _, fields, _ = run(_scan(1), llm)
+    assert (fields["type"]["value"], fields["type"]["tier"]) == ("IFU", "T0")
+    assert fields["validity_to"]["value"] == "2030-05-26"
