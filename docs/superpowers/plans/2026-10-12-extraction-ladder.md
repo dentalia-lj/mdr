@@ -125,7 +125,7 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | 3 scans | done: built (Opus), reviewed and fixed (Opus), merged; full suite 4820 passed, 5 skipped; decision 3 ruled by Denis (item identifiers asked on filename-typed scanned DoCs) | merge 0c891c8 |
 | 4 text ladder | done: built (Opus), 2 Opus review rounds, merged; full suite on the merge 5071 passed + 1 citation test fixed after (comment-only change); replays: text 10 of 79 cached, 7 of 79 agree (= measured), scans 24 of 34 | merge 09a6044, 4539373 |
 | 5a gate side: combined score, migration, published guard, wording | done: built (Opus), 3 Opus review rounds, merged; full suite 4921 passed, 5 skipped | merge 7b9abc4 |
-| 5b extraction side: second reads stamp the contract keys | built (Opus), 2 Opus review rounds (verdict merge); last fixes running: confirming reads under the stored-read rule (Denis), sparse scanned pages and citation proof, repair race | worktree el-second |
+| 5b extraction side: second reads stamp the contract keys | done: built (Opus), 2 Opus review rounds + final check, merged; full suite 5173 passed, 5 skipped; replay (GATE's _score) text 65 of 79 production, 0 wrong gate fields; scans 25 of 34 | merge b03bda7 |
 | 6 prompt caching | done: built (Sonnet), reviewed and fixed (Opus), merged; cache hits to confirm on the first real run | merge of bbc461d |
 | 7 re-extract command | done: built (Sonnet), reviewed and fixed (Opus), merged | c39bb77 |
 | 8 quality and parity | preparing (Opus, no API): label fixes, real-read batch harness with a $0.90 cap, report script, dry-run estimate; paid run after 5b merges | worktree el-quality |
@@ -296,14 +296,14 @@ a `regulation` the checks proved. GATE calibrates both and combines when each is
 least `gate.agreement_min`; `scope_stated`, the supersede guard and the manufacturer
 guard read `conf` alone.
 
-- [ ] Second read only where a gate field is neither T0 nor citation-proven: text
+- [x] Second read only where a gate field is neither T0 nor citation-proven: text
       documents get `T1-second`; scans ask the unproven gate fields in the second image
       read (Task 3 asks it only open fields, so a gate field settled at 0.85-0.92 is
       added here).
-- [ ] From the Task 3 review: the 24 of 34 scan gate figure holds only if the unproven
+- [x] From the Task 3 review: the 24 of 34 scan gate figure holds only if the unproven
       gate fields are asked in `T2-second` even where `T2-first` settled every open field
       (Task 3 makes no second call then); Task 3 alone gives 6 production (7 was an earlier, rougher replay).
-- [ ] One call per label per extraction: the unproven gate fields ride in the same
+- [x] One call per label per extraction: the unproven gate fields ride in the same
       `T2-second` call as Task 3's open fields, or that call's cost row is lost.
 - [x] Combined confidence `1 - (1 - c1)(1 - c2)` when both reads agree and each is at
       least `agreement_min`; citation-proven regulation 1.0.
