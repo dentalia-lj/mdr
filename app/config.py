@@ -71,12 +71,15 @@ class GateThresholds:
     EACH of two agreeing reads must state before their agreement counts -- for
     GATE's combined score `1 - (1 - c1)(1 - c2)`, and for a scan field settled
     by two cheap image reads. Read by the scan ladder (Task 3) and by GATE
-    (`gate._agreed_confidence`, Task 5); the one-field guards in GATE never
+    (`gate._confidences`, Task 5); the one-field guards in GATE never
     read it, they stay on the first read's own number. It lives here, not
     under `extract`, because the PRD names it `gate.agreement_min` and GATE is
     where the combined number is used; one key keeps the scan rule and the
     score on the same floor. The text ladder's agreement between T1 and the
     image read takes no floor (ruling 4, "as measured, no per-read minimum").
+    Both ladders also read it (Task 5b, `tiers._to_confirm`) to decide whether
+    a gate field's agreement already counts at GATE, which spares it the
+    confirming second read.
     """
 
     high: float = 0.92
@@ -261,8 +264,9 @@ class Models:
     # before Sonnet (`T2-first`, and the scan doc-class call); `second_read` is
     # the agreement read, thinking off (`T1-second`, `T2-second`). Separate keys
     # from `t1` so a swap of one is diffed on its own. `vision_first` is read by
-    # both ladders, `second_read` by the scan ladder's `T2-second`; nothing sends
-    # `T1-second` yet (plan Task 5).
+    # both ladders, `second_read` by both too since plan Task 5b (2026-10-13):
+    # the text ladder's `T1-second` and the scan ladder's `T2-second`, which
+    # also confirm the gate fields GATE combines two agreeing reads on.
     vision_first: str = "claude-haiku-5-5"
     second_read: str = "claude-haiku-5-5"
 

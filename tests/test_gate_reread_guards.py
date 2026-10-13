@@ -7,11 +7,13 @@
 2. A reviewer's edit outranks a machine re-read. A field with T3 evidence keeps
    its value and its evidence; the machine's differing value is counted. Root
    cause of the defect this closes: a T3 edit takes the next evidence rev
-   (`MAX(evidence.extract_rev) + 1`), while a reading's rev comes from
-   `extraction_attempt` (`tiers.next_extract_rev`), so the next re-read shares
-   the edit's rev, the per-(doc, field, rev) evidence guard skipped the
-   machine's row, and the column took the machine's value: the column and its
-   current evidence disagreed (invariant 2).
+   (`MAX(evidence.extract_rev) + 1`), while a reading's rev came from
+   `extraction_attempt` alone (`tiers.next_extract_rev`, until Task 5b), so the
+   next re-read shared the edit's rev, the per-(doc, field, rev) evidence guard
+   skipped the machine's row, and the column took the machine's value: the
+   column and its current evidence disagreed (invariant 2). A reading in
+   flight when the edit lands can still share it, so the hold stays; the tests
+   below write the shared rev directly.
 3. The manufacturer-binding route skips a stale revision, as the REF route does.
 4. The document row is locked when GATE reads its status, so a decision that
    commits in between cannot be overwritten on a status read before it.

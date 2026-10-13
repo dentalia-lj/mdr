@@ -2,7 +2,8 @@
 
 **Status:** live. Measured against the tree at 2026-08-31; the scan ladder
 (a document with no text page) added 2026-10-12, extraction-ladder plan Task 3;
-the text ladder rebuilt the same day (T-3 on Haiku 5.5, plan Task 4).
+the text ladder rebuilt the same day (T-3 on Haiku 5.5, plan Task 4); the
+second reads that confirm the gate fields added 2026-10-13 (plan Task 5b).
 
 Covers `app/extract/` and the parts of `app/handlers/extract.py` and
 `app/handlers/gate.py` that finish what `extract/` starts. Does not restate
@@ -23,7 +24,13 @@ model calls itself unsure. A text document takes T1 (Haiku 5.5), a cheap image
 read for what T1 leaves unproven, and Sonnet only for what those two do not
 settle. A document with no text page at all (a scan) skips T1 and takes its own
 ladder of image reads: a cheap read, a second cheap read for what that leaves
-open, Sonnet only for what the two do not settle. `extract.doc` (`app/handlers/extract.py`)
+open, Sonnet only for what the two do not settle. Once a ladder has run, the
+three fields GATE scores (`type`, `regulation`, `coverage_scope`) carry what
+proves or confirms them beyond one read's own number: a regulation its one
+printed citation proves, or a second read that gave the same value, which GATE
+combines with the first. A gate field nothing proves or confirms is asked of a
+second read made for that alone (`T1-second` on text; on a scan it rides in
+`T2-second`). `extract.doc` (`app/handlers/extract.py`)
 is the handler that drives the ladder and writes its two audit tables
 (`extraction_attempt`, `extraction_cost`); GATE is what turns the ladder's
 output into `evidence` rows, and constructs several fields of those rows
@@ -37,8 +44,8 @@ itself.
 | `app/extract/t0_templates.py` | 1546 | T0: doc-class classification, keyword tables, REF-list extraction, `field_ev()` evidence shape |
 | `app/extract/t0_layout.py` | 307 | The T0 REF-list layout-template engine (anchors + text-relative regions, read from playbooks) |
 | `app/extract/udi.py` | 159 | Offline Basic UDI-DI check-character validation (HIBCC + GS1, MOD 1021/32); `is_word` (no agency shape, no digit) |
-| `app/extract/tiers.py` | 1235 | The ladder itself: `needs_escalation`, `merge` (stronger read prevails), `calibrate`, `run_extraction` (splits text / scan), `run_text_ladder` (T-3) and `_image_pages` (its page choice), `run_scan_ladder` (S-2), `read_disagreements`, `failed_reads`, `extraction_attempt`/`extraction_cost` writers |
-| `app/extract/checks.py` | 331 | Evidence checks, pure: `settled` / `null_settled` / `both_null_settled` against the text layer; `well_formed`, `normalized` and `agree` (shape and agreement between two reads); a Basic UDI-DI that is a word never passes (`udi.is_word`) |
+| `app/extract/tiers.py` | 1388 | The ladder itself: `needs_escalation`, `merge` (stronger read prevails; of two agreeing reads the surer), `calibrate`, `run_extraction` (splits text / scan), `run_text_ladder` (T-3) and `_image_pages` (its page choice), `run_scan_ladder` (S-2), `_stamp_agreement` / `_to_confirm` (the gate fields' second reads), `read_disagreements`, `failed_reads`, `next_extract_rev`, `extraction_attempt`/`extraction_cost` writers |
+| `app/extract/checks.py` | 353 | Evidence checks, pure: `settled` / `null_settled` / `both_null_settled` against the text layer; `citation_proven` (a regulation proven by its one printed citation, for GATE's 1.0); `well_formed`, `normalized` and `agree` (shape and agreement between two reads); a Basic UDI-DI that is a word never passes (`udi.is_word`) |
 | `app/extract/llm.py` | 766 | T1/T2 Anthropic clients (sync `AnthropicLlm`, batch `AnthropicBatchClient`), `READ_STEPS`, the JSON schema, per-field evidence construction, the doc-class calls (`classify` on page 1-2 text, `classify_image` on page 1-2 images) |
 | `app/extract/batching.py` | 66 | Batch API state machine (`advance_batch`) over the `batch_ref` side table |
 | `app/extract/economics.py` | 153 | Token usage → USD, per-model `PRICES`, `UnknownModelPricing` |
@@ -144,6 +151,20 @@ Task 4). Steps and labels from `llm.READ_STEPS`:
 6. `T2` (`models.t2`, Sonnet) for what is still open, on the pages
    `_image_pages` picks for those fields. Its answer closes what it was asked,
    an empty answer included, with the scan ladder's guards (`_sonnet_closes`).
+7. The gate fields (plan Task 5b; see "The gate fields' evidence" below): a
+   `regulation` a read holds that `checks.citation_proven` proves is marked
+   `proven: "citation"`, and each gate field a read holds names the read that
+   agreed with it (`_stamp_agreement`). A gate field held by a read, with a
+   well-formed value, that is neither citation-proven nor agreed with by a read
+   where both reach `gate.agreement_min` (`_to_confirm`) is asked of
+   `T1-second` (`models.second_read`, thinking off, the whole text, hints
+   included): one call for all of them, at most one per extraction. It only
+   confirms: when it agrees it is stamped as the agreeing read, when it does not
+   it is a disagreement on the job result, and its value is never stored, nor is
+   any field sent on because of it. A failed `T1-second` stamps nothing and is
+   counted. Not asked: T0 at 0.95 (GATE's own number), a scope that follows the
+   type (T0 evidence), the doc-class answer, an empty field. On the eval (cached
+   replay, 2026-10-13) 37 of 79 documents made the call.
 
 A failed read (no answer at all) is never an empty answer: its fields stay
 open, it is marked `failed` in `_reads`, and the job result counts it, as on a
@@ -187,6 +208,13 @@ Steps and labels from `llm.READ_STEPS`:
    to the next read; it is marked `failed` in `_reads` and counted on the job
    result (`failed_reads`, `counts.read_failures`; review 2026-10-12: two
    failed cheap reads used to "settle" every field but the UDI as empty).
+   The gate fields the first read settled (`_to_confirm`, plan Task 5b) ride
+   in the same call, in the ladder's field order, so it is made even when
+   nothing else is open: for those it only confirms, as `T1-second` does on
+   text (stamped when it agrees, a counted disagreement when not, never stored,
+   never sent on to Sonnet). One call per label, or that call's cost row would
+   be lost. On the eval 8 of 34 scans make the call for the gate fields alone;
+   Task 3 made none there, and gave 7 scans production instead of 25.
 4. A scan longer than the four pages the image reads see: a field both cheap
    reads answered empty is **unread**, not settled and not sent to Sonnet (who
    sees the same pages). Recorded under `_pages_unread`; VALIDATE raises the
@@ -215,6 +243,10 @@ Steps and labels from `llm.READ_STEPS`:
    on the eval, four `cert_number` values only the second cheap read gave,
    contradicted by the first read and by Sonnet, survived Sonnet's null; one
    was a manufacturer SRN. Type to scope runs once more.
+7. Each gate field read twice to the same value names its agreeing read
+   (`_stamp_agreement`), as on text. A scan has no text to prove a regulation
+   by its citation (`n.a.` would pass the check on an empty text layer), so it
+   is never marked `proven`.
 
 The pursued set is `needs_escalation`'s, keyed to what is KNOWN (T0 at 0.95 or
 settled by a read) rather than to a value, so it only shrinks: a known IFU
@@ -236,12 +268,47 @@ sent to review (Denis, 2026-10-12). Failed reads are on the job result as
 (`tiers.failed_reads`). A scan field's evidence carries `step` (its label), which
 GATE ignores and `merge` ranks by.
 
+**The gate fields' evidence** (plan Task 5, "Split 2026-10-12"; GATE reads it in
+`gate._confidences`). On `type`, `regulation` and `coverage_scope` (`tiers.
+GATE_FIELDS`, held equal to `gate.REQUIRED_FIELDS` by a test):
+
+- `conf` stays the stored read's own raw number, with its value, quote, page
+  and `model_id`.
+- `agreed_model_id` / `agreed_conf` name another read that was asked the field
+  and gave the same well-formed value (`checks.agree`, normalized), and its own
+  raw number: the surest such read where several did. Stamped whatever the
+  numbers; GATE combines the two only when each, calibrated, is at least
+  `gate.agreement_min`, and stores the combination in `evidence.confidence`.
+  Only a read can agree or be agreed with: never T0, the doc-class answer, or a
+  scope type to scope derived (GATE never combines on a row with no model id).
+- `proven: "citation"`, on `regulation` only, on the text ladder only: the
+  checks prove it from the one citation printed (`checks.citation_proven`:
+  `settled`, and text for the whole document, since "only 2017/745 printed"
+  is also a claim that 93/42 is not; a scanned page of a mixed PDF, an unread
+  page or text past the budget leaves that unknown; an OCR layer counts as
+  text, as `settled` and the measured route read it). GATE scores it 1.0.
+
 **Merge policy** (`merge`): the **stronger** read wins for the fields it
 *returned* (rulings 2026-10-12): Sonnet's image read over a cheap image read
 (`T2-first`, and below it `T2-second`, which only confirms) over T1 over a T0
 guess under 0.95; T0 at 0.95 or more is never overwritten; equal strength,
 later wins. On the text ladder each read is stronger than the one before, so
-there it is exactly the old later-wins rule. A blank later answer never erases
+there it is exactly the old later-wins rule. **Two reads that agree** (plan
+Task 5b, review finding 9, 2026-10-13): when the new read gives the same
+well-formed value as the read the field holds, the surer read's evidence is
+stored (the one held on a tie) and the other becomes its agreeing read; the
+strength rule decides only between different values. Before, an image read
+agreeing with T1 replaced T1's evidence by strength alone, its 0.5 over T1's
+0.9 on one eval document (533048 RA_810, `coverage_scope`), and GATE's
+`scope_stated` and supersede guard read that number. Considered: keeping the
+earlier read on agreement (the plan's suggestion). On the eval replay that cost
+two documents production and moved a third from staged to manual, all where
+the earlier read was the less sure one (a Komet declaration whose T1 read MDR
+at 0.6 and the image read at 0.8, an inferred answer; a VOCO scan whose two
+cheap reads gave the scope at 0.6 and 0.8), so the surer one is kept instead. A T0 guess or the
+doc-class answer is not a read: a read giving the same value replaces it as
+before. `_proven` keeps that choice: a read's own value proving a field it
+agrees with does not replace the surer evidence the field holds. A blank later answer never erases
 an earlier hit (one exception, outside `merge`: Sonnet's empty answer closes
 the field on both ladders, step 6 above)
 (`_is_blank`, `tiers.py:128-136`); one shrink guard applies only to
@@ -303,9 +370,10 @@ that the doc-class call (`AnthropicLlm.classify`) and the T1 read both logged
 `T1`, so on every document T0 could not type the conflict clause dropped one of
 the two rows without a word. `/status` → **Spend** shows the breakdown per
 model, label and transport. The text ladder sends `doc-class`, `T1`,
-`T2-first` and `T2`; the scan ladder `doc-class-image`, `T2-first`, `T2-second`
-and `T2`; `T1-second` belongs to plan Task 5. Both doc-class calls send thinking
-off. A doc-class answer cut at `max_tokens` raises (`llm._classify_answer`)
+`T2-first`, `T2` and `T1-second` (since plan Task 5b, for the gate fields); the
+scan ladder `doc-class-image`, `T2-first`, `T2-second` (since Task 5b also for
+the gate fields the first read settled) and `T2`. Both doc-class calls send
+thinking off. A doc-class answer cut at `max_tokens` raises (`llm._classify_answer`)
 instead of reading as a refusal, on text since Task 4 too (the job retries, then
 lands in dead jobs); so does a batch doc-class result that carries no answer
 (`app/handlers/extract.py` `_batch_classifier`).
@@ -406,7 +474,15 @@ overwritten by the document's own handle.
 (`app/handlers/gate.py:1118-1139`): `tier='T3'`, `model_id=NULL`,
 `confidence=1.0`, `page=NULL`, `verbatim` = the human's own input, stamped at
 `extract_rev = MAX(extract_rev)+1` for that doc so "current" always resolves
-to the human's value. `app/extract/` never sees a T3 evidence row.
+to the human's value. `app/extract/` never sees a T3 evidence row, with one
+exception: `tiers.next_extract_rev` allocates a new reading's rev past both
+`extraction_attempt` and the document's `evidence` revs (plan Task 5b, from
+the Task 5a review), so a reading made after an edit no longer takes the
+edit's rev. An edit made while a reading is in flight can still share its rev;
+GATE holds edited fields against machine writes for that (`_reviewer_held`).
+The batch path allocates the rev for each step's cost row as that step
+resolves, so an edit landing between two polls splits one run's cost rows
+across two revs.
 
 **Evidence-page requirement** (Invariant 2's T1/T2-only page rule). Enforced
 in `_require_complete_evidence` (`app/handlers/gate.py:238-266`): a required
@@ -507,10 +583,10 @@ schema enforces it.
 
 | File | Pins |
 |---|---|
-| `tests/test_tiers.py` | Escalation gating, `merge`/shrink-guard, `run_extraction`, `test_a_scan_takes_the_image_ladder_and_never_a_text_read` |
-| `tests/test_tiers_text.py` | The text ladder: T0 settled fields never asked, what the text proves after T1, T1's empty answer and the null rule (labels, image pages, truncation), a failed read, T0 under 0.95, the image read's check / check-valid UDI / agreement / both empty, Sonnet prevailing and closing, the two suppressions, T1's pool, type to scope, the page choice, the reads record, hints, the text doc-class call |
-| `tests/test_tiers_scan.py` | The scan ladder: routing (a mixed PDF stays text), the image doc-class call, 1/3/6-page scans and `pages-unread`, settle at 0.85, agreement at 0.70, both-null except the UDI, failed reads (never an empty answer, counted), type to scope, Sonnet only for what is open and its empty answer closing a field, the reads record, disagreements, `merge` by strength |
-| `tests/test_checks.py` | `checks.py` — the text checks, page classes, and the scan shape / agreement checks |
+| `tests/test_tiers.py` | Escalation gating, `merge`/shrink-guard, two agreeing reads in `merge` (the surer stored; T0 and the doc-class answer are not reads), `GATE_FIELDS` equal to GATE's, `next_extract_rev` past evidence revs, `run_extraction`, `test_a_scan_takes_the_image_ladder_and_never_a_text_read` |
+| `tests/test_tiers_text.py` | The text ladder: T0 settled fields never asked, what the text proves after T1, T1's empty answer and the null rule (labels, image pages, truncation), a failed read, T0 under 0.95, the image read's check / check-valid UDI / agreement / both empty, Sonnet prevailing and closing, the two suppressions, T1's pool, type to scope, the page choice, the reads record, hints, the text doc-class call, `T1-second` (agrees / disagrees / empty / failed, one call, what is not asked, citation proof, an agreement under the floor, Sonnet as the agreeing read) |
+| `tests/test_tiers_scan.py` | The scan ladder: routing (a mixed PDF stays text), the image doc-class call, 1/3/6-page scans and `pages-unread`, settle at 0.85, agreement at 0.70, both-null except the UDI, failed reads (never an empty answer, counted), type to scope, Sonnet only for what is open and its empty answer closing a field, the reads record, disagreements, `merge` by strength, `T2-second` confirming the gate fields (one call, never stored, never sent on, no citation proof on a scan) |
+| `tests/test_checks.py` | `checks.py`: the text checks, page classes, `citation_proven`, and the scan shape / agreement checks |
 | `tests/test_tiers_corpus.py` | Ladder behaviour against the seed corpus |
 | `tests/test_t0.py`, `tests/test_t0_corpus.py` | `t0_templates.py` classification and field extraction |
 | `tests/test_t0_layout.py` | The layout-template engine (`t0_layout.py`) |

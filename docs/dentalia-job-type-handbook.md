@@ -537,8 +537,12 @@ def handle_extract_doc(job):
         open_ = [f for f in open_ if not (settled(f, fields) or agrees_with_t1(f))]
         if open_:
             fields |= run_llm_tier("T2", pdf, open_, job)    # Sonnet; its null closes a field
+        confirm = [f for f in GATE_FIELDS if unproven(f, fields)]   # Task 5b
+        if confirm:                                          # Haiku 5.5, thinking off, whole text:
+            stamp_agreement(fields, run_llm_tier("T1-second", pdf, confirm, job))  # never stored
     else:                                                    # scan ladder, S-2
-        ...  # doc-class on page images, T2-first, T2-second, Sonnet for what stays open
+        ...  # doc-class on page images, T2-first, T2-second (+ the unproven gate
+             # fields, even when nothing else is open), Sonnet for what stays open
     # per-FIELD escalation: clean date + unreadable REF list -> only REF goes on
 
     db.extraction_attempt.insert(job.payload["content_hash"],

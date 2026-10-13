@@ -213,6 +213,34 @@ def _weaker(challenger: dict, incumbent: dict | None) -> bool:
     return a is not None and b is not None and a < b
 
 
+#: The doc-class calls' labels (`llm.READ_STEPS`). Their answer is one word off
+#: the header with a fixed confidence and no model id, not a field read.
+_DOC_CLASS_STEPS = frozenset({"doc-class", "doc-class-image"})
+
+
+def _is_read(evidence) -> bool:
+    """Evidence a model READ for a field: tier T1 or T2, a model id, and not
+    the doc-class call's answer. Not T0 (a template or a file-name guess), not
+    a person. Only a read can agree with another (`_agree`), and GATE combines
+    only on a row with a model id (`gate._agreed_columns`)."""
+    return (isinstance(evidence, dict) and evidence.get("tier") in ("T1", "T2")
+            and bool(evidence.get("model_id")) and evidence.get("step") not in _DOC_CLASS_STEPS)
+
+
+def _conf(evidence, key: str = "conf") -> float:
+    """A read's own number (or another key's), 0.0 when it is not a number."""
+    try:
+        return float((evidence or {}).get(key) or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _agree(field: str, a, b) -> bool:
+    """Two reads gave the same well-formed value (`checks.agree` with no
+    per-read minimum: whether an agreement COUNTS is GATE's floor)."""
+    return _is_read(a) and _is_read(b) and checks.agree(field, a, b, 0.0)
+
+
 def merge(base: dict, new: dict, *, by_strength: bool = True) -> dict:
     """The stronger read wins for the fields it returned; earlier hits are
     preserved.
@@ -265,6 +293,15 @@ def merge(base: dict, new: dict, *, by_strength: bool = True) -> dict:
     `_pages_unread`: records about the extraction, not fields) is copied as
     given.
 
+    **Two reads that agree** (plan Task 5b, review finding 9): when the new
+    read gives the same well-formed value as the read the field holds
+    (`_agree`; T0 and the doc-class answer are not reads), the SURER read's
+    evidence is stored (value, quote, page, model, confidence), the one held
+    on a tie, and the other becomes the agreeing read GATE combines with it
+    (`_stamp_agreement`). Strength decides only between different values: an
+    image read agreeing with T1 at 0.5 used to replace T1's 0.9 by strength
+    alone, and `scope_stated` and the supersede guard read that number.
+
     `by_strength=False` is the rule as it stood before 2026-10-12 (later wins,
     with the blank and shrink guards), for `app/repair_ref_list.py`: it replays
     a fresh T0 under STORED answers to restore what a blank answer erased, and
@@ -278,6 +315,10 @@ def merge(base: dict, new: dict, *, by_strength: bool = True) -> dict:
             continue
         incumbent = base.get(field)
         if _is_blank(evidence) and not _is_blank(incumbent):
+            continue
+        if by_strength and _agree(field, incumbent, evidence):
+            if _conf(evidence) > _conf(incumbent):
+                out[field] = evidence
             continue
         if field in _ENUMERATED_FIELDS and isinstance(incumbent, dict):
             if _shrinks(incumbent, evidence):
@@ -459,11 +500,25 @@ IMAGE_SETTLE = _ExtractDefaults.image_settle
 AGREEMENT_MIN = _GateDefaults.agreement_min
 
 #: The ladders' steps (`llm.READ_STEPS` labels). The text ladder sends
-#: `doc-class`, `T1`, `T2-first` and `T2`; the scan ladder `doc-class-image`,
-#: `T2-first`, `T2-second` and `T2`.
+#: `doc-class`, `T1`, `T2-first`, `T2` and `T1-second`; the scan ladder
+#: `doc-class-image`, `T2-first`, `T2-second` and `T2`.
 DOC_CLASS_TEXT, DOC_CLASS_IMAGE = "doc-class", "doc-class-image"
-TEXT_READ = "T1"
+TEXT_READ, SECOND_TEXT = "T1", "T1-second"
 FIRST_IMAGE, SECOND_IMAGE, SONNET_IMAGE = "T2-first", "T2-second", "T2"
+
+#: GATE's required fields (`gate.REQUIRED_FIELDS`; a test holds the two
+#: equal, since this module cannot import the handler): the fields whose
+#: evidence carries the agreement keys, and the ones a second read confirms.
+GATE_FIELDS = ("type", "regulation", "coverage_scope")
+
+#: The evidence contract GATE reads (plan Task 5, "Split 2026-10-12";
+#: `gate._confidences`), on a gate field's evidence: `conf` stays the stored
+#: read's own raw number; `agreed_model_id` / `agreed_conf` name another read
+#: that gave the same well-formed value and its own raw number, set whenever
+#: the values agree (the 0.70 floor is GATE's); `proven: "citation"` marks a
+#: `regulation` its one printed citation proves (`checks.citation_proven`).
+AGREED_MODEL_KEY, AGREED_CONF_KEY = "agreed_model_id", "agreed_conf"
+PROVEN_KEY, CITATION = "proven", "citation"
 
 #: Types whose coverage scope follows from the type alone
 #: (`t0_templates.derive_coverage_scope`: EC and ISO are manufacturer-wide, an
@@ -507,7 +562,9 @@ def run_extraction(doc, filename: str, llm, threshold: float = 0.95,
     nobody asked for a hint; omitting the kwarg entirely when there is nothing
     to hint keeps every existing caller working unchanged, exactly as today.
     The same holds for an image read's page list (`pages`), passed only when
-    it is not pages 1-4."""
+    it is not pages 1-4. `agreement_min` (`gate.agreement_min`) decides, on
+    both ladders, whether an agreement GATE will count already confirms a gate
+    field, so no second read is asked for it."""
     doc_class, fields = t0_extract(doc, filename, result=result,
                                    companion_url=companion_url)
     used = ["T0"]
@@ -534,13 +591,15 @@ def run_extraction(doc, filename: str, llm, threshold: float = 0.95,
     doc_class, fields = run_text_ladder(
         doc, filename, doc_class, fields, used, read,
         classify=getattr(llm, "classify", None),
-        classify_image=getattr(llm, "classify_image", None), threshold=threshold)
+        classify_image=getattr(llm, "classify_image", None), threshold=threshold,
+        agreement_min=agreement_min)
     return doc_class, fields, used
 
 
 def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list[str],
                     read, classify=None, classify_image=None, *, threshold: float = 0.95,
-                    page_aware: bool = True) -> tuple[str, dict]:
+                    page_aware: bool = True,
+                    agreement_min: float = AGREEMENT_MIN) -> tuple[str, dict]:
     """T-3, the text ladder (PRD v3 section 5, amended 2026-10-12; plan Task 4).
     For a document with at least one text page. Returns (doc_class, fields)
     and appends each step's label to `used`.
@@ -584,6 +643,15 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     6. `T2` (`models.t2`, Sonnet) for what is still open, and only then; its
        answer closes every field it was asked, an empty answer included
        (`_sonnet_closes`, the scan ladder's guards).
+    7. The gate fields (`GATE_FIELDS`, plan Task 5b): a `regulation` its one
+       printed citation proves is marked `proven: "citation"`
+       (`checks.citation_proven`), and a read agreeing with the stored value
+       is stamped as its agreeing read (`_stamp_agreement`). A gate field a
+       read holds that neither proves nor confirms with an agreement GATE
+       will count (`_to_confirm`) is asked of `T1-second`
+       (`models.second_read`, thinking off), one call for all of them. That
+       read confirms or not: it is stamped when it agrees, counted as a
+       disagreement when it does not, and its value is never stored.
 
     A read that failed answered nothing, which is not an empty answer: its
     fields stay open and the read is named in `READS_KEY` (`failed_reads`).
@@ -693,6 +761,17 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
             if unread:
                 fields[PAGES_UNREAD_KEY] = unread
 
+    # The gate fields, once the ladder has run: what the citation proves, what
+    # two reads agree on, and one second text read for what neither covers.
+    reg = fields.get("regulation")
+    if _is_read(reg) and checks.citation_proven(reg, text_ctx):
+        fields["regulation"] = {**reg, PROVEN_KEY: CITATION}
+    _stamp_agreement(fields, reads)
+    confirm = _to_confirm(fields, agreement_min)
+    if confirm:
+        _read_step(read, used, reads, SECOND_TEXT, confirm)
+        _stamp_agreement(fields, reads)
+
     fields[READS_KEY] = _reads_record(reads)
     return doc_class, fields
 
@@ -714,6 +793,54 @@ def _read_step(read, used: list[str], reads: dict, label: str, missing: list[str
     used.append(label)
     reads[label] = (list(missing), answer)
     return answer
+
+
+def _stamp_agreement(fields: dict, reads: dict) -> None:
+    """Name each gate field's agreeing read (`AGREED_MODEL_KEY`,
+    `AGREED_CONF_KEY`): another read that was asked the field and gave the
+    same well-formed value as the read whose evidence is stored (`_agree`).
+    The surest such read where several did; none where none did, or where the
+    field holds no read (T0, a scope that follows the type, the doc-class
+    answer, nothing). Stamped whatever the numbers: GATE applies its floor.
+    Replaces the field's evidence dict rather than changing it, since the
+    same dict sits in the read's own answer."""
+    for f in GATE_FIELDS:
+        ev = fields.get(f)
+        if not _is_read(ev) or ev.get("step") not in reads:
+            continue
+        ev = {k: v for k, v in ev.items() if k not in (AGREED_MODEL_KEY, AGREED_CONF_KEY)}
+        best = None
+        for label, (asked, answer) in reads.items():
+            other = answer.get(f)
+            if label == ev["step"] or f not in asked or not _agree(f, ev, other):
+                continue
+            if best is None or _conf(other) > _conf(best):
+                best = other
+        if best is not None:
+            ev[AGREED_MODEL_KEY], ev[AGREED_CONF_KEY] = best["model_id"], _conf(best)
+        fields[f] = ev
+
+
+def _confirmed(evidence: dict, agreement_min: float) -> bool:
+    """A gate field GATE will score at more than the stored read's own number:
+    a citation-proven `regulation`, or an agreeing read where both reads are
+    at least `agreement_min` (GATE's floor, applied here to the raw numbers,
+    which calibration leaves as they are at the default factor of 1.0)."""
+    if evidence.get(PROVEN_KEY) == CITATION:
+        return True
+    return (bool(evidence.get(AGREED_MODEL_KEY))
+            and _conf(evidence) >= agreement_min
+            and _conf(evidence, AGREED_CONF_KEY) >= agreement_min)
+
+
+def _to_confirm(fields: dict, agreement_min: float) -> list[str]:
+    """The gate fields a second read is asked to confirm, in `GATE_FIELDS`
+    order: held by a read (`_is_read`: T0 at 0.95 is GATE's own number, and a
+    row with no model id is never combined), with a well-formed value (nothing
+    else can be agreed with), and not `_confirmed` already."""
+    return [f for f in GATE_FIELDS
+            if _is_read(fields.get(f)) and checks.well_formed(f, fields[f].get("value"))
+            and not _confirmed(fields[f], agreement_min)]
 
 
 def _asked(answer: dict, wanted) -> dict:
@@ -795,7 +922,9 @@ def _text_settles(f: str, fields: dict, answer: dict, ctx) -> bool:
 def _proven(f: str, fields: dict, own: dict | None, ctx) -> bool:
     """The field is proven by the text: the value it holds passes
     `checks.settled`, or the read's OWN value does (review 2026-10-13). The two
-    differ only for an enumeration, where `merge` lets the longer list win.
+    differ for an enumeration, where `merge` lets the longer list win, and for
+    two reads that agree, where `merge` stored the surer one's evidence (plan
+    Task 5b): the value proven is the same, and that evidence stays.
 
     When the read's own list settles it, the field takes that list if the list
     it holds was written by a read: a longer read list that fails the check (a
@@ -809,7 +938,7 @@ def _proven(f: str, fields: dict, own: dict | None, ctx) -> bool:
     if checks.settled(f, held, ctx):
         return True
     if own is not None and not _is_blank(own) and checks.settled(f, own, ctx):
-        if not (isinstance(held, dict) and held.get("tier") == "T0"):
+        if not (isinstance(held, dict) and held.get("tier") == "T0") and not _agree(f, held, own):
             fields[f] = own
         return True
     return False
@@ -1036,7 +1165,11 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
        value, each read at least `agreement_min`) or both ANSWERED it empty and
        `checks.both_null_settled` allows it (never a Basic UDI-DI on a scan,
        never when pages went unread). A read that failed gave no answer, which
-       is not an empty one: its fields stay open (`failed_reads`).
+       is not an empty one: its fields stay open (`failed_reads`). The gate
+       fields the first read settled (`_to_confirm`, plan Task 5b) ride in the
+       same call, so it is made even when nothing else is open: for those it
+       only confirms, as `T1-second` does on text (stamped when it agrees,
+       counted when it does not, never stored, never sent on to Sonnet).
     4. On a scan longer than the pages read, a field both cheap reads answered
        empty is UNREAD: not settled, not sent to Sonnet (who sees the same
        pages), recorded under `PAGES_UNREAD_KEY` (flag `pages-unread`).
@@ -1049,6 +1182,8 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
        answer closes every field it was asked, an empty answer included
        (`_sonnet_closes`), and type to scope runs again on the type it leaves.
        A field Sonnet gave no answer for keeps what it holds.
+    7. Each gate field read twice to the same value names its agreeing read
+       (`_stamp_agreement`). A scan has no citation to prove a regulation by.
 
     The pursued set is recomputed after every read, as the text ladder
     recomputes `needs_escalation` after T1, but keyed to what is KNOWN rather
@@ -1094,8 +1229,14 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
 
     unread: list[str] = []
     open_fields = _scan_pursued(fields, known)
-    if open_fields:
-        second = step(SECOND_IMAGE, open_fields)
+    # The gate fields the first read settled, confirmed in the same call: one
+    # call per label, or the second call's cost row would be lost. Asked in
+    # the ladder's field order, so a request with nothing to confirm is the
+    # one Task 3 sent.
+    confirm = [f for f in _to_confirm(fields, agreement_min) if f not in open_fields]
+    ask = [f for f in ESCALATE if f in open_fields or f in confirm]
+    if ask:
+        second = step(SECOND_IMAGE, ask)
         fields = merge(fields, _asked(second, open_fields))
         for f in open_fields:
             b = second.get(f)
@@ -1137,6 +1278,7 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
 
     if unread:
         fields[PAGES_UNREAD_KEY] = unread
+    _stamp_agreement(fields, reads)
     fields[READS_KEY] = _reads_record(reads)
     return doc_class, fields
 
@@ -1181,11 +1323,22 @@ def read_disagreements(fields: dict) -> list[dict]:
 
 
 def next_extract_rev(conn, content_hash: str) -> int:
-    """Next extract_rev for a content_hash (1 for the first extraction)."""
+    """Next extract_rev for a content_hash (1 for the first extraction): past
+    every reading in `extraction_attempt` AND every evidence row of the
+    document. A reviewer's edit is stamped `MAX(evidence.extract_rev) + 1`
+    (`gate._apply_edits`), a rev no attempt row holds, and counted from the
+    attempts alone the next reading took that same rev (Task 5a review, the
+    shared counter; plan Task 5b). An edit made while a reading is in flight
+    can still take that reading's rev, which GATE's reviewer hold covers
+    (`gate._reviewer_held`)."""
     return conn.execute(
-        "SELECT COALESCE(MAX(extract_rev), 0) + 1 AS rev "
-        "FROM extraction_attempt WHERE content_hash = %s",
-        (content_hash,),
+        "SELECT GREATEST("
+        " (SELECT COALESCE(MAX(extract_rev), 0) FROM extraction_attempt"
+        "  WHERE content_hash = %s),"
+        " (SELECT COALESCE(MAX(e.extract_rev), 0) FROM evidence e"
+        "  JOIN document d ON d.doc_id = e.doc_id WHERE d.content_hash = %s)"
+        ") + 1 AS rev",
+        (content_hash, content_hash),
     ).fetchone()["rev"]
 
 

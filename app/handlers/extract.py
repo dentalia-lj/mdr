@@ -121,8 +121,10 @@ def _finalize(conn, content_hash, group_id, doc_class, tiers_used, fields,
     every tier -- and they are written at the same extract_rev as the attempt. The
     BATCH path passes nothing here: it writes each tier's cost row as that tier
     resolves (`_batch_step`), because usage only realises per defer cycle. rev
-    is stable across a run: no attempt row exists until this finalize, so
-    next_extract_rev returns the same value at every mid-run cost write.
+    is stable across a run: no attempt row exists until this finalize and the
+    run writes no evidence, so next_extract_rev returns the same value at every
+    mid-run cost write, unless a reviewer's edit lands between two polls (it
+    counts the document's evidence revs too, since Task 5b).
 
     `steering` is the resolved playbook (Task 7 guard 4) -- recorded whenever a
     playbook steered ANY part of the read, T0 lexicons included, not only a
@@ -210,8 +212,9 @@ def _finalize(conn, content_hash, group_id, doc_class, tiers_used, fields,
 
 
 def _scan_thresholds() -> dict:
-    """The scan ladder's configured thresholds, as `run_extraction` /
-    `run_scan_ladder` keyword arguments."""
+    """The ladders' configured thresholds, as `run_extraction` /
+    `run_scan_ladder` keyword arguments. `agreement_min` is the text ladder's
+    too: an agreement GATE will count spares a gate field the second read."""
     cfg = load_config()
     return {"image_settle": cfg.extract.image_settle,
             "agreement_min": cfg.gate.agreement_min}
@@ -294,7 +297,7 @@ def _handle_batch(conn, job, doc, filename, content_hash, group_id,
                                            poll_interval_s, tiers.DOC_CLASS_TEXT),
                 classify_image=_batch_classifier(conn, job, batch_client, content_hash,
                                                  poll_interval_s, tiers.DOC_CLASS_IMAGE),
-                page_aware=False)
+                page_aware=False, agreement_min=_scan_thresholds()["agreement_min"])
     except tiers.Deferred as d:
         return {"_deferred": True, "waiting_on": d.label, "state": d.state}
     return _finalize(conn, content_hash, group_id, doc_class, tiers_used, fields,

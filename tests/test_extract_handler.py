@@ -564,6 +564,39 @@ def test_batch_path_takes_the_text_ladders_steps(conn, fixture_pdf):
                                    "values": [None, "v_regulation", "n.a."]}]
 
 
+def _reg(value, conf, tier="T1", model="batchmodel"):
+    return {"regulation": {"value": value, "conf": conf, "tier": tier,
+                           "verbatim": f"read {value}", "page": 1, "model_id": model}}
+
+
+@pytest.mark.parametrize("second, agreed, failed", [
+    (_reg("MDD", 0.95, model="second-model"), ("second-model", 0.95), None),
+    ({}, ("batchmodel", 0.5), ["T1-second"]),       # an errored request: no result at all
+], ids=["agrees", "errored"])
+def test_batch_text_second_read_is_its_own_batch_after_the_ladder(conn, fixture_pdf, second,
+                                                                  agreed, failed):
+    """Task 5b on the Batch API. T1 reads `regulation` MDD at 0.99 (neither
+    citation is printed, so the text cannot prove it), the image read agrees
+    at 0.5, under GATE's floor: `T1-second` is asked, as a batch of its own
+    label, submitted once and appended to the steps once (the ladder re-runs
+    on every poll and `Deferred` stops it before the step is recorded). An
+    errored request is a failed read: counted, and it stamps nothing."""
+    job = _enqueue_extract(conn, "sha-b14", 3, fixture_pdf(ISO_CERT))
+    bc = StubBatchClient({"T1": _reg("MDD", 0.99), "T2-first": _reg("MDD", 0.5, "T2"),
+                          "T1-second": second}, ready_after=0)
+
+    r, waited = _drive(conn, job, bc)
+
+    assert waited == ["T1", "T2-first", "T1-second"]
+    assert bc.submits == ["sha-b14:T1", "sha-b14:T2-first", "sha-b14:T1-second"]
+    assert r["tiers_used"] == ["T0", "T1", "T2-first", "T1-second"]
+    assert r.get("failed_reads") == failed
+    reg = conn.execute("SELECT fields FROM extraction_attempt "
+                       "WHERE content_hash='sha-b14'").fetchone()["fields"]["regulation"]
+    assert (reg["value"], reg["conf"], reg["step"]) == ("MDD", 0.99, "T1")
+    assert (reg["agreed_model_id"], reg["agreed_conf"]) == agreed
+
+
 class _TextClassifyingBatchClient(StubBatchClient):
     """`StubBatchClient` that also builds the doc-class call; `results` of the
     `doc-class` batch are `answer`."""
@@ -697,19 +730,30 @@ def _drive(conn, job, bc, limit=10):
     return r, waited
 
 
-def test_batch_scan_settled_by_the_first_image_read_submits_nothing_more(conn, fixture_pdf):
+def test_batch_scan_settled_by_the_first_image_read_submits_only_the_confirmation(
+        conn, fixture_pdf):
     """A scan takes the image ladder in batch mode too, and pays only for the
-    reads it needs: one cheap read settles everything, so no second read and no
-    Sonnet batch is submitted (and no text read at all)."""
+    reads it needs: one cheap read settles everything, so no Sonnet batch and
+    no text read at all. The second cheap read is still submitted, for the
+    gate fields only (plan Task 5b): GATE counts two agreeing reads, and the
+    first read alone is one."""
     job = _enqueue_extract(conn, "sha-b5", 6, fixture_pdf(SCAN_CERT))
-    bc = StubBatchClient({"T2-first": _scan_fields("T2-first", SCAN_SETTLED)}, ready_after=0)
+    bc = StubBatchClient({"T2-first": _scan_fields("T2-first", SCAN_SETTLED),
+                          "T2-second": _scan_fields("T2-second", {"type": "EC", "regulation": "MDR"},
+                                                    conf=0.9)}, ready_after=0)
 
     r, waited = _drive(conn, job, bc)
 
-    assert r["tiers_used"] == ["T0", "T2-first"]
-    assert waited == ["T2-first"]
-    assert bc.submits == ["sha-b5:T2-first"]
-    assert _count(conn, "SELECT count(*) c FROM batch_ref WHERE content_hash='sha-b5'") == 1
+    assert r["tiers_used"] == ["T0", "T2-first", "T2-second"]
+    assert waited == ["T2-first", "T2-second"]
+    assert bc.submits == ["sha-b5:T2-first", "sha-b5:T2-second"]
+    assert _count(conn, "SELECT count(*) c FROM batch_ref WHERE content_hash='sha-b5'") == 2
+    fields = conn.execute("SELECT fields FROM extraction_attempt "
+                          "WHERE content_hash='sha-b5'").fetchone()["fields"]
+    second = next(x for x in fields[tiers_mod.READS_KEY] if x["step"] == "T2-second")
+    assert set(second["fields"]) == {"type", "regulation"}     # the scope follows the type
+    assert (fields["type"]["step"], fields["type"]["agreed_model_id"],
+            fields["type"]["agreed_conf"]) == ("T2-first", "model-T2-second", 0.9)
 
 
 def test_batch_scan_runs_each_step_under_its_own_label(conn, fixture_pdf):
@@ -779,16 +823,19 @@ def test_batch_scan_refused_by_its_image_doc_class_call_emits_nothing(conn, tmp_
 
 def test_batch_scan_accepted_by_its_image_doc_class_call_is_read(conn, tmp_path):
     job = _enqueue_extract(conn, "sha-b8", 6, _untyped_scan(tmp_path))
+    settled = dict(SCAN_SETTLED, coverage_scope="manufacturer")
     bc = _ClassifyingBatchClient({
         "doc-class-image": {"doc_class": "EC", "quote": "EC Certificate"},
-        "T2-first": _scan_fields("T2-first", dict(SCAN_SETTLED, coverage_scope="manufacturer")),
+        "T2-first": _scan_fields("T2-first", settled),
+        "T2-second": _scan_fields("T2-second", {f: settled[f] for f in
+                                                ("type", "regulation", "coverage_scope")}),
     }, ready_after=0)
 
     r, waited = _drive(conn, job, bc)
 
-    assert waited == ["doc-class-image", "T2-first"]
+    assert waited == ["doc-class-image", "T2-first", "T2-second"]
     assert r["doc_class"] == "compliance-doc"
-    assert r["tiers_used"] == ["T0", "doc-class-image", "T2-first"]
+    assert r["tiers_used"] == ["T0", "doc-class-image", "T2-first", "T2-second"]
     assert _count(conn, "SELECT count(*) c FROM job WHERE type='validate.doc'") == 1
 
 
@@ -836,7 +883,9 @@ def test_sync_scan_keeps_every_read_and_flags_unread_pages(conn, fixture_pdf):
                 "validity_to": "2030-05-26", "coverage_scope": "group",
                 "manufacturer": "Dentsply Implants Manufacturing GmbH",
                 "ref_list": ["25810"], "basic_udi_di": "++J022MD0098KV"}
-    llm = _LabelLlm({"T2-first": _scan_fields("T2-first", answered), "T2-second": {}})
+    gate = {f: answered[f] for f in ("type", "regulation", "coverage_scope")}
+    llm = _LabelLlm({"T2-first": _scan_fields("T2-first", answered),
+                     "T2-second": _scan_fields("T2-second", gate)})   # confirms the gate fields
     job = {"payload": {"archive_url": fixture_pdf(DENTSPLY_SCAN),
                        "content_hash": "sha-scan-unread", "group_id": 4}}
 

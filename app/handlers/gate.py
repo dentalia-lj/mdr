@@ -1002,13 +1002,13 @@ def _reviewer_held(conn, doc_id) -> tuple[str, ...]:
     `_insert_evidence` writes no machine row for them.
 
     Why the hold is needed at all: a T3 edit is stamped `MAX(evidence.
-    extract_rev) + 1`, while a reading's rev is allocated from
-    `extraction_attempt` (`tiers.next_extract_rev`). The two counters do not
-    see each other, so the edit takes the NEXT reading's rev; that reading's
-    row for the edited field was then skipped by the per-(doc, field, rev)
-    guard while the column took its value, and the column disagreed with its
-    current evidence (invariant 2). With the field held, no machine write
-    reaches it, so the shared number is harmless."""
+    extract_rev) + 1`. Until Task 5b a reading's rev counted only
+    `extraction_attempt` (`tiers.next_extract_rev`), so the edit took the NEXT
+    reading's rev; that reading's row for the edited field was skipped by the
+    per-(doc, field, rev) guard while the column took its value (invariant 2).
+    It counts evidence revs too now, but an edit landing while a reading is in
+    flight still shares that reading's rev. With the field held, no machine
+    write reaches it, so a shared number is harmless."""
     return tuple(r["field"] for r in conn.execute(
         "SELECT DISTINCT field FROM evidence WHERE doc_id=%s AND tier='T3' ORDER BY field",
         (doc_id,)).fetchall() if r["field"] in _EDITABLE_COLUMNS)
@@ -1681,9 +1681,9 @@ def _apply_edits(conn, doc_id, edits) -> None:
     # A human edit isn't tied to any extraction — stamp it past the highest
     # extract_rev this doc has evidence for, so "current" (MAX(extract_rev) per
     # field) always resolves to the human's value over any machine extraction.
-    # That number is ALSO the next reading's: readings take theirs from
-    # `extraction_attempt` (`tiers.next_extract_rev`), which never sees this
-    # table. It is harmless because GATE holds every T3 field against machine
+    # A later reading starts past it (`tiers.next_extract_rev` counts this
+    # table too since Task 5b); one in flight when the edit lands can share it.
+    # That is harmless because GATE holds every T3 field against machine
     # writes (`_reviewer_held`, R4.2, 2026-10-12): no machine row or column
     # write reaches an edited field, so the shared rev never splits the column
     # from its current evidence.

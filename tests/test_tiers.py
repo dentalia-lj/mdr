@@ -166,6 +166,66 @@ def test_merge_zero_is_a_value_not_a_blank():
 
 
 # --------------------------------------------------------------------------- #
+# Two reads that give the same value (plan Task 5b, review finding 9): the
+# surer read's evidence is stored, the earlier one on a tie, and the other is
+# the agreeing read GATE combines. Merge-by-strength still decides when the
+# values differ. Before, an agreeing image read replaced T1's evidence by
+# strength alone, and its own 0.5 replaced T1's 0.9 (`scope_stated` reads it).
+# --------------------------------------------------------------------------- #
+def read_ev(value, conf, step, tier=None, model="m"):
+    tier = tier or ("T1" if step.startswith("T1") else "T2")
+    return {"value": value, "conf": conf, "tier": tier, "verbatim": f"{step} {value}",
+            "page": 1, "model_id": model, "step": step}
+
+
+@pytest.mark.parametrize("field, incumbent, challenger, stored", [
+    # the same value: the surer read's evidence is stored, a tie keeps the earlier
+    ("type", ("DoC", 0.9, "T1"), ("DoC", 0.5, "T2-first"), "T1"),
+    ("type", ("DoC", 0.6, "T1"), ("DoC", 0.95, "T2-first"), "T2-first"),
+    ("type", ("DoC", 0.9, "T1"), ("DoC", 0.9, "T2-first"), "T1"),
+    ("regulation", ("MDR", 0.95, "T2-first"), ("MDR", 0.8, "T2"), "T2-first"),
+    ("manufacturer", ("GC Europe N.V.", 0.9, "T1"), ("GC EUROPE N.V", 0.5, "T2-first"), "T1"),
+    # different values: the stronger read prevails, as before
+    ("type", ("DoC", 0.9, "T1"), ("EC", 0.5, "T2-first"), "T2-first"),
+    ("type", ("DoC", 0.95, "T2-first"), ("EC", 0.99, "T2-second"), "T2-first"),
+    # not two well-formed values: strength decides
+    ("type", ("Declaration", 0.9, "T1"), ("Declaration", 0.5, "T2-first"), "T2-first"),
+], ids=["surer-earlier", "surer-later", "tie", "sonnet-less-sure", "normalized",
+        "differ-stronger", "differ-weaker", "not-well-formed"])
+def test_of_two_agreeing_reads_the_surer_ones_evidence_is_stored(field, incumbent, challenger,
+                                                                 stored):
+    merged = tiers.merge({field: read_ev(*incumbent)}, {field: read_ev(*challenger)})
+    assert merged[field]["step"] == stored
+
+
+@pytest.mark.parametrize("incumbent", [
+    {"value": "DoC", "conf": 0.6, "tier": "T0", "verbatim": "filename:x", "page": None},
+    # the doc-class answer: one word off the header, no model id, never a field read
+    {"value": "DoC", "conf": 0.9, "tier": "T1", "verbatim": "Declaration", "page": 1,
+     "step": "doc-class"},
+], ids=["t0-guess", "doc-class"])
+def test_a_t0_guess_or_a_doc_class_answer_is_not_a_read_and_gives_way(incumbent):
+    """Only two field READS agree. A read giving the value T0 guessed, or the
+    doc-class call answered, replaces it as before: GATE never combines on a
+    row with no model id, so keeping it would drop a read's number for none."""
+    merged = tiers.merge({"type": incumbent}, {"type": read_ev("DoC", 0.5, "T1")})
+    assert merged["type"]["step"] == "T1"
+
+
+def test_the_repair_path_keeps_later_wins_for_agreeing_reads():
+    merged = tiers.merge({"type": read_ev("DoC", 0.9, "T1")}, {"type": read_ev("DoC", 0.5, "T2")},
+                         by_strength=False)
+    assert merged["type"]["step"] == "T2"
+
+
+def test_the_gate_fields_are_gates_required_fields():
+    """The fields a second read confirms are the ones GATE scores. Two names
+    for one tuple, since `tiers` cannot import the GATE handler."""
+    from app.handlers import gate
+    assert tiers.GATE_FIELDS == gate.REQUIRED_FIELDS
+
+
+# --------------------------------------------------------------------------- #
 # integrity flags — a REF list that came back at exactly the prompt cap
 # --------------------------------------------------------------------------- #
 # The prompt caps `ref_list` at REF_LIST_PROMPT_CAP codes, chosen on the measured
@@ -346,6 +406,43 @@ def test_next_extract_rev_increments(conn):
     tiers.write_extraction_attempt(conn, "h", ["T0"], {}, extract_rev=1)
     conn.commit()
     assert tiers.next_extract_rev(conn, "h") == 2
+
+
+def _doc_with_evidence_revs(conn, content_hash, revs):
+    doc_id = conn.execute(
+        "INSERT INTO document (type, regulation, coverage_scope, content_hash, archive_url) "
+        "VALUES ('DoC','MDR','group',%s,'file:///r.pdf') RETURNING doc_id",
+        (content_hash,)).fetchone()["doc_id"]
+    for rev, tier in revs:
+        conn.execute(
+            "INSERT INTO evidence (doc_id, field, value, archive_url, verbatim, tier, "
+            "confidence, extracted_at, extract_rev) "
+            "VALUES (%s,'type','DoC','file:///r.pdf','DoC',%s,1.0,now(),%s)",
+            (doc_id, tier, rev))
+
+
+@pytest.mark.parametrize("attempt_revs, evidence_revs, expected", [
+    ([1], [(1, "T1"), (2, "T3")], 3),     # a reviewer's edit took rev 2: the next reading is 3
+    ([1, 2, 3], [(1, "T1"), (2, "T3")], 4),
+    ([], [(1, "T3")], 2),
+    ([1], [], 2),                          # no document yet
+], ids=["edit-after-reading", "readings-ahead", "edit-only", "no-document"])
+def test_next_extract_rev_counts_the_documents_evidence_revs_too(conn, attempt_revs,
+                                                                 evidence_revs, expected):
+    """A reviewer's edit is stamped `MAX(evidence.extract_rev) + 1` (`gate.
+    _apply_edits`), a number `extraction_attempt` never holds; a reading
+    counted only from there took that same rev (Task 5a review, the shared
+    counter). The next reading now starts above both."""
+    for rev in attempt_revs:
+        tiers.write_extraction_attempt(conn, "h-rev", ["T0"], {}, extract_rev=rev)
+    if evidence_revs:
+        _doc_with_evidence_revs(conn, "h-rev", evidence_revs)
+    assert tiers.next_extract_rev(conn, "h-rev") == expected
+
+
+def test_next_extract_rev_counts_only_this_documents_evidence(conn):
+    _doc_with_evidence_revs(conn, "h-other", [(7, "T3")])
+    assert tiers.next_extract_rev(conn, "h-mine") == 1
 
 
 def test_a_deduced_coverage_scope_no_longer_escalates():

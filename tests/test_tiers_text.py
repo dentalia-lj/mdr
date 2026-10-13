@@ -66,10 +66,10 @@ def _doc(*pages) -> pymupdf.Document:
 FAILED = "failed"
 
 
-def ev(value, verbatim=None, page=1, conf=0.9, tier="T1"):
+def ev(value, verbatim=None, page=1, conf=0.9, tier="T1", model="stub-model"):
     return {"value": value, "conf": conf, "tier": tier,
             "verbatim": str(value) if verbatim is None else verbatim,
-            "page": page, "model_id": "stub-model"}
+            "page": page, "model_id": model}
 
 
 class TextLlm:
@@ -97,10 +97,12 @@ class TextLlm:
         given = self.answers.get(label, {})
         if given == FAILED:
             return {}
-        tier = "T1" if label == "T1" else "T2"
-        out = {f: ev(None, "", None, 0.0, tier) for f in missing}
+        tier = "T1" if label.startswith("T1") else "T2"
+        model = f"model-{label}"
+        out = {f: ev(None, "", None, 0.0, tier, model) for f in missing}
         for f, spec in given.items():
-            out[f] = ev(*spec, tier=tier) if isinstance(spec, tuple) else ev(spec, tier=tier)
+            out[f] = (ev(*spec, tier=tier, model=model) if isinstance(spec, tuple)
+                      else ev(spec, tier=tier, model=model))
         return out
 
     def asked(self, label):
@@ -424,7 +426,9 @@ def test_a_scope_t1_changes_brings_the_item_ids_in_from_t1s_answer(t0):
                           "basic_udi_di": (None, "")}})
     _, fields, used = run(_doc(DOC_PAGE), llm)
     assert not llm.asked("T1") & {"ref_list", "basic_udi_di"}
-    assert used == ["T0", "T1"]
+    # No image read; the scope T1 read is a gate field the second read confirms.
+    assert used == ["T0", "T1", "T1-second"]
+    assert llm.asked("T1-second") == {"coverage_scope"}
     assert fields["ref_list"]["value"] == ["003477", "003478"]
     assert fields["ref_list"]["step"] == "T1"
     t1_record = next(r for r in fields[tiers.READS_KEY] if r["step"] == "T1")
@@ -812,3 +816,169 @@ def test_a_file_name_guess_of_ifu_drops_nothing(t0):
     _, fields, used = run(_doc(DOC_PAGE + "\nvalid until 2030-01-01"), llm)
     assert (fields["type"]["value"], fields["type"]["tier"]) == ("IFU", "T0")
     assert fields["validity_to"]["value"] == "2030-01-01"
+
+
+# --- the second text read: confirmation of the gate fields (plan Task 5b) -------
+#
+# The evidence contract GATE reads (`gate._confidences`): `conf` stays the
+# stored read's own number; `agreed_model_id` / `agreed_conf` name another read
+# that gave the same well-formed value; `proven: "citation"` marks a
+# `regulation` its one printed citation proves. GATE applies the 0.70 floor.
+
+def _agreement(fields, f):
+    ev_ = fields[f]
+    return ev_.get("agreed_model_id"), ev_.get("agreed_conf")
+
+
+DECLARATION = ("DoC", "EU Declaration of Conformity", 1, 0.9)
+
+
+@pytest.mark.parametrize("second, agreed", [
+    (("DoC", "EU Declaration of Conformity", 1, 0.95), ("model-T1-second", 0.95)),
+    (("EC", "EC Certificate", 1, 0.95), (None, None)),        # disagrees: nothing stamped
+    ((None, "", None, 0.0), (None, None)),                    # found nothing
+    (FAILED, (None, None)),                                   # no answer at all
+], ids=["agrees", "disagrees", "empty", "failed"])
+def test_the_second_text_read_confirms_an_unproven_gate_field(t0, second, agreed):
+    """T1 settles `type` by a quote on the page, but a quote is not a second
+    read, and GATE scores T1's 0.9 alone. `T1-second` is asked that field
+    only, after the ladder; its value never replaces T1's."""
+    t0(_only_open("type"))
+    llm = TextLlm({"T1": {"type": DECLARATION},
+                   "T1-second": second if second == FAILED else {"type": second}})
+    _, fields, used = run(_doc(DOC_PAGE), llm)
+    assert used == ["T0", "T1", "T1-second"]
+    assert llm.asked("T1-second") == {"type"}
+    assert (fields["type"]["value"], fields["type"]["conf"], fields["type"]["step"]) == (
+        "DoC", 0.9, "T1")
+    assert _agreement(fields, "type") == agreed
+    record = [r["step"] for r in fields[tiers.READS_KEY]]
+    assert record == ["T1", "T1-second"]
+    if second == FAILED:
+        assert tiers.failed_reads(fields) == ["T1-second"]
+    elif agreed == (None, None):
+        assert tiers.read_disagreements(fields) == [
+            {"field": "type", "steps": ["T1", "T1-second"], "values": ["DoC", second[0]]}]
+    else:
+        assert tiers.read_disagreements(fields) == []
+
+
+def test_one_second_read_for_every_unproven_gate_field(t0):
+    t0(_only_open("type", "coverage_scope"))
+    llm = TextLlm({"T1": {"type": DECLARATION,
+                          "coverage_scope": ("group", "REF 003477 003478", 1, 0.9)},
+                   "T1-second": {"type": ("DoC", "EU Declaration of Conformity", 1, 0.9),
+                                 "coverage_scope": ("group", "REF 003477", 1, 0.8)}})
+    _, fields, used = run(_doc(DOC_PAGE), llm)
+    assert used.count("T1-second") == 1
+    assert llm.asked("T1-second") == {"type", "coverage_scope"}
+    assert _agreement(fields, "type") == ("model-T1-second", 0.9)
+    assert _agreement(fields, "coverage_scope") == ("model-T1-second", 0.8)
+
+
+def test_hints_go_to_the_second_read_too(t0):
+    t0(_only_open("type"))
+    llm = TextLlm({"T1": {"type": DECLARATION}})
+    run(_doc(DOC_PAGE), llm, hints="House style notes.")
+    assert llm.options("T1-second") == {"hints": "House style notes."}
+
+
+#: The citation pages: DOC_PAGE prints only 2017/745.
+BOTH_CITED = DOC_PAGE + "\nreplaces Directive 93/42/EEC"
+
+
+@pytest.mark.parametrize("pages, proven, asked", [
+    ((DOC_PAGE,), True, None),              # only 2017/745 printed: proven, no second read
+    ((DOC_PAGE, IMAGE), False, {"regulation"}),   # a scanned page may print 93/42
+], ids=["citation", "mixed-pdf"])
+def test_a_regulation_its_one_printed_citation_proves_needs_no_second_read(
+        t0, pages, proven, asked):
+    t0(_only_open("regulation"))
+    llm = TextLlm({"T1": {"regulation": ("MDR", "Regulation (EU) 2017/745")},
+                   "T1-second": {"regulation": ("MDR", "Regulation (EU) 2017/745", 1, 0.95)}})
+    _, fields, _ = run(_doc(*pages), llm)
+    assert (fields["regulation"].get("proven") == "citation") is proven
+    assert llm.asked("T1-second") == asked
+
+
+def test_a_regulation_with_both_citations_printed_is_never_proven(t0):
+    """Both citations printed: the checks cannot tell which applies, the image
+    read agrees with T1, and the agreement is what GATE counts."""
+    t0(_only_open("regulation"))
+    llm = TextLlm({"T1": {"regulation": ("MDR", "Regulation (EU) 2017/745")},
+                   "T2-first": {"regulation": ("MDR", "Regulation (EU) 2017/745", 1, 0.9)}})
+    _, fields, used = run(_doc(BOTH_CITED), llm)
+    assert "proven" not in fields["regulation"]
+    assert _agreement(fields, "regulation") == ("model-T2-first", 0.9)
+    assert "T1-second" not in used        # an agreement GATE counts: proven
+
+
+@pytest.mark.parametrize("second, agreed", [
+    (("DoC", "EU Declaration of Conformity", 1, 0.95), ("model-T1-second", 0.95)),
+    (FAILED, ("model-T2-first", 0.5)),
+], ids=["second-read-agrees", "second-read-failed"])
+def test_an_image_read_agreeing_under_the_floor_does_not_spare_the_second_read(
+        t0, second, agreed):
+    """Review finding 9: T1 reads `type` at 0.9 with a quote that is not on the
+    page, the image read agrees at 0.5. T1's evidence stays (the surer of two
+    agreeing reads), the image read is stamped as agreeing, and since GATE will
+    not count a 0.5, `T1-second` is still asked. The agreeing read stamped is
+    the surest one."""
+    t0(_only_open("type"))
+    llm = TextLlm({"T1": {"type": ("DoC", "a declaration elsewhere", 1, 0.9)},
+                   "T2-first": {"type": ("DoC", "EU Declaration of Conformity", 1, 0.5)},
+                   "T1-second": second if second == FAILED else {"type": second}})
+    _, fields, used = run(_doc(DOC_PAGE), llm)
+    assert used == ["T0", "T1", "T2-first", "T1-second"]
+    assert (fields["type"]["conf"], fields["type"]["step"]) == (0.9, "T1")
+    assert _agreement(fields, "type") == agreed
+
+
+def test_an_agreement_gate_will_count_needs_no_second_read(t0):
+    t0(_only_open("type"))
+    llm = TextLlm({"T1": {"type": ("DoC", "a declaration elsewhere", 1, 0.9)},
+                   "T2-first": {"type": ("DoC", "EU Declaration of Conformity", 1, 0.95)}})
+    _, fields, used = run(_doc(DOC_PAGE), llm)
+    assert used == ["T0", "T1", "T2-first"]
+    # the surer read's evidence is stored; the other is the agreeing read
+    assert (fields["type"]["conf"], fields["type"]["step"]) == (0.95, "T2-first")
+    assert _agreement(fields, "type") == ("model-T1", 0.9)
+
+
+def test_sonnet_giving_an_earlier_reads_value_is_stamped_as_agreeing(t0):
+    """T1 and the image read disagree; Sonnet prevails with T1's value. T1 is
+    then the agreeing read, and the field needs no second read."""
+    t0(_only_open("type"))
+    llm = TextLlm({"T1": {"type": ("DoC", "a declaration elsewhere", 1, 0.9)},
+                   "T2-first": {"type": ("EC", "a certificate", 1, 0.6)},
+                   "T2": {"type": ("DoC", "EU Declaration of Conformity", 1, 0.95)}})
+    _, fields, used = run(_doc(DOC_PAGE), llm)
+    assert used == ["T0", "T1", "T2-first", "T2"]
+    assert (fields["type"]["value"], fields["type"]["step"]) == ("DoC", "T2")
+    assert _agreement(fields, "type") == ("model-T1", 0.9)
+
+
+def test_a_scope_that_follows_the_type_is_not_asked_of_the_second_read(t0):
+    """Type to scope: the scope is derived from a certificate's type (T0
+    evidence, no model), so no read can agree with it; only the type is asked."""
+    t0({"regulation": t0ev("MDR", 1.0), "manufacturer": t0ev("GC EUROPE N.V.", 0.97),
+        "validity_from": t0ev("2025-08-25", 1.0), "validity_to": t0ev(None, 1.0),
+        "cert_number": t0ev("G1 021108 0031", 1.0)})
+    page = "EC Certificate\nCertificate G1 021108 0031\nRegulation (EU) 2017/745"
+    llm = TextLlm({"T1": {"type": ("EC", "EC Certificate", 1, 0.9)}})
+    _, fields, _ = run(_doc(page), llm)
+    assert fields["coverage_scope"]["tier"] == "T0"
+    assert llm.asked("T1-second") == {"type"}
+
+
+@pytest.mark.parametrize("t0_type", [t0ev("DoC", 0.9), None], ids=["t0-guess", "empty"])
+def test_a_gate_field_no_read_holds_is_not_asked(t0, t0_type):
+    """A T0 guess under 0.95 (GATE never combines a row with no model id), or
+    an empty field (nothing to confirm): no second read."""
+    fields0 = _only_open("type")
+    if t0_type is not None:
+        fields0["type"] = t0_type
+    t0(fields0)
+    llm = TextLlm({"T1": {}, "T2-first": {}, "T2": {}})
+    _, _, used = run(_doc(DOC_PAGE), llm)
+    assert "T1-second" not in used

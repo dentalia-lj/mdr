@@ -138,8 +138,9 @@ def test_a_scan_never_reaches_a_text_read(t0):
     t0()
     llm = ScanLlm({"T2-first": EVERYTHING})
     _, fields, used = run(_scan(1), llm)
-    assert used == ["T0", "T2-first"]
-    assert llm.labels == ["T2-first"]
+    # Settled by the first read; the second only confirms the gate fields (Task 5b).
+    assert used == ["T0", "T2-first", "T2-second"]
+    assert llm.labels == ["T2-first", "T2-second"]
     assert fields["regulation"]["step"] == "T2-first"
 
 
@@ -214,7 +215,7 @@ def test_a_client_without_an_image_classifier_reads_an_unknown_scan_as_before(t0
     llm = ScanLlm({"T2-first": EVERYTHING}, text_class=NOT_A_DOCUMENT)
     doc_class, _, used = run(_scan(1), llm)
     assert doc_class == "unknown" and llm.classified == []
-    assert used == ["T0", "T2-first"]
+    assert used == ["T0", "T2-first", "T2-second"]
 
 
 # --- 1, 3 and 6 pages --------------------------------------------------------
@@ -229,7 +230,7 @@ def test_an_empty_field_on_a_short_scan_settles_and_on_a_long_one_is_unread(t0, 
     answers = {k: v for k, v in EVERYTHING.items() if k != "validity_to"}
     llm = ScanLlm({"T2-first": answers, "T2-second": {}})
     _, fields, used = run(_scan(pages), llm)
-    assert llm.asked("T2-second") == {"validity_to"}
+    assert llm.asked("T2-second") == {"validity_to"} | GATE   # gate fields: confirmed
     assert "T2" not in used                       # Sonnet never asked
     if unread:
         assert fields[tiers.PAGES_UNREAD_KEY] == ["validity_to"]
@@ -261,9 +262,10 @@ def test_the_first_read_settles_a_well_formed_field_at_image_settle(t0, conf, se
                    "T2": {"cert_number": ("G10 082649 0004", 0.9)}})
     _, _, used = run(_scan(1), llm)
     if settles:
-        assert used == ["T0", "T2-first"]
+        assert used == ["T0", "T2-first", "T2-second"]
+        assert llm.asked("T2-second") == GATE         # only the gate fields' confirmation
     else:
-        assert llm.asked("T2-second") == {"cert_number"}
+        assert llm.asked("T2-second") == {"cert_number"} | GATE
 
 
 def test_a_malformed_value_never_settles_at_any_confidence(t0):
@@ -273,7 +275,7 @@ def test_a_malformed_value_never_settles_at_any_confidence(t0):
     first = dict(EVERYTHING, validity_from=("25.08.2025", 0.99), cert_number=("0482", 0.99))
     llm = ScanLlm({"T2-first": first, "T2-second": {}, "T2": {}})
     run(_scan(1), llm)
-    assert llm.asked("T2-second") == {"validity_from", "cert_number"}
+    assert llm.asked("T2-second") == {"validity_from", "cert_number"} | GATE
 
 
 def test_the_configured_threshold_is_the_one_used(t0):
@@ -281,7 +283,7 @@ def test_the_configured_threshold_is_the_one_used(t0):
     first = dict(EVERYTHING, cert_number=("G10 082649 0004", 0.88))
     llm = ScanLlm({"T2-first": first, "T2-second": {}, "T2": {}})
     run(_scan(1), llm, image_settle=0.90)
-    assert llm.asked("T2-second") == {"cert_number"}
+    assert llm.asked("T2-second") == {"cert_number"} | GATE
 
 
 # --- the second read: agreement ----------------------------------------------
@@ -421,7 +423,7 @@ def test_sonnet_is_never_called_when_nothing_is_open(t0):
     t0()
     llm = ScanLlm({"T2-first": EVERYTHING})
     _, _, used = run(_scan(3), llm)
-    assert used == ["T0", "T2-first"] and "T2" not in llm.labels
+    assert used == ["T0", "T2-first", "T2-second"] and "T2" not in llm.labels
 
 
 def test_sonnet_is_asked_only_the_fields_still_open(t0):
@@ -431,7 +433,7 @@ def test_sonnet_is_asked_only_the_fields_still_open(t0):
                    "T2-second": {"cert_number": ("C-1", 0.75), "manufacturer": ("Other", 0.9)},
                    "T2": {"manufacturer": ("GC EUROPE N.V.", 0.9)}})
     run(_scan(2), llm)
-    assert llm.asked("T2-second") == {"cert_number", "manufacturer"}
+    assert llm.asked("T2-second") == {"cert_number", "manufacturer"} | GATE
     assert llm.asked("T2") == {"manufacturer"}   # cert_number agreed
 
 
@@ -469,7 +471,8 @@ def test_a_known_manufacturer_scope_stops_the_item_id_reads(t0):
     first.pop("basic_udi_di")
     llm = ScanLlm({"T2-first": first, "T2-second": {}, "T2": {}})
     _, _, used = run(_scan(1), llm)
-    assert used == ["T0", "T2-first"]           # the empty UDI is not chased
+    assert used == ["T0", "T2-first", "T2-second"]
+    assert llm.asked("T2-second") == GATE        # the empty UDI is not chased
 
 
 def test_a_known_ifu_stops_the_certificate_reads(t0):
@@ -479,7 +482,9 @@ def test_a_known_ifu_stops_the_certificate_reads(t0):
              "basic_udi_di": ("++J022MD0098KV", 0.95)}
     llm = ScanLlm({"T2-first": first, "T2-second": {}, "T2": {}})
     _, _, used = run(_scan(1), llm)
-    assert used == ["T0", "T2-first"]
+    assert used == ["T0", "T2-first", "T2-second"]
+    # no certificate field; the scope follows the type, so it is not confirmed
+    assert llm.asked("T2-second") == {"type", "regulation"}
 
 
 # --- every read kept, disagreements counted ----------------------------------
@@ -492,8 +497,9 @@ def test_every_read_is_kept_on_the_attempt(t0):
     _, fields, _ = run(_scan(1), llm)
     reads = fields[tiers.READS_KEY]
     assert [r["step"] for r in reads] == ["T2-first", "T2-second", "T2"]
-    assert reads[1] == {"step": "T2-second", "model_id": "stub-model", "fields": {
-        "type": {"value": "ISO", "conf": 0.70, "page": 1}}}
+    assert reads[1]["step"] == "T2-second" and reads[1]["model_id"] == "stub-model"
+    assert set(reads[1]["fields"]) == {"type", "regulation", "coverage_scope"}
+    assert reads[1]["fields"]["type"] == {"value": "ISO", "conf": 0.70, "page": 1}
     assert reads[0]["fields"]["type"] == {"value": "EC", "conf": 0.80, "page": 1}
 
 
@@ -512,7 +518,8 @@ def test_disagreements_list_the_field_the_steps_and_the_values(t0):
     t0()
     first = dict(EVERYTHING, type=("EC", 0.80), manufacturer=("GC EUROPE N.V.", 0.80))
     llm = ScanLlm({"T2-first": first,
-                   "T2-second": {"type": ("ISO", 0.80), "manufacturer": ("GC Europe N.V", 0.80)},
+                   "T2-second": {"type": ("ISO", 0.80), "manufacturer": ("GC Europe N.V", 0.80),
+                                 "regulation": ("MDR", 0.9), "coverage_scope": ("group", 0.9)},
                    "T2": {"type": ("EC", 0.90)}})
     _, fields, _ = run(_scan(1), llm)
     assert tiers.read_disagreements(fields) == [
@@ -660,7 +667,8 @@ def test_item_ids_brought_in_by_type_to_scope_are_read_once_then_sonnet(t0):
                    "T2": {}})
     _, fields, used = run(_scan(6), llm)
     assert "ref_list" not in llm.asked("T2-first")
-    assert llm.asked("T2-second") == {"ref_list", "basic_udi_di"}
+    # and the gate fields the first read settled, to confirm; the scope follows the type
+    assert llm.asked("T2-second") == {"ref_list", "basic_udi_di", "type", "regulation"}
     assert llm.asked("T2") == {"basic_udi_di"}         # ref_list settled at 0.9
     assert fields["coverage_scope"]["value"] == "group"
     assert tiers.PAGES_UNREAD_KEY not in fields
@@ -748,3 +756,125 @@ def test_a_file_name_guess_of_ifu_drops_nothing_on_a_scan(t0):
     _, fields, _ = run(_scan(1), llm)
     assert (fields["type"]["value"], fields["type"]["tier"]) == ("IFU", "T0")
     assert fields["validity_to"]["value"] == "2030-05-26"
+
+
+# --- the second image read confirms the gate fields (plan Task 5b) -----------
+#
+# GATE counts two agreeing reads on `type`, `regulation` and `coverage_scope`
+# (`agreed_model_id` / `agreed_conf` beside the stored read's own `conf`). A
+# field the first read settled at `image_settle` has no second read yet, so the
+# unproven gate fields ride in the same `T2-second` call as the open fields,
+# and that call is made even when nothing else is open (Task 3 alone made none
+# then, and gave 7 of 34 scans production instead of about 24).
+
+GATE = {"type", "regulation", "coverage_scope"}
+
+
+def _agreed(fields, f):
+    return fields[f].get("agreed_model_id"), fields[f].get("agreed_conf")
+
+
+def test_a_scan_the_first_read_settled_gets_a_second_read_for_its_gate_fields(t0):
+    t0()
+    second = {"type": ("DoC", 0.9), "regulation": ("MDR", 0.9), "coverage_scope": ("group", 0.9)}
+    llm = ScanLlm({"T2-first": EVERYTHING, "T2-second": second})
+    _, fields, used = run(_scan(1), llm)
+    assert used == ["T0", "T2-first", "T2-second"]
+    assert llm.asked("T2-second") == GATE
+    for f in GATE:      # the first read's evidence stays; the second is the agreeing read
+        assert (fields[f]["step"], fields[f]["conf"]) == ("T2-first", 0.95)
+        assert _agreed(fields, f) == ("stub-model", 0.9)
+    assert "agreed_model_id" not in fields["cert_number"]    # gate fields only
+
+
+def test_open_fields_and_gate_confirmations_ride_in_one_second_read(t0):
+    t0()
+    first = {k: v for k, v in EVERYTHING.items() if k != "cert_number"}
+    llm = ScanLlm({"T2-first": first, "T2-second": {"cert_number": ("C-1", 0.9)}, "T2": {}})
+    _, _, used = run(_scan(1), llm)
+    assert used.count("T2-second") == 1
+    assert llm.asked("T2-second") == GATE | {"cert_number"}
+    # the request lists the fields in the ladder's order, as before
+    assert next(m for lb, m in llm.calls if lb == "T2-second") == (
+        "type", "regulation", "coverage_scope", "cert_number")
+
+
+@pytest.mark.parametrize("second, value, agreed", [
+    ({"type": ("EC", 0.99)}, "DoC", (None, None)),     # disagrees: nothing stamped, nor sent on
+    ({"type": ("DoC", 0.99)}, "DoC", ("stub-model", 0.99)),   # surer, agrees: still only confirms
+    (FAILED, "DoC", (None, None)),
+], ids=["disagrees", "agrees-surer", "failed"])
+def test_a_confirming_read_never_replaces_the_value_the_first_read_settled(t0, second, value,
+                                                                           agreed):
+    t0()
+    llm = ScanLlm({"T2-first": EVERYTHING, "T2-second": second, "T2": {}})
+    _, fields, used = run(_scan(1), llm)
+    assert "T2" not in used
+    assert (fields["type"]["value"], fields["type"]["step"], fields["type"]["conf"]) == (
+        value, "T2-first", 0.95)
+    assert _agreed(fields, "type") == agreed
+    if second == FAILED:
+        assert tiers.failed_reads(fields) == ["T2-second"]
+    elif agreed == (None, None):
+        assert {"field": "type", "steps": ["T2-first", "T2-second"],
+                "values": ["DoC", "EC"]} in tiers.read_disagreements(fields)
+
+
+def test_t0_and_a_scope_that_follows_the_type_are_not_confirmed(t0):
+    """T0 at 0.95 is GATE's own number; a scope derived from a certificate's
+    type is T0 evidence too. Neither has a model a read could agree with."""
+    t0("compliance-doc", {"regulation": t0ev("MDR", 1.0)})
+    first = dict(EVERYTHING, type=("EC", 0.95))
+    llm = ScanLlm({"T2-first": first, "T2-second": {"type": ("EC", 0.9)}})
+    _, fields, _ = run(_scan(1), llm)
+    assert fields["coverage_scope"]["tier"] == "T0"
+    assert llm.asked("T2-second") == {"type"}
+    assert _agreed(fields, "type") == ("stub-model", 0.9)
+
+
+def test_two_cheap_reads_agreeing_on_an_open_gate_field_are_stamped(t0):
+    """`type` under `image_settle` on the first read is open; the second read
+    agrees and settles it. The surer of the two is stored, the other agrees."""
+    t0()
+    first = dict(EVERYTHING, type=("DoC", 0.80))
+    llm = ScanLlm({"T2-first": first, "T2-second": {"type": ("DoC", 0.90)}})
+    _, fields, used = run(_scan(1), llm)
+    assert "T2" not in used
+    assert (fields["type"]["step"], fields["type"]["conf"]) == ("T2-second", 0.90)
+    assert _agreed(fields, "type") == ("stub-model", 0.80)
+
+
+def test_sonnet_agreeing_with_the_first_read_is_its_agreeing_read(t0):
+    """The cheap reads disagree; Sonnet gives the first read's value, less
+    sure. The first read's evidence stays and Sonnet is the agreeing read
+    (before, Sonnet's 0.75 replaced the first read's 0.80)."""
+    t0()
+    first = dict(EVERYTHING, type=("EC", 0.80))
+    llm = ScanLlm({"T2-first": first, "T2-second": {"type": ("ISO", 0.80)},
+                   "T2": {"type": ("EC", 0.75)}})
+    _, fields, used = run(_scan(1), llm)
+    assert used == ["T0", "T2-first", "T2-second", "T2"]
+    assert (fields["type"]["step"], fields["type"]["conf"]) == ("T2-first", 0.80)
+    assert _agreed(fields, "type") == ("stub-model", 0.75)
+
+
+def test_the_scan_class_answer_is_never_confirmed(t0):
+    """The doc-class call's one word carries no model id: no read can agree
+    with it for GATE, so it is not asked of a confirming read."""
+    t0("unknown")
+    first = {k: v for k, v in EVERYTHING.items() if k != "type"}
+    llm = ScanLlm({"T2-first": first, "T2-second": {}}, image_class="IFU")
+    _, fields, _ = run(_scan(1), llm)
+    assert fields["type"]["step"] == "doc-class-image"
+    assert "agreed_model_id" not in fields["type"]
+
+
+def test_a_scan_regulation_is_never_citation_proven(t0):
+    """A scan has no text layer: `n.a.` would pass the citation check on an
+    empty text, which proves nothing."""
+    t0()
+    first = dict(EVERYTHING, regulation=("n.a.", 0.95))
+    llm = ScanLlm({"T2-first": first})
+    _, fields, _ = run(_scan(1), llm)
+    assert "proven" not in fields["regulation"]
+    assert "regulation" in llm.asked("T2-second")
