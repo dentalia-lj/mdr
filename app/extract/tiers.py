@@ -572,8 +572,8 @@ def run_extraction(doc, filename: str, llm, threshold: float = 0.95,
     The two branches split on `pdf.has_text_page`: a page with a text layer,
     an OCR layer over a scan included, makes it a text document (plan
     2026-10-12, "a scan is a document with no text page at all"), so a mixed
-    PDF takes the text branch. `image_settle` and `agreement_min` are the scan
-    ladder's.
+    PDF takes the text branch. `image_settle` (`extract.image_settle`) and
+    `agreement_min` (`gate.agreement_min`) reach both ladders.
 
     `result` is the caller's `app.results.Result`, passed to T0 so a playbook
     template that matched but parsed nothing is counted at the point it happens
@@ -617,13 +617,13 @@ def run_extraction(doc, filename: str, llm, threshold: float = 0.95,
         doc, filename, doc_class, fields, used, read,
         classify=getattr(llm, "classify", None),
         classify_image=getattr(llm, "classify_image", None), threshold=threshold,
-        agreement_min=agreement_min)
+        image_settle=image_settle, agreement_min=agreement_min)
     return doc_class, fields, used
 
 
 def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list[str],
                     read, classify=None, classify_image=None, *, threshold: float = 0.95,
-                    page_aware: bool = True,
+                    page_aware: bool = True, image_settle: float = IMAGE_SETTLE,
                     agreement_min: float = AGREEMENT_MIN) -> tuple[str, dict]:
     """T-3, the text ladder (PRD v3 section 5, amended 2026-10-12; plan Task 4).
     For a document with at least one text page. Returns (doc_class, fields)
@@ -659,7 +659,10 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
        when it is a Basic UDI-DI whose check pair verifies
        (`checks.udi_check_valid`, the text layer may be corrupt), when it
        agrees with T1 (`checks.agree`, no per-read minimum: ruling 4, "as
-       measured"), or when both reads ANSWERED it empty and
+       measured"), or when the read cites it on a page no text read sees in
+       full and it is well-formed at `image_settle` or above, as on a scan
+       (`_image_only`, Denis 2026-10-13: never a Basic UDI-DI the text labels),
+       or when both reads ANSWERED it empty and
        `checks.both_null_settled` allows it (never a Basic UDI-DI the text
        labels: multi-UDI lists go to Sonnet). Image pages of a mixed PDF and
        pages where an annotation paints an image, when the read did not
@@ -768,7 +771,8 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
         image_ctx = checks.Ctx(pages=pages, classes=classes, truncated=truncated,
                                unread_pages=frozenset(set(image_pages) - rendered))
         known |= {f for f in open_fields
-                  if _image_settles_text(f, fields, t1, first, image_ctx)}
+                  if _image_settles_text(f, fields, t1, first, image_ctx,
+                                         image_pages, image_settle)}
         _scope_from_type(fields, known)
         _drop_ifu_certificate_reads(fields, known, t0, threshold)
         fields = _from_t1(fields, known, t1, reads, text_ctx)
@@ -1026,12 +1030,14 @@ def _from_t1(fields: dict, known: set[str], t1: dict, reads: dict, ctx) -> dict:
     return fields
 
 
-def _image_settles_text(f: str, fields: dict, t1: dict, image: dict, ctx) -> bool:
+def _image_settles_text(f: str, fields: dict, t1: dict, image: dict, ctx,
+                        image_pages=(), image_settle: float = IMAGE_SETTLE) -> bool:
     """Step 4 of `run_text_ladder` for one field: the image read's own value
     passes the checks (`_proven`: the field then holds the value that settled
-    it), or is a check-valid Basic UDI-DI, or agrees with T1's; or both reads
-    answered it empty and `checks.both_null_settled` allows it. No answer from
-    the image read (a failed read) settles nothing."""
+    it), or is a check-valid Basic UDI-DI, or agrees with T1's, or is a value
+    only an image shows (`_image_only`); or both reads answered it empty and
+    `checks.both_null_settled` allows it. No answer from the image read (a
+    failed read) settles nothing."""
     b = image.get(f)
     if b is None:
         return False
@@ -1040,9 +1046,38 @@ def _image_settles_text(f: str, fields: dict, t1: dict, image: dict, ctx) -> boo
             return True
         if f == "basic_udi_di" and checks.udi_check_valid(b.get("value")):
             return True
-        return checks.agree(f, t1.get(f), b, 0.0)
+        if checks.agree(f, t1.get(f), b, 0.0):
+            return True
+        return _image_only(f, fields, b, ctx, image_pages, image_settle)
     a = t1.get(f)
     return a is not None and _is_blank(a) and checks.both_null_settled(f, ctx)
+
+
+def _image_only(f: str, fields: dict, b: dict, ctx, image_pages,
+                image_settle: float) -> bool:
+    """A value the cheap image read cites on a page no text read sees in full
+    (`image_pages`: a scanned page of a mixed PDF, a page where an annotation
+    paints an image) is in no text the checks could prove it by, and T1 never
+    saw it. It settles as a scan read settles (Denis, 2026-10-13): well-formed,
+    stated at `image_settle` or above (`_image_settles`). VOCO's e-signed
+    declarations print their issue date only in the signature stamp; without
+    this rule every one went on to Sonnet.
+
+    Never a Basic UDI-DI the text labels (a multi-UDI list goes to Sonnet, as
+    under `checks.both_null_settled`). The field then holds this read's value;
+    where it holds a different T0 value, the two disagree and nothing settles."""
+    if b.get("page") not in image_pages or not _image_settles(f, b, image_settle):
+        return False
+    if f == "basic_udi_di" and re.search(checks.LABELS["basic_udi_di"], ctx.text,
+                                         re.IGNORECASE):
+        return False
+    held = fields.get(f)
+    held_value = held.get("value") if isinstance(held, dict) else None
+    if checks.normalized(f, held_value) != checks.normalized(f, b.get("value")):
+        if isinstance(held, dict) and held.get("tier") == "T0":
+            return False
+        fields[f] = b
+    return True
 
 
 def _image_pages(page_count: int, open_fields: list[str], t1: dict, pages: list[str],

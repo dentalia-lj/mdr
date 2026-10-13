@@ -1134,13 +1134,68 @@ def test_a_null_beside_a_signature_image_goes_to_an_image_read_of_that_page(t0):
     llm = TextLlm({"T1": {}, "T2-first": {"validity_from": SIGNED_DATE},
                    "T2": {"validity_from": SIGNED_DATE}})
     _, fields, used = run(doc, llm)
-    # The date is in no text, so the cheap image read cannot prove it: Sonnet
-    # decides, as for a value read off a scanned page of a mixed PDF.
-    assert used == ["T0", "T1", "T2-first", "T2"]
+    # The date is in no text the checks could prove it by; cited on the page
+    # whose annotation paints it, well-formed at 0.9, it settles as a scan read
+    # does (Denis, 2026-10-13), and Sonnet is not asked.
+    assert used == ["T0", "T1", "T2-first"]
     assert llm.options("T2-first") == {"pages": (1, 2, 3, 6)}
-    assert llm.asked("T2") == {"validity_from"}
-    assert fields["validity_from"]["value"] == "2026-01-14"
+    assert (fields["validity_from"]["value"], fields["validity_from"]["step"],
+            fields["validity_from"]["page"]) == ("2026-01-14", "T2-first", 6)
     assert tiers.PAGES_UNREAD_KEY not in fields
+
+
+# --- a value only an image shows (Denis, 2026-10-13) ---------------------------
+
+def _signed_six_pages():
+    return annotate(_doc(UNDATED_PAGE, FILLER, FILLER, FILLER, FILLER, SIGNATURES))
+
+
+@pytest.mark.parametrize("answer, settles", [
+    (("2026-01-14", SIGNED_AT, 6, 0.85), True),       # at `extract.image_settle`
+    (("2026-01-14", SIGNED_AT, 6, 0.84), False),      # under it: Sonnet decides
+    (("14.01.2026", SIGNED_AT, 6, 0.95), False),      # not an ISO date: not well-formed
+    (("2026-01-14", SIGNED_AT, 1, 0.95), False),      # cited on a text page: the checks
+], ids=["at-0.85", "at-0.84", "malformed", "text-page"])
+def test_a_value_cited_on_the_annotation_page_settles_at_image_settle(t0, answer, settles):
+    t0(_only_open("validity_from"))
+    llm = TextLlm({"T1": {}, "T2-first": {"validity_from": answer},
+                   "T2": {"validity_from": SIGNED_DATE}})
+    _, fields, used = run(_signed_six_pages(), llm)
+    assert ("T2" not in used) is settles
+    if settles:
+        assert fields["validity_from"]["step"] == "T2-first"
+
+
+def test_image_settle_is_the_configured_one(t0):
+    t0(_only_open("validity_from"))
+    llm = TextLlm({"T1": {}, "T2-first": {"validity_from": SIGNED_DATE},
+                   "T2": {"validity_from": SIGNED_DATE}})
+    _, _, used = run(_signed_six_pages(), llm, image_settle=0.95)
+    assert used == ["T0", "T1", "T2-first", "T2"]
+
+
+def test_a_value_cited_on_a_scanned_page_of_a_mixed_pdf_settles_too(t0):
+    t0(_only_open("validity_from"))
+    date = ("2025-08-25", "25.08.2025", 2, 0.9)
+    llm = TextLlm({"T1": {}, "T2-first": {"validity_from": date}, "T2": {}})
+    _, fields, used = run(_doc(UNDATED_PAGE, IMAGE), llm)
+    assert used == ["T0", "T1", "T2-first"]
+    assert fields["validity_from"]["value"] == "2025-08-25"
+
+
+@pytest.mark.parametrize("labelled, settles", [(False, True), (True, False)],
+                         ids=["no-udi-label", "udi-label"])
+def test_a_udi_off_an_image_settles_only_where_the_text_labels_none(t0, labelled, settles):
+    """Never a Basic UDI-DI the text labels: a multi-UDI list goes to Sonnet.
+    `B-12345` is well-formed (EUDAMED-assigned) and not check-valid, so only
+    the image rule could settle it."""
+    t0(_only_open("basic_udi_di"))
+    page = UNDATED_PAGE + ("\nBasic UDI-DI: see annex" if labelled else "")
+    doc = _doc(page, IMAGE)
+    llm = TextLlm({"T1": {}, "T2-first": {"basic_udi_di": ("B-12345", "B-12345", 2, 0.95)},
+                   "T2": {"basic_udi_di": ("B-12345", "B-12345", 2, 0.95)}})
+    _, _, used = run(doc, llm)
+    assert ("T2" not in used) is settles
 
 
 def test_two_empty_reads_settle_once_the_signature_page_was_rendered(t0):
@@ -1208,13 +1263,13 @@ def _run_fixture(path, llm):
 def test_voco_ceramic_bond_reads_its_issue_date_off_the_signature_image(fixture_pdf):
     """The Task 8 case on the document itself: T0 real, the reads stubbed with
     what the run's reads answered (T1: the two REF codes on page 2, no date;
-    Sonnet: 2026-01-14, "Cuxhaven, 14.01.2026", page 3)."""
+    the image read: 2026-01-14, "Cuxhaven, 14.01.2026", page 3)."""
     date = ("2026-01-14", SIGNED_AT, 3, 0.9)
     llm = TextLlm({"T1": {"ref_list": (["1106", "1107"], "1106 Bottle 5 ml 1107", 2, 0.85)},
                    "T2-first": {"validity_from": date}, "T2": {"validity_from": date}})
     _, fields, used = _run_fixture(fixture_pdf(VOCO_SIGNED), llm)
     assert llm.asked("T1") == {"validity_from", "ref_list"}
-    assert used == ["T0", "T1", "T2-first", "T2"]
+    assert used == ["T0", "T1", "T2-first"]          # settled off the stamp: no Sonnet
     # Three pages: the image read renders all of them, the default request.
     assert llm.asked("T2-first") == {"validity_from"} and llm.options("T2-first") == {}
     assert fields["validity_from"]["value"] == "2026-01-14"

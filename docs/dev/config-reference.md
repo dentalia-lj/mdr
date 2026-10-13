@@ -264,14 +264,21 @@ that cannot be set on a deployed stack").
 On a scan, a field the cheap image read (`T2-first`) states at or above this
 confidence is settled and goes no further. 0.85 is the measured setting
 (`tools/ladder_probe.py`). Read by the scan ladder (`tiers.run_scan_ladder`,
-2026-10-12; the extract handler passes it on every extraction). Not by the text
-ladder: a text document's image read settles a field by the evidence checks, a
-check-valid Basic UDI-DI or agreement with T1, never by its confidence. The value must
+2026-10-12) and, since 2026-10-13 (Denis's ruling), by the text ladder for one
+case only (`tiers._image_only`): a value the cheap image read cites on a page no
+text read sees in full, a scanned page of a mixed PDF or a page where an
+annotation paints an image (VOCO's e-signature stamp, which alone prints the
+issue date). Every other value a text document's image read gives settles by
+the evidence checks, a check-valid Basic UDI-DI or agreement with T1, never by
+its confidence; a Basic UDI-DI the text labels never settles by it. The
+extract handler passes it on every extraction, sync and batch. The value must
 also be well-formed (`checks.well_formed`: an ISO date, a type, scope or
 regulation from its vocabulary, a certificate that is not a notified-body
 number) whatever the confidence. Blast radius: lower lets a less certain cheap
-read stand on a scan; higher sends more scan fields to the second read and to
-Sonnet. `EXTRACT_MODE` is a
+read stand on a scan and on those pages of a text document; higher sends more
+of them to the second read (scans) and to Sonnet (both). On the SFTP mirror
+(2026-10-13) 148 of the 1,057 text documents carry such a page: 53 a scanned
+page, 95 an annotation's image (90 of them VOCO e-signed declarations). `EXTRACT_MODE` is a
 different thing: a compose variable that becomes `DENTALIA_EXTRACT_MODE`, the
 sync / batch transport switch, and is not part of this section.
 

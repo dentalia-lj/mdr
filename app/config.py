@@ -274,9 +274,12 @@ class Models:
 @dataclass(frozen=True)
 class Extract:
     """extract.image_settle (PRD §11, 2026-10-12). Read by the scan ladder
-    (`tiers.run_scan_ladder`, extraction-ladder plan Task 3) through the
-    extract handler; the text ladder does not use it (a text document's image
-    read settles by the evidence checks or by agreeing with T1).
+    (`tiers.run_scan_ladder`, extraction-ladder plan Task 3) and, since
+    2026-10-13, by the text ladder (`tiers._image_only`), both through the
+    extract handler. On a text document it applies only to a value the cheap
+    image read cites on a page no text read sees in full (a scanned page of a
+    mixed PDF, a page where an annotation paints an image); everything else
+    there settles by the evidence checks or by agreeing with T1.
 
     `image_settle`: on a scan, a field the cheap image read (`T2-first`) states
     at or above this confidence is settled and goes no further up the ladder.

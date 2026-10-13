@@ -44,14 +44,14 @@ itself.
 | `app/extract/t0_templates.py` | 1546 | T0: doc-class classification, keyword tables, REF-list extraction, `field_ev()` evidence shape |
 | `app/extract/t0_layout.py` | 307 | The T0 REF-list layout-template engine (anchors + text-relative regions, read from playbooks) |
 | `app/extract/udi.py` | 159 | Offline Basic UDI-DI check-character validation (HIBCC + GS1, MOD 1021/32); `is_word` (no agency shape, no digit) |
-| `app/extract/tiers.py` | 1473 | The ladder itself: `needs_escalation`, `merge` (stronger read prevails; of two agreeing reads a verified one, then the surer), `calibrate`, `run_extraction` (splits text / scan), `run_text_ladder` (T-3) and `_image_pages` (its page choice), `run_scan_ladder` (S-2), `_stamp_agreement` / `_to_confirm` (the gate fields' second reads), `read_disagreements`, `failed_reads`, `next_extract_rev`, `extraction_attempt`/`extraction_cost` writers |
+| `app/extract/tiers.py` | 1507 | The ladder itself: `needs_escalation`, `merge` (stronger read prevails; of two agreeing reads a verified one, then the surer), `calibrate`, `run_extraction` (splits text / scan), `run_text_ladder` (T-3) and `_image_pages` (its page choice), `run_scan_ladder` (S-2), `_stamp_agreement` / `_to_confirm` (the gate fields' second reads), `read_disagreements`, `failed_reads`, `next_extract_rev`, `extraction_attempt`/`extraction_cost` writers |
 | `app/extract/checks.py` | 366 | Evidence checks, pure: `settled` / `null_settled` / `both_null_settled` against the text layer; `citation_proven` (a regulation proven by its one printed citation, for GATE's 1.0); `well_formed`, `normalized` and `agree` (shape and agreement between two reads); a Basic UDI-DI that is a word never passes (`udi.is_word`) |
 | `app/extract/llm.py` | 766 | T1/T2 Anthropic clients (sync `AnthropicLlm`, batch `AnthropicBatchClient`), `READ_STEPS`, the JSON schema, per-field evidence construction, the doc-class calls (`classify` on page 1-2 text, `classify_image` on page 1-2 images) |
 | `app/extract/batching.py` | 66 | Batch API state machine (`advance_batch`) over the `batch_ref` side table |
 | `app/extract/economics.py` | 153 | Token usage → USD, per-model `PRICES`, `UnknownModelPricing` |
 | `app/extract/pdf.py` | 334 | The only module touching PyMuPDF directly: text, rasterization, `is_scan`, `bounded_text`, per-page classes (`page_classes`; `has_text_page` decides text ladder or scan ladder), the pages where an annotation paints an image (`annotation_image_pages`) |
 | `app/extract/text_store.py` | 77 | `document_text` sidecar — what was actually read, independent of the tier ladder |
-| `app/handlers/extract.py` | 472 | `handle_extract_doc`: sync/batch dispatch, hint assembly, `_finalize` (writes + emits `validate.doc`) |
+| `app/handlers/extract.py` | 478 | `handle_extract_doc`: sync/batch dispatch, hint assembly, `_finalize` (writes + emits `validate.doc`) |
 | `app/handlers/gate.py` | — | `_insert_evidence` (622-678), `_require_complete_evidence` (238-266), `_apply_edits` (1118-1139) — see Rules and Gotchas |
 
 ## Input → Output
@@ -136,13 +136,16 @@ Task 4). Steps and labels from `llm.READ_STEPS`:
    checks (and then holds that value, as in step 2), when it is a Basic UDI-DI whose check pair verifies
    (`checks.udi_check_valid`; the text layer may be an OCR misread, "OOIYC" for
    "001YC"), when it agrees with T1 (`checks.agree` with no per-read minimum:
-   ruling 4, "as measured"), or when both reads ANSWERED it empty and
+   ruling 4, "as measured"), when it is a value only an image shows
+   (`_image_only`, Denis 2026-10-13: cited on a page no text read sees in
+   full, a scanned page of a mixed PDF or a page where an annotation paints an
+   image, it is in no text to prove it and T1 never saw it, so it settles as
+   on a scan: well-formed at `extract.image_settle`, 0.85, or above; never a
+   Basic UDI-DI the text labels; a different T0 value it would replace keeps
+   it open), or when both reads ANSWERED it empty and
    `checks.both_null_settled` allows it: never a Basic UDI-DI the text labels
    (a multi-UDI list goes to Sonnet), never with an image page or an
-   annotation's image no read rendered, or text past the budget. A value the
-   image read finds only in an image (a scanned page, an annotation's image)
-   is in no text to prove it and has no T1 value to agree with: Sonnet decides
-   it (step 6).
+   annotation's image no read rendered, or text past the budget.
 5. Type to scope after each read, as on a scan (step 5 below). And once the
    type is known to be an IFU, the certificate fields a read wrote before the
    type was known are dropped (`_drop_ifu_certificate_reads`, review
@@ -222,11 +225,13 @@ on one), four notified-body certificates with a handwritten signature image
 stamp annotation (its address footer), those five on `text` pages. No
 appearance writes text `get_text` misses. Under the null rule 92 of them can
 lose a settled null (90 VOCO `validity_from`, DEKRA DE, Planmeca), so at most
-92 more image reads; on VOCO the date is then found only in an image and
-Sonnet decides it, about $0.016 a declaration at Batch prices (Haiku 5.5's
-image read $0.0007, Sonnet 5.5's $0.015, measured on Ceramic Bond), about
-$1.42 over the 90. A date pasted into the page content as an image is not
-found ([limits.md](limits.md#deliberately-not-built)).
+92 more image reads. On VOCO the date is then found only in the stamp and
+settles on the cheap read (a value only an image shows, step 4): one real
+Haiku 5.5 image read of Ceramic Bond (2026-10-13, Batch API, $0.0009, 8,539
+tokens in) read 2026-01-14 off page 3 at 0.9, so the 92 cost about $0.09 at
+Batch prices, and Sonnet is asked only where the cheap read states under
+0.85. A date pasted into the page content as an image is not found
+([limits.md](limits.md#deliberately-not-built)).
 
 **The scan ladder, S-2** (`run_scan_ladder`; PRD v3 §5 amended 2026-10-12).
 Steps and labels from `llm.READ_STEPS`:
@@ -590,7 +595,8 @@ schema enforces it.
   `app/handlers/extract.py` (the sync path calls `run_extraction`, the batch
   path the two ladders, all with the unpassed default). Since 2026-10-12 it
   decides only which T0 fields are KNOWN; a read's own confidence no longer
-  moves a field up the ladder (the scan ladder's `extract.image_settle` aside).
+  moves a field up the ladder (`extract.image_settle` aside: on a scan, and on
+  a text document for a value only an image shows).
   `cfg.gate.high` is a
   *separate* number, `0.92` (`app/config.py:57-70`), read only inside
   `app/handlers/gate.py` to gate four unrelated GATE-time decisions
@@ -660,7 +666,7 @@ schema enforces it.
 | File | Pins |
 |---|---|
 | `tests/test_tiers.py` | Escalation gating, `merge`/shrink-guard, two agreeing reads in `merge` (a verified one first, then the surer; with no text, the surer; T0 and the doc-class answer are not reads), `GATE_FIELDS` equal to GATE's, `next_extract_rev` past evidence revs, `run_extraction`, `test_a_scan_takes_the_image_ladder_and_never_a_text_read` |
-| `tests/test_tiers_text.py` | The text ladder: T0 settled fields never asked, what the text proves after T1, T1's empty answer and the null rule (labels, image pages, truncation), a failed read, T0 under 0.95, the image read's check / check-valid UDI / agreement / both empty, Sonnet prevailing and closing, the two suppressions, T1's pool, type to scope, the page choice, the reads record, hints, the text doc-class call, `T1-second` (agrees / disagrees / empty / failed, one call, what is not asked, a stored read under the floor, citation proof, an agreement under the floor, the verified read stored, Sonnet as the agreeing read or the stored one, the `asked` guard, a confirming read stored by ruling D1 and the scope following the type it took), the type-derived scope marked, a page where an annotation paints an image (unread to T1, rendered by the image read, two empty reads, batch past page 4, no citation proof; VOCO Ceramic Bond and LUMIWHITE themselves) |
+| `tests/test_tiers_text.py` | The text ladder: T0 settled fields never asked, what the text proves after T1, T1's empty answer and the null rule (labels, image pages, truncation), a failed read, T0 under 0.95, the image read's check / check-valid UDI / agreement / both empty, Sonnet prevailing and closing, the two suppressions, T1's pool, type to scope, the page choice, the reads record, hints, the text doc-class call, `T1-second` (agrees / disagrees / empty / failed, one call, what is not asked, a stored read under the floor, citation proof, an agreement under the floor, the verified read stored, Sonnet as the agreeing read or the stored one, the `asked` guard, a confirming read stored by ruling D1 and the scope following the type it took), the type-derived scope marked, a page where an annotation paints an image (unread to T1, rendered by the image read, two empty reads, batch past page 4, no citation proof; VOCO Ceramic Bond and LUMIWHITE themselves), a value only an image shows (settles well-formed at `image_settle`: 0.85 settles, 0.84, a non-ISO date or a text page's cite do not, the configured value is used, a scanned page of a mixed PDF too, never a UDI the text labels) |
 | `tests/test_tiers_scan.py` | The scan ladder: routing (a mixed PDF stays text), the image doc-class call, 1/3/6-page scans and `pages-unread`, settle at 0.85, agreement at 0.70, both-null except the UDI, failed reads (never an empty answer, counted), type to scope, Sonnet only for what is open and its empty answer closing a field, the reads record, disagreements, `merge` by strength, `T2-second` confirming the gate fields (one call, its value never stored, never sent on, the surer of two agreeing reads stored, the derived scope following a type it took, no citation proof on a scan), the type-derived scope marked (an IFU's too) |
 | `tests/test_checks.py` | `checks.py`: the text checks, page classes (a scan with a short overlay is an image page), `citation_proven` (also over real documents), and the scan shape / agreement checks |
 | `tests/test_tiers_corpus.py` | Ladder behaviour against the seed corpus |

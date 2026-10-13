@@ -213,8 +213,11 @@ def _finalize(conn, content_hash, group_id, doc_class, tiers_used, fields,
 
 def _scan_thresholds() -> dict:
     """The ladders' configured thresholds, as `run_extraction` /
-    `run_scan_ladder` keyword arguments. `agreement_min` is the text ladder's
-    too: an agreement GATE will count spares a gate field the second read."""
+    `run_scan_ladder` / `run_text_ladder` keyword arguments, both read by both
+    ladders: `agreement_min` because an agreement GATE will count spares a gate
+    field the second read; `image_settle` because on a text document a value
+    the cheap image read finds only in an image settles as on a scan (Denis,
+    2026-10-13)."""
     cfg = load_config()
     return {"image_settle": cfg.extract.image_settle,
             "agreement_min": cfg.gate.agreement_min}
@@ -297,7 +300,7 @@ def _handle_batch(conn, job, doc, filename, content_hash, group_id,
                                            poll_interval_s, tiers.DOC_CLASS_TEXT),
                 classify_image=_batch_classifier(conn, job, batch_client, content_hash,
                                                  poll_interval_s, tiers.DOC_CLASS_IMAGE),
-                page_aware=False, agreement_min=_scan_thresholds()["agreement_min"])
+                page_aware=False, **_scan_thresholds())
     except tiers.Deferred as d:
         return {"_deferred": True, "waiting_on": d.label, "state": d.state}
     return _finalize(conn, content_hash, group_id, doc_class, tiers_used, fields,
