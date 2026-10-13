@@ -178,7 +178,11 @@ own origin.</p>
 production document and its complete evidence.
 <strong class="warn">Internal.</strong> Carries <code>model_id</code>,
 <code>confidence</code> and <code>verbatim</code>. Never render this to a
-customer.{% if example_doc_id %} Try
+customer. <code>confidence</code> is the model's own number, not calibrated;
+where two reads agreed on the value, each at least
+{{ "%.2f"|format(agreement_min) }}, it combines the two and the row names the
+second read in <code>agreed_model_id</code> and <code>agreed_confidence</code>,
+and it is 1.0 for a regulation its printed citation proves.{% if example_doc_id %} Try
 <a href="/api/documents/{{ example_doc_id }}">/api/documents/{{ example_doc_id }}</a>.{% endif %}</p>
 
 <h3><code>GET /api/kpi</code></h3>

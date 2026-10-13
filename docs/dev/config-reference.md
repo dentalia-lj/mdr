@@ -134,13 +134,24 @@ reads must state before their agreement counts: for GATE's combined score
 `1 - (1 - c1)(1 - c2)`, and for a scan field settled by two cheap image reads.
 It sits under `gate` because PRD v3 § 11 names it `gate.agreement_min` and GATE
 is where the combined number is used; the plan's Task 1 had put it under
-`extract`. Read since 2026-10-12 by the scan ladder only (`tiers.
+`extract`. Read since 2026-10-12 by two places. The scan ladder (`tiers.
 run_scan_ladder`, `checks.agree`): two cheap image reads of a scan that give
 one well-formed value, each at least this sure, settle the field without
-Sonnet. GATE's combined score is plan Task 5 and not built. Blast radius
-today: lower lets two weak cheap reads settle a scan field Sonnet would have
-read; higher sends more scan fields to Sonnet. Once GATE reads it: lower lets
-two weak reads combine past `gate.high` and publish without a person.
+Sonnet. GATE (`gate._agreed_confidence`, extraction-ladder plan Task 5): a
+required field two reads agreed on counts `1 - (1 - c1)(1 - c2)` in the score
+only when both calibrated numbers are at least this, and `evidence.confidence`
+stores the raw combination when it counted. The confidence note under both
+evidence tables and on `/api-reference` quotes this value, read at web
+start-up. Blast radius:
+lower lets two weak cheap reads settle a scan field Sonnet would have read,
+and lets two weak reads combine past `gate.high` and publish a document and
+its trusted links without a person (0.6 + 0.85 combines to 0.94, the case the
+floor was set to keep out); higher sends more scan fields to Sonnet and holds
+more agreed documents at `staged`. GATE's half acts only on fields whose
+evidence names an agreeing read, which nothing writes until the plan's Task
+5b, so today it changes no disposition. It never moves the manufacturer
+auto-bind, the manufacturer-name check or the supersede fast path: those read
+the first read's own number.
 
 Not to be confused with the extraction escalation threshold, which is a hardcoded
 `0.95` parameter of `tiers.run_extraction` and is not config at all.
