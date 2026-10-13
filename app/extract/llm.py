@@ -524,13 +524,21 @@ def _classify_image_request(read: Read, doc, filename: str) -> dict:
     return params
 
 
+def doc_class_text(doc) -> str:
+    """The text the text doc-class call reads: pages 1..`DOC_CLASS_PAGES`,
+    stripped. Empty means that call would see nothing: the text ladder then
+    asks the page images instead (`tiers.run_text_ladder`)."""
+    return "\n".join(pdfutil.page_texts(doc)[:DOC_CLASS_PAGES]).strip()
+
+
 def _classify_text_request(read: Read, doc, filename: str) -> dict | None:
     """The messages.create() body for the text doc-class call: the file name and
     the text of pages 1..`DOC_CLASS_PAGES`. None when those pages hold no text:
-    the call would see nothing, and the file is refused without one. Shared by
-    the sync call and the batch client so both send the same request."""
-    pages = pdfutil.page_texts(doc)[:DOC_CLASS_PAGES]
-    text = "\n".join(pages).strip()
+    the call would see nothing, and the file is refused without one (the text
+    ladder asks the page images first, so this is reached only by a client
+    with no image call). Shared by the sync call and the batch client so both
+    send the same request."""
+    text = doc_class_text(doc)
     if not text:
         return None
     params = {

@@ -533,12 +533,13 @@ def run_extraction(doc, filename: str, llm, threshold: float = 0.95,
 
     doc_class, fields = run_text_ladder(
         doc, filename, doc_class, fields, used, read,
-        classify=getattr(llm, "classify", None), threshold=threshold)
+        classify=getattr(llm, "classify", None),
+        classify_image=getattr(llm, "classify_image", None), threshold=threshold)
     return doc_class, fields, used
 
 
 def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list[str],
-                    read, classify=None, *, threshold: float = 0.95,
+                    read, classify=None, classify_image=None, *, threshold: float = 0.95,
                     page_aware: bool = True) -> tuple[str, dict]:
     """T-3, the text ladder (PRD v3 section 5, amended 2026-10-12; plan Task 4).
     For a document with at least one text page. Returns (doc_class, fields)
@@ -554,8 +555,10 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     before). Both are injected so the sync and batch transports share every
     rule here.
 
-    1. `unknown` to T0: the doc-class call on the page 1-2 text (`doc-class`).
-       A refusal (`not-a-compliance-document`) is terminal.
+    1. `unknown` to T0: the doc-class call on the page 1-2 text (`doc-class`),
+       or, when pages 1-2 hold no text (a mixed PDF that opens with scanned
+       pages), on their images (`classify_image`, `doc-class-image`, review
+       2026-10-13). A refusal (`not-a-compliance-document`) is terminal.
     2. `T1` (`models.t1`) on the whole text (`pdf.bounded_text`), asked every
        pursued field T0 does not hold at the threshold (`_text_pursued`: the
        IFU and manufacturer-scope suppressions of `needs_escalation`). A field
@@ -575,7 +578,9 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
        `checks.both_null_settled` allows it (never a Basic UDI-DI the text
        labels: multi-UDI lists go to Sonnet). Image pages of a mixed PDF the
        read did not render, and text beyond the budget, count as unread.
-    5. Type to scope (`_scope_from_type`) after each read, as on a scan.
+    5. Type to scope (`_scope_from_type`) after each read, as on a scan; and
+       once the type is known to be an IFU, the certificate fields a read
+       wrote before that are dropped (`_drop_ifu_certificate_reads`).
     6. `T2` (`models.t2`, Sonnet) for what is still open, and only then; its
        answer closes every field it was asked, an empty answer included
        (`_sonnet_closes`, the scan ladder's guards).
@@ -595,9 +600,20 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     # everything else comes here for a real answer, including
     # `not-a-compliance-document`, which is terminal. The call is logged under
     # its own label (`doc-class`, until 2026-10-12 `T1`).
+    # Pages 1-2 with no text: the text call would see nothing and refuse the
+    # file without a call, so their images are asked, as on a scan. A client
+    # with no image call keeps the text call (and its refusal), as before.
+    if doc_class == "unknown" and classify_image is not None:
+        from app.extract.llm import doc_class_text   # `llm` imports this module
+        if not doc_class_text(doc):
+            classify, label, tier = classify_image, DOC_CLASS_IMAGE, "T2"
+        else:
+            label, tier = DOC_CLASS_TEXT, "T1"
+    else:
+        label, tier = DOC_CLASS_TEXT, "T1"
     if doc_class == "unknown" and classify is not None:
         answer, quote = classify(doc, filename)
-        used.append(DOC_CLASS_TEXT)
+        used.append(label)
         if answer == NOT_A_DOCUMENT:
             return NOT_A_DOCUMENT, {}
         doc_class = "compliance-doc"
@@ -605,12 +621,12 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
         # than a filename guess. It never overwrites a T0 read, and any field
         # read outranks it (`_STEP_RANK`).
         if "type" not in fields:
-            fields["type"] = {"value": answer, "conf": T1_DOC_CLASS_CONF, "tier": "T1",
-                              "verbatim": quote, "page": 1, "step": DOC_CLASS_TEXT}
+            fields["type"] = {"value": answer, "conf": T1_DOC_CLASS_CONF, "tier": tier,
+                              "verbatim": quote, "page": 1, "step": label}
 
-    known = {f for f, ev in fields.items()
-             if isinstance(ev, dict) and ev.get("tier") == "T0"
-             and float(ev.get("conf") or 0.0) >= threshold}
+    t0 = {f: dict(ev) for f, ev in fields.items()
+          if isinstance(ev, dict) and ev.get("tier") == "T0"}
+    known = {f for f, ev in t0.items() if float(ev.get("conf") or 0.0) >= threshold}
     open_fields = _text_pursued(fields, known)
     if not open_fields:
         return doc_class, fields
@@ -631,6 +647,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     fields = merge(fields, _asked(t1, open_fields))
     known |= {f for f in open_fields if _text_settles(f, fields, t1, text_ctx)}
     _scope_from_type(fields, known)
+    _drop_ifu_certificate_reads(fields, known, t0)
     fields = _from_t1(fields, known, t1, reads, text_ctx)
 
     def choose(wanted):
@@ -645,8 +662,10 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
         rendered |= set(sel or range(1, min(doc.page_count, _max_vision_pages()) + 1))
         image_ctx = checks.Ctx(pages=pages, classes=classes, truncated=truncated,
                                unread_pages=frozenset(set(image_pages) - rendered))
-        known |= {f for f in open_fields if _image_settles_text(f, t1, first, image_ctx)}
+        known |= {f for f in open_fields
+                  if _image_settles_text(f, fields, t1, first, image_ctx)}
         _scope_from_type(fields, known)
+        _drop_ifu_certificate_reads(fields, known, t0)
         fields = _from_t1(fields, known, t1, reads, text_ctx)
 
     open_fields = _text_pursued(fields, known)
@@ -663,6 +682,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
                 fields[f] = sonnet[f]
         known |= set(open_fields)
         _scope_from_type(fields, known)
+        _drop_ifu_certificate_reads(fields, known, t0)
         # Part of the document no read saw: text past the budget, or a scanned
         # page of a mixed PDF no image read rendered. A field every read left
         # empty there is unread, not absent (PRD v3 section 7, `pages-unread`).
@@ -697,13 +717,36 @@ def _read_step(read, used: list[str], reads: dict, label: str, missing: list[str
 
 
 def _asked(answer: dict, wanted) -> dict:
-    """The part of a read's answer the ladder merges: the fields it pursues.
-    A read answers every field (the response schema requires them all), and a
-    field nobody pursued stays out of the record: an IFU's certificate fields
-    (a fabricated date is the answer to a question it cannot hold), the
-    item identifiers of a manufacturer-wide certificate, and `stated_class`,
-    which is T0's alone (PRD v3 section 5)."""
+    """The part of a read's answer the ladder merges: the fields it pursues
+    at the time of the read. A read answers every field (the response schema
+    requires them all), and a field nobody pursued stays out: the item
+    identifiers of a manufacturer-wide certificate, `stated_class` (T0's alone,
+    PRD v3 section 5), and the certificate fields of a document already known
+    to be an IFU. A certificate field asked while the type was still open IS
+    merged; if the type then turns out an IFU, `_drop_ifu_certificate_reads`
+    removes it."""
     return {f: answer[f] for f in wanted if f in answer}
+
+
+def _drop_ifu_certificate_reads(fields: dict, known: set[str], t0: dict) -> None:
+    """Once the type is known to be an IFU (`_NO_CERTIFICATE_TYPES`), the
+    certificate fields a read wrote before the type was known are dropped
+    (review 2026-10-13): the suppression exists because a model asked for a
+    date an IFU cannot hold finds one anyway (STRAUMANN, "701593/M/12 04/26"
+    read as 2026-04-26), and that is as true of an answer given before the
+    type was known as after. T0's own read of the field comes back where there
+    was one; otherwise the field is removed. The read stays in `READS_KEY`."""
+    doc_type = (fields.get("type") or {}).get("value")
+    if "type" not in known or doc_type not in _NO_CERTIFICATE_TYPES:
+        return
+    for f in _ESCALATE_CERTIFICATE:
+        ev = fields.get(f)
+        if not isinstance(ev, dict) or ev.get("tier") == "T0":
+            continue
+        if f in t0:
+            fields[f] = dict(t0[f])
+        else:
+            del fields[f]
 
 
 def _text_pursued(fields: dict, known: set[str]) -> list[str]:
@@ -734,10 +777,26 @@ def _text_settles(f: str, fields: dict, answer: dict, ctx) -> bool:
     ("Document", unscorable, 0.9) and T1 the OCR layer's invalid code; the
     image read's check-valid code settles it."""
     ev = fields.get(f)
-    if checks.settled(f, ev, ctx):
+    if _proven(f, fields, answer.get(f), ctx):
         return True
     return (f in answer and _is_blank(answer[f]) and _is_blank(ev)
             and checks.null_settled(f, ctx))
+
+
+def _proven(f: str, fields: dict, own: dict | None, ctx) -> bool:
+    """The field is proven by the text: the value it holds passes
+    `checks.settled`, or the read's OWN value does, and then the field takes
+    that value (review 2026-10-13). The two differ only for an enumeration,
+    where `merge` lets the longer list win: a longer list that fails the check
+    (a code not printed) is not stored over a shorter one that passes. When
+    both pass, the longer one the field holds stays. T0 at or above the
+    threshold is never asked, so never replaced here."""
+    if checks.settled(f, fields.get(f), ctx):
+        return True
+    if own is not None and not _is_blank(own) and checks.settled(f, own, ctx):
+        fields[f] = own
+        return True
+    return False
 
 
 def _from_t1(fields: dict, known: set[str], t1: dict, reads: dict, ctx) -> dict:
@@ -757,16 +816,17 @@ def _from_t1(fields: dict, known: set[str], t1: dict, reads: dict, ctx) -> dict:
     return fields
 
 
-def _image_settles_text(f: str, t1: dict, image: dict, ctx) -> bool:
+def _image_settles_text(f: str, fields: dict, t1: dict, image: dict, ctx) -> bool:
     """Step 4 of `run_text_ladder` for one field: the image read's own value
-    passes the checks, or is a check-valid Basic UDI-DI, or agrees with T1's;
-    or both reads answered it empty and `checks.both_null_settled` allows it.
-    No answer from the image read (a failed read) settles nothing."""
+    passes the checks (`_proven`: the field then holds the value that settled
+    it), or is a check-valid Basic UDI-DI, or agrees with T1's; or both reads
+    answered it empty and `checks.both_null_settled` allows it. No answer from
+    the image read (a failed read) settles nothing."""
     b = image.get(f)
     if b is None:
         return False
     if not _is_blank(b):
-        if checks.settled(f, b, ctx):
+        if _proven(f, fields, b, ctx):
             return True
         if f == "basic_udi_di" and checks.udi_check_valid(b.get("value")):
             return True

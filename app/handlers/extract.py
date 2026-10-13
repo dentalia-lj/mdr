@@ -292,6 +292,8 @@ def _handle_batch(conn, job, doc, filename, content_hash, group_id,
                 doc, filename, doc_class, fields, tiers_used, read,
                 classify=_batch_classifier(conn, job, batch_client, content_hash,
                                            poll_interval_s, tiers.DOC_CLASS_TEXT),
+                classify_image=_batch_classifier(conn, job, batch_client, content_hash,
+                                                 poll_interval_s, tiers.DOC_CLASS_IMAGE),
                 page_aware=False)
     except tiers.Deferred as d:
         return {"_deferred": True, "waiting_on": d.label, "state": d.state}
@@ -324,9 +326,10 @@ def _batch_classifier(conn, job, batch_client, content_hash, poll_interval_s, la
     injected client has no `build_classify_requests` (every stub that predates
     it), which reads an `unknown` document exactly as before.
 
-    A text document whose pages 1-2 hold no text gets no request (the sync
-    call refuses it without one, `llm._classify_text_request`), and is refused
-    the same way here. A result with no answer -- the batch request errored,
+    A text document whose pages 1-2 hold no text is asked on their images
+    (the text ladder picks `doc-class-image` then, review 2026-10-13); the
+    empty request list below is reached only by a client with no image call,
+    and refuses as the sync text call does. A result with no answer -- the batch request errored,
     so `results()` skips it -- raises instead of reading as a refusal: a file
     refused for a failed request would be dropped for good."""
     build = getattr(batch_client, "build_classify_requests", None)

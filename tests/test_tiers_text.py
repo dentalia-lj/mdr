@@ -79,11 +79,18 @@ class TextLlm:
     answer given is null, as a real read gives it. `FAILED` answers nothing.
     Records every read as (label, missing, read options)."""
 
-    def __init__(self, answers=None, text_class=None):
+    def __init__(self, answers=None, text_class=None, image_class=None):
         self.answers = answers or {}
         self.calls: list[tuple[str, tuple[str, ...], dict]] = []
+        self.classified: list[str] = []
         if text_class is not None:
-            self.classify = lambda doc, filename: (text_class, "EU Declaration of Conformity")
+            self.classify = lambda doc, filename: self._classify("text", text_class)
+        if image_class is not None:
+            self.classify_image = lambda doc, filename: self._classify("image", image_class)
+
+    def _classify(self, kind, answer):
+        self.classified.append(kind)
+        return answer, "EU Declaration of Conformity"
 
     def extract(self, label, doc, filename, missing, **kw):
         self.calls.append((label, tuple(missing), kw))
@@ -626,3 +633,138 @@ def test_without_page_lists_the_image_reads_are_pages_one_to_four_and_counted_so
     assert llm.options("T2-first") == {} and llm.options("T2") == {}
     assert used == ["T0", "T1", "T2-first", "T2"]
     assert out[tiers.PAGES_UNREAD_KEY] == ["validity_to"]
+
+
+# --- a REF list: store the list that settled it (review 2026-10-13) -------------
+
+def test_a_failing_longer_list_is_never_stored_over_a_passing_shorter_one(t0):
+    """The review's stub: T1's list is longer and one code is not printed
+    (66%, under the 95% check), the image read's shorter list is all printed.
+    `merge` keeps the longer list by its length rule; the field takes the
+    list that settled it."""
+    t0(_only_open("ref_list"))
+    llm = TextLlm({"T1": {"ref_list": (["003477", "003478", "999999"], "REF 003477 003478")},
+                   "T2-first": {"ref_list": (["003477", "003478"], "REF 003477 003478")}})
+    _, fields, used = run(_doc(DOC_PAGE), llm)
+    assert used == ["T0", "T1", "T2-first"]
+    assert fields["ref_list"]["value"] == ["003477", "003478"]
+    assert fields["ref_list"]["step"] == "T2-first"
+
+
+def test_t1s_passing_list_is_stored_over_a_failing_longer_t0_guess(t0):
+    fields0 = _only_open("ref_list")
+    fields0["ref_list"] = t0ev(["003477", "003478", "999999"], 0.9, "3 REF codes", 1)
+    t0(fields0)
+    llm = TextLlm({"T1": {"ref_list": (["003477", "003478"], "REF 003477 003478")}})
+    _, fields, used = run(_doc(DOC_PAGE), llm)
+    assert used == ["T0", "T1"]
+    assert fields["ref_list"]["value"] == ["003477", "003478"]
+    assert fields["ref_list"]["step"] == "T1"
+
+
+def test_the_longer_list_still_wins_when_both_pass(t0):
+    page = DOC_PAGE.replace("REF 003477 003478", "REF 003477 003478 003479")
+    fields0 = _only_open("ref_list")
+    fields0["ref_list"] = t0ev(["003477", "003478", "003479"], 0.9, "3 REF codes", 1)
+    t0(fields0)
+    llm = TextLlm({"T1": {"ref_list": (["003477", "003478"], "REF 003477 003478")}})
+    _, fields, used = run(_doc(page), llm)
+    assert used == ["T0", "T1"]
+    assert fields["ref_list"]["value"] == ["003477", "003478", "003479"]
+    assert fields["ref_list"]["tier"] == "T0"
+
+
+def test_a_t0_list_at_the_threshold_is_never_asked_or_replaced(t0):
+    fields0 = _only_open("cert_number")
+    fields0["ref_list"] = t0ev(["003477", "999999"], 1.0, "2 REF codes", 1)   # one not printed
+    t0(fields0)
+    llm = TextLlm({"T1": {"ref_list": (["003477"], "REF 003477"),
+                          "cert_number": ("G1 021108 0031", "Certificate G1 021108 0031")}})
+    _, fields, _ = run(_doc(DOC_PAGE), llm)
+    assert "ref_list" not in llm.asked("T1")
+    assert fields["ref_list"]["value"] == ["003477", "999999"]
+
+
+# --- an IFU's certificate fields (review 2026-10-13) -----------------------------
+
+IFU_PAGE = ("Instructions for use\nManufacturer: GC EUROPE N.V.\nRegulation (EU) 2017/745\n"
+            "701593/M/12 04/26\n(c) Institut Straumann AG, 2025")
+
+
+def test_certificate_fields_t1_read_before_the_type_was_known_are_dropped(t0):
+    """T1 was asked `validity_from` because the type was not known yet, and read
+    a date off the revision code (the STRAUMANN case). Once T1's own type
+    settles it as an IFU, the suppression applies to what T1 already read:
+    an IFU carries no certificate and no validity period."""
+    t0({"regulation": t0ev("MDR", 1.0)})
+    llm = TextLlm({"T1": {"type": ("IFU", "Instructions for use", 1, 0.97),
+                          "validity_from": ("2026-04-26", "701593/M/12 04/26", 1, 0.6),
+                          "cert_number": ("701593/M/12", "701593/M/12 04/26", 1, 0.5)}})
+    _, fields, _ = run(_doc(IFU_PAGE), llm)
+    assert "validity_from" in llm.asked("T1")
+    assert "validity_from" not in fields and "cert_number" not in fields
+    t1_record = next(r for r in fields[tiers.READS_KEY] if r["step"] == "T1")
+    assert t1_record["fields"]["validity_from"]["value"] == "2026-04-26"   # still recorded
+
+
+def test_the_drop_follows_a_type_the_image_read_settles(t0):
+    t0({"regulation": t0ev("MDR", 1.0), "manufacturer": t0ev("GC EUROPE N.V.", 0.97)})
+    llm = TextLlm({"T1": {"type": ("IFU", "a manual", 1, 0.6),
+                          "validity_from": ("2026-04-26", "701593/M/12 04/26", 1, 0.6)},
+                   "T2-first": {"type": ("IFU", "Instructions for use", 1, 0.95)}})
+    _, fields, _ = run(_doc(IFU_PAGE), llm)
+    assert fields["type"]["value"] == "IFU"
+    assert "validity_from" not in fields
+
+
+def test_a_t0_certificate_value_stays_when_the_type_turns_out_an_ifu(t0):
+    """Only what a read wrote is dropped: T0's own read of the field is what
+    the document held before any read was asked."""
+    t0({"regulation": t0ev("MDR", 1.0), "validity_to": t0ev("2030-01-01", 1.0),
+        "validity_from": t0ev("2024-01-01", 0.6)})
+    llm = TextLlm({"T1": {"type": ("IFU", "Instructions for use", 1, 0.97),
+                          "validity_from": ("2026-04-26", "701593/M/12 04/26", 1, 0.6)}})
+    _, fields, _ = run(_doc(IFU_PAGE), llm)
+    assert fields["validity_to"]["value"] == "2030-01-01"
+    assert (fields["validity_from"]["value"], fields["validity_from"]["tier"]) == ("2024-01-01", "T0")
+
+
+
+# --- a mixed PDF whose pages 1-2 have no text (review 2026-10-13) -----------------
+
+def test_no_text_on_pages_one_and_two_asks_the_image_doc_class_call(t0):
+    """T0 cannot type it and the text call would see nothing: the page 1-2
+    images are asked instead, as on a scan. The review found two real
+    compliance documents in the mirror shaped like this, which the text call
+    refused without a call."""
+    t0({}, doc_class="unknown")
+    llm = TextLlm({"T1": FAILED, "T2-first": FAILED, "T2": FAILED},
+                  text_class=NOT_A_DOCUMENT, image_class="DoC")
+    doc_class, fields, used = run(_doc(IMAGE, IMAGE, DOC_PAGE), llm)
+    assert llm.classified == ["image"]
+    assert doc_class == "compliance-doc"
+    assert used[:3] == ["T0", "doc-class-image", "T1"]
+    assert (fields["type"]["value"], fields["type"]["step"]) == ("DoC", "doc-class-image")
+
+
+def test_the_image_doc_class_refusal_is_terminal_on_text_too(t0):
+    t0({}, doc_class="unknown")
+    llm = TextLlm(text_class="DoC", image_class=NOT_A_DOCUMENT)
+    doc_class, fields, used = run(_doc(IMAGE, IMAGE, DOC_PAGE), llm)
+    assert (doc_class, fields, used) == (NOT_A_DOCUMENT, {}, ["T0", "doc-class-image"])
+    assert llm.calls == []
+
+
+def test_text_on_pages_one_and_two_keeps_the_text_call(t0):
+    t0({}, doc_class="unknown")
+    llm = TextLlm({"T1": FAILED, "T2-first": FAILED, "T2": FAILED},
+                  text_class="DoC", image_class="EC")
+    run(_doc(DOC_PAGE, IMAGE), llm)
+    assert llm.classified == ["text"]
+
+
+def test_a_client_without_an_image_classifier_keeps_the_text_call(t0):
+    t0({}, doc_class="unknown")
+    llm = TextLlm({"T1": FAILED, "T2-first": FAILED, "T2": FAILED}, text_class="DoC")
+    run(_doc(IMAGE, IMAGE, DOC_PAGE), llm)
+    assert llm.classified == ["text"]

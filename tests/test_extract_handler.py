@@ -619,9 +619,10 @@ def test_batch_text_unknown_accepted_is_read(conn, tmp_path):
     assert waited[:2] == ["doc-class", "T1"]
 
 
-def test_batch_text_classify_with_no_text_on_pages_one_and_two_submits_nothing(conn, tmp_path):
-    """Pages 1-2 empty, text on page 3: the sync call refuses that without a
-    call, and so does the batch path (no request, no batch_ref row)."""
+def test_batch_text_with_no_text_on_pages_one_and_two_asks_the_image_call(conn, tmp_path):
+    """Pages 1-2 empty, text on page 3, and T0 cannot type it: the page 1-2
+    images are asked under `doc-class-image`, as on a scan (review 2026-10-13;
+    before, the batch path refused it without a call, as the sync one did)."""
     import pymupdf
     doc = pymupdf.open()
     doc.new_page()
@@ -632,12 +633,15 @@ def test_batch_text_classify_with_no_text_on_pages_one_and_two_submits_nothing(c
     path = tmp_path / "late.pdf"
     doc.save(str(path))
     job = _enqueue_extract(conn, "sha-b13", 6, str(path))
-    bc = _TextClassifyingBatchClient({}, {"doc_class": "DoC", "quote": "x"})
+    bc = _TextClassifyingBatchClient({"doc-class-image": {"doc_class": "DoC", "quote": "x"}},
+                                     {"doc_class": "IFU", "quote": "x"})
 
-    r, waited = _drive(conn, job, bc)
+    r, waited = _drive(conn, job, bc, limit=12)
 
-    assert waited == [] and bc.submits == []
-    assert r["doc_class"] == tiers_mod.NOT_A_DOCUMENT
+    assert set(bc.classify_labels) == {"doc-class-image"}   # rebuilt on every poll
+    assert waited[0] == "doc-class-image"
+    assert r["doc_class"] == "compliance-doc"
+    assert r["tiers_used"][:3] == ["T0", "doc-class-image", "T1"]
 
 
 def test_sync_text_result_counts_disagreements_and_failed_reads(conn, fixture_pdf):

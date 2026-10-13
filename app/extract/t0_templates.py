@@ -682,8 +682,16 @@ def extract_basic_udi(text: str, result=None) -> dict | None:
     tools and tests with no job envelope, and an anomaly is a count, never an
     exception. The value is never rewritten or dropped -- a human reviewing the
     document still needs to see what was printed on it.
+
+    A word after the label is not a value (`udi.is_word`, review 2026-10-13):
+    on 12 mirror documents the label heads a table column or sits beside the
+    next label, and the token that followed was "PRODUCT", "Thermaprep",
+    "Document". Such a match is skipped and the next label tried; a document
+    whose every label is followed by a word has no T0 Basic UDI-DI, and the
+    reads look for one.
     """
-    m = _UDI_LABEL.search(text)
+    m = next((m for m in _UDI_LABEL.finditer(text)
+              if not udi.is_word(m.group(1).strip())), None)
     if not m:
         return None
     value = m.group(1).strip()
