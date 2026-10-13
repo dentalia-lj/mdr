@@ -120,9 +120,9 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | 1 read plumbing, ledger | done: built (Opus), reviewed and fixed (Opus), merged; full suite 4674 passed, 5 skipped | merge of f843948 |
 | 2 checks, page classes | done: built (Sonnet), reviewed and fixed (Opus), merged | b9cd734 |
 | 3 scans | done: built (Opus), reviewed and fixed (Opus), merged; full suite 4820 passed, 5 skipped; decision 3 ruled by Denis (item identifiers asked on filename-typed scanned DoCs) | merge 0c891c8 |
-| 4 text ladder | review fixes in (6c5c592, 10f6537, 67f630a; full suite 4960 passed; agree replay 7 of 79 = measured); IFU drop on scans running, then Opus check | worktree el-text |
+| 4 text ladder | done: built (Opus), 2 Opus review rounds, merged; full suite on the merge 5071 passed + 1 citation test fixed after (comment-only change); replays: text 10 of 79 cached, 7 of 79 agree (= measured), scans 24 of 34 | merge 09a6044, 4539373 |
 | 5a gate side: combined score, migration, published guard, wording | done: built (Opus), 3 Opus review rounds, merged; full suite 4921 passed, 5 skipped | merge 7b9abc4 |
-| 5b extraction side: second reads stamp the contract keys | waiting for 4 and 5a | |
+| 5b extraction side: second reads stamp the contract keys | starting (Opus) | worktree el-second |
 | 6 prompt caching | done: built (Sonnet), reviewed and fixed (Opus), merged; cache hits to confirm on the first real run | merge of bbc461d |
 | 7 re-extract command | done: built (Sonnet), reviewed and fixed (Opus), merged | c39bb77 |
 | 8 quality and parity | waiting for 1-6 | |
@@ -235,41 +235,41 @@ Hours: human (by hand, tests and docs included) / Claude Code (wall-clock, same 
 
 ### Task 4. Text ladder: T-3 with Haiku 5.5 - 27 h / 2.7 h
 
-- [ ] `app/extract/prompts/t1_text.md`: the ruling-A `cert_number` line, verbatim as
+- [x] `app/extract/prompts/t1_text.md`: the ruling-A `cert_number` line, verbatim as
       measured (`tools/haiku_compare.py` PROMPT_VARIANTS `ruling-a`); update the
       prompt pins in `tests/test_llm.py` and `tests/test_llm_schema_vocabulary.py`.
-- [ ] `app/config.py`: `models.t1` default `claude-haiku-5-5` (dataclass default and
+- [x] `app/config.py`: `models.t1` default `claude-haiku-5-5` (dataclass default and
       `_str` fallback; test_config guards both). This also moves the text doc-class
       call to Haiku 5.5: cover it (256 tokens, adaptive thinking) in tests.
-- [ ] `llm.extract` returns every parsed field, not only the asked ones (line 313
+- [x] `llm.extract` returns every parsed field, not only the asked ones (line 313
       filters today), into the reads pool; `stated_class` stays T0-only (PRD).
-- [ ] `run_extraction` text branch: T0 -> T1 -> `checks.settled` (T0 fields under 0.95
+- [x] `run_extraction` text branch: T0 -> T1 -> `checks.settled` (T0 fields under 0.95
       included; IFU and manufacturer-scope suppressions kept) -> open fields to the
       first image read -> settled by check, check-valid UDI or agreement with T1 ->
       Sonnet image for what remains (multi-UDI lists included). Image pages of a
       mixed PDF and text beyond the budget count as unread for the null rule.
-- [ ] Page-aware image reads (Denis, 2026-10-12): the image read renders, in this
+- [x] Page-aware image reads (Denis, 2026-10-12): the image read renders, in this
       order, the pages T1 cited for the open fields, the pages where an open field's
       label occurs, the image pages of a mixed PDF, then page 1 onward, at most 4.
       Cost-neutral. Measured on the eval: 1 of 72 open fields pointed past page 4
       (neodent `cert_number`, page 26). Sonnet on the whole text was not reintroduced
       (T-2: 77% of an image call, closed 22% of documents, 0 of 72 answers past page 4).
-- [ ] Hints go to every read, as today's T1 and T2 get them.
-- [ ] From the Task 1 review: the text doc-class call on Haiku 5.5 (256 tokens, adaptive
+- [x] Hints go to every read, as today's T1 and T2 get them.
+- [x] From the Task 1 review: the text doc-class call on Haiku 5.5 (256 tokens, adaptive
       thinking) must send thinking off or treat a `max_tokens` stop as a failure, since a
       truncated answer becomes `not-a-compliance-document` and drops the file for good;
       page-aware selection clamps to the page count (`_vision_content` raises past the
       end); RecordedLlm accepts read options; `.env.example` `MODELS_T1` updated.
-- [ ] From the Task 3 review: Sonnet's explicit null closes an asked field (a T1 value
+- [x] From the Task 3 review: Sonnet's explicit null closes an asked field (a T1 value
       must not survive it); a failed read is never an empty answer and is counted;
       `derive_coverage_scope` gives the EC / ISO / IFU branches the type's confidence, as
       the DoC branch does (today a filename-typed EC or ISO at 0.6 gets a `manufacturer`
       scope at 1.0, `t0_templates.py:946`, so item IDs are never asked if reads retype it).
-- [ ] Disagreements counted: the extract job result lists each field where reads
+- [x] Disagreements counted: the extract job result lists each field where reads
       disagreed (field, steps, values), and the extraction record keeps every read.
-- [ ] Batch path: same steps.
-- [ ] Tests: `tests/test_tiers*.py`, `tests/test_extract*.py`, `tests/test_llm*.py`.
-- [ ] Docs: `docs/dev/handlers.md`, `docs/dev/extraction.md`, `docs/architecture.md`,
+- [x] Batch path: same steps.
+- [x] Tests: `tests/test_tiers*.py`, `tests/test_extract*.py`, `tests/test_llm*.py`.
+- [x] Docs: `docs/dev/handlers.md`, `docs/dev/extraction.md`, `docs/architecture.md`,
       `docs/runbook.md` (MODELS_T1), `docs/code-map.md`, `docs/vocabulary.md`,
       `docs/dev/deployment.md` (EXTRACT_MODE, cost), `CLAUDE.md` models line,
       `docs/dentalia-job-type-handbook.md` extract section.
