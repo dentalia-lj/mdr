@@ -165,28 +165,45 @@ def test_the_auto_supersede_pointer_alone_makes_a_chain(conn):
 
 
 def test_a_superseded_document_is_not_re_identified_either(conn):
-    """The older end of the chain: its `superseded_by` is the pointer."""
+    """The older end of the chain: its `superseded_by` is the pointer. Since
+    R6 (Denis, 2026-10-13) no reading of a superseded document is adopted,
+    production or not, so the identity cannot move."""
     _, older = _chain(conn, "chain-older")
     _seed(conn, "chain-older-old", _fields(type=_ev("EC")))
     r = gh.handle_gate_candidate(conn, _job("chain-older-old", ref_gate=True, flags=[],
                                             links=[], jid=50))
-    assert r["chain_identity_changed"] == ["type"]
     assert r["kept"] == "superseded"
     doc = _doc(conn, older)
     assert (doc["status"], doc["type"]) == ("superseded", "DoC")
 
 
 def test_a_rejected_document_in_a_chain_is_not_re_identified(conn):
-    """`rejected` is not one of the guarded statuses, and a reject does not
-    unwind a supersession: the pointer stays, so the identity must too."""
+    """A reject does not unwind a supersession; R5 makes a rejected document
+    final for the machine, so the pointer and the identity both stay."""
     ch = "chain-rejected"
     doc_id, older = _chain(conn, ch)
     conn.execute("UPDATE document SET status='rejected' WHERE doc_id=%s", (doc_id,))
     r = _production_reread(conn, ch, 2, regulation=_ev("MDD"))
-    assert r["chain_identity_changed"] == ["regulation"]
     assert r["kept"] == "rejected"
     doc = _doc(conn, doc_id)
     assert (doc["status"], doc["regulation"]) == ("rejected", "MDR")
+
+
+def test_the_manufacturer_route_does_not_re_identify_a_chain_member(conn):
+    """F4 (review round 2): the chain check on the binding route."""
+    ch = "chain-mfr"
+    _seed_ivoclar(conn, ch)
+    _seed(conn, ch, _mfr_fields("EC-1"))
+    x = gh.handle_gate_candidate(conn, _job(ch, route="mfr-binding"))["doc_id"]
+    conn.execute(
+        "INSERT INTO document (type, regulation, status, content_hash, archive_url, "
+        "coverage_scope, superseded_by) VALUES ('EC','MDR','superseded','chain-mfr-old',"
+        "'/a.pdf','manufacturer',%s)", (x,))
+    _seed(conn, ch, {**_mfr_fields("EC-1"), "regulation": _ev("MDD")}, rev=2)
+    r = gh.handle_gate_candidate(conn, _job(ch, rev=2, route="mfr-binding"))
+    assert r["chain_identity_changed"] == ["regulation"]
+    assert r["kept"] == "production"
+    assert _doc(conn, x)["regulation"] == "MDR"
 
 
 # --------------------------------------------------------------------------- #
@@ -235,6 +252,73 @@ def test_an_edit_survives_a_later_re_read_too(conn):
     assert _current(conn, doc_id, "cert_number")["tier"] == "T3"
     assert r["reviewer_edits_kept"] == ["cert_number"]
     assert _column_matches_current_evidence(conn, doc_id) == {}
+
+
+def test_the_manufacturer_route_holds_a_reviewer_s_edit(conn):
+    """F4 (review round 2): the hold on the binding route."""
+    ch = "t3-mfr"
+    _seed_ivoclar(conn, ch)
+    _seed(conn, ch, _mfr_fields("EC-1"))
+    x = gh.handle_gate_candidate(conn, _job(ch, route="mfr-binding"))["doc_id"]
+    gh._apply_edits(conn, x, {"cert_number": "EC-FIXED"})
+    _seed(conn, ch, _mfr_fields("EC-NEW"), rev=3)
+    r = gh.handle_gate_candidate(conn, _job(ch, rev=3, route="mfr-binding"))
+    assert r["disposition"] == "mfr-bound"
+    assert _doc(conn, x)["cert_number"] == "EC-FIXED"
+    assert _current(conn, x, "cert_number")["tier"] == "T3"
+    assert r["reviewer_edits_kept"] == ["cert_number"]
+
+
+def _ec_fields(cert, conf):
+    return {"type": _ev("EC", conf), "regulation": _ev("MDR", conf),
+            "coverage_scope": _ev("group", conf), "cert_number": _ev(cert, conf),
+            "validity_from": _ev("2024-01-01", conf)}
+
+
+def _citing_doc(conn, ch, cert_number):
+    return conn.execute(
+        "INSERT INTO document (type, regulation, status, content_hash, archive_url, "
+        "coverage_scope, cert_number) VALUES ('DoC','MDR','production',%s,'/archive/d.pdf',"
+        "'group',%s) RETURNING doc_id", (ch, cert_number)).fetchone()["doc_id"]
+
+
+def test_back_resolution_follows_the_reviewer_s_certificate_number(conn):
+    """F3 (review round 2): a certificate whose number a person corrected is
+    read again and still reads the wrong number. Back-resolution must answer
+    the declarations that cite the CORRECTED number, which is what the column
+    holds, and not the ones citing the number the person threw out."""
+    ch = "t3-ec"
+    _seed(conn, ch, _ec_fields("EC-WRONG", 0.85))
+    cert = gh.handle_gate_candidate(conn, _job(ch, ref_gate=True, flags=[], links=[]))["doc_id"]
+    gh.handle_gate_apply(conn, {"id": 2, "type": "gate.apply", "payload": {
+        "doc_id": cert, "decision": "approve", "decided_by": "nat",
+        "edits": {"cert_number": "EC-FIXED"}}})
+    wrong = _citing_doc(conn, "t3-ec-wrong", "EC-WRONG")
+    right = _citing_doc(conn, "t3-ec-right", "EC-FIXED")
+
+    _seed(conn, ch, _ec_fields("EC-WRONG", 0.97), rev=2)
+    r = gh.handle_gate_candidate(conn, _job(ch, rev=2, ref_gate=True, flags=[], links=[], jid=3))
+
+    assert r["disposition"] == "production"
+    cited = lambda d: conn.execute("SELECT cert_doc_id FROM document WHERE doc_id=%s",  # noqa: E731
+                                   (d,)).fetchone()["cert_doc_id"]
+    assert cited(wrong) is None
+    assert cited(right) == cert
+
+
+def test_back_resolution_follows_a_held_type(conn):
+    """A person who re-typed a document as a certificate decides that it is
+    one; a later reading calling it a DoC does not stop it answering citers."""
+    ch = "t3-type"
+    _seed(conn, ch, _ec_fields("EC-7", 0.85) | {"type": _ev("DoC", 0.85)})
+    cert = gh.handle_gate_candidate(conn, _job(ch, ref_gate=True, flags=[], links=[]))["doc_id"]
+    gh.handle_gate_apply(conn, {"id": 2, "type": "gate.apply", "payload": {
+        "doc_id": cert, "decision": "approve", "decided_by": "nat", "edits": {"type": "EC"}}})
+    citer = _citing_doc(conn, "t3-type-citer", "EC-7")
+    _seed(conn, ch, _ec_fields("EC-7", 0.97) | {"type": _ev("DoC")}, rev=2)
+    gh.handle_gate_candidate(conn, _job(ch, rev=2, ref_gate=True, flags=[], links=[], jid=3))
+    assert conn.execute("SELECT cert_doc_id FROM document WHERE doc_id=%s",
+                        (citer,)).fetchone()["cert_doc_id"] == cert
 
 
 def test_a_re_read_that_agrees_with_the_edit_counts_nothing(conn):
@@ -311,3 +395,115 @@ def test_the_manufacturer_route_locks_the_row_too(conn, connect_test):
                           (r1["doc_id"],))
     finally:
         conn.rollback()
+
+
+# --------------------------------------------------------------------------- #
+# 5. a rejected document is final for the machine (R5, Denis 2026-10-13)
+# --------------------------------------------------------------------------- #
+def _rejected(conn, ch, **over):
+    """A document read once at `staged` and rejected by a person; the reject
+    cascades its link to `rejected`."""
+    _seed_item(conn, f"{ch}-old")
+    _seed(conn, ch, _fields(conf=0.85, **over))
+    r = gh.handle_gate_candidate(conn, _job(ch, ref_gate=True, flags=[], links=[
+        {"item_ref": f"{ch}-old", "match_basis": "ref-list"}]))
+    assert r["disposition"] == "staged"
+    gh.handle_gate_apply(conn, {"id": 2, "type": "gate.apply", "payload": {
+        "doc_id": r["doc_id"], "decision": "reject", "decided_by": "nat"}})
+    return r["doc_id"]
+
+
+def _everything(conn, doc_id):
+    return {
+        "doc": dict(conn.execute("SELECT * FROM document WHERE doc_id=%s", (doc_id,)).fetchone()),
+        "evidence": conn.execute("SELECT count(*) c FROM evidence WHERE doc_id=%s",
+                                 (doc_id,)).fetchone()["c"],
+        "links": sorted((r["item_ref"], r["status"]) for r in conn.execute(
+            "SELECT item_ref, status FROM item_document WHERE doc_id=%s", (doc_id,)).fetchall()),
+        "audit": sorted(r["event"] for r in conn.execute(
+            "SELECT event FROM audit_log WHERE doc_id=%s", (doc_id,)).fetchall()),
+        "tasks": conn.execute("SELECT count(*) c FROM manual_task WHERE doc_id=%s",
+                              (doc_id,)).fetchone()["c"],
+    }
+
+
+def test_a_production_reading_of_a_rejected_document_writes_nothing(conn):
+    """Probe (a) of review round 2: the reading reaches production and carries
+    `supersedes` = a live document. Before R5 it wrote a production link under
+    the rejected document and retired the live one in favour of it."""
+    ch = "rej-prod"
+    y = conn.execute(
+        "INSERT INTO document (type, regulation, validity_from, status, content_hash, "
+        "archive_url, coverage_scope) VALUES ('DoC','MDR','2022-01-01','production',"
+        "'rej-prod-y','/archive/y.pdf','group') RETURNING doc_id").fetchone()["doc_id"]
+    x = _rejected(conn, ch, validity_from=_ev("2025-01-01", 0.85))
+    _seed_item(conn, f"{ch}-new")
+    before = _everything(conn, x)
+    _seed(conn, ch, _fields(validity_from=_ev("2025-01-01")), rev=2)
+
+    r = gh.handle_gate_candidate(conn, _job(ch, rev=2, ref_gate=True, flags=[], jid=3,
+                                            supersedes=y, links=[
+        {"item_ref": f"{ch}-new", "match_basis": "ref-list"}]))
+
+    assert r["disposition"] == "production" and r["kept"] == "rejected"
+    assert _everything(conn, x) == before
+    row = _doc(conn, y)
+    assert (row["status"], row["superseded_by"]) == ("production", None)
+
+
+def test_a_staged_reading_of_a_rejected_document_writes_nothing(conn):
+    """No field, no link (not even staged), no task."""
+    ch = "rej-staged"
+    x = _rejected(conn, ch)
+    _seed_item(conn, f"{ch}-new")
+    before = _everything(conn, x)
+    _seed(conn, ch, _fields(conf=0.85, cert_number=_ev("CERT-2", 0.85)), rev=2)
+
+    r = gh.handle_gate_candidate(conn, _job(ch, rev=2, ref_gate=True, jid=3,
+                                            flags=["no-item-identifier"], links=[
+        {"item_ref": f"{ch}-new", "match_basis": "ref-list"}]))
+
+    assert r["kept"] == "rejected"
+    assert _everything(conn, x) == before
+
+
+def test_a_rejected_chain_member_gets_no_staged_link_either(conn):
+    ch = "rej-chain"
+    doc_id, _ = _chain(conn, ch)
+    gh.handle_gate_apply(conn, {"id": 2, "type": "gate.apply", "payload": {
+        "doc_id": doc_id, "decision": "reject", "decided_by": "nat"}})
+    _seed_item(conn, f"{ch}-new")
+    before = _everything(conn, doc_id)
+    _seed(conn, ch, _fields(regulation=_ev("MDD")), rev=2)
+    r = gh.handle_gate_candidate(conn, _job(ch, rev=2, ref_gate=True, flags=[], jid=3, links=[
+        {"item_ref": f"{ch}-new", "match_basis": "ref-list"}]))
+    assert r["kept"] == "rejected"
+    assert _everything(conn, doc_id) == before
+
+
+def test_a_rejected_binding_is_final_on_the_manufacturer_route(conn):
+    ch = "rej-mfr"
+    _seed_ivoclar(conn, ch)
+    _seed(conn, ch, _mfr_fields("EC-1"))
+    x = gh.handle_gate_candidate(conn, _job(ch, route="mfr-binding"))["doc_id"]
+    gh.handle_gate_apply(conn, {"id": 2, "type": "gate.apply", "payload": {
+        "doc_id": x, "decision": "reject", "decided_by": "nat"}})
+    before = _everything(conn, x)
+    _seed(conn, ch, _mfr_fields("EC-2"), rev=2)
+
+    r = gh.handle_gate_candidate(conn, _job(ch, rev=2, route="mfr-binding"))
+
+    assert r["kept"] == "rejected"
+    assert _everything(conn, x) == before
+
+
+def test_reopen_is_the_way_back(conn):
+    """Once a person reopens it, the document takes readings again."""
+    ch = "rej-reopen"
+    x = _rejected(conn, ch)
+    gh.handle_gate_apply(conn, {"id": 3, "type": "gate.apply", "payload": {
+        "doc_id": x, "decision": "reopen", "decided_by": "nat"}})
+    _seed(conn, ch, _fields(conf=0.85, cert_number=_ev("CERT-2", 0.85)), rev=2)
+    r = gh.handle_gate_candidate(conn, _job(ch, rev=2, ref_gate=True, flags=[], links=[], jid=4))
+    assert "kept" not in r
+    assert _doc(conn, x)["cert_number"] == "CERT-2"

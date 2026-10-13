@@ -349,6 +349,61 @@ def test_a_superseded_document_is_kept_by_a_re_read_that_is_not_production(conn)
     assert (f"{ch}-new", "staged") in _links(conn, doc_id)
 
 
+def test_a_production_reading_of_a_superseded_document_is_kept_too(conn):
+    """R6 (Denis, 2026-10-13): a superseded document takes no reading at all.
+    Its replacement decided its place in the chain; a reading that clears
+    production says nothing about which of the two is current."""
+    ch = "pub-superseded-prod"
+    doc_id = _published(conn, ch)
+    newer = conn.execute(
+        "INSERT INTO document (type, regulation, validity_from, status, content_hash, "
+        "archive_url, coverage_scope, supersedes) VALUES ('DoC','MDR','2026-01-01',"
+        "'production','pub-superseded-prod-new','/archive/s.pdf','group',%s) RETURNING doc_id",
+        (doc_id,)).fetchone()["doc_id"]
+    conn.execute("UPDATE document SET status='superseded', superseded_by=%s WHERE doc_id=%s",
+                 (newer, doc_id))
+    _seed_item(conn, f"{ch}-new")
+    before = _snapshot(conn, doc_id)
+    _seed(conn, ch, _fields(cert_number=_ev("CERT-2")), rev=2)
+
+    r = gh.handle_gate_candidate(conn, _job(ch, rev=2, ref_gate=True, flags=[], links=[
+        {"item_ref": f"{ch}-new", "match_basis": "ref-list"}]))
+
+    assert r["disposition"] == "production" and r["kept"] == "superseded"
+    assert _snapshot(conn, doc_id) == before
+    assert (f"{ch}-new", "staged") in _links(conn, doc_id)
+
+
+def test_a_date_repair_cannot_close_a_supersession_cycle(conn):
+    """Review round 2, probe (b). X was superseded by Y; a repaired reading of
+    X dates it after Y, so VALIDATE hands GATE `supersedes = Y`. Writing it
+    would leave X superseded by Y and Y superseded by X: a cycle, with no
+    current document for the items at all."""
+    ch = "pub-cycle"
+    _seed_item(conn, f"{ch}-ref")
+    _seed_item(conn, f"{ch}-new")
+    _seed(conn, ch, _fields(validity_from=_ev("2020-01-01")))
+    x = gh.handle_gate_candidate(conn, _job(ch, ref_gate=True, flags=[], links=[
+        {"item_ref": f"{ch}-ref", "match_basis": "ref-list"}]))["doc_id"]
+    y = conn.execute(
+        "INSERT INTO document (type, regulation, validity_from, status, content_hash, "
+        "archive_url, coverage_scope, supersedes) VALUES ('DoC','MDR','2023-01-01',"
+        "'production','pub-cycle-y','/archive/y.pdf','group',%s) RETURNING doc_id",
+        (x,)).fetchone()["doc_id"]
+    conn.execute("UPDATE document SET status='superseded', superseded_by=%s WHERE doc_id=%s",
+                 (y, x))
+    _seed(conn, ch, _fields(validity_from=_ev("2025-06-01")), rev=2)
+
+    r = gh.handle_gate_candidate(conn, _job(ch, rev=2, ref_gate=True, flags=[], jid=3,
+                                            supersedes=y, links=[
+        {"item_ref": f"{ch}-new", "match_basis": "ref-list"}]))
+
+    assert r["kept"] == "superseded"
+    assert (_doc(conn, x)["status"], _doc(conn, x)["superseded_by"]) == ("superseded", y)
+    assert (_doc(conn, y)["status"], _doc(conn, y)["superseded_by"]) == ("production", None)
+    assert (f"{ch}-new", "staged") in _links(conn, x)
+
+
 # --------------------------------------------------------------------------- #
 # a re-read that is itself production replaces
 # --------------------------------------------------------------------------- #

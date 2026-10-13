@@ -629,7 +629,7 @@ def _backresolve_citing_docs(conn, doc_id, cert_number):
     return len(rows)
 
 
-def _backresolve_here(conn, doc_id, fields) -> int:
+def _backresolve_here(conn, doc_id) -> int:
     """Back-resolve if this document is itself a certificate. Both routes.
 
     Task 4's back-resolution had exactly one call site, in
@@ -652,10 +652,18 @@ def _backresolve_here(conn, doc_id, fields) -> int:
     already refuses to inherit an expiry from a certificate that is not
     production or superseded, so a staged one records the link and lends
     nothing until a human publishes it.
+
+    Reads `type` and `cert_number` off the document row as just written, not
+    off the reading (Task 5a review round 2, F3): where a person edited either
+    (`_reviewer_held`), the row holds the person's value and the reading's
+    differs, and declarations must be answered by the number the registry
+    holds, never by one a person threw out.
     """
-    if not fields or _val(fields, "type") not in ("EC", "ISO"):
+    row = conn.execute("SELECT type, cert_number FROM document WHERE doc_id=%s",
+                       (doc_id,)).fetchone()
+    if row is None or row["type"] not in ("EC", "ISO"):
         return 0
-    return _backresolve_citing_docs(conn, doc_id, _val(fields, "cert_number"))
+    return _backresolve_citing_docs(conn, doc_id, row["cert_number"])
 
 
 def _is_current_rev(conn, content_hash: str, extract_rev: int) -> bool:
@@ -912,6 +920,22 @@ def _evidence_value(ev) -> str | None:
 #: 2026-10-12): published (R1) and superseded (R2). `_kept` says why.
 KEPT_STATUSES = ("production", "superseded")
 
+
+def _keeps(prev_status, reaches_production: bool) -> bool:
+    """Whether GATE keeps the stored document from this candidate.
+
+    * `rejected` (R5, Denis 2026-10-13): always. A rejected document is final
+      for the machine: nothing is written for it, not even a staged link, and
+      only a person's Reopen brings it back.
+    * `superseded` (R2 2026-10-12, R6 2026-10-13): always. Its replacement
+      fixed its place in the chain, and a reading that clears production says
+      nothing about which of the two is current.
+    * `production` (R1): unless the reading itself reaches production.
+    * Anything else (no row yet, `staged`, `filed`): never."""
+    if prev_status in ("rejected", "superseded"):
+        return True
+    return prev_status == "production" and not reaches_production
+
 #: The fields that ARE a document's identity for supersession (invariant 5:
 #: identical coverage subject, type and regulation; the subject's document-level
 #: half is `coverage_scope`).
@@ -1011,13 +1035,15 @@ def _chain_identity_change(conn, doc_row, fields, held) -> list[str]:
 
     "In a chain" is any of the four pointers: it supersedes something, or is
     superseded, from either side (the task-5 fast path writes only the older
-    document's `superseded_by`). Only `production`, `superseded` and `rejected`
-    documents are checked: those are the statuses a chain member can have (a
-    reject does not unwind a supersession). A `staged` or `filed` document can
-    carry only a PENDING `supersedes`, which `_assert_chain_identity` re-checks
-    live at the moment it would take effect. A held (reviewer-edited) identity
-    field does not change, so it is not counted."""
-    if doc_row is None or doc_row["status"] not in KEPT_STATUSES + ("rejected",):
+    document's `superseded_by`). A chain member is `production`, `superseded`
+    or `rejected` (a reject does not unwind a supersession); only a
+    `production` one needs this check, because `_keeps` keeps a superseded or
+    rejected document from every reading (R5, R6, 2026-10-13). A `staged` or
+    `filed` document can carry only a PENDING `supersedes`, which
+    `_assert_chain_identity` re-checks live at the moment it would take effect.
+    A held (reviewer-edited) identity field does not change, so it is not
+    counted."""
+    if doc_row is None or doc_row["status"] != "production":
         return []
     changed = [f for f in IDENTITY_FIELDS
                if f not in held and _column_differs(doc_row, fields, f)]
@@ -1031,11 +1057,12 @@ def _chain_identity_change(conn, doc_row, fields, held) -> list[str]:
 
 
 def _kept(conn, doc_row, fields, out: dict) -> dict:
-    """The result of a candidate GATE keeps a document from (Denis, 2026-10-12;
-    extraction-ladder plan, Task 5, and its review): a document `production`
-    (R1) or `superseded` (R2), read again by a candidate that does not itself
-    reach production, or any chain member a production reading would re-identify
-    (R4.1).
+    """The result of a candidate GATE keeps a document from (Denis, 2026-10-12
+    and -13; extraction-ladder plan, Task 5, and its two reviews; `_keeps`): a
+    `production` document read by a candidate that does not itself reach
+    production (R1), a `superseded` (R2, R6) or `rejected` (R5) document read
+    by any candidate, and a published chain member a production reading would
+    re-identify (R4.1).
 
     Before this, `_upsert_document` kept the STATUS and overwrote every field
     with whatever the reading said, whatever its own disposition; evidence was
@@ -1047,7 +1074,8 @@ def _kept(conn, doc_row, fields, out: dict) -> dict:
     `extraction_attempt`. Its links are the one thing still written, by the
     caller, at `staged` only: never production, never a retraction (R1). That
     makes a second group's candidate for the same reading (C3) land the same
-    whichever arrives first.
+    whichever arrives first. On a `rejected` document not even that: it is
+    final for the machine, and only a person's Reopen brings it back (R5).
 
     Never silent: `kept` is the status that held, `out["disposition"]` what the
     reading scored, and the fields it read differently are listed and counted
@@ -1227,7 +1255,7 @@ def _handle_mfr_binding(conn, job) -> dict:
     ev_kw = {"calib_map": calib_map, "agreement_min": cfg.gate.agreement_min, "held": held}
 
     if bound is None:
-        if prev_status in KEPT_STATUSES:
+        if _keeps(prev_status, False):
             out = {"disposition": "mfr-binding", "doc_id": prev["doc_id"]}
             if flags:
                 out["flags"] = flags
@@ -1235,7 +1263,7 @@ def _handle_mfr_binding(conn, job) -> dict:
         doc_id = _upsert_document(conn, fields, p["content_hash"], archive_url, "staged",
                                   held=held)
         _insert_evidence(conn, doc_id, p["extract_rev"], fields, archive_url, **ev_kw)
-        _backresolve_here(conn, doc_id, fields)
+        _backresolve_here(conn, doc_id)
         task = {"route": "mfr-binding", "manufacturer": name}
         if flags:
             # the review queue must explain itself: the reviewer sees WHY the
@@ -1288,7 +1316,7 @@ def _handle_mfr_binding(conn, job) -> dict:
     storable = _bindable_manufacturer(conn, bound)
 
     if not n_items and not declassified:
-        if prev_status in KEPT_STATUSES:
+        if _keeps(prev_status, False):
             out = {"disposition": "mfr-binding", "doc_id": prev["doc_id"],
                    "manufacturer": bound, "reason": "md-class-unknown"}
             if flags:
@@ -1297,7 +1325,7 @@ def _handle_mfr_binding(conn, job) -> dict:
         doc_id = _upsert_document(conn, fields, p["content_hash"], archive_url, "staged",
                                   canonical_manufacturer=storable, held=held)
         _insert_evidence(conn, doc_id, p["extract_rev"], fields, archive_url, **ev_kw)
-        _backresolve_here(conn, doc_id, fields)
+        _backresolve_here(conn, doc_id)
         # The manufacturer DID resolve -- that is what separates this from the
         # `bound is None` branch above, and the reviewer needs to be told so,
         # or the task reads as "we could not identify this" when in fact we
@@ -1314,10 +1342,10 @@ def _handle_mfr_binding(conn, job) -> dict:
         return _note_held(out, prev, fields, held)
 
     status = "production" if n_items else "filed"
-    if status == "filed" and prev_status in KEPT_STATUSES:
+    if _keeps(prev_status, status == "production"):
         return _kept(conn, prev, fields, {
-            "disposition": "filed", "doc_id": prev["doc_id"], "manufacturer": bound,
-            "links": 0})
+            "disposition": "mfr-bound" if n_items else "filed", "doc_id": prev["doc_id"],
+            "manufacturer": bound, "links": 0})
     # R4.1: a binding is a production reading too, and must not re-identify a
     # document that sits in a supersession chain.
     chain_changed = (_chain_identity_change(conn, prev, fields, held)
@@ -1329,12 +1357,21 @@ def _handle_mfr_binding(conn, job) -> dict:
     doc_id = _upsert_document(conn, fields, p["content_hash"], archive_url, status,
                               canonical_manufacturer=storable, held=held)
     _insert_evidence(conn, doc_id, p["extract_rev"], fields, archive_url, **ev_kw)
-    _backresolve_here(conn, doc_id, fields)
+    _backresolve_here(conn, doc_id)
     # The binding IS the decision this task was raised to obtain. Leaving it open
     # is how the review board came to show 24 items against 14 real ones.
     _resolve_manual_tasks(conn, doc_id, "gate")
 
     if n_items:
+        # Production links only under a document that IS production (Denis,
+        # 2026-10-13). `_keeps` above returned for every status the upsert
+        # could have refused to move, so this cannot fire; if it ever does,
+        # the job fails where a person sees it rather than linking a whole
+        # catalogue under a document nobody published.
+        actual_status = _doc_status(conn, doc_id)
+        if actual_status != "production":
+            raise ValueError(f"gate.candidate: binding doc {doc_id} would link items "
+                             f"under status {actual_status!r}")
         _derive_mfr_scope_links(conn, doc_id, bound)
         if prev_status != "production":
             _audit(conn, "bind-manufacturer", doc_id, "gate", job, detail={"manufacturer": bound})
@@ -1474,19 +1511,19 @@ def handle_gate_candidate(conn, job: dict) -> dict:
     # R4.2: the columns a person edited are held against every machine write.
     held = _reviewer_held(conn, prev["doc_id"]) if prev else ()
 
-    # R4.1: a production reading that would re-identify a chain member goes to
-    # `manual` and is kept below, with the fields named on the result.
+    # R4.1: a production reading that would re-identify a published chain
+    # member goes to `manual` and is kept below, with the fields named.
     chain_changed = (_chain_identity_change(conn, prev, fields, held)
                      if disposition == "production" else [])
     if chain_changed:
         disposition = "manual"
 
-    # The kept-document guard (Denis, 2026-10-12, R1 and R2): a reading that
-    # does not itself reach production keeps a published or superseded document
-    # as it is -- no field, no evidence, no task, no chain pointer -- and still
-    # proposes its links, at `staged` only. Placed before the first registry
-    # write; the stale-rev no-op above it still runs first. `_kept` says why.
-    if chain_changed or (prev_status in KEPT_STATUSES and disposition != "production"):
+    # The kept-document guard (Denis, 2026-10-12 and -13: R1, R2, R5, R6;
+    # `_keeps`): a published document is kept from a reading that is not
+    # itself production, a superseded or rejected one from every reading. No
+    # field, no evidence, no task, no chain pointer. Placed before the first
+    # registry write; the stale-rev no-op above it still runs first.
+    if chain_changed or _keeps(prev_status, disposition == "production"):
         out = _candidate_result(disposition, prev["doc_id"], score, p, flags)
         if chain_changed:
             out["chain_identity_changed"] = chain_changed
@@ -1494,11 +1531,14 @@ def handle_gate_candidate(conn, job: dict) -> dict:
             # The fast path's own report for a target already published, which
             # the chain-pointer block below would have made; the guard skips it.
             out["supersede_skipped"] = "target already production"
-        # R1: never production (whatever the basis) and never a retraction. A
-        # sticky link (production, rejected) is left as it is by the upsert.
-        for link in p.get("links", []):
-            _upsert_link(conn, link["item_ref"], prev["doc_id"], link.get("udi"),
-                         link["match_basis"], "staged")
+        # R1: the reading's links are still proposed, never production (whatever
+        # the basis) and never a retraction; a sticky link (production,
+        # rejected) is left as it is by the upsert. R5: not on a rejected
+        # document, where not even a staged link is written.
+        if prev_status != "rejected":
+            for link in p.get("links", []):
+                _upsert_link(conn, link["item_ref"], prev["doc_id"], link.get("udi"),
+                             link["match_basis"], "staged")
         return _kept(conn, prev, fields, out)
 
     # 053: only an UNAMBIGUOUS resolution is stored. Zero canonicals means we
@@ -1561,20 +1601,26 @@ def handle_gate_candidate(conn, job: dict) -> dict:
     # task 4 back-resolution: this document may itself be a certificate that
     # earlier-processed declarations cited before we held it. Shared with the
     # mfr-binding route, which is the one real certificates actually take.
-    _backresolve_here(conn, doc_id, fields)
+    _backresolve_here(conn, doc_id)
 
     # A superseded reading must not touch the registry's links in EITHER
     # direction. Out-of-order delivery is real (a repair appends a new rev and
     # re-emits, so two candidates for one document can be in flight), and
     # letting rev N-1 write after rev N is how a corrected document reacquires
     # the links its correction removed.
+    # What the row says now, not what this candidate computed: `_upsert_document`
+    # never moves a document backward, so the two can differ, and a production
+    # link or a supersession under a document that is not production would
+    # assert coverage nobody published (Denis, 2026-10-13, independent of R6).
+    actual_status = _doc_status(conn, doc_id)
     if _is_current_rev(conn, p["content_hash"], p["extract_rev"]):
         for link in p.get("links", []):
             basis = link["match_basis"]
             # `score` is the combined one (`_score`): per-link production reads
             # two agreeing reads exactly as the disposition does.
             link_status = ("production"
-                           if basis in TRUSTED_BASES and doc_status == "production" and score >= cfg.gate.high
+                           if basis in TRUSTED_BASES and doc_status == "production"
+                           and actual_status == "production" and score >= cfg.gate.high
                            else "staged")
             _upsert_link(conn, link["item_ref"], doc_id, link.get("udi"), basis, link_status)
         _retract_unsupported_links(conn, doc_id, p.get("links", []), job,
@@ -1583,7 +1629,8 @@ def handle_gate_candidate(conn, job: dict) -> dict:
     _insert_evidence(conn, doc_id, p["extract_rev"], fields, archive_url,
                      calib_map=calib_map, agreement_min=agreement_min, held=held)
 
-    if disposition == "production" and prev_status != "production":
+    if disposition == "production" and actual_status == "production" \
+            and prev_status != "production":
         _audit(conn, "production-write", doc_id, "gate", job)
     elif disposition == "filed" and prev_status != "filed":
         # Audited like any other disposition change. Filing removes a document
@@ -1601,7 +1648,8 @@ def handle_gate_candidate(conn, job: dict) -> dict:
     # C6: a candidate landing directly on production may act on its supersession
     # target immediately — the STAGED case waits for gate.apply approve, since a
     # staged doc must never actually supersede anything (§7).
-    if disposition == "production" and p.get("supersedes") is not None:
+    if (disposition == "production" and actual_status == "production"
+            and p.get("supersedes") is not None):
         _apply_supersession(conn, doc_id, p["supersedes"], "gate", job)
 
     return _note_held(_candidate_result(disposition, doc_id, score, p, flags),

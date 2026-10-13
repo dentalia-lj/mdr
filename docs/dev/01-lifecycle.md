@@ -30,8 +30,8 @@ table exists only to anchor the walkthrough below.
 | `fetch.url` | `app/handlers/fetch.py:114` |
 | `extract.doc` | `app/handlers/extract.py:258` |
 | `validate.doc` | `app/handlers/validate.py:759` |
-| `gate.candidate` | `app/handlers/gate.py:910` |
-| `gate.apply` | `app/handlers/gate.py:1311` |
+| `gate.candidate` | `app/handlers/gate.py:1401` |
+| `gate.apply` | `app/handlers/gate.py:1972` |
 | `email.request` / `email.reminder` (renewal) | `app/handlers/email_request.py:407` / `:525` |
 
 ## Input → Output: the walkthrough
@@ -151,17 +151,17 @@ the full evaluation order). Two outcomes matter most:
 **7. `gate.candidate` — the only place the registry gets written (besides
 `gate.apply`).**
 A stale extraction revision is a silent no-op on both routes, decided before
-any read or write (`app/handlers/gate.py:1381-1383`, and `:1172-1174` on the
+any read or write (`app/handlers/gate.py:1418-1420`, and `:1200-1202` on the
 manufacturer-binding route since 2026-10-12) — prevents an old rev's stale field
 from re-triggering a permanent dead-letter loop. Otherwise, two dispositions
 run in parallel:
    - **Document-level**, a 5-way if/elif chain checked in this priority
-     order (`app/handlers/gate.py:1448-1462`): the narrow **auto-supersede
+     order (`app/handlers/gate.py:1485-1499`): the narrow **auto-supersede
      fast path** → `superseded` directly, skipping every disposition below
      it, when all four hold — `superseded_by_doc_id` present, no *other*
      blocking flag survives, `date-insane` absent, and `validity_from`'s
      own calibrated confidence clears `cfg.gate.high`
-     (`app/handlers/gate.py:1412-1447`) — then `production` (score/ref_gate/no
+     (`app/handlers/gate.py:1449-1484`) — then `production` (score/ref_gate/no
      blocking flags clear high), then `filed` (C15: correctly read,
      correctly attributed, covers nothing we sell), then `staged`, else
      `manual`. Any guard failure on the fast path falls through to the
@@ -179,7 +179,7 @@ run in parallel:
      CHECK (migrations 005, 021) — no approval ever lifts them; only a C17
      human link decision can.
    - **The mfr-binding route** (`_handle_mfr_binding`,
-     `app/handlers/gate.py:1134-1349`) resolves the document's manufacturer
+     `app/handlers/gate.py:1162-1386`) resolves the document's manufacturer
      string against the curated canonical table and takes one of three
      paths: exactly one canonical + at least one MD-flagged item →
      `production`, linked to every MD item under every BC code of that
@@ -198,18 +198,20 @@ run in parallel:
      citation-proven `regulation` counts 1.0; T0 keeps its number
      (`gate._gate_confidence`). The auto-bind's scope and name checks and
      the fast path's `validity_from` keep the first read's own number.
-   - **A published or superseded document read again** (2026-10-12): when
-     the document is `production` or `superseded` and the new candidate does
-     not itself reach production, on either route, GATE keeps it (fields,
-     evidence, status, task and chain pointer stay as they were) and still
-     upserts the candidate's links at `staged` only, never retracting one
-     (`gate._kept`, `app/handlers/gate.py:1489`). The job result says `kept`
-     and counts the fields the read saw differently. On both routes this is
-     decided after the stale-rev no-op and before the first write, on a
-     document row read `FOR UPDATE`.
+   - **A published, superseded or rejected document read again**
+     (2026-10-12 and -13): GATE keeps a `production` document from a
+     candidate that does not itself reach production, and a `superseded` or
+     `rejected` one from every candidate, on either route (`gate._keeps`,
+     `gate._kept`, `app/handlers/gate.py:1526`). Fields, evidence, status,
+     task and chain pointer stay as they were. A kept production or
+     superseded document still gets the candidate's links at `staged` only,
+     never retracting one; a rejected one gets nothing, until a person
+     reopens it. The job result says `kept` and counts the fields the read
+     saw differently. On both routes this is decided after the stale-rev
+     no-op and before the first write, on a document row read `FOR UPDATE`.
    - **Three holds on a production re-read** (2026-10-12): it goes to
      `manual` and is kept if it would change `type`, `regulation` or
-     `coverage_scope` of a document in a supersession chain
+     `coverage_scope` of a published document in a supersession chain
      (`chain_identity_changed`, invariant 5); a field a reviewer edited (T3
      evidence) keeps its column and evidence (`reviewer_edits_kept`,
      invariant 2); and the row lock above stops a decision committing
@@ -224,15 +226,15 @@ document is not — it sits in `/staging` or `/manual` until a human acts.
 **9. `gate.apply` — a human decides.**
 Three decisions that matter here (C17 link-only decisions —
 `confirm-link`/`reject-link`/`reopen-link` — return before touching
-`document` at all, `app/handlers/gate.py:1320-1321`):
+`document` at all, `app/handlers/gate.py:1981-1982`):
    - **`approve`**: promotes the document to `production`
-     (`_promote`, `gate.py:1142-1143`), promotes any staged link whose basis
+     (`_promote`, `gate.py:1707-1708`), promotes any staged link whose basis
      is in `TRUSTED_BASES` alongside it (`_promote_pending_links`,
-     `:1146-1152`) — `name-family`/`fetch-context` links stay staged even
+     `:1711-1718`) — `name-family`/`fetch-context` links stay staged even
      now. **This is the human half of supersession (C6)**: a staged
      candidate that carried a `supersedes` target (written sticky at
      candidate time, inert while merely staged) only acts on it here, via
-     `_apply_supersession` (`gate.py:604`) —
+     `_apply_supersession` (`gate.py:813`) —
      `test_staged_candidate_does_not_supersede_until_gate_apply_approves`
      (`tests/test_gate_candidate_handler.py:1370`) is the contrast case to
      step 7's machine fast path
@@ -240,15 +242,15 @@ Three decisions that matter here (C17 link-only decisions —
    - **`reject`**: sets the document `rejected` and **cascades every one of
      its links to `rejected`** — un-binding is reject-plus-cascade, no link
      may stay `production` or `staged` under a rejected document
-     (`app/handlers/gate.py:1338-1348`,
+     (`app/handlers/gate.py:2012-2022`,
      `test_reject_cascades_link_statuses_with_audit`,
-     `tests/test_gate_apply_handler.py:159`). If the rejected candidate
+     `tests/test_gate_apply_handler.py:167`). If the rejected candidate
      carried a `group_id`, `gate.apply` **re-enqueues `discover.group`** at
      interactive priority (`dedupe: discover:gate-reject:{doc_id}:{group_id}`,
-     `gate.py:1349-1355`) — a human "no" restarts discovery for that group
+     `gate.py:2023-2029`) — a human "no" restarts discovery for that group
      rather than leaving it stuck on the rejected document
      (`test_reject_marks_rejected_and_enqueues_interactive_discover`,
-     `tests/test_gate_apply_handler.py:88`). Human edits are written as T3
+     `tests/test_gate_apply_handler.py:90`). Human edits are written as T3
      evidence (`tier='T3'`, `model_id=NULL`, `confidence=1.0`, pageless —
      [evidence-page] ruling).
    - **`bind-manufacturer`**: the person's version of step 7's mfr-binding
@@ -322,14 +324,15 @@ Stubbed, deferred, or unwired points this journey passes through:
   document is a path meaningful only on the scanning machine — this is what
   put a dead `/imports/...` URL on every one of the GC pilot's 130
   documents before the 2026-08-24 fix.
-- **A stale extraction revision is a silent no-op at GATE**, not an error
-  (`app/handlers/gate.py:927-929`) — a repair that appends a new rev and
+- **A stale extraction revision is a silent no-op at GATE**, not an error, on
+  both routes (`app/handlers/gate.py:1418-1420`, and `:1200-1202` on the
+  manufacturer-binding route since 2026-10-12) — a repair that appends a new rev and
   re-emits will see the old rev's candidate simply do nothing, which is the
   point (rev N-1 must never overwrite rev N's type/regulation/dates).
 - **`device-enumeration` blocks the machine mfr-bind even at high
   confidence** — a certificate that names its own covered devices is not
   manufacturer-wide by its own words, whatever `coverage_scope` says
-  (`app/handlers/validate.py:816-840`, `app/handlers/gate.py:802-815`). A
+  (`app/handlers/validate.py:862-869`, `app/handlers/gate.py:1240-1244`). A
   human can still bind it via `gate.apply bind-manufacturer` — the machine
   path alone refuses.
 - **A document's links are gated independently of the document.** A
