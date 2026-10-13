@@ -113,3 +113,20 @@ def test_an_extract_request_keeps_the_pipelines_thinking_when_the_arm_names_none
     doc = pdf.open_doc(fixture_pdf(TEXT_PDF))
     params = hc._capture(lambda: hc._llm("h55", "capture").extract("T1", doc, "f.pdf", ["type"]))
     assert "thinking" not in params
+
+
+# --- label corrections (extraction-ladder Task 8) --------------------------------
+
+def test_no_doc_certificate_label_is_overridden_since_ruling_a():
+    """Ruling A (2026-10-12): a DoC's cert_number is the certificate it cites, so
+    the manifest's DoC certificate labels are right again and none is nulled."""
+    assert not [k for k, v in hc.LABEL_OVERRIDES.items() if k[1] == "cert_number"]
+
+
+def test_every_basic_udi_override_passes_its_check_pair():
+    from app.extract.udi import INVALID, validate_basic_udi
+    udis = {doc: v for (doc, f), v in hc.LABEL_OVERRIDES.items() if f == "basic_udi_di"}
+    assert udis["533068_RA_812_Liste_DoC.pdf"] == "++E2265330681KSCH"
+    assert all(validate_basic_udi(v).status != INVALID for v in udis.values())
+    assert hc.corrected_gt("x/533068_RA_812_Liste_DoC.pdf",
+                           {"basic_udi_di": "++E2265330681"})["basic_udi_di"] == "++E2265330681KSCH"
