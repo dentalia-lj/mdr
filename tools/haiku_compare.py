@@ -78,13 +78,22 @@ PROMPT_VARIANTS = {
         "  four-digit identification number (e.g. `0482`).",
     )],
 }
+#: The reverse edit: the T1 prompt as it stood before ruling A. The baseline
+#: arms (h45, h55, h55n, h55hi) were measured and cached with it, so they put
+#: the old line back; without it their requests miss the cache and a fresh
+#: capture would measure "today's T1" on a prompt it never ran with.
+PROMPT_VARIANTS["pre-ruling-a"] = [(new, old) for old, new in PROMPT_VARIANTS["ruling-a"]]
 
 
 ARMS = {
-    "h45": Arm("claude-haiku-4-5", None, "Haiku 4.5 (today's T1)"),
-    "h55": Arm("claude-haiku-5-5", None, "Haiku 5.5, model swap only (adaptive thinking, effort medium)"),
-    "h55n": Arm("claude-haiku-5-5", {"type": "disabled"}, "Haiku 5.5, thinking disabled"),
-    "h55hi": Arm("claude-haiku-5-5", None, "Haiku 5.5, adaptive thinking, effort high", "high"),
+    "h45": Arm("claude-haiku-4-5", None, "Haiku 4.5 (the T1 before 2026-10-12)",
+               prompt="pre-ruling-a"),
+    "h55": Arm("claude-haiku-5-5", None, "Haiku 5.5, model swap only (adaptive thinking, effort medium)",
+               prompt="pre-ruling-a"),
+    "h55n": Arm("claude-haiku-5-5", {"type": "disabled"}, "Haiku 5.5, thinking disabled",
+                prompt="pre-ruling-a"),
+    "h55hi": Arm("claude-haiku-5-5", None, "Haiku 5.5, adaptive thinking, effort high", "high",
+                 prompt="pre-ruling-a"),
     "h55a": Arm("claude-haiku-5-5", None, "Haiku 5.5, T1 prompt with the DoC certificate ruling",
                 prompt="ruling-a"),
 }
@@ -136,6 +145,11 @@ class _Captured(Exception):
 def arm_params(params: dict, arm: Arm) -> dict:
     out = dict(params)
     assert out["model"] == arm.model, (out["model"], arm.model)
+    if out["output_config"]["format"].get("schema") == llm_mod.DOC_CLASS_SCHEMA:
+        # The pipeline's doc-class call sends thinking off since the text
+        # ladder (`llm.READ_STEPS`); an arm's doc-class request carries the
+        # arm's own setting, none when it names none, as it was cached.
+        out.pop("thinking", None)
     if arm.thinking is not None:
         out["thinking"] = arm.thinking
     if arm.effort is not None:
@@ -757,7 +771,10 @@ def _evaluate(run: pathlib.Path, only: set[str] | None = None) -> list[dict]:
                 # `llm.extract` returns every parsed field since Task 4 of the
                 # extraction ladder; this report is about the fields T1 was
                 # asked, as before, so the rest stays out of `answer` and `merged`.
-                answer = llm.extract("T1", doc, path, d["missing"], **kwargs)
+                # The arm's prompt variant, as at capture: the replay must send
+                # the request the response was cached under.
+                with _prompt_variant(ARMS[arm_id].prompt):
+                    answer = llm.extract("T1", doc, path, d["missing"], **kwargs)
                 answer = {f: ev for f, ev in answer.items() if f in d["missing"]}
                 data = llm_mod._response_json(msg)
                 raw = llm_mod._fields_from_json(data, "T1", ARMS[arm_id].model)
