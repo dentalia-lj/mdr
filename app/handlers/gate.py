@@ -1539,6 +1539,8 @@ def handle_gate_candidate(conn, job: dict) -> dict:
             for link in p.get("links", []):
                 _upsert_link(conn, link["item_ref"], prev["doc_id"], link.get("udi"),
                              link["match_basis"], "staged")
+        else:
+            out["links"] = 0   # R5 wrote none; `links` counts what was written
         return _kept(conn, prev, fields, out)
 
     # 053: only an UNAMBIGUOUS resolution is stored. Zero canonicals means we

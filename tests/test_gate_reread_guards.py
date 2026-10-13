@@ -446,6 +446,7 @@ def test_a_production_reading_of_a_rejected_document_writes_nothing(conn):
         {"item_ref": f"{ch}-new", "match_basis": "ref-list"}]))
 
     assert r["disposition"] == "production" and r["kept"] == "rejected"
+    assert r["links"] == 0   # nothing written, so nothing counted
     assert _everything(conn, x) == before
     row = _doc(conn, y)
     assert (row["status"], row["superseded_by"]) == ("production", None)
@@ -494,6 +495,7 @@ def test_a_rejected_binding_is_final_on_the_manufacturer_route(conn):
     r = gh.handle_gate_candidate(conn, _job(ch, rev=2, route="mfr-binding"))
 
     assert r["kept"] == "rejected"
+    assert r["disposition"] == "mfr-bound" and r["links"] == 0
     assert _everything(conn, x) == before
 
 

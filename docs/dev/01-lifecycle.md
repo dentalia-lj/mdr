@@ -31,7 +31,7 @@ table exists only to anchor the walkthrough below.
 | `extract.doc` | `app/handlers/extract.py:258` |
 | `validate.doc` | `app/handlers/validate.py:759` |
 | `gate.candidate` | `app/handlers/gate.py:1401` |
-| `gate.apply` | `app/handlers/gate.py:1972` |
+| `gate.apply` | `app/handlers/gate.py:1974` |
 | `email.request` / `email.reminder` (renewal) | `app/handlers/email_request.py:407` / `:525` |
 
 ## Input → Output: the walkthrough
@@ -226,9 +226,9 @@ document is not — it sits in `/staging` or `/manual` until a human acts.
 **9. `gate.apply` — a human decides.**
 Three decisions that matter here (C17 link-only decisions —
 `confirm-link`/`reject-link`/`reopen-link` — return before touching
-`document` at all, `app/handlers/gate.py:1981-1982`):
+`document` at all, `app/handlers/gate.py:1983-1984`):
    - **`approve`**: promotes the document to `production`
-     (`_promote`, `gate.py:1707-1708`), promotes any staged link whose basis
+     (`_promote`, `gate.py:1709-1710`), promotes any staged link whose basis
      is in `TRUSTED_BASES` alongside it (`_promote_pending_links`,
      `:1711-1718`) — `name-family`/`fetch-context` links stay staged even
      now. **This is the human half of supersession (C6)**: a staged
