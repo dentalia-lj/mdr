@@ -45,6 +45,7 @@ import fcntl
 import json
 import os
 import pathlib
+import re
 import statistics
 import struct
 import subprocess
@@ -102,6 +103,11 @@ ARM_CLASS = {
 STANDIN_ARM = {"T1": "h55a", "T1-second": "h55n", "T2-first": "h55v",
                "T2-second": "h55vn", "T2": "s55v"}
 CLASSIFY_LABELS = (llm_mod.DOC_CLASS_LABEL, llm_mod.DOC_CLASS_IMAGE_LABEL)
+#: The harness's own label for TODAY's Sonnet read (the `T2` request today's ladder
+#: sends: Sonnet 5.5, pages 1-4, the hints, asked what Haiku 4.5 left below 0.95),
+#: made only to complete the "today" baseline (Denis, 2026-10-13). Never a ladder
+#: step, so it never shares a key, a custom id or a cost row with the new `T2`.
+TODAY_FILL = "T2-today"
 
 
 # --------------------------------------------------------------------------- #
@@ -148,6 +154,7 @@ class Cache:
         self.base, self.own = base, own
         self.entries: dict[str, dict] = {}
         self.by_arm: dict[tuple[str, str, str], dict] = {}
+        self.by_label: dict[tuple[str, str], dict] = {}
         for p in sorted(base.glob("*/*.json")):
             e = json.loads(p.read_text())
             e["_source"] = "eval"
@@ -157,6 +164,7 @@ class Cache:
             e = json.loads(p.read_text())
             e["_source"] = "own"
             self.entries[e["request_key"]] = e
+            self.by_label[(e["content_hash"], e["label"])] = e
 
     def get(self, key: str) -> dict | None:
         return self.entries.get(key)
@@ -164,16 +172,22 @@ class Cache:
     def arm(self, content_hash: str, arm: str, kind: str = "extract") -> dict | None:
         return self.by_arm.get((content_hash, arm, kind))
 
+    def label(self, content_hash: str, label: str) -> dict | None:
+        """This harness's own answer to a read with this label, for this document."""
+        return self.by_label.get((content_hash, label))
+
     def put(self, meta: dict, message: dict, batch_id: str, cost: Decimal) -> None:
         p = self.own / meta["content_hash"] / f"{meta['label']}-{meta['key'][:16]}.json"
         p.parent.mkdir(parents=True, exist_ok=True)
         entry = {"request_key": meta["key"], "content_hash": meta["content_hash"],
                  "label": meta["label"], "arm": "quality-check", "kind": meta["kind"],
+                 "asked": meta.get("asked", []),
                  "model": meta["model"], "class": meta["class"], "transport": "batch",
                  "batch_id": batch_id, "cost_usd": str(cost),
                  "fetched_at": datetime.datetime.now(datetime.UTC).isoformat(), "message": message}
         _write_json(p, entry)
         self.entries[meta["key"]] = {**entry, "_source": "own"}
+        self.by_label[(meta["content_hash"], meta["label"])] = self.entries[meta["key"]]
 
     def output_estimate(self) -> dict[tuple, int]:
         """Output tokens to expect per (model, read, thinking off): the larger of
@@ -256,10 +270,13 @@ def request_record(doc: dict, label: str, params: dict, key: str) -> dict:
     images = [_png_px(b) for b in blocks if b.get("type") == "image"]
     kind = "classify" if label in CLASSIFY_LABELS else "extract"
     read = "classify" if kind == "classify" else ("image" if images else "text")
+    first = next((b.get("text", "") for b in blocks if b.get("type") == "text"), "")
+    asked = re.match(r"Extract these fields: ([^.]*)\.", first) if kind == "extract" else None
     return {"content_hash": doc["content_hash"], "path": doc["path"], "label": label, "key": key,
             "kind": kind, "model": params["model"],
             "class": (params["model"], read, params.get("thinking") == llm_mod.THINKING_OFF),
             "max_tokens": params["max_tokens"],
+            "asked": [f.strip() for f in asked.group(1).split(",")] if asked else [],
             "system_chars": len(json.dumps(params["system"], ensure_ascii=False)),
             "text_chars": sum(len(json.dumps(b.get("text", ""), ensure_ascii=False))
                               for b in blocks if b.get("type") == "text")
@@ -381,10 +398,7 @@ def run_doc(doc: dict, data: pathlib.Path, cache: Cache, cfg, exhausted: set[str
     client = CachedClient(cache, doc, exhausted, standin)
     llm = _Llm(client, cfg.models)
     with pdfutil.open_doc(path) as pdf_doc:
-        # As the live handler does for a backfilled document (no group, so
-        # never authoritative): `app/handlers/extract.py`.
-        steering = t0_templates.steering_playbook("\n".join(pdfutil.page_texts(pdf_doc)))
-        hints = _hints_for(steering, tiers.needs_escalation({}), authoritative=False)
+        hints = _hints(pdf_doc)
         doc_class, fields, used = tiers.run_extraction(
             pdf_doc, path, llm, hints=hints, image_settle=cfg.image_settle,
             agreement_min=cfg.agreement_min)
@@ -392,6 +406,36 @@ def run_doc(doc: dict, data: pathlib.Path, cache: Cache, cfg, exhausted: set[str
              "doc_class": doc_class, "used": used, "fields": fields, "served": client.served,
              "disagreements": tiers.read_disagreements(fields),
              "failed_reads": tiers.failed_reads(fields)}, client.misses)
+
+
+def _hints(pdf_doc) -> str | None:
+    """As the live handler builds them for a backfilled document (no group, so
+    never authoritative): `app/handlers/extract.py`."""
+    steering = t0_templates.steering_playbook("\n".join(pdfutil.page_texts(pdf_doc)))
+    return _hints_for(steering, tiers.needs_escalation({}), authoritative=False)
+
+
+def today_fill_requests(docs, data, cache: Cache, probe_open: dict, cfg) -> list[dict]:
+    """Today's Sonnet read (`TODAY_FILL`) for each labelled text document where
+    the cached Sonnet read (`s55v`) was not asked some field today's ladder
+    escalated after Haiku 4.5: the baseline's "today" arm then reads today's
+    real request there. Built every time; the caller drops the cached ones."""
+    out = []
+    for d in docs:
+        if d["set"] != "text" or not d["gt"]:
+            continue
+        fields = today_t1(d, cache)
+        if fields is None:
+            continue
+        escalated = tiers.needs_escalation(fields)
+        if not _sonnet_answers(d["content_hash"], escalated, cache, probe_open,
+                               asked_only=True, fill=None)[1]["none"]:
+            continue
+        with pdfutil.open_doc(str(data / d["path"])) as pdf_doc:
+            params = llm_mod._params("T2", cfg.models, pdf_doc, escalated,
+                                     llm_mod.DEFAULT_MAX_TOKENS, hints=_hints(pdf_doc))
+        out.append(request_record(d, TODAY_FILL, params, hc.request_key(params)))
+    return out
 
 
 def run_round(docs, data, cache, cfg, exhausted, standin=None):
@@ -435,7 +479,7 @@ def _print_estimate(title: str, reqs, outs, log) -> Decimal:
 # Submit and collect
 # --------------------------------------------------------------------------- #
 def _meta(r: dict) -> dict:
-    return {k: r[k] for k in ("key", "label", "content_hash", "kind", "model", "class")}
+    return {k: r[k] for k in ("key", "label", "content_hash", "kind", "model", "class", "asked")}
 
 
 def submit(state: State, client, reqs: list[dict], outs: dict, cap: Decimal, round_no: int,
@@ -537,7 +581,7 @@ def api_client(data: pathlib.Path):
 def cmd_run(args) -> int:
     data = pathlib.Path(args.data) if args.data else main_checkout()
     root = data / OUT
-    docs, _ = load_docs(data)
+    docs, probe_open = load_docs(data)
     cache = Cache(data / BASE_CACHE, root / "cache")
     state = State(root / "state.json")
     cfg = config()
@@ -599,6 +643,11 @@ def cmd_run(args) -> int:
         for i in sorted(rounds):
             total += _print_estimate(f"round {i}", rounds[i], outs, log)
         log(f"all rounds ~${total:.4f}; spent so far ${state.spent():.4f}; cap ${cap}")
+        if not args.no_today_fill:
+            fill = [r for r in today_fill_requests(docs, data, cache, probe_open, cfg)
+                    if cache.get(r["key"]) is None]
+            total += _print_estimate("baseline fill (today's Sonnet read)", fill, outs, log)
+            log(f"with the baseline fill ~${total:.4f}")
         _write_run(run, results, simulated=True)
         log(f"run dir: {run}")
         return 0
@@ -613,7 +662,9 @@ def cmd_run(args) -> int:
         reqs = list(misses.values())
         if not reqs:
             log(f"round {round_no}: nothing misses; {len(results)} documents read")
-            _write_run(run, results, simulated=False)
+            fill = fill_today(args, docs, data, cache, probe_open, cfg, state, outs, cap,
+                              round_no, log, lambda: client or api_client(data))
+            _write_run(run, results, simulated=False, today_fill=fill)
             log(f"spent ${state.spent():.4f} in all; run dir: {run}")
             return cmd_report(SimpleNamespace(run=str(run), data=str(data)))
         if args.dry_run:
@@ -622,6 +673,10 @@ def cmd_run(args) -> int:
             if pending:
                 log(f"note: {len(pending)} requests sit in batches not yet collected")
             _print_estimate(f"DRY RUN, round {round_no} (no API call)", reqs, outs, log)
+            if not args.no_today_fill:
+                _print_estimate("DRY RUN, the baseline fill after the last round", [
+                    r for r in today_fill_requests(docs, data, cache, probe_open, cfg)
+                    if cache.get(r["key"]) is None], outs, log)
             log(f"spent so far ${state.spent():.4f}; cap ${cap}")
             return 0
         client = client or api_client(data)
@@ -632,10 +687,36 @@ def cmd_run(args) -> int:
     return 2
 
 
-def _write_run(run: pathlib.Path, results: dict, simulated: bool) -> None:
+def fill_today(args, docs, data, cache, probe_open, cfg, state, outs, cap, round_no, log,
+               client_fn) -> dict:
+    """The baseline fill, a final round of its own after the ladder's: today's
+    Sonnet read where the cached one leaves today's arm without an answer
+    (`today_fill_requests`). Under the same cap; past it, skipped and said so."""
+    reqs = today_fill_requests(docs, data, cache, probe_open, cfg)
+    out = {"documents": len(reqs)}
+    if args.no_today_fill:
+        return {**out, "status": "off (--no-today-fill)"}
+    todo = [r for r in reqs if cache.get(r["key"]) is None and r["key"] not in state.exhausted()]
+    if todo:
+        log(f"baseline fill: today's Sonnet read ({TODAY_FILL}) on {len(todo)} labelled documents")
+        client = client_fn()
+        if submit(state, client, todo, outs, cap, round_no + 1, log) is None:
+            log("baseline fill SKIPPED: it would pass the cap. Today's arm keeps Haiku 4.5's "
+                "answer on those fields.")
+            return {**out, "status": "skipped: the cap",
+                    "estimate_usd": str(sum((estimate_usd(r, outs) for r in todo), Decimal(0)))}
+        collect(state, cache, client, log)
+    unanswered = [r["path"] for r in reqs if cache.get(r["key"]) is None]
+    return {**out, "status": "done" if not unanswered else "partly failed",
+            "unanswered": unanswered}
+
+
+def _write_run(run: pathlib.Path, results: dict, simulated: bool,
+               today_fill: dict | None = None) -> None:
     run.mkdir(parents=True, exist_ok=True)
     _write_json(run / "results.json", {"simulated": simulated, "ladder": str(REPO),
-                                       "written_at": _now(), "docs": results})
+                                       "written_at": _now(), "today_fill": today_fill,
+                                       "docs": results})
 
 
 # --------------------------------------------------------------------------- #
@@ -661,16 +742,25 @@ def today_text(d: dict, cache: Cache, probe_open: dict,
     built from the plan's T0), later-wins as before 2026-10-12, then Sonnet's
     image read (`s55v`) for the fields that still escalated (`_sonnet_over`).
     None when today's doc-class call (Haiku 4.5, cached) refused the file."""
+    fields = today_t1(d, cache)
+    if fields is None:
+        return None, collections.Counter()
+    return _sonnet_over(fields, tiers.needs_escalation(fields), d["content_hash"], cache,
+                        probe_open, asked_only)
+
+
+def today_t1(d: dict, cache: Cache) -> dict | None:
+    """T0 and Haiku 4.5's T1 as today's ladder merged them; None when today's
+    doc-class call (Haiku 4.5, cached) refused the file."""
     h, plan = d["content_hash"], d["plan"]
     if plan["doc_class"] == "unknown":
         c = cache.arm(h, "h45", "classify")
         if c and llm_mod._classify_answer(anthropic.types.Message.model_validate(c["message"]),
                                           "doc-class")[0] == tiers.NOT_A_DOCUMENT:
-            return None, collections.Counter()
+            return None
     t1 = _fields_of(cache.arm(h, "h45"), "T1")
-    fields = tiers.merge(plan["t0"], {f: t1[f] for f in plan["missing"] if f in t1},
-                         by_strength=False)
-    return _sonnet_over(fields, tiers.needs_escalation(fields), h, cache, probe_open, asked_only)
+    return tiers.merge(plan["t0"], {f: t1[f] for f in plan["missing"] if f in t1},
+                       by_strength=False)
 
 
 def today_scan(d: dict, cache: Cache, probe_open: dict,
@@ -686,19 +776,29 @@ def today_scan(d: dict, cache: Cache, probe_open: dict,
 
 
 def _sonnet_answers(h: str, needed, cache: Cache, probe_open: dict,
-                    asked_only: bool) -> tuple[dict, collections.Counter]:
+                    asked_only: bool, fill: str | None = "first") -> tuple[dict, collections.Counter]:
     """Sonnet's cached image read (`s55v`) for the fields `needed`. The probe
     asked it the fields open after Haiku 5.5's T1, not today's or the new
     ladder's list. Its response carries every field (the schema requires
     them), mostly null at 0 ("not requested") for one it was not asked, but
     a value at times: unless `asked_only`, such a volunteered VALUE is taken
     (its null is not an answer). Counted: `asked`, `unasked` (a volunteered
-    value), `none` (no answer: the arm keeps what it had)."""
+    value), `none` (no answer: the arm keeps what it had).
+
+    Where this run made today's own Sonnet read (`TODAY_FILL`), it answers every
+    field it was asked, counted `fill`: `fill="first"` (the today arm: it IS
+    today's request), `"fallback"` (after an asked `s55v`), None (never)."""
+    today = cache.label(h, TODAY_FILL) if fill else None
+    tv = _fields_of(today, "T2")
     sv = _fields_of(cache.arm(h, "s55v"), "T2")
     asked = set(probe_open.get(h, []))
     out, cov = {}, collections.Counter()
     for f in needed:
-        if f in sv and f in asked:
+        filled = bool(today) and f in today.get("asked", []) and f in tv
+        if filled and (fill == "first" or not (f in sv and f in asked)):
+            out[f] = tv[f]
+            cov["fill"] += 1
+        elif f in sv and f in asked:
             out[f] = sv[f]
             cov["asked"] += 1
         elif f in sv and not asked_only and hc.norm(f, sv[f].get("value")) is not None:
@@ -724,7 +824,7 @@ def sonnet_every_open(d: dict, new: dict | None, cache: Cache,
         return None, collections.Counter()
     first = next((e for e in new.get(tiers.READS_KEY) or [] if e.get("step") == "T2-first"), None)
     add, cov = _sonnet_answers(d["content_hash"], list((first or {}).get("fields") or {}),
-                               cache, probe_open, asked_only=False)
+                               cache, probe_open, asked_only=False, fill="fallback")
     return {**new, **add}, cov
 
 
@@ -826,11 +926,23 @@ def cmd_report(args) -> int:
           "`haiku_compare.LABEL_OVERRIDES`; `validity_from` is not scored.", ""]
     cov_t = sum((x["today_cov"] for x in done if x["gt"]), collections.Counter())
     cov_s = sum((x["sonnet_cov"] for x in done if x["gt"]), collections.Counter())
+    fill = res.get("today_fill") or {"status": "not run"}
+    L += [f"Baseline fill (today's own Sonnet read, `{TODAY_FILL}`, on {fill.get('documents', 0)} "
+          f"labelled text documents): **{fill['status']}**"
+          + (". Today's arm keeps Haiku 4.5's answer on the fields below marked 'no Sonnet "
+             "answer': there it is Haiku 4.5 alone, not today's ladder." if fill["status"] != "done"
+             else "") + "", ""]
+    anyof = [(d, f, list(v)) for (d, f), v in hc.LABEL_OVERRIDES.items() if isinstance(v, hc.AnyOf)]
+    if anyof:
+        L += ["Labels with more than one right answer (the document prints several; any scores "
+              f"right): {anyof}.", ""]
     L += ["The cached Sonnet read (`s55v`) was asked the fields open after Haiku 5.5's T1 on "
           "2026-10-08, not today's list nor the new ladder's; it answers every field. On the "
-          f"labelled documents, today's escalated fields: {cov_t['asked']} answered as asked, "
+          f"labelled documents, today's escalated fields: {cov_t['fill']} from the fill, "
+          f"{cov_t['asked']} answered as asked, "
           f"{cov_t['unasked']} a value the read gave unasked, {cov_t['none']} no Sonnet answer "
-          f"(Haiku 4.5's value kept). Sonnet arm: {cov_s['asked']} asked, {cov_s['unasked']} "
+          f"(Haiku 4.5's value kept). Sonnet arm: {cov_s['asked']} asked, {cov_s['fill']} from "
+          f"the fill, {cov_s['unasked']} "
           f"unasked values, {cov_s['none']} no Sonnet answer (the new value kept).",
           "", "No Sonnet answer, by field: today "
           + str({k[5:]: v for k, v in sorted(cov_t.items()) if k.startswith("none:")})
@@ -989,11 +1101,13 @@ def cmd_report(args) -> int:
           "| measure | target | measured |", "|---|---|---|",
           f"| text documents reaching Sonnet | 7 +/- 1 of 79 (7-10 if the image read disagrees on a "
           f"both-citations regulation) | {t.get('sonnet')} of {t.get('n')} |",
-          f"| text gate, production | about 82-84% (Task 5: 84% +/- 2 points); today 73% simulated | "
+          f"| text gate, production (confidence test: an upper bound) | about 82-84% (Task 5: "
+          f"84% +/- 2 points); today 73% simulated | "
           f"{hc._pct(t.get('prod', 0), t.get('n', 0))} |",
           f"| text, labelled in production with a wrong gate field | 0 of 19 | "
           f"{len(t.get('wrong', []))} of 19 |",
-          f"| scan gate, production | 24 +/- 1 of 34; today 1 of 34 | {s.get('prod')} of {s.get('n')} |",
+          f"| scan gate, production (confidence test: an upper bound) | 24 +/- 1 of 34; today 1 "
+          f"of 34 | {s.get('prod')} of {s.get('n')} |",
           f"| scans reaching Sonnet | 19 measured; up to 27 allowed (Denis, after Task 3) | "
           f"{s.get('sonnet')} of {s.get('n')} |",
           f"| scans, labelled in production with a wrong gate field | 1 of 4 measured, likely a "
@@ -1058,6 +1172,8 @@ def main(argv=None) -> int:
     p.add_argument("--adopt", metavar="BATCH_ID", help="the batch an interrupted submission created")
     p.add_argument("--forget-intent", action="store_true",
                    help="an interrupted submission created no batch")
+    p.add_argument("--no-today-fill", action="store_true",
+                   help="no final round of today's Sonnet reads for the baseline")
     p = sub.add_parser("report")
     p.add_argument("--run", required=True)
     p.add_argument("--data")

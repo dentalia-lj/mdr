@@ -160,3 +160,42 @@ def test_the_estimate_prices_every_page_image(fixture_pdf):
     floor = economics.cost_usd("claude-haiku-5-5", economics.Usage(
         input_tokens=int(sum(image["image_px"]) / lq.IMAGE_PX_PER_TOKEN)), batch=True)
     assert lq.estimate_usd(image, {}) - lq.estimate_usd(text, {}) >= floor
+
+
+def _entry(path, **kw):
+    import json
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(kw))
+
+
+def _read(value, conf=0.9):
+    import json
+    return {"id": "m", "type": "message", "role": "assistant", "model": "claude-sonnet-5-5",
+            "content": [{"type": "text", "text": json.dumps(
+                {"type": {"value": value, "confidence": conf, "verbatim": value, "page": 1}})}],
+            "stop_reason": "end_turn", "stop_sequence": None,
+            "usage": {"input_tokens": 10, "output_tokens": 10}}
+
+
+def test_todays_own_sonnet_read_fills_the_baseline_first(tmp_path):
+    """The today arm takes the baseline fill (today's request) before the
+    probe's Sonnet read; the Sonnet arm takes it only where that read was not
+    asked the field; neither takes a field the fill was not asked."""
+    h = "b" * 64
+    _entry(tmp_path / "base" / h / "s55v.json", request_key="k1", content_hash=h, arm="s55v",
+           kind="extract", model="claude-sonnet-5-5", message=_read("EC"))
+    _entry(tmp_path / "own" / h / "fill.json", request_key="k2", content_hash=h,
+           label=lq.TODAY_FILL, kind="extract", model="claude-sonnet-5-5", asked=["type"],
+           message=_read("DoC"))
+    cache = lq.Cache(tmp_path / "base", tmp_path / "own")
+
+    first, cov = lq._sonnet_answers(h, ["type"], cache, {h: ["type"]}, asked_only=True)
+    assert first["type"]["value"] == "DoC" and cov["fill"] == 1
+    fallback, _ = lq._sonnet_answers(h, ["type"], cache, {h: ["type"]}, asked_only=False,
+                                     fill="fallback")
+    assert fallback["type"]["value"] == "EC"
+    unasked, cov = lq._sonnet_answers(h, ["type"], cache, {h: []}, asked_only=True,
+                                      fill="fallback")
+    assert unasked["type"]["value"] == "DoC" and cov["fill"] == 1
+    none, cov = lq._sonnet_answers(h, ["regulation"], cache, {h: []}, asked_only=True)
+    assert none == {} and cov["none"] == 1
