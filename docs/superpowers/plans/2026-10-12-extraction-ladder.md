@@ -302,30 +302,30 @@ guard read `conf` alone.
       (Task 3 makes no second call then); Task 3 alone gives 7 production.
 - [ ] One call per label per extraction: the unproven gate fields ride in the same
       `T2-second` call as Task 3's open fields, or that call's cost row is lost.
-- [ ] Combined confidence `1 - (1 - c1)(1 - c2)` when both reads agree and each is at
+- [x] Combined confidence `1 - (1 - c1)(1 - c2)` when both reads agree and each is at
       least `agreement_min`; citation-proven regulation 1.0.
-- [ ] Migration 071 (or the next free number at merge; other worktrees add
+- [x] Migration 071 (or the next free number at merge; other worktrees add
       migrations): `evidence.agreed_model_id`, `evidence.agreed_confidence`, nullable.
       `gate._write_evidence` writes them; the stored `confidence` is the combined one.
-- [ ] `app/handlers/gate.py`: the manufacturer auto-bind (`scope_stated`, line 880)
+- [x] `app/handlers/gate.py`: the manufacturer auto-bind (`scope_stated`, line 880)
       reads the first read's own scope confidence, not the combined one; per-link
       production and `_score` read the combined one; the task-5 supersede guard reads
       `validity_from` (never combined).
-- [ ] Published-document guard (Denis, 2026-10-12): when a document already in
+- [x] Published-document guard (Denis, 2026-10-12): when a document already in
       production is read again, GATE replaces its fields only if the new read itself
       reaches production; otherwise the stored values stay, no review task opens (Review
       never lists tasks on published documents), and the difference is counted on the job
       result. Today `_upsert_document` overwrites the fields whatever the new disposition.
       134 of the 654 DoCs to re-read are published. Update the `reextract` runbook section
       ("GATE has no guard for this yet") and `docs/troubleshooting.md` re-read entry.
-- [ ] The 2026-09-16 ruling's wording was never built: a note on the confidence columns
+- [x] The 2026-09-16 ruling's wording was never built: a note on the confidence columns
       of `web/templates/_staging_doc_detail.html` and `document_detail.html` (the
       model's own number, uncalibrated, may combine two agreeing reads), the guide's
       review page EN + SL, `python3 scripts/build-guide.py`, both bundles committed.
-- [ ] Tests: `tests/test_gate*.py` (0.70 boundary, 0.69 does not combine, disagreement
+- [x] Tests: `tests/test_gate*.py` (0.70 boundary, 0.69 does not combine, disagreement
       keeps the lower read, T0 untouched, auto-bind unboosted), migration test,
       `tests/test_web.py`, `tests/test_docs_sets.py`. Full suite (migration).
-- [ ] Docs: `docs/dentalia-schema-sketch.md` (evidence), `docs/dev/changing-things.md`.
+- [x] Docs: `docs/dentalia-schema-sketch.md` (evidence), `docs/dev/changing-things.md`.
 - **Done when:** on the eval set the text gate puts 84% +/- 2 points into production
   with 0 wrong gate fields of 19 labelled, and scans 24 +/- 1 of 34 (Task 8).
 
