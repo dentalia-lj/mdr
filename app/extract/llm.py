@@ -75,10 +75,11 @@ class ReadStep:
 #: The extraction-ladder plan's "Read steps and their labels" (2026-10-12), one
 #: table for sync and batch alike. Labels carry hyphens only: `_custom_id` joins
 #: label and hash with `_` and `_tier_of` splits on the first one. The text
-#: ladder sends `doc-class`, `T1` and `T2`; the scan ladder (`tiers.
-#: run_scan_ladder`) `doc-class-image`, `T2-first`, `T2-second` and `T2`;
-#: `T1-second` is plumbing for Task 5. The two `doc-class` rows label the
-#: classify calls, never an `extract`.
+#: ladder (`tiers.run_text_ladder`) sends `doc-class`, `T1`, `T2-first`, `T2`
+#: and `T1-second` (the gate fields' confirmation, plan Task 5b); the scan
+#: ladder (`tiers.run_scan_ladder`) `doc-class-image`, `T2-first`, `T2-second`
+#: and `T2`. The two `doc-class` rows label the classify calls, never an
+#: `extract`.
 #:
 #: Both doc-class calls send thinking off (`doc-class-image` since Task 3,
 #: `doc-class` since Task 4 moved `models.t1` to Haiku 5.5, 2026-10-12): the

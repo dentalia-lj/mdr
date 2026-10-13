@@ -248,12 +248,14 @@ These are **evidence** tiers. The cost ledger (`extraction_cost.tier`, the
 whole text), `T1-second` (a second text read, thinking off), `T2-first` (a cheap
 image read), `T2-second` (a second image read, thinking off), `T2` (the Sonnet
 image read). A text label's evidence is `T1`, an image label's `T2`. The text
-ladder (`tiers.run_text_ladder`) sends `doc-class`, `T1`, `T2-first` and `T2`;
-the scan ladder (a document with no text page, `tiers.run_scan_ladder`) sends
-`doc-class-image`, `T2-first`, `T2-second` and `T2`; `T1-second` is not sent
-yet. A read's evidence also carries the label it came from as `step`, which is how `tiers.merge`
+ladder (`tiers.run_text_ladder`) sends `doc-class`, `T1`, `T2-first`, `T2` and,
+since 2026-10-13, `T1-second` (confirming the gate fields); the scan ladder (a
+document with no text page, `tiers.run_scan_ladder`) sends `doc-class-image`,
+`T2-first`, `T2-second` and `T2`. A read's evidence also carries the label it came from as `step`, which is how `tiers.merge`
 lets the stronger read prevail (Sonnet over a cheap image read over the text
-read over a T0 guess).
+read over a T0 guess); of two reads giving the same value, one the checks
+verify is stored first, then the surer one, and the other is its **agreeing read**
+(`agreed_model_id` / `agreed_conf`, which GATE combines).
 
 | `doc_class` | effect |
 |---|---|

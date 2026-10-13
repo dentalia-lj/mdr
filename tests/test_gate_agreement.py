@@ -1,6 +1,6 @@
 """GATE: two agreeing reads as confidence (PRD v3 section 7, amended 2026-10-12).
 
-The extraction record's field evidence may carry, beside the first read's own
+The extraction record's field evidence may carry, beside the stored read's own
 `conf` / `model_id`:
 
 * `agreed_model_id` + `agreed_conf`: a second read agreed on the same value;
@@ -10,7 +10,7 @@ GATE combines at score time: `1 - (1 - own)(1 - agreed)` when both calibrated
 numbers are at least `gate.agreement_min`, 1.0 for a citation-proven
 regulation, the read's own number otherwise. T0 is never touched. The guards
 that read ONE field (the manufacturer-scope auto-bind, the manufacturer-name
-check and the supersede fast path's `validity_from`) keep the first read's own
+check and the supersede fast path's `validity_from`) keep the stored read's own
 number: the agreement evidence was measured on the production disposition, not
 on those writes.
 """
@@ -129,7 +129,7 @@ STORED = [
                                   agreed_conf=0.95), {}, 0.85),
     # F3: whether the agreement counts is the SCORE's decision, on calibrated
     # numbers (0.9 x 0.5 = 0.45, under the floor), so the row stores the
-    # first read's own raw number, never a combination the score refused.
+    # stored read's own raw number, never a combination the score refused.
     ("the-floor-is-tested-calibrated", "type", _agreed("DoC", 0.90, 0.90),
      {"m-first": {"*": 0.5}}, 0.90),
     # ... and when the calibrated numbers do clear it, the RAW pair is combined.
@@ -182,7 +182,7 @@ def test_an_integer_confidence_is_a_number():
 
 def test_the_own_reader_never_sees_the_agreement():
     """`_field_confidence` is the one-field reader for the guards; it must stay
-    the first read's own number even when a second read agreed."""
+    the stored read's own number even when a second read agreed."""
     fields = {"coverage_scope": _agreed("manufacturer", 0.80, 0.95)}
     assert gh._field_confidence(fields, "coverage_scope", {}) == pytest.approx(0.80)
 
@@ -316,7 +316,7 @@ def test_a_human_edit_names_no_agreeing_read(conn):
 
 
 # --------------------------------------------------------------------------- #
-# the guards that read ONE field stay on the first read's own number
+# the guards that read ONE field stay on the stored read's own number
 # --------------------------------------------------------------------------- #
 def _mfr_case(conn, ch, *, scope, manufacturer):
     fields = {"type": _ev("EC", 0.97), "regulation": _ev("MDR", 0.97),
@@ -370,3 +370,64 @@ def test_the_supersede_fast_path_reads_validity_from_s_own_confidence(conn):
     row = conn.execute("SELECT status, superseded_by FROM document WHERE doc_id=%s",
                        (r["doc_id"],)).fetchone()
     assert row["status"] != "superseded" and row["superseded_by"] is None
+
+
+# --------------------------------------------------------------------------- #
+# a scope that follows the type (Denis, ruling D3, 2026-10-13)
+# --------------------------------------------------------------------------- #
+def _follows(value, conf, doc_type="EC"):
+    """A `coverage_scope` the extraction derived from the type
+    (`tiers._scope_from_type`): T0 evidence at the type's own number."""
+    return _t0(value, conf, verbatim=f"type={doc_type}", page=None, follows="type")
+
+
+CERT = {"type": _agreed("EC", 0.85, 0.85), "regulation": _ev("MDR", 0.80, proven="citation"),
+        "coverage_scope": _follows("manufacturer", 0.85)}
+
+
+def test_a_scope_that_follows_the_type_is_left_out_of_the_score():
+    """The type is in the minimum already, combined when confirmed; the scope
+    holds only the type's own number. Unmarked, the same scope holds it."""
+    assert gh._score(CERT, {}, MIN) == pytest.approx(1 - 0.15 * 0.15)
+    unmarked = dict(CERT, coverage_scope=_t0("manufacturer", 0.85, verbatim="type=EC"))
+    assert gh._score(unmarked, {}, MIN) == pytest.approx(0.85)
+
+
+def test_only_a_scope_marked_as_following_the_type_is_left_out():
+    fields = dict(CERT, type=_ev("EC", 0.85, follows="type"))      # not a scope: scored
+    assert gh._score(fields, {}, MIN) == pytest.approx(0.85)
+
+
+def test_a_certificate_whose_type_a_second_read_confirmed_reaches_production(conn):
+    """Type 0.85 confirmed by a second read at 0.85 combines to 0.9775; the
+    scope derived from it at 0.85 no longer holds the document at `staged`."""
+    ch = "follows-publish"
+    _seed_item(conn, "FT-1")
+    _seed(conn, ch, dict(CERT))
+    r = gh.handle_gate_candidate(conn, _job(ch, ref_gate=True, flags=[], links=[
+        {"item_ref": "FT-1", "match_basis": "ref-list"}]))
+    assert r["disposition"] == "production"
+    assert r["score"] == pytest.approx(1 - 0.15 * 0.15, abs=1e-4)
+    scope = conn.execute("SELECT confidence FROM evidence WHERE doc_id=%s AND "
+                         "field='coverage_scope'", (r["doc_id"],)).fetchone()
+    assert float(scope["confidence"]) == pytest.approx(0.85)    # its own number, stored
+
+
+@pytest.mark.parametrize("own, bound", [(0.85, False), (0.95, True)],
+                         ids=["type-own-under-high", "control"])
+def test_the_auto_bind_reads_the_own_number_of_a_scope_that_follows_the_type(conn, own, bound):
+    """`scope_stated` reads the scope's own number, the type's own one, never
+    the type's combination: at 0.85 the catalogue-wide bind refuses as before
+    (the type combines to 0.9775); the control at 0.95 binds."""
+    ch = f"follows-bind-{own}"
+    _seed(conn, ch, dict(CERT, type=_agreed("EC", own, 0.85),
+                         coverage_scope=_follows("manufacturer", own),
+                         manufacturer=_ev("Ivoclar Vivadent AG", 0.95)))
+    _seed_alias(conn, "001", "IVOCLAR")
+    _seed_alias(conn, "Ivoclar Vivadent AG", "IVOCLAR")
+    _seed_item(conn, f"{ch}-1", "001", md=True)
+    r = gh.handle_gate_candidate(conn, _job(ch, route="mfr-binding"))
+    assert r["disposition"] == ("mfr-bound" if bound else "mfr-binding")
+    links = conn.execute("SELECT count(*) c FROM item_document WHERE doc_id=%s",
+                         (r["doc_id"],)).fetchone()["c"]
+    assert (links > 0) is bound

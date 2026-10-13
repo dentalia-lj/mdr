@@ -223,6 +223,35 @@ def null_settled(field_name: str, ctx: Ctx) -> bool:
     return re.search(pat, ctx.text, re.IGNORECASE) is None
 
 
+def citation_proven(evidence: dict | None, ctx: Ctx) -> bool:
+    """A `regulation` proven by its one printed citation, for GATE's 1.0 (PRD
+    v3 section 7, amended 2026-10-12; extraction-ladder plan Task 5b): a
+    well-formed value (`MDR`, `MDD` or `n.a.`, as written), `settled` (only
+    2017/745 printed for MDR, only 93/42 for MDD, neither for `n.a.`), and
+    the text the check read covers the whole document.
+
+    The last half is what makes it a proof. "Only one citation printed" is
+    also a claim that the other is NOT printed, and that is unknown where part
+    of the document has no text to read: a scanned page of a mixed PDF, an
+    unread page, text cut at the budget. A scan with a short visible overlay
+    is an image page too (`pdf.page_classes`, review 2026-10-13, F7), so it
+    stops every citation proof; a sparse page (a cover, a signature page) is
+    text and stops none. An OCR layer is read as text here,
+    as `settled` reads it and as the measured route counted it (on the eval,
+    one OCR-layer declaration, Celalux 3, is proven `n.a.` this way). Fails
+    closed when the page classes are missing or do not match the pages, and
+    when no page carries a text layer: a scan has no text, so `n.a.` would
+    pass `settled` on it."""
+    value = (evidence or {}).get("value") if isinstance(evidence, dict) else None
+    if not well_formed("regulation", value):
+        return False
+    if ctx.truncated or ctx.unread_pages or not _classes_known(ctx):
+        return False
+    if "image" in ctx.classes or not any(c in TEXT_BEARING for c in ctx.classes):
+        return False
+    return settled("regulation", evidence, ctx)
+
+
 def both_null_settled(field_name: str, ctx: Ctx) -> bool:
     """TWO reads both returned the field empty: settled, for any field (PRD v3
     section 5, corrected 2026-10-12 to the measured rule), except

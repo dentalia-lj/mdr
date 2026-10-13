@@ -331,6 +331,34 @@ def test_batch_three_reads_three_rows_idempotent(conn, fixture_pdf):
     assert float(first["cost_usd"]) == 0.000125
 
 
+def test_batch_second_text_read_writes_its_own_row_once(conn, fixture_pdf):
+    """Task 5b: T1 reads `regulation` MDD, the image read agrees under GATE's
+    floor (0.5), so `T1-second` (`models.second_read`, thinking off) is asked.
+    It is a batch and a ledger row of its own label, priced at its own model,
+    and the polls that re-fetch it write nothing twice."""
+    h = "sha-cost-b5b"
+    items = {
+        "T1": [_item("T1", h, _payload(["regulation"], regulation="MDD"), _usage(1500, 400))],
+        "T2-first": [_item("T2-first", h, _payload(["regulation"], conf=0.5, regulation="MDD"),
+                           _usage(2000, 100))],
+        "T1-second": [_item("T1-second", h, _payload(["regulation"], conf=0.95, regulation="MDD"),
+                            _usage(1400, 60))],
+    }
+    job = _enqueue(conn, h, 6, fixture_pdf(ISO_CERT))
+    bc = llm.AnthropicBatchClient(_low_client(items), Models())
+
+    r = _drive_batch(conn, job, bc, limit=10)
+
+    assert r["tiers_used"] == ["T0", "T1", "T2-first", "T1-second"]
+    rows = {x["tier"]: x for x in _rows(conn, h)}
+    assert sorted(rows) == ["T1", "T1-second", "T2-first"]
+    assert rows["T1-second"]["model_id"] == "claude-haiku-5-5"
+    # Haiku 5.5 batch: (1400*0.10 + 60*0.50)/1e6 / 2 = 0.000085
+    assert float(rows["T1-second"]["cost_usd"]) == pytest.approx(0.000085)
+    sent = bc.client.messages.batches
+    assert sorted(sent._tier.values()) == ["T1", "T1-second", "T2-first"]   # one batch each
+
+
 def test_spend_view_sums_measured_cost(conn, fixture_pdf):
     tier_client = llm.AnthropicLlm(_SyncClient(_payload(tiers_mod.TARGET), _usage(1000, 200)),
                                    Models())

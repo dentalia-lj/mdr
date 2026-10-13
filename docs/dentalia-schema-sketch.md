@@ -671,7 +671,7 @@ CREATE TABLE evidence (
   agreed_model_id   text,                     -- 071: the read that agreed with this
   agreed_confidence numeric                   -- one on the same value, and its own raw
                                               -- confidence. `model_id`/`verbatim`/`page`
-                                              -- stay the first read's. `confidence` is
+                                              -- stay the stored read's. `confidence` is
                                               -- what GATE scored, uncalibrated: the raw
                                               -- 1-(1-c1)(1-c2) when the agreement counted
                                               -- (both >= gate.agreement_min calibrated),
