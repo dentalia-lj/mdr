@@ -145,14 +145,19 @@ def apply(conn, repairs: list[dict]) -> dict:
     row summarises the ladder that produced the FIELDS, and the added key is a
     T0 read from a ladder that always begins at T0.
 
-    The rev is allocated again here (`tiers.next_extract_rev`, past every
-    attempt and every evidence row of the document), never assumed to be the
-    planned `new_rev` the report printed: `revs_moved` counts the repairs
-    written at another rev than that, which only a reading committed in
-    between causes.
+    A repair whose copied attempt is no longer the newest at apply (a reading
+    committed since the plan) is skipped and counted, `skipped_newer_reading`:
+    the newer reading stands, and a re-run plans off it. The rev is allocated
+    again here (`tiers.next_extract_rev`, past every attempt and every
+    evidence row of the document), never assumed to be the planned `new_rev`
+    the report printed: `revs_moved` counts the repairs written at another
+    rev than that, which a reviewer's edit made since the plan causes.
     """
-    moved = 0
+    appended = moved = skipped = 0
     for r in repairs:
+        if not _base_is_newest(conn, r):
+            skipped += 1
+            continue
         rev = tiers.next_extract_rev(conn, r["content_hash"])
         moved += rev != r.get("new_rev", rev)
         tiers.write_extraction_attempt(
@@ -160,7 +165,19 @@ def apply(conn, repairs: list[dict]) -> dict:
             extract_rev=rev, model_id=r["model_id"],
             playbook_slug=r["playbook_slug"], playbook_rev=r["playbook_rev"],
         )
-    return {"appended": len(repairs), "revs_moved": moved}
+        appended += 1
+    return {"appended": appended, "revs_moved": moved, "skipped_newer_reading": skipped}
+
+
+def _base_is_newest(conn, r: dict) -> bool:
+    """Whether the attempt this repair copies is still the newest reading of
+    its document. A reading committed between plan and apply is newer than
+    the copy, and appending the copy past it would put the old reading back
+    on top (review 2026-10-13, F6)."""
+    newest = conn.execute(
+        "SELECT max(extract_rev) AS rev FROM extraction_attempt WHERE content_hash=%s",
+        (r["content_hash"],)).fetchone()["rev"]
+    return newest == r["extract_rev"]
 
 
 def render(repairs: list[dict], counts: dict, limit: int = 40) -> list[str]:
