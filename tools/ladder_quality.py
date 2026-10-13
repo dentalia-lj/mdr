@@ -56,6 +56,7 @@ from tools import haiku_compare as hc   # puts this checkout first on sys.path
 
 import anthropic  # noqa: E402
 
+from app import playbooks as playbooks_mod  # noqa: E402
 from app.config import Extract, GateThresholds, Models  # noqa: E402
 from app.extract import economics, tiers  # noqa: E402
 from app.extract import llm as llm_mod  # noqa: E402
@@ -376,18 +377,28 @@ def standin_for(cache: Cache):
 def run_doc(doc: dict, data: pathlib.Path, cache: Cache, cfg, exhausted: set[str],
             standin=None) -> tuple[dict, list[dict]]:
     """The ladder on one document. Raises `Miss` at the first uncached request
-    (unless a stand-in answers it)."""
+    (unless a stand-in answers it).
+
+    As the live handler (`app/handlers/extract.py`): the steering playbook is
+    the group's manufacturer's when the document came through a group
+    (`group_manufacturer`, authoritative), else T0's own text match (never
+    authoritative: the eval documents, and every backfilled one). `companion`
+    is the companion annex T0 reads the REF list from, a path under `data`."""
     path = str(data / doc["path"])
+    companion = str(data / doc["companion"]) if doc.get("companion") else None
+    group_mfr = doc.get("group_manufacturer")
+    override = (playbooks_mod.for_manufacturer(group_mfr)
+                if group_mfr and group_mfr != "unknown" else None)
     client = CachedClient(cache, doc, exhausted, standin)
     llm = _Llm(client, cfg.models)
     with pdfutil.open_doc(path) as pdf_doc:
-        # As the live handler does for a backfilled document (no group, so
-        # never authoritative): `app/handlers/extract.py`.
-        steering = t0_templates.steering_playbook("\n".join(pdfutil.page_texts(pdf_doc)))
-        hints = _hints_for(steering, tiers.needs_escalation({}), authoritative=False)
+        steering = t0_templates.steering_playbook("\n".join(pdfutil.page_texts(pdf_doc)),
+                                                  override=override)
+        hints = _hints_for(steering, tiers.needs_escalation({}),
+                           authoritative=override is not None)
         doc_class, fields, used = tiers.run_extraction(
-            pdf_doc, path, llm, hints=hints, image_settle=cfg.image_settle,
-            agreement_min=cfg.agreement_min)
+            pdf_doc, path, llm, hints=hints, companion_url=companion,
+            image_settle=cfg.image_settle, agreement_min=cfg.agreement_min)
     return ({"content_hash": doc["content_hash"], "set": doc["set"], "path": doc["path"],
              "doc_class": doc_class, "used": used, "fields": fields, "served": client.served,
              "disagreements": tiers.read_disagreements(fields),
@@ -538,14 +549,24 @@ def cmd_run(args) -> int:
     data = pathlib.Path(args.data) if args.data else main_checkout()
     root = data / OUT
     docs, _ = load_docs(data)
-    cache = Cache(data / BASE_CACHE, root / "cache")
-    state = State(root / "state.json")
+    run = (pathlib.Path(args.run) if args.run else
+           root / (datetime.datetime.now().strftime("%Y%m%dT%H%M%S") + ("-sim" if args.simulate else "")))
+    return drive(docs, data, Cache(data / BASE_CACHE, root / "cache"), State(root / "state.json"),
+                 root, run, args, env_root=data,
+                 finish=lambda run: cmd_report(SimpleNamespace(run=str(run), data=str(data))))
+
+
+def drive(docs: list[dict], data: pathlib.Path, cache: Cache, state: State, root: pathlib.Path,
+          run: pathlib.Path, args, env_root: pathlib.Path, finish) -> int:
+    """The rounds, for any document list: `cmd_run` here, and
+    `tools.prod_replay` on production's documents with its own cache, state and
+    cap. `data` holds the PDFs (`doc["path"]` is relative to it), `root` the
+    lock, `env_root` the `.env` with the API key; `finish(run)` reports a
+    completed run. `args`: dry_run, simulate, cap_usd, adopt, forget_intent."""
     cfg = config()
     outs = cache.output_estimate()
     cap = Decimal(str(args.cap_usd))
     offline = args.dry_run or args.simulate
-    run = (pathlib.Path(args.run) if args.run else
-           root / (datetime.datetime.now().strftime("%Y%m%dT%H%M%S") + ("-sim" if args.simulate else "")))
     if not args.dry_run:
         run.mkdir(parents=True, exist_ok=True)
 
@@ -605,7 +626,7 @@ def cmd_run(args) -> int:
 
     client = None
     if state.uncollected() and not offline:
-        client = api_client(data)
+        client = api_client(env_root)
         log(f"collecting {len(state.uncollected())} batch(es) an earlier run submitted")
         collect(state, cache, client, log)
     for round_no in range(1, MAX_ROUNDS + 1):
@@ -615,7 +636,7 @@ def cmd_run(args) -> int:
             log(f"round {round_no}: nothing misses; {len(results)} documents read")
             _write_run(run, results, simulated=False)
             log(f"spent ${state.spent():.4f} in all; run dir: {run}")
-            return cmd_report(SimpleNamespace(run=str(run), data=str(data)))
+            return finish(run)
         if args.dry_run:
             pending = [k for b in state.uncollected() for k in
                        (m["key"] for m in state.data["batches"][b]["requests"].values())]
@@ -624,7 +645,7 @@ def cmd_run(args) -> int:
             _print_estimate(f"DRY RUN, round {round_no} (no API call)", reqs, outs, log)
             log(f"spent so far ${state.spent():.4f}; cap ${cap}")
             return 0
-        client = client or api_client(data)
+        client = client or api_client(env_root)
         if submit(state, client, reqs, outs, cap, round_no, log) is None:
             return 2
         collect(state, cache, client, log)
