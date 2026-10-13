@@ -351,7 +351,7 @@ guard read `conf` alone.
       (ruling A restores those labels); add 533068 `basic_udi_di` `++E2265330681KSCH`.
 - [ ] Run the built ladder on the same 79 text documents and 34 scans. New request
       shapes miss the eval cache, so this calls the API (under $1, Batch API, capped);
-      Denis's go before it runs.
+      approved by Denis 2026-10-13 at under $1.
 - [ ] Quality first, per field, on the labelled documents: accuracy of the new ladder
       against today's ladder (Haiku 4.5 + Sonnet, from the stored and cached reads) and
       against Sonnet reading every open field; every field that ends differently
@@ -369,7 +369,8 @@ guard read `conf` alone.
       the 129 text documents held by `no-item-identifier` (2026-10-12 reading; re-read
       the same day as the replay). Copy their PDFs read-only (`rsync` from
       `/srv/compliance/archive`) into a gitignored local folder; delete it afterwards.
-- [ ] Run the built ladder on them (Batch API, about $1, capped; Denis's go). Nothing is
+- [ ] Run the built ladder on them (Batch API, capped below $1: approved by Denis
+      2026-10-13 at under $1; trim the set to fit if the estimate exceeds it). Nothing is
       written to the server: no jobs, no registry, no `fetch_log`.
 - [ ] Per document: does the gate confidence now clear 0.92; is a REF list or UDI now
       found, and does it overlap the catalogue for that manufacturer (read-only query);
