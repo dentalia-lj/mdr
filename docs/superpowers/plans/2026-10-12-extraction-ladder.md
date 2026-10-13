@@ -122,7 +122,7 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | 3 scans | done: built (Opus), reviewed and fixed (Opus), merged; full suite 4820 passed, 5 skipped; decision 3 ruled by Denis (item identifiers asked on filename-typed scanned DoCs) | merge 0c891c8 |
 | 4 text ladder | done: built (Opus), 2 Opus review rounds, merged; full suite on the merge 5071 passed + 1 citation test fixed after (comment-only change); replays: text 10 of 79 cached, 7 of 79 agree (= measured), scans 24 of 34 | merge 09a6044, 4539373 |
 | 5a gate side: combined score, migration, published guard, wording | done: built (Opus), 3 Opus review rounds, merged; full suite 4921 passed, 5 skipped | merge 7b9abc4 |
-| 5b extraction side: second reads stamp the contract keys | starting (Opus) | worktree el-second |
+| 5b extraction side: second reads stamp the contract keys | built (Opus) 0fca060, full suite 5133 passed; replay text 65 of 79 production (82.3%, target 84 +/- 2), scans 25 of 34; Opus review running | worktree el-second |
 | 6 prompt caching | done: built (Sonnet), reviewed and fixed (Opus), merged; cache hits to confirm on the first real run | merge of bbc461d |
 | 7 re-extract command | done: built (Sonnet), reviewed and fixed (Opus), merged | c39bb77 |
 | 8 quality and parity | waiting for 1-6 | |
