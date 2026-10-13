@@ -17,6 +17,8 @@ Everything lives in one run folder under the main checkout's gitignored
     cache/, state.json  this run's paid answers and batches; the cap reads state.json
     results.json        a finished run; results-partial.json what a stopped one finished
     overlap-input.json  what `sql overlap` sent; overlap.jsonl what the server answered
+    review.json         verdicts on changed fields, read against the PDFs (by hand)
+    notes.md            the reviewer's findings, included in the report (by hand)
     report.md, documents.csv, fields.csv
 
     python -m tools.prod_replay sql select                     the selection query
@@ -574,6 +576,8 @@ def cmd_report(args) -> int:
                 o = json.loads(line)
                 ov[o["doc_id"]][o["arm"]] = o
     sel = {r["doc_id"]: r for r in load_selection(run)}
+    review = {(v["doc_id"], v["field"]): v for v in
+              (json.loads((run / "review.json").read_text()) if (run / "review.json").exists() else [])}
     rows, field_rows = [], []
     for doc_id in sample["doc_ids"]:
         r = sel[doc_id]
@@ -599,7 +603,11 @@ def cmd_report(args) -> int:
                 "stored": lq._short(_v({f: sv}, f)), "stored_quote": _quote(sv),
                 "stored_on_page": _on_page(sv, pages),
                 "new": lq._short(_v({f: nv}, f)), "new_quote": _quote(nv),
-                "new_on_page": _on_page(nv, pages), "file": pathlib.Path(r["archive_url"]).name})
+                "new_on_page": _on_page(nv, pages),
+                "lost": _v({f: sv}, f) not in (None, "", []) and _v({f: nv}, f) in (None, "", []),
+                "verdict": review.get((doc_id, f), {}).get("verdict", ""),
+                "note": review.get((doc_id, f), {}).get("note", ""),
+                "file": pathlib.Path(r["archive_url"]).name})
         used = (x or {}).get("used") or []
         rows.append({
             "doc_id": doc_id, "selected_as": r["selected_as"],
@@ -611,6 +619,7 @@ def cmd_report(args) -> int:
             "stored_disposition": r["gate_result"].get("disposition"),
             "stored_flags": ",".join(r["gate_result"].get("flags") or []),
             "simulated_before": before["disposition"],
+            "new_doc_class": (x or {}).get("doc_class", ""),
             "new_score": None if after["score"] is None else round(after["score"], 4),
             "clears_092": after["score"] is not None and after["score"] >= cfg.high,
             "new_disposition": after["disposition"],
@@ -628,6 +637,13 @@ def cmd_report(args) -> int:
             "disagreements": len((x or {}).get("disagreements") or []),
             "changed_fields": ",".join(changed), "error": (x or {}).get("error", "" if x else "not run")})
     _write_csv(run / "documents.csv", rows)
+    for v in review.values():               # a verdict on a document, not a field
+        if v["field"] == "*" and v["doc_id"] in {x["doc_id"] for x in rows}:
+            field_rows.append({"doc_id": v["doc_id"], "selected_as": sel[v["doc_id"]]["selected_as"],
+                               "field": "*", "stored": "", "stored_quote": "", "stored_on_page": None,
+                               "new": "", "new_quote": "", "new_on_page": None, "lost": False,
+                               "verdict": v["verdict"], "note": v["note"],
+                               "file": pathlib.Path(sel[v["doc_id"]]["archive_url"]).name})
     _write_csv(run / "fields.csv", field_rows)
     text = render(run, rows, field_rows, sample, state, res)
     (run / "report.md").write_text(text)
@@ -645,6 +661,11 @@ def _write_csv(path: pathlib.Path, rows: list[dict]) -> None:
         w.writerows(rows)
 
 
+#: How far a disposition is from leaving review: lower is better.
+_RANK = {"production": 0, "filed": 0, "superseded": 0, "staged": 1, "mfr-binding": 1,
+         "manual": 2, "no-candidate": 2, "refused": 3}
+
+
 def render(run, rows, field_rows, sample, state, res) -> str:
     C = collections.Counter
     L = ["# Extraction ladder, Task 9: replay on production's review queue", ""]
@@ -656,46 +677,114 @@ def render(run, rows, field_rows, sample, state, res) -> str:
               f"{len(pend)} were still waiting for a read ({dict(collections.Counter(pend.values()))}). "
               "The finished ones are the ones that needed no further read, so they are not a "
               "random sample of the selection.**", ""]
-    L += [f"Run `{run.name}`, ladder from `{res.get('ladder')}`. Selected "
-          f"{sample['gate_confidence']} gate-confidence + {sample['nii_selected']} no-item-identifier "
-          f"text documents; run {sample['gate_confidence']} + {sample['nii_run']}"
-          + (f" (random sample, seed {sample['seed']}; trimmed {len(sample['trimmed_doc_ids'])})"
+    L += [f"Run `{run.name}`, ladder from `{res.get('ladder')}`, written {res.get('written_at')}.", ""]
+    if (run / "queue-reading.txt").exists():
+        q = [x for x in (run / "queue-reading.txt").read_text().splitlines() if "|" in x]
+        L += ["## Production's review queue (read-only reading, `queue-reading.sql`)", "",
+              f"Read {(run / 'queue-reading.txt').read_text().splitlines()[0]}: "
+              f"{sum(int(x.split('|')[2]) for x in q)} documents staged. What holds each "
+              "(latest `gate.candidate` result), by text layer:", "",
+              "| text layer | hold | documents |", "|---|---|---|"]
+        L += [f"| {a} | {b} | {c} |" for a, b, c in (x.split("|") for x in q)] + [""]
+    L += ["## Selection and spend", "",
+          f"- Selected {sample['gate_confidence']} gate-confidence documents (no blocking flag, not "
+          f"the binding route, score below 0.92) and {sample['nii_selected']} text documents "
+          "carrying `no-item-identifier`.",
+          f"- Run: all {sample['gate_confidence']} gate-confidence and {sample['nii_run']} of the "
+          f"{sample['nii_selected']} no-item-identifier documents"
+          + (f" (the first {sample['nii_run']} of a shuffle with seed {sample['seed']}; "
+             f"{len(sample['trimmed_doc_ids'])} not run, listed in `sample.json`)"
              if sample.get("seed") is not None else "") + ".",
-          f"Spend: ${state.spent():.4f} (state.json; measured per batch).", ""]
+          "- Batch API spend (`state.json`):", ""]
+    for b, v in state.data["batches"].items():
+        L.append(f"  - `{b}`: {len(v['requests'])} requests, estimate ${Decimal(v['estimate_usd']):.4f}, "
+                 + (f"measured ${Decimal(v['cost_usd']):.4f}" if v.get("collected") else "not collected"))
+    L += [f"  - total ${state.spent():.4f}", ""]
+
+    leave = [x for x in rows if x["leaves_review"]]
+    L += ["## Headline", "",
+          f"- **Would leave review: {len(leave)} of {len(rows)}** "
+          f"({dict(C(x['new_disposition'] for x in leave))}).",
+          f"- Stay: {len(rows) - len(leave)}, by disposition "
+          f"{dict(C(x['new_disposition'] for x in rows if not x['leaves_review']))}.",
+          f"- New score clears 0.92: {sum(x['clears_092'] for x in rows)} of {len(rows)}.",
+          f"- Refused as not a compliance document: {sum(x['new_disposition'] == 'refused' for x in rows)} "
+          f"({[x['doc_id'] for x in rows if x['new_disposition'] == 'refused']}).", "",
+          "Disposition, stored (production's latest `gate.candidate`) to new (simulated):", "",
+          "| stored | new | documents |", "|---|---|---|"]
+    for (a, b), n in sorted(C((x["stored_disposition"], x["new_disposition"]) for x in rows).items()):
+        L.append(f"| {a} | {b} | {n} |")
+    L += ["", "How the new disposition is simulated: GATE's own `_score`, thresholds (0.92 / 0.75) and "
+          "flag classes, in GATE's order; VALIDATE's REF gate recomputed on the server's catalogue "
+          "(`overlap.sql`, read-only); VALIDATE's field rules (no-item-identifier, dates, expiry, "
+          "device document, evidence pages) recomputed on the new fields; the flags that need the "
+          "registry (C6 / C7 date ordering, cited certificate) carried over from the stored result. "
+          "On the stored fields the same simulation reproduces production's links, flags, score and "
+          "disposition: "
+          f"{sum(x['simulated_before'] == x['stored_disposition'] for x in rows)} of {len(rows)} "
+          "dispositions.", ""]
+    if (run / "notes.md").exists():         # the reviewer's reading of the results
+        L += [(run / "notes.md").read_text().rstrip(), ""]
     for sel in (GATE_CONF, NII_TEXT):
         xs = [x for x in rows if x["selected_as"] == sel]
         if not xs:
             continue
         n = len(xs)
         L += [f"## {sel} ({n})", "",
-              f"- new score clears 0.92: {sum(x['clears_092'] for x in xs)} of {n}",
+              f"- new score clears 0.92: {sum(x['clears_092'] for x in xs)} of {n} "
+              f"(stored: {sum((x['stored_score'] or 0) >= 0.92 for x in xs)})",
               f"- would leave review: {sum(x['leaves_review'] for x in xs)} "
               f"({dict(C(x['new_disposition'] for x in xs if x['leaves_review']))})",
               f"- stay: {sum(not x['leaves_review'] for x in xs)}, by disposition "
               f"{dict(C(x['new_disposition'] for x in xs if not x['leaves_review']))}",
-              f"- stay on: {dict(C(x['stays_on'] for x in xs if not x['leaves_review']).most_common())}",
-              f"- branch: {dict(C(x['branch'] for x in xs))}; Sonnet read: {sum(x['sonnet'] for x in xs)}",
-              f"- simulated before (stored fields, same rules) vs stored disposition: "
-              f"{dict(C((x['stored_disposition'], x['simulated_before']) for x in xs))}", ""]
+              "- stay on:", ""]
+        L += [f"  - {k or '-'}: {v}" for k, v in
+              C(x["stays_on"] for x in xs if not x["leaves_review"]).most_common()]
+        L += ["", f"- branch: {dict(C(x['branch'] for x in xs))}; documents with a Sonnet read: "
+              f"{sum(x['sonnet'] for x in xs)}", ""]
         if sel == NII_TEXT:
             found = [x for x in xs if x["new_refs"] or x["new_udi"]]
             L += [f"- a REF list or Basic UDI-DI now found: {len(found)} of {n} "
-                  f"(REF list {sum(bool(x['new_refs']) for x in xs)}, UDI {sum(bool(x['new_udi']) for x in xs)})",
-                  f"- REF list overlaps the catalogue (VALIDATE's REF gate, scoped): "
-                  f"{sum(bool(x['new_items_matched']) for x in found)}; item mirror REF overlap "
-                  f"{sum(bool(x['new_mirror_ref_items']) for x in found)}; UDI matches a group "
-                  f"{sum(bool(x['new_udi_group_match']) for x in found)}, the mirror "
-                  f"{sum(bool(x['new_mirror_udi_items']) for x in found)}", ""]
+                  f"(REF list {sum(bool(x['new_refs']) for x in xs)}, UDI {sum(bool(x['new_udi']) for x in xs)}): "
+                  f"{[x['doc_id'] for x in found]}",
+                  f"- overlaps the catalogue for its manufacturer: VALIDATE's REF gate "
+                  f"{sum(bool(x['new_items_matched']) for x in found)}; item mirror REF "
+                  f"{sum(bool(x['new_mirror_ref_items']) for x in found)}; UDI in a group "
+                  f"{sum(bool(x['new_udi_group_match']) for x in found)}, in the mirror "
+                  f"{sum(bool(x['new_mirror_udi_items']) for x in found)}; no manufacturer, REF held "
+                  f"by one manufacturer (capped `ref-catalogue`): "
+                  f"{sum(x['new_unscoped_holders'] == 1 for x in found)}", ""]
+
+    worse_disp = [x for x in rows if _RANK.get(x["new_disposition"], 2)
+                  > _RANK.get(x["stored_disposition"], 2)]
+    worse_fields = [f for f in field_rows if f["verdict"] == "worse"]
+    L += ["## Regressions: read worse than production", "",
+          f"- Documents refused as not a compliance document: "
+          f"{[x['doc_id'] for x in rows if x['new_disposition'] == 'refused']}",
+          f"- Disposition further from leaving review than production's: "
+          f"{[(x['doc_id'], x['stored_disposition'], x['new_disposition']) for x in worse_disp]}",
+          f"- Fields judged worse (`review.json`, read against the PDF): {len(worse_fields)} on "
+          f"{len({f['doc_id'] for f in worse_fields})} documents", ""]
+    if worse_fields:
+        L += ["| doc | field | stored | new | why |", "|---|---|---|---|---|"]
+        L += [f"| {f['doc_id']} | {f['field']} | {f['stored']} {f['stored_quote']} | {f['new']} "
+              f"{f['new_quote']} | {f['note']} |".replace("\n", " ") for f in worse_fields]
+        L.append("")
+
     L += ["## Fields that changed from the stored value", "",
-          f"{len(field_rows)} fields on {len({f['doc_id'] for f in field_rows})} documents; by field "
-          f"{dict(C(f['field'] for f in field_rows).most_common())}. Quote on its page "
-          "(`hc._verbatim_ok`, text documents): stored / new.", "",
-          "| doc | field | stored | new |", "|---|---|---|---|"]
+          f"{len([f for f in field_rows if f['field'] != '*'])} fields on "
+          f"{len({f['doc_id'] for f in field_rows if f['field'] != '*'})} documents; by field "
+          f"{dict(C(f['field'] for f in field_rows if f['field'] != '*').most_common())}; verdicts "
+          f"{dict(C(f['verdict'] or 'not reviewed' for f in field_rows).most_common())}. "
+          "Quote on its page (`haiku_compare._verbatim_ok`, text pages only): stored / new.", "",
+          "| doc | field | stored | new | verdict |", "|---|---|---|---|---|"]
+    mark = {True: "on page", False: "NOT on page", None: "-"}
     for f in field_rows:
-        mark = {True: "on page", False: "NOT on page", None: "-"}
+        if f["field"] == "*":
+            continue
         L.append(f"| {f['doc_id']} | {f['field']} | {f['stored']} {f['stored_quote']} "
                  f"[{mark[f['stored_on_page']]}] | {f['new']} {f['new_quote']} "
-                 f"[{mark[f['new_on_page']]}] |".replace("\n", " "))
+                 f"[{mark[f['new_on_page']]}] | {f['verdict']} {f['note']} |".replace("\n", " "))
     L += ["", "## Per document", "",
           "| doc | sel | stored | new score | new | stays on | refs st/new | items | changed |",
           "|---|---|---|---|---|---|---|---|---|"]
