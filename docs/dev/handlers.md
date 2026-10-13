@@ -23,7 +23,7 @@ never clobber a real handler.
 | `resolve.group` | `handlers/resolve.py:278` | `discover.group` | `test_resolve_handler.py` |
 | `discover.group` | `handlers/discover.py:908` | `fetch.url` ×k, `email.request`, `validate.doc` | `test_discover_handler.py` |
 | `fetch.url` | `handlers/fetch.py:145` | `extract.doc` or `validate.doc`, **or nothing** when the body is not a document | `test_fetch_handler.py` |
-| `extract.doc` | `handlers/extract.py:359` | `validate.doc`, **or nothing** when the doc-class call answers `not-a-compliance-document` | `test_extract_handler.py`, `test_extract_cost.py`, `test_doc_class_gate.py` |
+| `extract.doc` | `handlers/extract.py:362` | `validate.doc`, **or nothing** when the doc-class call answers `not-a-compliance-document` | `test_extract_handler.py`, `test_extract_cost.py`, `test_doc_class_gate.py` |
 | `validate.doc` | `handlers/validate.py:780` | `gate.candidate` | `test_validate_handler.py` |
 | `gate.candidate` | `handlers/gate.py:1414` | nothing (terminal) | `test_gate_candidate_handler.py` |
 | `gate.apply` | `handlers/gate.py:1987` | `discover.group` on reject | `test_gate_apply_handler.py` |

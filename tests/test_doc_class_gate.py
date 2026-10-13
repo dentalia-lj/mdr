@@ -103,10 +103,12 @@ def _a_text_document(monkeypatch):
     `sparse` to `pdf.page_classes` and send it down the scan ladder, which has
     its own doc-class call on page images (`tests/test_tiers_scan.py`). This
     file is about the text one. The text ladder also reads the page classes
-    (an image page is unread for the null rule), which this stub document
-    cannot compute: every page is a text page."""
+    and the pages where an annotation paints an image (both unread for the
+    null rule), which this stub document cannot compute: every page is a text
+    page, and none carries an annotation."""
     monkeypatch.setattr(tiers.pdfutil, "has_text_page", lambda doc: True)
     monkeypatch.setattr(tiers.pdfutil, "page_classes", lambda doc: ["text"] * doc.page_count)
+    monkeypatch.setattr(tiers.pdfutil, "annotation_image_pages", lambda doc: ())
 
 
 def _run(doc, llm, filename="d.pdf"):

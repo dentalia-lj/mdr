@@ -572,8 +572,8 @@ def run_extraction(doc, filename: str, llm, threshold: float = 0.95,
     The two branches split on `pdf.has_text_page`: a page with a text layer,
     an OCR layer over a scan included, makes it a text document (plan
     2026-10-12, "a scan is a document with no text page at all"), so a mixed
-    PDF takes the text branch. `image_settle` and `agreement_min` are the scan
-    ladder's.
+    PDF takes the text branch. `image_settle` (`extract.image_settle`) and
+    `agreement_min` (`gate.agreement_min`) reach both ladders.
 
     `result` is the caller's `app.results.Result`, passed to T0 so a playbook
     template that matched but parsed nothing is counted at the point it happens
@@ -617,13 +617,13 @@ def run_extraction(doc, filename: str, llm, threshold: float = 0.95,
         doc, filename, doc_class, fields, used, read,
         classify=getattr(llm, "classify", None),
         classify_image=getattr(llm, "classify_image", None), threshold=threshold,
-        agreement_min=agreement_min)
+        image_settle=image_settle, agreement_min=agreement_min)
     return doc_class, fields, used
 
 
 def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list[str],
                     read, classify=None, classify_image=None, *, threshold: float = 0.95,
-                    page_aware: bool = True,
+                    page_aware: bool = True, image_settle: float = IMAGE_SETTLE,
                     agreement_min: float = AGREEMENT_MIN) -> tuple[str, dict]:
     """T-3, the text ladder (PRD v3 section 5, amended 2026-10-12; plan Task 4).
     For a document with at least one text page. Returns (doc_class, fields)
@@ -649,7 +649,8 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
        is settled when the value it then holds passes `checks.settled` (T0's
        own included, where T1 read nothing better), or T1 answered it empty and
        `checks.null_settled` holds (no label for it in the text, no image or
-       OCR page, text not cut).
+       OCR page, no page where an annotation paints an image
+       (`pdf.annotation_image_pages`), text not cut).
     3. Fields pursued only after T1 (a scope T1 changed brings the item
        identifiers in) are taken from T1's answer, which carries every field,
        and settle as in step 2.
@@ -658,10 +659,14 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
        when it is a Basic UDI-DI whose check pair verifies
        (`checks.udi_check_valid`, the text layer may be corrupt), when it
        agrees with T1 (`checks.agree`, no per-read minimum: ruling 4, "as
-       measured"), or when both reads ANSWERED it empty and
+       measured"), or when the read cites it on a page no text read sees in
+       full and it is well-formed at `image_settle` or above, as on a scan
+       (`_image_only`, Denis 2026-10-13: never a Basic UDI-DI the text labels),
+       or when both reads ANSWERED it empty and
        `checks.both_null_settled` allows it (never a Basic UDI-DI the text
-       labels: multi-UDI lists go to Sonnet). Image pages of a mixed PDF the
-       read did not render, and text beyond the budget, count as unread.
+       labels: multi-UDI lists go to Sonnet). Image pages of a mixed PDF and
+       pages where an annotation paints an image, when the read did not
+       render them, and text beyond the budget, count as unread.
     5. Type to scope (`_scope_from_type`) after each read, as on a scan; and
        once the type is known to be an IFU, the certificate fields a read
        wrote before that are dropped (`_drop_ifu_certificate_reads`).
@@ -685,8 +690,9 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     fields stay open and the read is named in `READS_KEY` (`failed_reads`).
     Every read is recorded there; `read_disagreements` counts where they
     differ. Where part of the document was read by nobody (text past the
-    budget, a scanned page no image read rendered), a field Sonnet also
-    answered empty is recorded under `PAGES_UNREAD_KEY` (`pages-unread`)."""
+    budget, a scanned page or an annotation's image no image read rendered),
+    a field Sonnet also answered empty is recorded under `PAGES_UNREAD_KEY`
+    (`pages-unread`)."""
     # T0 declined to type this file. Ask, rather than guess.
     #
     # `unknown` used to proceed into the full ladder and, worse, be promoted to
@@ -729,11 +735,17 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
 
     pages = pdfutil.page_texts(doc)
     classes = pdfutil.page_classes(doc)
-    image_pages = tuple(n for n, c in enumerate(classes, start=1) if c == "image")
+    # The pages a text read does not see in full: a scanned page of a mixed
+    # PDF, and a page where an annotation paints an image (VOCO's e-signature,
+    # the only print of its issue date; Task 8, 2026-10-13).
+    image_pages = tuple(sorted({n for n, c in enumerate(classes, start=1) if c == "image"}
+                               | set(pdfutil.annotation_image_pages(doc))))
     # Read at call time, not as `bounded_text`'s default: T1 reads exactly this
     # budget, and the checks must judge the same cut.
     truncated = pdfutil.bounded_text(doc, pdfutil.LLM_TEXT_BUDGET_CHARS)[1] > 0
-    # T1 sees no image page: an empty answer there proves nothing.
+    # T1 does not see those pages in full: an empty answer proves nothing, nor
+    # does a citation's absence (`checks.citation_proven` judges this text).
+    # An image read that renders them counts them read (`image_ctx`).
     text_ctx = checks.Ctx(pages=pages, classes=classes, truncated=truncated,
                           unread_pages=frozenset(image_pages))
     reads: dict[str, tuple[list[str], dict]] = {}
@@ -759,7 +771,8 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
         image_ctx = checks.Ctx(pages=pages, classes=classes, truncated=truncated,
                                unread_pages=frozenset(set(image_pages) - rendered))
         known |= {f for f in open_fields
-                  if _image_settles_text(f, fields, t1, first, image_ctx)}
+                  if _image_settles_text(f, fields, t1, first, image_ctx,
+                                         image_pages, image_settle)}
         _scope_from_type(fields, known)
         _drop_ifu_certificate_reads(fields, known, t0, threshold)
         fields = _from_t1(fields, known, t1, reads, text_ctx)
@@ -780,9 +793,10 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
         _scope_from_type(fields, known)
         _drop_ifu_certificate_reads(fields, known, t0, threshold)
         # Part of the document no read saw: text past the budget, or a scanned
-        # page of a mixed PDF no image read rendered. A field every read left
-        # empty there is unread, not absent (PRD v3 section 7, `pages-unread`).
-        # A field Sonnet gave no answer for failed, which says nothing.
+        # page of a mixed PDF or an annotation's image no image read rendered.
+        # A field every read left empty there is unread, not absent (PRD v3
+        # section 7, `pages-unread`). A field Sonnet gave no answer for
+        # failed, which says nothing.
         if truncated or set(image_pages) - rendered:
             unread = [f for f in open_fields
                       if f in sonnet and _is_blank(sonnet[f]) and _is_blank(fields.get(f))]
@@ -1016,12 +1030,14 @@ def _from_t1(fields: dict, known: set[str], t1: dict, reads: dict, ctx) -> dict:
     return fields
 
 
-def _image_settles_text(f: str, fields: dict, t1: dict, image: dict, ctx) -> bool:
+def _image_settles_text(f: str, fields: dict, t1: dict, image: dict, ctx,
+                        image_pages=(), image_settle: float = IMAGE_SETTLE) -> bool:
     """Step 4 of `run_text_ladder` for one field: the image read's own value
     passes the checks (`_proven`: the field then holds the value that settled
-    it), or is a check-valid Basic UDI-DI, or agrees with T1's; or both reads
-    answered it empty and `checks.both_null_settled` allows it. No answer from
-    the image read (a failed read) settles nothing."""
+    it), or is a check-valid Basic UDI-DI, or agrees with T1's, or is a value
+    only an image shows (`_image_only`); or both reads answered it empty and
+    `checks.both_null_settled` allows it. No answer from the image read (a
+    failed read) settles nothing."""
     b = image.get(f)
     if b is None:
         return False
@@ -1030,19 +1046,49 @@ def _image_settles_text(f: str, fields: dict, t1: dict, image: dict, ctx) -> boo
             return True
         if f == "basic_udi_di" and checks.udi_check_valid(b.get("value")):
             return True
-        return checks.agree(f, t1.get(f), b, 0.0)
+        if checks.agree(f, t1.get(f), b, 0.0):
+            return True
+        return _image_only(f, fields, b, ctx, image_pages, image_settle)
     a = t1.get(f)
     return a is not None and _is_blank(a) and checks.both_null_settled(f, ctx)
+
+
+def _image_only(f: str, fields: dict, b: dict, ctx, image_pages,
+                image_settle: float) -> bool:
+    """A value the cheap image read cites on a page no text read sees in full
+    (`image_pages`: a scanned page of a mixed PDF, a page where an annotation
+    paints an image) is in no text the checks could prove it by, and T1 never
+    saw it. It settles as a scan read settles (Denis, 2026-10-13): well-formed,
+    stated at `image_settle` or above (`_image_settles`). VOCO's e-signed
+    declarations print their issue date only in the signature stamp; without
+    this rule every one went on to Sonnet.
+
+    Never a Basic UDI-DI the text labels (a multi-UDI list goes to Sonnet, as
+    under `checks.both_null_settled`). The field then holds this read's value;
+    where it holds a different T0 value, the two disagree and nothing settles."""
+    if b.get("page") not in image_pages or not _image_settles(f, b, image_settle):
+        return False
+    if f == "basic_udi_di" and re.search(checks.LABELS["basic_udi_di"], ctx.text,
+                                         re.IGNORECASE):
+        return False
+    held = fields.get(f)
+    held_value = held.get("value") if isinstance(held, dict) else None
+    if checks.normalized(f, held_value) != checks.normalized(f, b.get("value")):
+        if isinstance(held, dict) and held.get("tier") == "T0":
+            return False
+        fields[f] = b
+    return True
 
 
 def _image_pages(page_count: int, open_fields: list[str], t1: dict, pages: list[str],
                  image_pages=()) -> tuple[int, ...] | None:
     """The pages a text document's image read renders (Denis, 2026-10-12),
     chosen in this order: the pages T1 cited for the open fields, the first
-    page where each open field's label occurs (`checks.LABELS`), the image
-    pages of a mixed PDF, then page 1 onward; at most `MAX_VISION_PAGES`, each
-    clamped to the page count (`llm._vision_content` refuses a page past the
-    end). Sent in document order, so the model reads the document as it runs
+    page where each open field's label occurs (`checks.LABELS`), the pages
+    no text read sees in full (`image_pages`: the image pages of a mixed PDF,
+    the pages where an annotation paints an image), then page 1 onward; at
+    most `MAX_VISION_PAGES`, each clamped to the page count
+    (`llm._vision_content` refuses a page past the end). Sent in document order, so the model reads the document as it runs
     and a choice of pages 1-4 is today's request byte for byte: then this
     returns None, the read's default. Measured on the eval: 1 of 72 open
     fields pointed past page 4."""

@@ -11,6 +11,7 @@ can run over the local seed corpus.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -231,6 +232,92 @@ def page_classes(doc: pymupdf.Document) -> list[str]:
 
 #: Classes whose page carries a text layer a text read can use.
 TEXT_BEARING = frozenset({"text", "ocr"})
+
+
+#: Annotation flags under which a viewer does not draw the annotation (PDF
+#: 32000-1, 12.5.3): Hidden (bit 2) and NoView (bit 6). MuPDF skips them too.
+_NOT_DRAWN = 2 | 32
+_REF = re.compile(r"/([^\s/<>\[\]()]+)\s+(\d+)\s+0\s+R")
+_INLINE_IMAGE = re.compile(rb"(?:^|\s)BI\s*/")
+#: Forms followed inside one appearance, against a malformed self-reference.
+_MAX_FORMS = 16
+
+
+def annotation_image_pages(doc: pymupdf.Document) -> tuple[int, ...]:
+    """1-based pages where a drawn annotation paints an IMAGE in its normal
+    appearance: printed content that no text layer holds.
+
+    The case (Task 8, 2026-10-13): VOCO's e-signed declarations print their
+    issue date ("Cuxhaven, 14.01.2026") only inside the signature field's
+    appearance, which paints one image (Certifaction's stamp) on an otherwise
+    sparse page. The page text has no date and no date label, so T1's empty
+    `validity_from` passed the null rule and the date was lost.
+
+    Text an appearance WRITES is not this case: MuPDF runs a page's
+    annotations when it extracts text, so `get_text` already holds it
+    (measured on the SFTP mirror, 2026-10-13: no appearance with text that
+    `get_text` missed). An image the page content itself places (a pasted
+    signature, a stamp scanned into the page) is not an annotation and not
+    found here (`docs/dev/limits.md`).
+
+    Links are passed over: a link points somewhere, it prints nothing (the
+    mirror's are all bare, some written as direct dictionaries with no object
+    number to read them by). Hidden, never-viewed and zero-area annotations
+    are not drawn and do not count. An annotation that cannot be read counts,
+    so that a broken file costs an image read rather than an absence proved
+    over content nobody saw."""
+    out = []
+    for n, page in enumerate(doc, start=1):
+        if any(_paints_image(doc, xref) for xref, kind, _ in page.annot_xrefs()
+               if kind != pymupdf.PDF_ANNOT_LINK):
+            out.append(n)
+    return tuple(out)
+
+
+def _paints_image(doc: pymupdf.Document, annot_xref: int) -> bool:
+    try:
+        kind, flags = doc.xref_get_key(annot_xref, "F")
+        if kind == "int" and int(flags) & _NOT_DRAWN:
+            return False
+        kind, rect = doc.xref_get_key(annot_xref, "Rect")
+        if kind == "array":                # corners in any order: normalized first
+            corners = map(float, rect.strip("[]").split()[:4])
+            if pymupdf.Rect(*corners).normalize().is_empty:
+                return False
+        kind, ap = doc.xref_get_key(annot_xref, "AP/N")
+        if kind == "xref":
+            forms = [int(ap.split()[0])]
+        elif kind == "dict":               # one appearance per state (a check box)
+            forms = [int(x) for _, x in _REF.findall(ap)]
+        else:
+            return False                   # no appearance: nothing drawn
+        return any(_form_paints_image(doc, x, set()) for x in forms)
+    except Exception:  # noqa: BLE001 -- unreadable: counted, see the docstring above
+        return True
+
+
+def _form_paints_image(doc: pymupdf.Document, xref: int, seen: set[int]) -> bool:
+    """The form XObject paints an image: inline, or an Image XObject it invokes
+    with `Do`, itself or through a form it invokes."""
+    if xref in seen or len(seen) >= _MAX_FORMS:
+        return False
+    seen.add(xref)
+    stream = doc.xref_stream(xref) or b""
+    if _INLINE_IMAGE.search(stream):
+        return True
+    kind, xobjects = doc.xref_get_key(xref, "Resources/XObject")
+    if kind == "xref":
+        kind, xobjects = "dict", doc.xref_object(int(xobjects.split()[0]))
+    if kind != "dict":
+        return False
+    for name, ref in _REF.findall(xobjects):
+        if not re.search(b"/" + re.escape(name.encode()) + rb"\s*Do\b", stream):
+            continue
+        subtype = doc.xref_get_key(int(ref), "Subtype")[1]
+        if subtype == "/Image" or (subtype == "/Form"
+                                   and _form_paints_image(doc, int(ref), seen)):
+            return True
+    return False
 
 
 def has_text_page(doc: pymupdf.Document) -> bool:

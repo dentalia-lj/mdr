@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import pymupdf
+import pytest
+
 from app.extract import pdf
+from tests.fixtures.annotated_pdf import SIGNED_AT, annotate, text_png
 
 TEXT_PDF = "IVOCLAR/Ivoclar ISO certifikat do 30_10_2027.pdf"
 SCAN_PDF = "IVOCLAR/MDR Certificate IV AG 2017_745.pdf"
@@ -96,3 +100,96 @@ def test_bounded_text_honours_the_budget_even_on_an_oversized_first_page():
     assert len(text) <= 200 + 80            # budget + truncation marker
     assert dropped > 0
     doc.close()
+
+
+# --- annotation images: printed content no text layer holds ------------------ #
+#
+# VOCO's e-signed declarations print the issue date only inside the signature
+# field's appearance, as an image (Task 8, 2026-10-13: Ceramic Bond's
+# `validity_from` settled empty on T1's null). MuPDF's text extraction runs
+# annotations, so an appearance that WRITES text is in the text layer already;
+# one that PAINTS an image is not, and only an image read sees it.
+
+VOCO_SIGNED = "VOCO/VOCO_DoC_MDR_Ceramic Bond_2026-1-signed.pdf"
+LUMIWHITE = "LUMIWHITE/Declaration_of_Conformity_LUMIWHITE_OU.pdf"
+
+
+def _signature_pages(n: int = 1) -> pymupdf.Document:
+    doc = pymupdf.open()
+    for i in range(n):
+        page = doc.new_page()
+        page.insert_text((72, 72), f"Signatures, page {i + 1}")
+        page.insert_text((72, 92), "This document has been electronically signed by:")
+    return doc
+
+
+def test_a_signature_painted_as_an_image_is_found_and_its_date_is_in_no_text_layer():
+    doc = annotate(_signature_pages())
+    assert SIGNED_AT not in doc[0].get_text()
+    assert pdf.annotation_image_pages(doc) == (1,)
+    assert pdf.page_classes(doc) == ["sparse"]       # the page's class does not change
+
+
+def test_only_the_page_carrying_the_annotation_is_listed():
+    assert pdf.annotation_image_pages(annotate(_signature_pages(4), 3)) == (3,)
+
+
+def test_a_stamp_annotation_painting_an_image_counts_too():
+    assert pdf.annotation_image_pages(annotate(_signature_pages(), subtype="Stamp")) == (1,)
+
+
+@pytest.mark.parametrize("kw", [
+    {"appearance": "text"},       # written text: MuPDF's text extraction reads it
+    {"appearance": None},         # an invisible signature: nothing drawn
+    {"hidden": True},             # a viewer does not draw it
+], ids=["text-appearance", "no-appearance", "hidden"])
+def test_an_annotation_that_paints_no_image_is_not_listed(kw):
+    doc = annotate(_signature_pages(), **kw)
+    assert pdf.annotation_image_pages(doc) == ()
+    assert (SIGNED_AT in doc[0].get_text()) is (kw.get("appearance") == "text")
+
+
+def test_an_image_behind_indirect_resources_is_found():
+    doc = annotate(_signature_pages())
+    annot = doc[0].annot_xrefs()[0][0]
+    form = int(doc.xref_get_key(annot, "AP/N")[1].split()[0])
+    xobjects = doc.get_new_xref()
+    doc.update_object(xobjects, doc.xref_get_key(form, "Resources/XObject")[1])
+    resources = doc.get_new_xref()
+    doc.update_object(resources, f"<</XObject {xobjects} 0 R>>")
+    doc.xref_set_key(form, "Resources", f"{resources} 0 R")
+    assert pdf.annotation_image_pages(pymupdf.open("pdf", doc.tobytes())) == (1,)
+
+
+def test_a_link_written_inline_is_passed_over():
+    """Henry Schein's safety data sheets write their links as direct
+    dictionaries in `/Annots` (no object number to read them by): a link is
+    not drawn content, and an unreadable annotation must not be taken for one
+    that paints an image."""
+    doc = _signature_pages()
+    doc.xref_set_key(doc[0].xref, "Annots", "[<</Type/Annot/Subtype/Link/Border[0 0 0]"
+                     "/Rect[150 548 228 555]/A<</S/URI/URI(mailto:x@example.com)>>>>]")
+    doc = pymupdf.open("pdf", doc.tobytes())
+    assert [t for _, t, _ in doc[0].annot_xrefs()] == [pymupdf.PDF_ANNOT_LINK]
+    assert pdf.annotation_image_pages(doc) == ()
+
+
+def test_an_image_in_the_page_content_is_not_an_annotation():
+    """Out of this rule's reach: a date pasted into the page as an image (see
+    `docs/dev/limits.md`)."""
+    doc = _signature_pages()
+    doc[0].insert_image(pymupdf.Rect(72, 600, 322, 660), stream=text_png(SIGNED_AT))
+    assert pdf.annotation_image_pages(doc) == ()
+
+
+def test_voco_prints_its_issue_date_only_in_the_signature_image(fixture_pdf):
+    doc = pdf.open_doc(fixture_pdf(VOCO_SIGNED))
+    assert pdf.page_classes(doc) == ["text", "text", "sparse"]
+    assert pdf.annotation_image_pages(doc) == (3,)
+    assert "14.01.2026" not in pdf.full_text(doc)
+
+
+def test_lumiwhites_signature_page_carries_no_annotation(fixture_pdf):
+    doc = pdf.open_doc(fixture_pdf(LUMIWHITE))
+    assert pdf.page_classes(doc) == ["text", "sparse"]
+    assert pdf.annotation_image_pages(doc) == ()
