@@ -130,7 +130,7 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | 7 re-extract command | done: built (Sonnet), reviewed and fixed (Opus), merged | c39bb77 |
 | 8 quality and parity | done: real reads $0.60, all deploy blockers pass; text 121/130 fields right (today 112), scans 25/26 (today 24); report docs/private/2026-10-13-extraction-ladder-quality.md | el-quality 3b2b6b0 |
 | 8a date only an image shows (VOCO stamps) | done: built (Opus), checked, merged 6eeef62; ruling recorded c24b7f7; full suite 5214 passed; eval Sonnet 9 to 8, quality unchanged; confirmation read $0.0009 | merged |
-| 9 production replay | finishing (agent, cap 1.30 est) on the current ladder; regressions (doc 520 mixed PDF and docs 503/1130 IFU refused by doc-class, doc 754 scope 0.6) being fixed in el-regress with a doc-class measurement; after that merge, re-run so only changed requests are paid | el-replay, el-regress |
+| 9 production replay | run done ($0.84): 42 of 145 would leave review, but 76 fields read worse than production (24 staged to manual, 3 refused): BLOCKS DEPLOY. Fixing in el-regress (doc-class, mixed PDFs with a scanned page 1, scope) and el-fields (legacy MDD prompt per Denis, IFU dates, REF cap and non-REF codes, cert_number, dates, manufacturer); then re-run Tasks 8 and 9 | report eval/prod-replay/20261013T142432/report.md |
 
 ## Who builds what, and in parallel (Denis, 2026-10-12)
 
