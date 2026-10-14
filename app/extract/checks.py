@@ -425,18 +425,25 @@ _DISOWNED_REF = re.compile(r"\bnot\b[^.;:()\n]{0,30}?\b(?:REF|article|catalog(?:
 #: Below this a read is more unsure than sure of its own list.
 DISOWNED_REF_CONF = 0.5
 
+#: Up to 40 characters between the declaration word and its number label that
+#: hold no certificate word. "This declaration is based on EC Certificate No.:"
+#: labels the certificate the declaration cites, which is ruling A's
+#: `cert_number` (review of the Task 9 fixes, 2026-10-14).
+_NO_CERTIFICATE_GAP = r"(?:(?!certific|zertifikat|certificat|certifikat)[^:\n]){0,40}?"
+
 #: The label of a declaration's OWN number, ending the quote just before the
 #: value: "Declaration of conformity reference:", "DoC No.", "Konformitäts-
 #: erklärung Nr.", "Référence de la déclaration de conformité :". It names the
 #: declaration, so an EC or ISO certificate's own number ("Certificate No.")
-#: never matches.
+#: never matches, nor does a label a certificate word separates from the
+#: declaration ("Konformitätserklärung gemäß Zertifikat Nr.").
 _OWN_REFERENCE = re.compile(
-    r"(?:declaration|\bDoC\b|dichiarazione|erkl[äa]rung|izjava)[^:\n]{0,40}?"
+    rf"(?:declaration|\bDoC\b|dichiarazione|erkl[äa]rung|izjava){_NO_CERTIFICATE_GAP}"
     r"(?:reference|\bref\b\.?|\bno\b\.?|\bnr\b\.?|n°|number|nummer|num[ée]ro|\bšt\b\.?)"
     r"\s*[:.]?\s*$"
     r"|(?:r[ée]f[ée]rence|\bref\b\.?|\bno\b\.?|\bnr\b\.?|n°|number|nummer|num[ée]ro)"
     r"\s+(?:de\s+la\s+|of\s+the\s+|der\s+)?(?:d[ée]claration|declaration|erkl[äa]rung)"
-    r"[^:\n]{0,40}?\s*[:.]?\s*$",
+    rf"{_NO_CERTIFICATE_GAP}\s*[:.]?\s*$",
     re.IGNORECASE)
 
 

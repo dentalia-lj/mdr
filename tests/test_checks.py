@@ -782,6 +782,13 @@ def test_a_value_with_no_rule_is_never_rejected():
     ("G1 021108 0031", "Certificate No.: G1 021108 0031", False),
     ("MDR 778483", "This declaration is based on EU certificate MDR 778483", False),
     ("HZ 1470094-1", "Declaration of Conformity ... No. of Certificate: HZ 1470094-1", False),
+    # a certificate word between the declaration and the number label: the
+    # number is the certificate's (review of the Task 9 fixes)
+    ("G1 021108 0031", "This declaration is based on EC Certificate No.: G1 021108 0031", False),
+    ("G1 021108 0031", "Konformitätserklärung gemäß Zertifikat Nr. G1 021108 0031", False),
+    ("8445 rev.18", "Izjava o skladnosti, certifikat št. 8445 rev.18", False),
+    ("MDR 778483", "This declaration is based on the Certificate No. MDR 778483", False),
+    ("CE 01234", "Déclaration de conformité selon le certificat n° CE 01234", False),
 ])
 def test_a_certificate_number_the_quote_names_the_declarations_own_is_rejected(value, quote, rejected):
     """Ruling A (2026-10-12): a DoC's `cert_number` is the certificate it cites.
