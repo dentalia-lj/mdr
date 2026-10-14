@@ -741,6 +741,52 @@ def test_real_ref_codes_are_not_nomenclature_codes(codes, text):
     assert checks.nomenclature_codes(codes, text) == []
 
 
+#: Doc 622's text layer as PyMuPDF reads it: eight labels, then their values,
+#: so a code sits up to ten lines below its label.
+ULTRADENT_622 = """Intended Purpose:
+UMDNS Code:
+GMDN Code:
+EMDN Code:
+Basic UDI-D1:
+Eudamed SRN:
+Model Numbers:
+Images:
+Page 1 of 2
+lsoBlock bite blocks are used as a tongue restraint and to provide bilateral
+support during in-office whitening and dental procedures
+14066, Tongue Depressor
+36311, Occlusal splint, dental preformed
+V9001, Tongue Depressors, Single-Use
+0883205-TF057B8
+US-MF-000013697
+331-"""
+
+
+def test_doc_622s_nomenclature_codes_are_found_below_their_labels():
+    assert checks.nomenclature_codes(["14066", "36311", "V9001", "331-"], ULTRADENT_622) == [
+        "14066", "36311", "V9001"]
+
+
+def test_a_code_far_below_every_nomenclature_label_is_an_article():
+    """Review of the Task 9 fixes: a document that names GMDN once is not a
+    list of nomenclature codes. A five-digit article number printed with its
+    description far below the label is an article."""
+    text = ("GMDN code: 12345 Dental bur\n" + "Lorem ipsum dolor sit amet.\n" * 15
+            + "REF Description\n10234 Diamond bur\n10235 Carbide bur")
+    assert checks.nomenclature_codes(["10234", "10235"], text) == []
+
+
+def test_a_code_t0_listed_is_never_a_nomenclature_code():
+    """T0 enumerated the document's own article list: a code it holds is an
+    article, whatever its shape and wherever it sits."""
+    assert checks.nomenclature_codes(["14066", "V9001"], ULTRADENT_FORM,
+                                     listed=["14066"]) == ["V9001"]
+    reason, kept = checks.not_the_field(
+        "ref_list", {"value": ["14066", "331-"], "conf": 0.8, "verbatim": "x"},
+        ULTRADENT_FORM, listed=["14066", "331-"])
+    assert (reason, kept) == (None, None)
+
+
 def test_a_list_the_read_itself_disowns_is_rejected():
     """Doc 305: Barco's type designations, which the read returned at 0.4 while
     saying they are not REF codes. Under 0.5 and in its own words only: real

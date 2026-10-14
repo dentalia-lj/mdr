@@ -390,29 +390,52 @@ _NOMENCLATURE_LABEL = re.compile(r"\b(?:GMDN|EMDN|UMDNS|CND)\b", re.IGNORECASE)
 _NOMENCLATURE_SHAPE = re.compile(r"^(?:[A-Z]\d{2}(?:\d{2}){0,4}|\d{5}|\d{2}-\d{3})$")
 
 
-def nomenclature_codes(codes, text: str) -> list[str]:
+#: How many lines below a nomenclature label its code may be printed. Doc
+#: 622's form prints eight labels, then their eight values, so its codes sit
+#: eight to ten lines below their labels.
+NOMENCLATURE_LINES = 12
+
+
+def _near_nomenclature_labels(text: str) -> list[str]:
+    """The stretches of `text` that start at a nomenclature label's line and
+    run `NOMENCLATURE_LINES` lines on."""
+    lines = text.splitlines()
+    return ["\n".join(lines[i:i + NOMENCLATURE_LINES + 1])
+            for i, line in enumerate(lines) if _NOMENCLATURE_LABEL.search(line)]
+
+
+def nomenclature_codes(codes, text: str, listed=()) -> list[str]:
     """The codes of `codes` the text prints as a nomenclature entry, in their
-    order: on a document that names GMDN, EMDN, UMDNS or CND, a code of their
-    shape printed right after such a label, or followed by its term ("14066,
-    Tongue Depressor", "Q01010102: Temporary and Permanent Dental Restoration
-    Cements"). A nomenclature code names a type of device, not an article.
+    order: a code of the shape GMDN, EMDN, UMDNS or CND codes take, printed
+    within `NOMENCLATURE_LINES` lines below such a label, right after the
+    label or followed by its term ("14066, Tongue Depressor", "Q01010102:
+    Temporary and Permanent Dental Restoration Cements"). A nomenclature code
+    names a type of device, not an article. Never a code of `listed` (T0's
+    own REF list): T0 enumerated the document's article list, so a code it
+    holds is an article.
 
     Doc 622 (Task 9 replay): Ultradent's form prints its labels first and its
     values after, so T1 read the GMDN and EMDN codes as the "Model Numbers",
     every one printed, and the 95% check settled them. Measured 2026-10-14: no
     code of the 17,133 in T0's REF lists on the 1,320 PDFs of the SFTP mirror,
-    and none in 415 cached REF-list reads but doc 622's, is found here."""
+    and none in 415 cached REF-list reads but doc 622's, is found here. Near a
+    label only (review of the Task 9 fixes, 2026-10-14): a document that names
+    GMDN once may list five-digit article numbers with their descriptions
+    pages later."""
     if not text or not _NOMENCLATURE_LABEL.search(text):
         return []
+    stretches = _near_nomenclature_labels(text)
+    held = {compact(c) for c in listed or []}
     out = []
     for code in codes or []:
         c = str(code).strip()
-        if not _NOMENCLATURE_SHAPE.match(c):
+        if not _NOMENCLATURE_SHAPE.match(c) or compact(c) in held:
             continue
         esc = re.escape(c)
         with_term = rf"(?<![\w.-]){esc}[ \t]*[,:/\u2013-]?[ \t]*[^\W\d_]{{3,}}"
         after_label = rf"{_NOMENCLATURE_LABEL.pattern}[^\n]{{0,40}}\n?[ \t]*{esc}(?![\w.-])"
-        if re.search(with_term, text) or re.search(after_label, text, re.IGNORECASE):
+        if any(re.search(with_term, s) or re.search(after_label, s, re.IGNORECASE)
+               for s in stretches):
             out.append(code)
     return out
 
@@ -462,7 +485,8 @@ def _before(quote: str, value) -> str | None:
     return quote[:m.start()] if m else None
 
 
-def not_the_field(field_name: str, evidence: dict | None, text: str = "") -> tuple[str | None, object]:
+def not_the_field(field_name: str, evidence: dict | None, text: str = "",
+                  listed=()) -> tuple[str | None, object]:
     """Why a read's value is provably not `field_name`, and what of it stays:
     (None, None) when nothing is wrong with it, (reason, None) when none of it
     stays, (reason, kept) for a list that keeps some codes. The ladder treats
@@ -473,8 +497,9 @@ def not_the_field(field_name: str, evidence: dict | None, text: str = "") -> tup
     quote says the values are not REF codes (doc 305, Barco type designations
     at 0.4; real Ultradent model numbers were read at 0.55 to 0.7 with "not
     labelled REF", and a real list as low as 0.35, so neither half alone);
-    and any code the text prints as a nomenclature entry
-    (`nomenclature_codes`, doc 622).
+    and any code the text prints as a nomenclature entry near its label
+    (`nomenclature_codes`, doc 622), never one of `listed`, T0's own REF
+    list.
 
     `cert_number`: a number the quote labels as the declaration's own
     ("Declaration of conformity reference: 1000-TF_8_EUDOC_000219 [5]", doc
@@ -497,7 +522,7 @@ def not_the_field(field_name: str, evidence: dict | None, text: str = "") -> tup
         if (_conf(evidence) < DISOWNED_REF_CONF
                 and _DISOWNED_REF.search(str(evidence.get("verbatim") or ""))):
             return "the read says these are not REF codes", None
-        bad = nomenclature_codes(value, text)
+        bad = nomenclature_codes(value, text, listed)
         if bad:
             kept = [c for c in value if c not in bad]
             return f"nomenclature codes, not articles: {', '.join(map(str, bad))}", kept or None

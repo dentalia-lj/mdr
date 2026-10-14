@@ -395,13 +395,19 @@ counts them as `counts.rejected_values` (`tiers.rejected_values`). The rules,
 each measured on every cached read and the SFTP mirror before it was added:
 
 - `ref_list`: a code the text prints as a GMDN, EMDN, UMDNS or CND entry
-  (`checks.nomenclature_codes`: a document naming one of them, a code of
-  their shape right after the label or followed by its term, "14066, Tongue
-  Depressor"). Doc 622's form prints its labels before its values, and T1
-  read the GMDN and EMDN codes as the "Model Numbers"; every one is printed,
-  so the 95% check had settled them. No code of the 17,133 in T0's lists on
-  the 1,320 mirror PDFs, and none in 415 cached list reads but doc 622's,
-  matches.
+  (`checks.nomenclature_codes`: a code of their shape within
+  `NOMENCLATURE_LINES`, 12, lines below such a label, right after the label
+  or followed by its term, "14066, Tongue Depressor"). Doc 622's form prints
+  its eight labels before their values, so its codes sit eight to ten lines
+  below their labels, and T1 read the GMDN and EMDN codes as the "Model
+  Numbers"; every one is printed, so the 95% check had settled them. No code
+  of the 17,133 in T0's lists on the 1,320 mirror PDFs, and none in 415
+  cached list reads but doc 622's, matches. Near a label only, and never a
+  code T0 listed (review of the Task 9 fixes, 2026-10-14): a document that
+  names GMDN once may list five-digit articles with their descriptions pages
+  later, and T0 enumerated the article list. On the mirror's 352 documents
+  naming a nomenclature, the window cut the shape tokens the rule finds from
+  920 to 452; a sample of 25 of the 452 are all nomenclature codes.
 - `ref_list`: a list the read states under 0.5 while its own quote says the
   values are not REF codes (doc 305: Barco type designations at 0.4,
   "(these are type designations, not explicit REF codes)"). Both halves:

@@ -949,6 +949,19 @@ def test_a_rejected_value_t1_gave_for_a_field_pursued_later_is_recorded(t0):
     assert [(r["step"], r["field"]) for r in tiers.rejected_values(fields)] == [("T1", "ref_list")]
 
 
+def test_a_code_t0_listed_is_never_rejected_as_nomenclature(t0):
+    """Review of the Task 9 fixes: T0 enumerated the article list, so a code
+    it holds is an article, whatever its shape and wherever it sits."""
+    fields0 = _only_open("ref_list")
+    fields0["ref_list"] = t0ev(["14066", "331-"], 0.9, "2 REF codes", 1)
+    t0(fields0)
+    llm = TextLlm({"T1": {"ref_list": (["14066", "331-"], "Model Numbers: 14066", 1, 0.8)}})
+    _, fields, used = run(_doc(ULTRADENT_FORM), llm)
+    assert used == ["T0", "T1"]
+    assert tiers.rejected_values(fields) == []
+    assert fields["ref_list"]["value"] == ["14066", "331-"]
+
+
 def test_a_real_code_beside_nomenclature_codes_stays(t0):
     t0(_only_open("ref_list"))
     llm = TextLlm({"T1": {"ref_list": (["331-", "14066"], "Model Numbers: 331-", 1, 0.8)}})

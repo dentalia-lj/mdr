@@ -805,7 +805,8 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     rendered: set[int] = set()
 
     text = "\n".join(pages)
-    t1 = _read_step(read, used, reads, TEXT_READ, open_fields, text=text)
+    listed = _t0_codes(t0)
+    t1 = _read_step(read, used, reads, TEXT_READ, open_fields, text=text, listed=listed)
     fields = merge(fields, _asked(t1, open_fields), ctx=text_ctx)
     known |= {f for f in open_fields
               if _text_settles(f, fields, t1, text_ctx, agreement_min)}
@@ -820,7 +821,8 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     open_fields = _text_pursued(fields, known)
     if open_fields:
         sel = choose(open_fields)
-        first = _read_step(read, used, reads, FIRST_IMAGE, open_fields, pages=sel, text=text)
+        first = _read_step(read, used, reads, FIRST_IMAGE, open_fields, pages=sel, text=text,
+                           listed=listed)
         fields = merge(fields, _asked(first, open_fields), ctx=text_ctx)
         rendered |= set(sel or range(1, min(doc.page_count, _max_vision_pages()) + 1))
         image_ctx = checks.Ctx(pages=pages, classes=classes, truncated=truncated,
@@ -835,7 +837,8 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     open_fields = _text_pursued(fields, known)
     if open_fields:
         sel = choose(open_fields)
-        sonnet = _read_step(read, used, reads, SONNET_IMAGE, open_fields, pages=sel, text=text)
+        sonnet = _read_step(read, used, reads, SONNET_IMAGE, open_fields, pages=sel, text=text,
+                            listed=listed)
         fields = merge(fields, _asked(sonnet, open_fields), ctx=text_ctx)
         rendered |= set(sel or range(1, min(doc.page_count, _max_vision_pages()) + 1))
         # The last read closes what it was asked, an empty answer included, as
@@ -866,12 +869,19 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     _stamp_agreement(fields, reads)
     confirm = _to_confirm(fields, agreement_min)
     if confirm:
-        second = _read_step(read, used, reads, SECOND_TEXT, confirm, text=text)
+        second = _read_step(read, used, reads, SECOND_TEXT, confirm, text=text, listed=listed)
         _prefer_confirming(fields, known, second, confirm, text_ctx)
         _stamp_agreement(fields, reads)
 
     fields[READS_KEY] = _reads_record(reads)
     return doc_class, fields
+
+
+def _t0_codes(t0: dict) -> list:
+    """T0's own REF list, whose codes no rejection rule sets aside
+    (`checks.nomenclature_codes`): T0 enumerated the document's article list."""
+    value = (t0.get("ref_list") or {}).get("value")
+    return list(value) if isinstance(value, list) else []
 
 
 def _max_vision_pages() -> int:
@@ -881,21 +891,21 @@ def _max_vision_pages() -> int:
 
 
 def _read_step(read, used: list[str], reads: dict, label: str, missing: list[str],
-               pages=None, text: str = "") -> dict:
+               pages=None, text: str = "", listed=()) -> dict:
     """One read: its whole answer, each field marked with the step
     (`_stamp`). Recorded under `reads[label]` with the fields it was asked;
     `pages` is passed to `read` only when given, so a protocol stub without
     read options keeps working.
 
     Returned without what is provably not its field (`_without_rejected`,
-    against `text`, the document's text layer): the ladder sees no answer
-    there, as from a read that gave none, while the record keeps the value
-    and the reason."""
+    against `text`, the document's text layer, and `listed`, T0's own REF
+    list): the ladder sees no answer there, as from a read that gave none,
+    while the record keeps the value and the reason."""
     opts = {"pages": pages} if pages is not None else {}
     answer = _stamp(read(label, missing, **opts), label)
     used.append(label)
     reads[label] = (list(missing), answer)
-    return _without_rejected(answer, text)
+    return _without_rejected(answer, text, listed)
 
 
 #: On a read's own evidence in `reads` (and so in `READS_KEY`): why its value
@@ -903,16 +913,17 @@ def _read_step(read, used: list[str], reads: dict, label: str, missing: list[str
 REJECTED_KEY = "rejected"
 
 
-def _without_rejected(answer: dict, text: str) -> dict:
+def _without_rejected(answer: dict, text: str, listed=()) -> dict:
     """A read's answer without the values `checks.not_the_field` rejects
     (Task 9 replay, 2026-10-14): a field none of whose value stays is left
     out, so the ladder treats it as unanswered (open, never an empty answer
     that could settle or close it); a list that keeps some codes keeps those.
     The read's own evidence is marked with the reason (`REJECTED_KEY`) and
-    keeps its value, for the record (`_reads_record`, `rejected_values`)."""
+    keeps its value, for the record (`_reads_record`, `rejected_values`).
+    `listed` is T0's own REF list, whose codes are never rejected."""
     out = dict(answer)
     for f, ev in answer.items():
-        reason, kept = checks.not_the_field(f, ev, text)
+        reason, kept = checks.not_the_field(f, ev, text, listed)
         if reason is None:
             continue
         ev[REJECTED_KEY] = reason
@@ -1489,7 +1500,8 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     def step(label: str, missing: list[str]) -> dict:
         # The whole answer is kept for the record; only the asked fields are
         # merged (`_asked`), since a read answers every field.
-        return _read_step(read, used, reads, label, missing, text=ctx.text)
+        return _read_step(read, used, reads, label, missing, text=ctx.text,
+                          listed=_t0_codes(t0))
 
     first = step(FIRST_IMAGE, open_fields)
     fields = merge(fields, _asked(first, open_fields))
