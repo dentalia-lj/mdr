@@ -822,6 +822,32 @@ def test_certificate_fields_t1_read_before_the_type_was_known_are_dropped(t0):
     assert t1_record["fields"]["validity_from"]["value"] == "2026-04-26"   # still recorded
 
 
+@pytest.mark.parametrize("value, quote, kept", [
+    ("2023-06-01", "REV.00_06-2023", True),          # docs 709, 712, 714, 717, 719
+    ("2025-04-01", "04/2025", True),                 # doc 1059
+    ("2026-04-01", "701593/M/12 04/26", True),       # decisions.md 2026-10-02
+    ("2026-04-26", "701593/M/12 04/26", False),      # the STRAUMANN read: a made-up day
+])
+def test_an_ifu_keeps_the_revision_date_its_quote_prints(t0, value, quote, kept):
+    """Task 9 replay: an IFU's revision date ("REV.00_06-2023") is the only
+    date it carries, and dropping every date a read gave before the type was
+    known lost it on six documents. A date the quote prints, as a whole date
+    or as month and year stored as the first of the month, stays; one the
+    quote does not print (a day read off a revision code) still goes, and
+    `validity_to` and `cert_number` go whatever the quote."""
+    page = "Instructions for use\nManufacturer: Dental World S.r.l.\n" + quote
+    t0({"regulation": t0ev("MDR", 1.0)})
+    llm = TextLlm({"T1": {"type": ("IFU", "Instructions for use", 1, 0.97),
+                          "validity_from": (value, quote, 1, 0.4),
+                          "validity_to": ("2030-01-01", quote, 1, 0.5),
+                          "cert_number": ("701593/M/12", quote, 1, 0.5)}})
+    _, fields, _ = run(_doc(page), llm)
+    assert ("validity_from" in fields) is kept
+    if kept:
+        assert (fields["validity_from"]["value"], fields["validity_from"]["step"]) == (value, "T1")
+    assert "validity_to" not in fields and "cert_number" not in fields
+
+
 def test_the_drop_follows_a_type_the_image_read_settles(t0):
     t0({"regulation": t0ev("MDR", 1.0), "manufacturer": t0ev("GC EUROPE N.V.", 0.97)})
     llm = TextLlm({"T1": {"type": ("IFU", "a manual", 1, 0.6),

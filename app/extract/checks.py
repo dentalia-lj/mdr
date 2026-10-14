@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from rapidfuzz import fuzz
 
 from app.extract.pdf import TEXT_BEARING
-from app.extract.t0_templates import _DATE_RE, _parse_date
+from app.extract.t0_templates import _DATE_RE, _MONTH_NUMBERS, _parse_date
 from app.extract.udi import INVALID, VALID, is_word, validate_basic_udi
 
 DATE_FIELDS = ("validity_from", "validity_to")
@@ -145,6 +145,50 @@ def dates_in(text: str) -> set[str]:
     """Every ISO date the T0 parser reads out of `text`."""
     out = {d for m in _DATE_RE.finditer(text) if (d := _parse_date(m.group(0)))}
     return out | set(re.findall(r"\d{4}-\d{2}-\d{2}", text))
+
+
+def _month_year_in(value: str, quote: str) -> bool:
+    """`value` is the first of a month, and `quote` prints that month and year
+    as a revision line does: "06-2023", "01/2024", "04/26", "2023-06", "June
+    2023". Never as part of a whole date ("15-06-2023", "2023-06-15"), whose
+    day the value would drop."""
+    y, m, d = value.split("-")
+    if d != "01":
+        return False
+    mo = int(m)
+    names = "|".join(re.escape(n) for n, k in _MONTH_NUMBERS.items() if k == mo)
+    patterns = (
+        rf"(?<!\d)(?<!\d[-/.])0?{mo}\s*[-/._]\s*(?:{y}|{y[2:]})(?!\d)",
+        rf"(?<!\d){y}\s*[-/.]\s*0?{mo}(?![-/.]?\d)",
+        rf"\b(?:{names})\.?,?\s*{y}(?!\d)",
+    )
+    return any(re.search(p, quote, re.IGNORECASE) for p in patterns)
+
+
+def issue_date_proven(evidence: dict | None, ctx: Ctx | None = None) -> bool:
+    """A read's `validity_from` that its own quote prints: a whole date the
+    T0 parser reads out of the quote (`dates_in`), or the first of a month
+    whose month and year the quote prints ("REV.00_06-2023" for 2023-06-01).
+    For an IFU, whose only date is its revision date (Task 9 replay, 2026-10-14:
+    six IFUs lost it). A day the quote does not print is not read off it: the
+    STRAUMANN read "701593/M/12 04/26" as 2026-04-26, a day made up from a
+    revision code, where the code prints April 2026 (decisions.md 2026-10-02).
+
+    With `ctx`, a quote cited on a page the text reads in full must be on that
+    page, as `settled` requires; on a page no text read sees (a scan, an image
+    page), and without `ctx`, the quote stands alone."""
+    if not isinstance(evidence, dict):
+        return False
+    value, quote = evidence.get("value"), str(evidence.get("verbatim") or "")
+    if not well_formed("validity_from", value):
+        return False
+    page = evidence.get("page")
+    if (ctx is not None and isinstance(page, int) and not isinstance(page, bool)
+            and 1 <= page <= len(ctx.pages) and page not in ctx.unread_pages
+            and (not _classes_known(ctx) or ctx.classes[page - 1] in TEXT_BEARING)
+            and not quote_on_page(quote, page, ctx.pages)):
+        return False
+    return str(value) in dates_in(quote) or _month_year_in(str(value), quote)
 
 
 def udi_check_valid(value) -> bool:

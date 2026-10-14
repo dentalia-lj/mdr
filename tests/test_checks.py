@@ -88,6 +88,43 @@ def test_the_eval_dates_the_quote_does_not_prove_stay_unsettled(f, iso, quote, p
     assert checks.settled(f, ev(iso, quote), c) is False
 
 
+# --------------------------------------------------------------------------- #
+# an IFU's own date: its revision date, read off its quote (Task 9 replay)
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("value, quote, proven", [
+    # the measured IFU revision lines (docs 709, 712, 714, 1059)
+    ("2023-06-01", "REV.00_06-2023", True),
+    ("2024-01-01", "REV.01_01-2024", True),
+    ("2024-01-01", "REV.01_01/2024", True),
+    ("2025-04-01", "04/2025", True),
+    ("2023-06-01", "Rev. June 2023", True),
+    ("2023-06-01", "Edition 2023-06", True),
+    ("2024-03-15", "Date of issue: 2024-03-15", True),        # a whole printed date
+    # decisions.md 2026-10-02: "701593/M/12 04/26" is revision 12 of April 2026
+    ("2026-04-01", "701593/M/12 04/26", True),
+    # ... and the STRAUMANN read it was built against: a day the code never printed
+    ("2026-04-26", "701593/M/12 04/26", False),
+    ("2025", "(c) Institut Straumann AG, 2025", False),       # not a date at all
+    ("2023-06-01", "REV.00_07-2023", False),                  # another month
+    ("2023-06-01", "15-06-2023", False),                      # a day the value drops
+    ("2023-06-01", "2023-06-15", False),
+    ("2023-06-01", "Instructions for use", False),            # no date in the quote
+])
+def test_an_ifu_date_is_one_its_own_quote_prints(value, quote, proven):
+    assert checks.issue_date_proven(ev(value, quote)) is proven
+
+
+def test_an_ifu_date_quote_must_be_on_its_text_page():
+    c = ctx(LONG + "REV.00_06-2023")
+    assert checks.issue_date_proven(ev("2023-06-01", "REV.00_06-2023"), c) is True
+    assert checks.issue_date_proven(ev("2023-06-01", "REV.00_06-2023", page=2),
+                                    ctx(LONG + "REV.00_06-2023", LONG)) is False
+    # a page the text does not read in full: the image read's quote stands alone
+    assert checks.issue_date_proven(
+        ev("2023-06-01", "REV.00_06-2023", page=2),
+        ctx(LONG, "", classes=["text", "image"], unread=(2,))) is True
+
+
 def test_a_quote_that_is_not_on_the_cited_page_does_not_settle():
     c = ctx(LONG, LONG + "Issue Date: 2022-07-08")
     quote = "Issue Date: 2022-07-08"

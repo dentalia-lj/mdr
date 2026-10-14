@@ -65,7 +65,11 @@ Field definitions:
   "Izdano", or the date half of a place-and-date signature line ("Leuven,
   12/02/2026", "Ort, Datum", "Done at ... on ..."). A declaration takes effect
   when it is issued, so that date is its start. Return `null` only when the
-  document carries no date of its own at all.
+  document carries no date of its own at all. An IFU prints no issue date as
+  such: its date is its own revision or edition line ("REV.01_01-2024",
+  "Rev. 04/2025"), as the first of that month when only the month and year
+  are printed. Never a day you did not read: a part or document number is not
+  a date.
 - `validity_to` — expiry date, ISO 8601, or `null`. Many documents legitimately
   have no expiry — that is correct, not a missing value.
   A place-and-date signature line is where the document was SIGNED. It is

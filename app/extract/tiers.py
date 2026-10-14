@@ -80,6 +80,13 @@ _ESCALATE_ITEM_ID = ["ref_list", "basic_udi_di"]
 # The second is the dangerous one: a plausible date derived from a part number is
 # invisible to every downstream guard, and validity_from drives supersession.
 # Two documents, two fabricated dates, zero real ones.
+#
+# Not pursued is not dropped (2026-10-14, Task 9 replay): a `validity_from` a
+# read gave before the type was known stays when its own quote prints it
+# (`_drop_ifu_certificate_reads`, `checks.issue_date_proven`). An IFU's
+# revision line ("REV.00_06-2023") is its issue date, and "701593/M/12 04/26"
+# turned out to print one too, April 2026 (decisions.md 2026-10-02): the
+# failure was the day, 26, which no quote prints.
 _ESCALATE_CERTIFICATE = ["validity_from", "validity_to", "cert_number"]
 
 #: Document types that carry no certificate and no validity period by nature.
@@ -768,7 +775,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     fields = merge(fields, _asked(t1, open_fields), ctx=text_ctx)
     known |= {f for f in open_fields if _text_settles(f, fields, t1, text_ctx)}
     _scope_from_type(fields, known)
-    _drop_ifu_certificate_reads(fields, known, t0, threshold)
+    _drop_ifu_certificate_reads(fields, known, t0, threshold, text_ctx)
     fields = _from_t1(fields, known, t1, reads, text_ctx)
 
     def choose(wanted):
@@ -787,7 +794,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
                   if _image_settles_text(f, fields, t1, first, image_ctx,
                                          image_pages, image_settle)}
         _scope_from_type(fields, known)
-        _drop_ifu_certificate_reads(fields, known, t0, threshold)
+        _drop_ifu_certificate_reads(fields, known, t0, threshold, text_ctx)
         fields = _from_t1(fields, known, t1, reads, text_ctx)
 
     open_fields = _text_pursued(fields, known)
@@ -804,7 +811,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
                 fields[f] = sonnet[f]
         known |= set(open_fields)
         _scope_from_type(fields, known)
-        _drop_ifu_certificate_reads(fields, known, t0, threshold)
+        _drop_ifu_certificate_reads(fields, known, t0, threshold, text_ctx)
         # Part of the document no read saw: text past the budget, or a scanned
         # page of a mixed PDF or an annotation's image no image read rendered.
         # A field every read left empty there is unread, not absent (PRD v3
@@ -938,7 +945,7 @@ def _asked(answer: dict, wanted) -> dict:
 
 
 def _drop_ifu_certificate_reads(fields: dict, known: set[str], t0: dict,
-                                threshold: float = 0.95) -> None:
+                                threshold: float = 0.95, ctx=None) -> None:
     """Once the type is known to be an IFU (`_NO_CERTIFICATE_TYPES`), the
     certificate fields a read wrote before the type was known are dropped
     (review 2026-10-13; both ladders): the suppression exists because a model asked for a
@@ -946,6 +953,13 @@ def _drop_ifu_certificate_reads(fields: dict, known: set[str], t0: dict,
     read as 2026-04-26), and that is as true of an answer given before the
     type was known as after. T0's own read of the field comes back where there
     was one; otherwise the field is removed. The read stays in `READS_KEY`.
+
+    One exception (Task 9 replay, 2026-10-14): a `validity_from` its own quote
+    prints stays (`checks.issue_date_proven`, against `ctx` on the text
+    ladder). An IFU has no validity period and cites no certificate, but its
+    revision date ("REV.00_06-2023") is its issue date and the only date it
+    carries, and dropping it lost the date on six IFUs. The STRAUMANN read
+    still goes: its quote prints April 2026, not the 26th.
 
     Only for a type someone read (review round 2): T0 at or above the
     threshold, or a read's value (the doc-class call or a field read). A T0
@@ -960,6 +974,8 @@ def _drop_ifu_certificate_reads(fields: dict, known: set[str], t0: dict,
     for f in _ESCALATE_CERTIFICATE:
         ev = fields.get(f)
         if not isinstance(ev, dict) or ev.get("tier") == "T0":
+            continue
+        if f == "validity_from" and checks.issue_date_proven(ev, ctx):
             continue
         if f in t0:
             fields[f] = dict(t0[f])

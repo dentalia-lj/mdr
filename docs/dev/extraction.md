@@ -156,6 +156,16 @@ Task 4). Steps and labels from `llm.READ_STEPS`:
    2026-10-13): T1 is asked `validity_from` while the type is still open, and on
    an IFU it reads one off a revision code. T0's own value comes back where it
    had one; the read stays in `_reads`. The scan ladder applies the same rule.
+   One exception since 2026-10-14 (Task 9 replay): a `validity_from` its own
+   quote prints stays (`checks.issue_date_proven`): a whole date the T0
+   parser reads out of the quote, or the first of a month whose month and
+   year the quote prints ("REV.00_06-2023" for 2023-06-01), the quote on its
+   page where that page is text. An IFU's revision date is its issue date and
+   the only date it carries (six IFUs lost it in the replay). The STRAUMANN
+   read still goes: "701593/M/12 04/26" prints April 2026 (decisions.md
+   2026-10-02), and 2026-04-26 is a day nobody printed. `validity_to` and
+   `cert_number` go whatever the quote. The fields are still not PURSUED on a
+   known IFU: no read is asked for a date it does not already hold.
    Only for a type someone read: T0 at 0.95 or more, or a read's value. A T0
    guess under 0.95 (a file named "IFU") that became known because both reads
    answered `type` empty drops nothing.
@@ -293,7 +303,8 @@ Steps and labels from `llm.READ_STEPS`:
    A read's own scope kept because it agrees is not marked.
    Once the type is known to be an IFU, the certificate fields a read wrote
    before that are dropped, as on text (`_drop_ifu_certificate_reads`, review
-   2026-10-13): the first image read is asked them while the type is open. Runs after each read, so a type the first read
+   2026-10-13): the first image read is asked them while the type is open,
+   and a `validity_from` its quote prints stays, as on text. Runs after each read, so a type the first read
    settles spares the second read the scope. Measured: two cheap reads agreed on
    `group` for an MDD certificate in the eval; this caught it.
 6. `T2` (`models.t2`, Sonnet) for what is still open, never when nothing is.
@@ -509,9 +520,10 @@ returns a list of blocks now: the static T1 or T2 prompt first, carrying
 `cache_control: {"type": "ephemeral"}` (the default 5-minute cache), then the
 playbook hints block when there is one, never marked. Sync reads and batch
 requests share `_request`, so both carry it. What is cached is the marked block
-alone, the prompt file's text as rendered: `t1_text.md` is 8,000 characters and
-`t2_vision.md` 4,800 since the legacy-device rule (2026-10-14; 7,473 and 4,252
-when Task 6 measured), roughly 2,950 and 1,750 tokens on the 5.5 models. That is
+alone, the prompt file's text as rendered: `t1_text.md` is 8,266 characters and
+`t2_vision.md` 5,058 since the legacy-device and IFU revision-date rules
+(2026-10-14; 7,473 and 4,252 when Task 6 measured), roughly 3,050 and 1,850
+tokens on the 5.5 models. That is
 an estimate, not a count: the research doc's fixed part of a call (system prompt,
 schema and request line, counted with `count_tokens` on the 5.5 models) is 4,870
 tokens for T1 and 3,696 for T2, and the 3,221 characters between the two prompts

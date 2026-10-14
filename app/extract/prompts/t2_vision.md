@@ -21,7 +21,11 @@ Never `null`), `validity_from` (the date the document takes effect: an explicit
 validity-period start if there is one ("Valid from", "Gültig ab", "velja od"),
 otherwise the ISSUE or SIGNING date — "Date of issue", "Izdano", or the date
 half of a place-and-date line ("Leuven, 12/02/2026"). A declaration takes effect
-when it is issued. `null` only if the document carries no date at all),
+when it is issued. `null` only if the document carries no date at all. An IFU
+prints no issue date as such: its date is its own revision or edition line
+("REV.01_01-2024", "Rev. 04/2025"), as the first of that month when only the
+month and year are printed. Never a day you did not read: a part or document
+number is not a date),
 `validity_to` (ISO 8601 dates; `validity_to` null is
 normal for DoCs. A place-and-date line is `validity_from` and is NEVER an
 expiry. Return a date only with an explicit expiry phrase ("Expiry Date",

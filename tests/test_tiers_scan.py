@@ -94,7 +94,8 @@ class ScanLlm:
         given = self.answers.get(label, {})
         if given == FAILED:
             return {}
-        return {f: ev(*given[f]) if f in given else null_ev() for f in missing}
+        return {f: (dict(given[f]) if isinstance(given[f], dict) else ev(*given[f]))
+                if f in given else null_ev() for f in missing}
 
     def asked(self, label):
         return next((set(m) for lb, m in self.calls if lb == label), None)
@@ -755,7 +756,8 @@ def test_certificate_fields_a_read_wrote_before_the_type_was_an_ifu_are_dropped(
     be an IFU they are dropped; T0's own value comes back, the read stays in
     the record."""
     t0("compliance-doc", {"validity_to": t0ev("2030-01-01", 0.6)})
-    first = dict(EVERYTHING, type=("IFU", 0.95), validity_from=("2026-04-26", 0.9),
+    made_up_day = dict(ev("2026-04-26", 0.9), verbatim="701593/M/12 04/26")
+    first = dict(EVERYTHING, type=("IFU", 0.95), validity_from=made_up_day,
                  validity_to=("2031-01-01", 0.9), cert_number=("701593/M/12", 0.9))
     llm = ScanLlm({"T2-first": first})
     _, fields, _ = run(_scan(1), llm)
@@ -764,6 +766,19 @@ def test_certificate_fields_a_read_wrote_before_the_type_was_an_ifu_are_dropped(
     assert (fields["validity_to"]["value"], fields["validity_to"]["tier"]) == ("2030-01-01", "T0")
     record = next(r for r in fields[tiers.READS_KEY] if r["step"] == "T2-first")
     assert record["fields"]["validity_from"]["value"] == "2026-04-26"
+
+
+def test_an_ifu_scan_keeps_the_revision_date_its_quote_prints(t0):
+    """Task 9 replay, as on text: the month and year a revision line prints
+    stay as the first of the month; the other certificate fields still go."""
+    t0("compliance-doc")
+    revision = dict(ev("2023-06-01", 0.9), verbatim="REV.00_06-2023")
+    first = dict(EVERYTHING, type=("IFU", 0.95), validity_from=revision,
+                 validity_to=("2031-01-01", 0.9), cert_number=("701593/M/12", 0.9))
+    llm = ScanLlm({"T2-first": first})
+    _, fields, _ = run(_scan(1), llm)
+    assert fields["validity_from"]["value"] == "2023-06-01"
+    assert "validity_to" not in fields and "cert_number" not in fields
 
 
 def test_a_file_name_guess_of_ifu_drops_nothing_on_a_scan(t0):
