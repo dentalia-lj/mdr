@@ -714,8 +714,9 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
        identifiers in) are taken from T1's answer, which carries every field,
        and settle as in step 2.
     4. `T2-first` (`models.vision_first`) for what is open, on the pages
-       `_image_pages` picks. A field settles when its value passes the checks,
-       when it is a Basic UDI-DI whose check pair verifies
+       `_image_pages` picks. A field settles when its value passes the checks
+       (a `type` or `coverage_scope` on its quote only at `agreement_min` or
+       above, as in step 2), when it is a Basic UDI-DI whose check pair verifies
        (`checks.udi_check_valid`, the text layer may be corrupt), when it
        agrees with T1 (`checks.agree`, no per-read minimum: ruling 4, "as
        measured"), or when the read cites it on a page no text read sees in
@@ -842,7 +843,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
                                unread_pages=frozenset(set(image_pages) - rendered))
         known |= {f for f in open_fields
                   if _image_settles_text(f, fields, t1, first, image_ctx,
-                                         image_pages, image_settle)}
+                                         image_pages, image_settle, agreement_min)}
         _scope_from_type(fields, known)
         _drop_ifu_certificate_reads(fields, known, t0, threshold, text_ctx, reads)
         fields = _from_t1(fields, known, t1, reads, text_ctx, agreement_min)
@@ -1204,18 +1205,26 @@ def _from_t1(fields: dict, known: set[str], t1: dict, reads: dict, ctx,
 
 
 def _image_settles_text(f: str, fields: dict, t1: dict, image: dict, ctx,
-                        image_pages=(), image_settle: float = IMAGE_SETTLE) -> bool:
+                        image_pages=(), image_settle: float = IMAGE_SETTLE,
+                        floor: float = AGREEMENT_MIN) -> bool:
     """Step 4 of `run_text_ladder` for one field: the image read's own value
     passes the checks (`_proven`: the field then holds the value that settled
     it), or is a check-valid Basic UDI-DI, or agrees with T1's, or is a value
     only an image shows (`_image_only`); or both reads answered it empty and
     `checks.both_null_settled` allows it. No answer from the image read (a
-    failed read) settles nothing."""
+    failed read) settles nothing.
+
+    A `type` or `coverage_scope` (`checks.SEMANTIC_FIELDS`) the image read
+    states under `floor` (`gate.agreement_min`) does not settle on its quote,
+    as T1's does not at step 2 (review of the Task 9 fixes, 2026-10-14): a
+    disagreeing image read at 0.5 settled the scope there and Sonnet was never
+    asked. Agreeing with T1 still settles it at any number (ruling 4)."""
     b = image.get(f)
     if b is None:
         return False
     if not _is_blank(b):
-        if _proven(f, fields, b, ctx):
+        unsure = f in checks.SEMANTIC_FIELDS and _conf(b) < floor
+        if not unsure and _proven(f, fields, b, ctx):
             return True
         if f == "basic_udi_di" and checks.udi_check_valid(b.get("value")):
             return True

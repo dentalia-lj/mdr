@@ -180,7 +180,11 @@ Task 4). Steps and labels from `llm.READ_STEPS`:
    field, and settle as in step 2; recorded as T1's.
 4. `T2-first` (`models.vision_first`) for what is open, on the pages
    `_image_pages` picks (below). A field settles when its own value passes the
-   checks (and then holds that value, as in step 2), when it is a Basic UDI-DI whose check pair verifies
+   checks (and then holds that value, as in step 2; a `type` or
+   `coverage_scope` on its quote only when the image read states at least
+   `gate.agreement_min`, as T1's at step 2: review of the Task 9 fixes,
+   2026-10-14, a disagreeing image read at 0.5 settled the scope and Sonnet
+   was never asked), when it is a Basic UDI-DI whose check pair verifies
    (`checks.udi_check_valid`; the text layer may be an OCR misread, "OOIYC" for
    "001YC"), when it agrees with T1 (`checks.agree` with no per-read minimum:
    ruling 4, "as measured"), when it is a value only an image shows

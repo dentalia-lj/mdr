@@ -369,6 +369,32 @@ def test_a_semantic_t1_read_under_the_floor_settles_by_agreement_with_the_image_
     assert fields["coverage_scope"]["value"] == "manufacturer"
 
 
+@pytest.mark.parametrize("field, t1, first, settles", [
+    # the floor in step 4: the image read's own disagreeing value at 0.5
+    ("coverage_scope", ("manufacturer", "Product name: Euroklav 29 VS+", 1, 0.6),
+     ("group", "Product name: Euroklav 29 VS+", 1, 0.5), False),
+    ("type", ("other", "EU Declaration of Conformity", 1, 0.5),
+     ("DoC", "EU Declaration of Conformity", 1, 0.6), False),
+    # at the floor its quote settles it, as T1's does
+    ("coverage_scope", ("manufacturer", "Product name: Euroklav 29 VS+", 1, 0.6),
+     ("group", "Product name: Euroklav 29 VS+", 1, 0.7), True),
+], ids=["scope-0.5", "type-0.6", "scope-0.70"])
+def test_a_semantic_image_read_under_the_floor_does_not_settle_on_its_quote(
+        t0, field, t1, first, settles):
+    """Review of the Task 9 fixes: the floor applied to T1 only, so a
+    disagreeing image read at 0.5 settled the field on its quote and Sonnet
+    was never asked. The image read's own `type` or `coverage_scope` settles on
+    its quote only at `gate.agreement_min`; agreeing with T1 still settles it
+    at any number (the test above)."""
+    t0(_only_open(field))
+    llm = TextLlm({"T1": {field: t1}, "T2-first": {field: first},
+                   "T2": {field: (first[0], first[1], 1, 0.9)}})
+    _, fields, used = run(_doc(ONE_PRODUCT_PAGE), llm)
+    assert ("T2" not in used) is settles
+    if not settles:
+        assert llm.asked("T2") == {field}
+
+
 def test_t1s_empty_manufacturer_goes_to_the_image_read_without_a_label(t0):
     """Doc 2173: T1 could not read the name off a text layer in a private
     encoding, and with no "Manufacturer" label in it the null rule settled the
