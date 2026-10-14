@@ -436,7 +436,13 @@ each measured on every cached read and the SFTP mirror before it was added:
   ("Template RP00S0.07 Released May 31, 2024", doc 617, T1 at 0.3). The quote
   prints the date, so the checks had settled it, and the declaration's own
   date (a notary's stamp, in no text layer) was never asked of an image read.
-  1 of 1,143 cached date reads matches, doc 617's. Both prompts say so too.
+  Only the line of the quote that prints the date counts, with a template
+  named by its ID before the date ("Template RP00S0.07", "Template:
+  PLP_T_0071"; `checks._template_date`, review of the Task 9 fixes,
+  2026-10-14): Ivoclar prints "Template ID: TEFO-EN-000422" in every page
+  footer, and a quote that runs into it, or names a "Surgical Template Kit",
+  still gives the document's own date. 1 of 1,139 cached date reads matches,
+  doc 617's, as before the narrowing. Both prompts say so too.
 
 On the same document T1 answered the REF list empty: Ultradent prints its
 article numbers as "Model Numbers", which T1 took as out of scope, and with

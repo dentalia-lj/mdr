@@ -156,7 +156,10 @@ def _month_year_in(value: str, quote: str) -> str | None:
     """Where `quote` prints the month and year of `value`, the first of a
     month, as a revision line does: "06-2023", "01/2024", "04/26", "2023-06",
     "June 2023". Never as part of a whole date ("15-06-2023", "2023-06-15"),
-    whose day the value would drop. None when it does not."""
+    whose day the value would drop. None when it does not, or when `value` is
+    not an ISO date."""
+    if not _ISO_DATE.fullmatch(value):
+        return None
     y, m, d = value.split("-")
     if d != "01":
         return None
@@ -477,9 +480,27 @@ _OWN_REFERENCE = re.compile(
     re.IGNORECASE)
 
 
-#: A date quoted from the line of the form a document is printed on:
-#: "Template RP00S0.07 Released May 31, 2024" (doc 617).
-_TEMPLATE = re.compile(r"\btemplate\b", re.IGNORECASE)
+#: A form template named by its ID: "Template RP00S0.07" (doc 617),
+#: "Template: PLP_T_0071" (Dentsply), "Template ID: TEFO-EN-000422"
+#: (Ivoclar). A product such as a "Surgical Template Kit" names no form.
+_TEMPLATE = re.compile(r"\btemplate\b(?:\s*(?:id|no|nr|number)\.?)?\s*[:#]?\s*\S*\d",
+                       re.IGNORECASE)
+
+
+def _template_date(value, quote: str) -> bool:
+    """The quote gives `value` as the date of the form the document is printed
+    on: on a line of the quote that prints the date (`_printed_date`), a
+    template named by its ID before it ("Template RP00S0.07 Released May 31,
+    2024", doc 617). Only that line (review of the Task 9 fixes, 2026-10-14):
+    Ivoclar prints "Template ID: TEFO-EN-000422" in every page footer, and a
+    quote that runs into it, or names a "Surgical Template Kit", still gives
+    the document's own date. False when no line prints the date."""
+    for line in quote.splitlines():
+        printed = _printed_date(str(value), line)
+        at = line.find(printed) if printed else -1
+        if at >= 0 and _TEMPLATE.search(line[:at]):
+            return True
+    return False
 
 
 def _before(quote: str, value) -> str | None:
@@ -537,7 +558,7 @@ def not_the_field(field_name: str, evidence: dict | None, text: str = "",
         head = _before(str(evidence.get("verbatim") or ""), value)
         if head is not None and _OWN_REFERENCE.search(head):
             return "the declaration's own reference, not a certificate", None
-    if field_name in DATE_FIELDS and value and _TEMPLATE.search(str(evidence.get("verbatim") or "")):
+    if field_name in DATE_FIELDS and value and _template_date(value, str(evidence.get("verbatim") or "")):
         return "a template's release date, not the document's", None
     return None, None
 

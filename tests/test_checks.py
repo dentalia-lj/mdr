@@ -871,6 +871,14 @@ def test_a_certificate_number_the_quote_names_the_declarations_own_is_rejected(v
     ("validity_from", "2024-08-08", "Subscribed and sworn to before me on 08 August 2024", False),
     # doc 622: the declaration's own release line stays (arguable, not a template)
     ("validity_from", "2023-04-20", "RTD-002882.02 Released April 20, 2023", False),
+    # Dentsply's form footer: the template's own validity
+    ("validity_from", "2019-04-01", "Template: PLP_T_0071 ♦ Rev.1 ♦ valid from: 2019-04-01", True),
+    # only the line that prints the date, and a template named by its ID before
+    # the date (review of the Task 9 fixes): Ivoclar's form footer, a product
+    ("validity_from", "2026-05-04", "Date of issue: 2026-05-04\nTemplate ID:\nTEFO-EN-000422", False),
+    ("validity_to", "2030-10-21", "Valid until: 2030-10-21 Template ID: TEFO-EN-000422", False),
+    ("validity_from", "2023-06-15", "Surgical Template Kit\nIssued 2023-06-15", False),
+    ("validity_from", "2023-06-15", "Surgical Template Kit, issued 2023-06-15", False),
 ])
 def test_a_date_the_quote_gives_a_template_is_rejected(field, value, quote, rejected):
     reason, _ = checks.not_the_field(field, {"value": value, "conf": 0.3, "verbatim": quote})
