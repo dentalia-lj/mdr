@@ -395,6 +395,67 @@ def test_a_semantic_image_read_under_the_floor_does_not_settle_on_its_quote(
         assert llm.asked("T2") == {field}
 
 
+@pytest.mark.parametrize("configured, first_asked, sonnet_asked", [
+    (None, {"type", "coverage_scope"}, {"type"}),        # the default, 0.70
+    ("0.55", {"type"}, None),
+], ids=["default", "0.55"])
+def test_the_configured_agreement_min_is_the_floor_at_steps_2_and_4(
+        t0, monkeypatch, configured, first_asked, sonnet_asked):
+    """Review of the Task 9 fixes: `gate.agreement_min` as configured, read
+    by the extract handler (`_scan_thresholds`), is the floor T1's semantic
+    reads settle at (step 2) and the image read's (step 4). At 0.55, T1's
+    scope at 0.6 settles at step 2 and the image read's type at 0.6 at step
+    4; at the default neither does."""
+    from app.handlers import extract as extract_handler
+    if configured is None:
+        monkeypatch.delenv("GATE_AGREEMENT_MIN", raising=False)
+    else:
+        monkeypatch.setenv("GATE_AGREEMENT_MIN", configured)
+    t0(_only_open("type", "coverage_scope"))
+    llm = TextLlm({"T1": {"type": ("other", "EU Declaration of Conformity", 1, 0.5),
+                          "coverage_scope": ("group", "Product name: Euroklav 29 VS+", 1, 0.6)},
+                   "T2-first": {"type": ("DoC", "EU Declaration of Conformity", 1, 0.6),
+                                "coverage_scope": ("group", "Product name: Euroklav 29 VS+", 1, 0.6)},
+                   "T2": {"type": ("DoC", "EU Declaration of Conformity", 1, 0.9)}})
+    _, fields, _ = run(_doc(ONE_PRODUCT_PAGE), llm, **extract_handler._scan_thresholds())
+    assert llm.asked("T2-first") == first_asked
+    assert llm.asked("T2") == sonnet_asked
+    assert fields["type"]["value"] == "DoC"
+
+
+def test_the_configured_agreement_min_reaches_every_floor_call(t0, monkeypatch):
+    """The same number reaches each call that applies the floor: step 2 in
+    the ladder, the fields `_from_t1` takes after a scope change, and step 4."""
+    import inspect
+    import sys
+
+    from app.handlers import extract as extract_handler
+    monkeypatch.setenv("GATE_AGREEMENT_MIN", "0.55")
+    seen = set()
+    for name in ("_text_settles", "_image_settles_text"):
+        real = getattr(tiers, name)
+
+        def spy(*a, _real=real, _name=name, **kw):
+            frame = sys._getframe(1)
+            while frame.f_code.co_name.startswith("<"):      # a comprehension's frame
+                frame = frame.f_back
+            floor = inspect.signature(_real).bind(*a, **kw).arguments.get("floor")
+            seen.add((_name, frame.f_code.co_name, floor))
+            return _real(*a, **kw)
+        monkeypatch.setattr(tiers, name, spy)
+    fields0 = _only_open("coverage_scope", "ref_list", "manufacturer")
+    fields0["coverage_scope"] = t0ev("manufacturer", 0.6)
+    t0(fields0)
+    llm = TextLlm({"T1": {"coverage_scope": ("group", "Model Numbers:", 1, 0.9),
+                          "ref_list": (["331-"], "331-", 1, 0.8),
+                          "manufacturer": ("Ultradent Products", "Ultradent Products", 1, 0.8)},
+                   "T2-first": {"manufacturer": ("Ultradent Products", "Ultradent Products", 1, 0.9)}})
+    run(_doc(ULTRADENT_FORM), llm, **extract_handler._scan_thresholds())
+    assert seen == {("_text_settles", "run_text_ladder", 0.55),
+                    ("_text_settles", "_from_t1", 0.55),
+                    ("_image_settles_text", "run_text_ladder", 0.55)}
+
+
 def test_t1s_empty_manufacturer_goes_to_the_image_read_without_a_label(t0):
     """Doc 2173: T1 could not read the name off a text layer in a private
     encoding, and with no "Manufacturer" label in it the null rule settled the
