@@ -155,6 +155,17 @@ def test_both_prompts_read_a_legacy_device_declaration_as_mdd():
         assert "Article 120" in rule and "is `MDD`" in rule
 
 
+def test_both_prompts_keep_nomenclature_codes_out_of_the_ref_list():
+    """Task 9 replay: doc 622's GMDN and EMDN codes read as its REF list, and
+    doc 305's type designations returned at 0.4 by a read that said they were
+    not REF codes. The code rejects both (`checks.not_the_field`); the prompts
+    ask for neither."""
+    for text in (llm.T1_SYSTEM, llm.T2_SYSTEM):
+        flat = " ".join(text.split())
+        assert "GMDN, EMDN, UMDNS or CND" in flat
+        assert "would have to say is not a REF code" in flat
+
+
 def test_manufacturer_is_in_the_structured_output_schema():
     # SCHEMA is generated from _FIELD_VALUE so both tiers stay in step; a field
     # in TARGET but not here would be requested and never returned.

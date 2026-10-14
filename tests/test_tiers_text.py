@@ -800,6 +800,70 @@ def test_a_t0_list_of_exactly_the_cap_is_a_real_count(t0):
     assert fields["ref_list"]["tier"] == "T0"
 
 
+# --- a read's value that is provably not the field (Task 9 replay) ---------------
+
+#: Doc 622's text layer: the form's labels first, then its values.
+ULTRADENT_FORM = ("DECLARATION OF CONFORMITY\nRegulation (EU) 2017/745\nGMDN Code:\nEMDN Code:\n"
+                  "Model Numbers:\n14066, Tongue Depressor\n36311, Occlusal splint\n"
+                  "V9001, Tongue Depressors, Single-Use\n331-")
+
+
+def test_nomenclature_codes_t1_read_as_ref_codes_are_rejected(t0):
+    """Doc 622: T1 read the GMDN and EMDN codes as the REF list, every one
+    printed, so the 95% check settled them. They are not the field: the read
+    counts as no answer for it, the image read is asked, and the read keeps
+    its value and the reason in the record."""
+    t0(_only_open("ref_list"))
+    llm = TextLlm({"T1": {"ref_list": (["14066", "36311", "V9001"], "Model Numbers: 14066", 1, 0.8)},
+                   "T2-first": {"ref_list": (["331-"], "Model Numbers: 331-", 1, 0.6)}})
+    _, fields, used = run(_doc(ULTRADENT_FORM), llm)
+    assert used[:3] == ["T0", "T1", "T2-first"]
+    assert fields["ref_list"]["value"] == ["331-"]
+    record = next(r for r in fields[tiers.READS_KEY] if r["step"] == "T1")
+    assert record["fields"]["ref_list"]["value"] == ["14066", "36311", "V9001"]
+    assert "nomenclature" in record["fields"]["ref_list"]["rejected"]
+    assert tiers.rejected_values(fields) == [
+        {"step": "T1", "field": "ref_list", "reason": record["fields"]["ref_list"]["rejected"]}]
+
+
+def test_a_rejected_value_t1_gave_for_a_field_pursued_later_is_recorded(t0):
+    """T1 changes the scope to `group`, which brings the item identifiers in
+    after T1 (`_from_t1`). Its REF list was rejected, so it is not taken; it is
+    still recorded as T1's, so the job result counts it."""
+    fields0 = _only_open("coverage_scope", "ref_list")
+    fields0["coverage_scope"] = t0ev("manufacturer", 0.6)
+    t0(fields0)
+    llm = TextLlm({"T1": {"coverage_scope": ("group", "Model Numbers:", 1, 0.9),
+                          "ref_list": (["14066", "36311"], "Model Numbers: 14066", 1, 0.8)},
+                   "T2-first": {"ref_list": (["331-"], "Model Numbers: 331-", 1, 0.6)}})
+    _, fields, _ = run(_doc(ULTRADENT_FORM), llm)
+    assert "ref_list" not in llm.asked("T1")
+    assert fields["ref_list"]["value"] == ["331-"]
+    assert [(r["step"], r["field"]) for r in tiers.rejected_values(fields)] == [("T1", "ref_list")]
+
+
+def test_a_real_code_beside_nomenclature_codes_stays(t0):
+    t0(_only_open("ref_list"))
+    llm = TextLlm({"T1": {"ref_list": (["331-", "14066"], "Model Numbers: 331-", 1, 0.8)}})
+    _, fields, used = run(_doc(ULTRADENT_FORM), llm)
+    assert used == ["T0", "T1"]
+    assert fields["ref_list"]["value"] == ["331-"]
+
+
+def test_a_list_the_read_disowns_is_no_answer(t0):
+    """Doc 305: type designations T1 returned at 0.4 while saying they are
+    not REF codes."""
+    page = DOC_PAGE + "\nType: MDAC-2422 SNIB TER, MDAC-2422 SNNB ESA"
+    t0(_only_open("ref_list"))
+    quote = "Type: MDAC-2422 SNIB TER (these are type designations, not explicit REF codes)"
+    llm = TextLlm({"T1": {"ref_list": (["MDAC-2422 SNIB TER", "MDAC-2422 SNNB ESA"], quote, 1, 0.4)},
+                   "T2-first": {"ref_list": ([], "", None, 0.0)},
+                   "T2": {"ref_list": ([], "", None, 0.0)}})
+    _, fields, used = run(_doc(page), llm)
+    assert "T2-first" in used
+    assert not fields["ref_list"]["value"]
+
+
 # --- an IFU's certificate fields (review 2026-10-13) -----------------------------
 
 IFU_PAGE = ("Instructions for use\nManufacturer: GC EUROPE N.V.\nRegulation (EU) 2017/745\n"

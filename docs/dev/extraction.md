@@ -44,8 +44,8 @@ itself.
 | `app/extract/t0_templates.py` | 1546 | T0: doc-class classification, keyword tables, REF-list extraction, `field_ev()` evidence shape |
 | `app/extract/t0_layout.py` | 307 | The T0 REF-list layout-template engine (anchors + text-relative regions, read from playbooks) |
 | `app/extract/udi.py` | 159 | Offline Basic UDI-DI check-character validation (HIBCC + GS1, MOD 1021/32); `is_word` (no agency shape, no digit) |
-| `app/extract/tiers.py` | 1507 | The ladder itself: `needs_escalation`, `merge` (stronger read prevails; of two agreeing reads a verified one, then the surer), `calibrate`, `run_extraction` (splits text / scan), `run_text_ladder` (T-3) and `_image_pages` (its page choice), `run_scan_ladder` (S-2), `_stamp_agreement` / `_to_confirm` (the gate fields' second reads), `read_disagreements`, `failed_reads`, `next_extract_rev`, `extraction_attempt`/`extraction_cost` writers |
-| `app/extract/checks.py` | 366 | Evidence checks, pure: `settled` / `null_settled` / `both_null_settled` against the text layer; `citation_proven` (a regulation proven by its one printed citation, for GATE's 1.0); `well_formed`, `normalized` and `agree` (shape and agreement between two reads); a Basic UDI-DI that is a word never passes (`udi.is_word`) |
+| `app/extract/tiers.py` | 1507 | The ladder itself: `needs_escalation`, `merge` (stronger read prevails; of two agreeing reads a verified one, then the surer), `calibrate`, `run_extraction` (splits text / scan), `run_text_ladder` (T-3) and `_image_pages` (its page choice), `run_scan_ladder` (S-2), `_stamp_agreement` / `_to_confirm` (the gate fields' second reads), `_without_rejected` (a read's value provably not its field), `read_disagreements`, `failed_reads`, `rejected_values`, `next_extract_rev`, `extraction_attempt`/`extraction_cost` writers |
+| `app/extract/checks.py` | 366 | Evidence checks, pure: `settled` / `null_settled` / `both_null_settled` against the text layer; `citation_proven` (a regulation proven by its one printed citation, for GATE's 1.0); `not_the_field` / `nomenclature_codes` (a read's value provably not its field); `issue_date_proven` (an IFU's revision date its quote prints); `well_formed`, `normalized` and `agree` (shape and agreement between two reads); a Basic UDI-DI that is a word never passes (`udi.is_word`) |
 | `app/extract/llm.py` | 766 | T1/T2 Anthropic clients (sync `AnthropicLlm`, batch `AnthropicBatchClient`), `READ_STEPS`, the JSON schema, per-field evidence construction, the doc-class calls (`classify` on page 1-2 text, `classify_image` on page 1-2 images) |
 | `app/extract/batching.py` | 66 | Batch API state machine (`advance_batch`) over the `batch_ref` side table |
 | `app/extract/economics.py` | 153 | Token usage → USD, per-model `PRICES`, `UnknownModelPricing` |
@@ -341,6 +341,33 @@ sent to review (Denis, 2026-10-12). Failed reads are on the job result as
 (`tiers.failed_reads`). A scan field's evidence carries `step` (its label), which
 GATE ignores and `merge` ranks by.
 
+**A read's value that is provably not its field** (Task 9 replay, 2026-10-14)
+is not taken: `_read_step` hands the ladder each read's answer without it
+(`_without_rejected`, `checks.not_the_field`), so the field is unanswered by
+that read, exactly as from a read that gave no answer for it: still open,
+never an empty answer that could settle it or, from Sonnet, close it over a
+value an earlier read holds. A list keeps the codes that pass. The record
+keeps the read's value with the reason (`rejected` on its `_reads` entry), and
+the job result lists them as `rejected_values` (`{step, field, reason}`) and
+counts them as `counts.rejected_values` (`tiers.rejected_values`). The rules,
+each measured on every cached read and the SFTP mirror before it was added:
+
+- `ref_list`: a code the text prints as a GMDN, EMDN, UMDNS or CND entry
+  (`checks.nomenclature_codes`: a document naming one of them, a code of
+  their shape right after the label or followed by its term, "14066, Tongue
+  Depressor"). Doc 622's form prints its labels before its values, and T1
+  read the GMDN and EMDN codes as the "Model Numbers"; every one is printed,
+  so the 95% check had settled them. No code of the 17,133 in T0's lists on
+  the 1,320 mirror PDFs, and none in 415 cached list reads but doc 622's,
+  matches.
+- `ref_list`: a list the read states under 0.5 while its own quote says the
+  values are not REF codes (doc 305: Barco type designations at 0.4,
+  "(these are type designations, not explicit REF codes)"). Both halves:
+  real Ultradent model numbers were read at 0.55 to 0.7 with "not labelled
+  REF", and real lists as low as 0.35. Three of 415 cached list reads match,
+  all three not article numbers (doc 305, a series of ranges "1-9999", a
+  column of Basic UDI-DIs).
+
 **The gate fields' evidence** (plan Task 5, "Split 2026-10-12"; GATE reads it in
 `gate._confidences`). On `type`, `regulation` and `coverage_scope` (`tiers.
 GATE_FIELDS`, held equal to `gate.REQUIRED_FIELDS` by a test):
@@ -520,10 +547,10 @@ returns a list of blocks now: the static T1 or T2 prompt first, carrying
 `cache_control: {"type": "ephemeral"}` (the default 5-minute cache), then the
 playbook hints block when there is one, never marked. Sync reads and batch
 requests share `_request`, so both carry it. What is cached is the marked block
-alone, the prompt file's text as rendered: `t1_text.md` is 8,266 characters and
-`t2_vision.md` 5,058 since the legacy-device and IFU revision-date rules
-(2026-10-14; 7,473 and 4,252 when Task 6 measured), roughly 3,050 and 1,850
-tokens on the 5.5 models. That is
+alone, the prompt file's text as rendered: `t1_text.md` is 8,479 characters and
+`t2_vision.md` 5,285 since the Task 9 replay's rules (2026-10-14; 7,473 and
+4,252 when Task 6 measured), roughly 3,150 and 1,950 tokens on the 5.5
+models. That is
 an estimate, not a count: the research doc's fixed part of a call (system prompt,
 schema and request line, counted with `count_tokens` on the 5.5 models) is 4,870
 tokens for T1 and 3,696 for T2, and the 3,221 characters between the two prompts

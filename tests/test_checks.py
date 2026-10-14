@@ -657,3 +657,81 @@ def test_a_citation_proof_over_a_real_document(kinds, value, proven):
         doc[0].insert_text((72, 400), "Regulation (EU) 2017/745")
     c = Ctx(pages=pdf.page_texts(doc), classes=pdf.page_classes(doc))
     assert checks.citation_proven(ev(value), c) is proven
+
+
+# --------------------------------------------------------------------------- #
+# a read's value that is provably not the field (Task 9 replay, 2026-10-14)
+# --------------------------------------------------------------------------- #
+#: Doc 622 (Ultradent IsoBlock): a two-column form whose text layer prints the
+#: labels first and the values after, so T1 paired "Model Numbers:" with the
+#: GMDN and EMDN lines.
+ULTRADENT_FORM = """UMDNS Code:
+GMDN Code:
+EMDN Code:
+Basic UDI-D1:
+Model Numbers:
+14066, Tongue Depressor
+36311, Occlusal splint, dental preformed
+V9001, Tongue Depressors, Single-Use
+0883205-TF057B8
+331-"""
+
+
+def test_codes_printed_as_nomenclature_entries_are_found():
+    codes = ["14066", "36311", "V9001", "331-"]
+    assert checks.nomenclature_codes(codes, ULTRADENT_FORM) == ["14066", "36311", "V9001"]
+
+
+@pytest.mark.parametrize("text", [
+    "EMDN code / description\nV0599 - CLINICAL KITS - OTHERS\n"
+    "GMDN code / description\n45247 - Endodontic obturation system",
+    "EMDN Code:\nQ010199 Conservative dentistry\nUMDNS Code:\n16-411\nBohrinstrument",
+    "EMDN Code + term\nQ01010103\nDental Conservation Composites",
+])
+def test_a_code_after_a_nomenclature_label_is_found(text):
+    codes = ["V0599", "45247", "Q010199", "16-411", "Q01010103", "1510310B"]
+    found = checks.nomenclature_codes(codes, text)
+    assert found and "1510310B" not in found
+
+
+@pytest.mark.parametrize("codes, text", [
+    # a REF table on a declaration that names a GMDN code (doc 1406's layout)
+    (["1510310B", "1510311B"], "Product reference GMDN code\n1510310B 10 D.T. LIGHT-POST #0.5\n"
+                               "1510311B 10 D.T. LIGHT-POST #1\n38609"),
+    # five-digit article numbers in a list, nothing after them
+    (["10234", "10235"], "GMDN 12345\nREF\n10234\n10235"),
+    # the same codes on a document that names no nomenclature
+    (["14066", "V9001"], "Model Numbers:\n14066, Tongue Depressor\nV9001, Tongue Depressors"),
+])
+def test_real_ref_codes_are_not_nomenclature_codes(codes, text):
+    assert checks.nomenclature_codes(codes, text) == []
+
+
+def test_a_list_the_read_itself_disowns_is_rejected():
+    """Doc 305: Barco's type designations, which the read returned at 0.4 while
+    saying they are not REF codes. Under 0.5 and in its own words only: real
+    Ultradent model numbers were read at 0.55 to 0.7 with "not labelled REF"
+    (Task 9 replay), and a real list can be read at 0.35."""
+    quote = ("Type: MDAC-2422 SNIB TER, MDAC-2422 SNNB ESA "
+             "(these are type designations, not explicit REF codes)")
+    disowned = {"value": ["MDAC-2422 SNIB TER", "MDAC-2422 SNNB ESA"], "conf": 0.4,
+                "verbatim": quote}
+    assert checks.not_the_field("ref_list", disowned)[0] is not None
+    assert checks.not_the_field("ref_list", dict(disowned, conf=0.55))[0] is None
+    assert checks.not_the_field("ref_list", {"value": ["5941-"], "conf": 0.35,
+                                              "verbatim": "Model Numbers: '5941-' as printed"})[0] is None
+
+
+def test_nomenclature_codes_leave_the_rest_of_the_list():
+    ev_ = {"value": ["331-", "14066"], "conf": 0.8, "verbatim": "Model Numbers"}
+    reason, kept = checks.not_the_field("ref_list", ev_, ULTRADENT_FORM)
+    assert reason and kept == ["331-"]
+    reason, kept = checks.not_the_field(
+        "ref_list", {"value": ["14066", "36311", "V9001"], "conf": 0.8, "verbatim": "x"},
+        ULTRADENT_FORM)
+    assert reason and kept is None
+
+
+def test_a_value_with_no_rule_is_never_rejected():
+    assert checks.not_the_field("type", {"value": "DoC", "conf": 0.1, "verbatim": "x"}) == (None, None)
+    assert checks.not_the_field("ref_list", None) == (None, None)

@@ -771,7 +771,8 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     reads: dict[str, tuple[list[str], dict]] = {}
     rendered: set[int] = set()
 
-    t1 = _read_step(read, used, reads, TEXT_READ, open_fields)
+    text = "\n".join(pages)
+    t1 = _read_step(read, used, reads, TEXT_READ, open_fields, text=text)
     fields = merge(fields, _asked(t1, open_fields), ctx=text_ctx)
     known |= {f for f in open_fields if _text_settles(f, fields, t1, text_ctx)}
     _scope_from_type(fields, known)
@@ -785,7 +786,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     open_fields = _text_pursued(fields, known)
     if open_fields:
         sel = choose(open_fields)
-        first = _read_step(read, used, reads, FIRST_IMAGE, open_fields, pages=sel)
+        first = _read_step(read, used, reads, FIRST_IMAGE, open_fields, pages=sel, text=text)
         fields = merge(fields, _asked(first, open_fields), ctx=text_ctx)
         rendered |= set(sel or range(1, min(doc.page_count, _max_vision_pages()) + 1))
         image_ctx = checks.Ctx(pages=pages, classes=classes, truncated=truncated,
@@ -800,7 +801,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     open_fields = _text_pursued(fields, known)
     if open_fields:
         sel = choose(open_fields)
-        sonnet = _read_step(read, used, reads, SONNET_IMAGE, open_fields, pages=sel)
+        sonnet = _read_step(read, used, reads, SONNET_IMAGE, open_fields, pages=sel, text=text)
         fields = merge(fields, _asked(sonnet, open_fields), ctx=text_ctx)
         rendered |= set(sel or range(1, min(doc.page_count, _max_vision_pages()) + 1))
         # The last read closes what it was asked, an empty answer included, as
@@ -831,7 +832,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     _stamp_agreement(fields, reads)
     confirm = _to_confirm(fields, agreement_min)
     if confirm:
-        second = _read_step(read, used, reads, SECOND_TEXT, confirm)
+        second = _read_step(read, used, reads, SECOND_TEXT, confirm, text=text)
         _prefer_confirming(fields, known, second, confirm, text_ctx)
         _stamp_agreement(fields, reads)
 
@@ -846,16 +847,46 @@ def _max_vision_pages() -> int:
 
 
 def _read_step(read, used: list[str], reads: dict, label: str, missing: list[str],
-               pages=None) -> dict:
+               pages=None, text: str = "") -> dict:
     """One read: its whole answer, each field marked with the step
     (`_stamp`). Recorded under `reads[label]` with the fields it was asked;
     `pages` is passed to `read` only when given, so a protocol stub without
-    read options keeps working."""
+    read options keeps working.
+
+    Returned without what is provably not its field (`_without_rejected`,
+    against `text`, the document's text layer): the ladder sees no answer
+    there, as from a read that gave none, while the record keeps the value
+    and the reason."""
     opts = {"pages": pages} if pages is not None else {}
     answer = _stamp(read(label, missing, **opts), label)
     used.append(label)
     reads[label] = (list(missing), answer)
-    return answer
+    return _without_rejected(answer, text)
+
+
+#: On a read's own evidence in `reads` (and so in `READS_KEY`): why its value
+#: is not the field (`checks.not_the_field`).
+REJECTED_KEY = "rejected"
+
+
+def _without_rejected(answer: dict, text: str) -> dict:
+    """A read's answer without the values `checks.not_the_field` rejects
+    (Task 9 replay, 2026-10-14): a field none of whose value stays is left
+    out, so the ladder treats it as unanswered (open, never an empty answer
+    that could settle or close it); a list that keeps some codes keeps those.
+    The read's own evidence is marked with the reason (`REJECTED_KEY`) and
+    keeps its value, for the record (`_reads_record`, `rejected_values`)."""
+    out = dict(answer)
+    for f, ev in answer.items():
+        reason, kept = checks.not_the_field(f, ev, text)
+        if reason is None:
+            continue
+        ev[REJECTED_KEY] = reason
+        if kept is None:
+            del out[f]
+        else:
+            out[f] = {**{k: v for k, v in ev.items() if k != REJECTED_KEY}, "value": kept}
+    return out
 
 
 def _stamp_agreement(fields: dict, reads: dict) -> None:
@@ -1055,8 +1086,12 @@ def _from_t1(fields: dict, known: set[str], t1: dict, reads: dict, ctx) -> dict:
     T1's answer and settle as T1's asked fields do, before any image read is
     asked them. Recorded as T1's, so the record and the disagreement count see
     them. Returns the merged fields."""
-    asked = reads.get(TEXT_READ, ([], {}))[0]
-    pulled = [f for f in _text_pursued(fields, known) if f not in asked and f in t1]
+    asked, raw = reads.get(TEXT_READ, ([], {}))
+    now = [f for f in _text_pursued(fields, known) if f not in asked]
+    # A value T1 gave that was rejected (`_without_rejected`) is not in `t1`:
+    # recorded as asked all the same, so the record and the job result count it.
+    asked.extend(f for f in now if f not in t1 and REJECTED_KEY in (raw.get(f) or {}))
+    pulled = [f for f in now if f in t1]
     if not pulled:
         return fields
     asked.extend(pulled)
@@ -1265,12 +1300,20 @@ def _reads_record(reads: dict[str, tuple[list[str], dict]]) -> list[dict]:
     for label, (asked, answer) in reads.items():
         model = next((ev.get("model_id") for ev in answer.values() if ev.get("model_id")), None)
         entry = {"step": label, "model_id": model, "fields": {
-            f: ({"value": answer[f].get("value"), "conf": answer[f].get("conf"),
-                 "page": answer[f].get("page")} if f in answer else None)
-            for f in asked}}
+            f: (_recorded(answer[f]) if f in answer else None) for f in asked}}
         if asked and not answer:
             entry["failed"] = True
         out.append(entry)
+    return out
+
+
+def _recorded(evidence: dict) -> dict:
+    """One field of one read in `READS_KEY`: value, confidence, page, and the
+    reason it was not taken where it was rejected (`REJECTED_KEY`)."""
+    out = {"value": evidence.get("value"), "conf": evidence.get("conf"),
+           "page": evidence.get("page")}
+    if evidence.get(REJECTED_KEY):
+        out[REJECTED_KEY] = evidence[REJECTED_KEY]
     return out
 
 
@@ -1372,7 +1415,7 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     def step(label: str, missing: list[str]) -> dict:
         # The whole answer is kept for the record; only the asked fields are
         # merged (`_asked`), since a read answers every field.
-        return _read_step(read, used, reads, label, missing)
+        return _read_step(read, used, reads, label, missing, text=ctx.text)
 
     first = step(FIRST_IMAGE, open_fields)
     fields = merge(fields, _asked(first, open_fields))
@@ -1454,6 +1497,17 @@ def failed_reads(fields: dict) -> list[str]:
     """The steps whose read failed (`_reads_record`), in read order. For the
     extract job result, so a failed read is counted rather than silent."""
     return [e.get("step") for e in fields.get(READS_KEY) or [] if e.get("failed")]
+
+
+def rejected_values(fields: dict) -> list[dict]:
+    """Every value a read gave that was not taken because it is provably not
+    its field (`checks.not_the_field`), from `READS_KEY`, in read order:
+    `{step, field, reason}`. For the extract job result: a dropped value is
+    counted, never silent."""
+    return [{"step": e.get("step"), "field": f, "reason": ev[REJECTED_KEY]}
+            for e in fields.get(READS_KEY) or []
+            for f, ev in (e.get("fields") or {}).items()
+            if isinstance(ev, dict) and ev.get(REJECTED_KEY)]
 
 
 def read_disagreements(fields: dict) -> list[dict]:

@@ -90,7 +90,10 @@ Field definitions:
   no product identifiers). There is no per-item value — a declaration naming one
   product is still `group`.
 - `ref_list` — the manufacturer article numbers / REF codes, VERBATIM. Do not
-  strip dots, dashes, spaces, or leading zeros; copy each code exactly.
+  strip dots, dashes, spaces, or leading zeros; copy each code exactly. Never a
+  GMDN, EMDN, UMDNS or CND nomenclature code (those name a type of device, not
+  an article), a Basic UDI-DI, an SRN or a certificate number. Leave out any
+  value you would have to say is not a REF code.
 - `basic_udi_di` — the Basic UDI-DI string, or `null`.
 - `referenced_docs` — other documents this one references (e.g. an underlying
   EC certificate number), as strings.

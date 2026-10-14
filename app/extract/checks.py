@@ -336,6 +336,82 @@ def both_null_settled(field_name: str, ctx: Ctx) -> bool:
 
 
 # --------------------------------------------------------------------------- #
+# A read's value that is provably not the field (Task 9 replay, 2026-10-14)
+# --------------------------------------------------------------------------- #
+#: A nomenclature that codes device TYPES, not articles: GMDN, EMDN, UMDNS,
+#: and EMDN's Italian origin CND.
+_NOMENCLATURE_LABEL = re.compile(r"\b(?:GMDN|EMDN|UMDNS|CND)\b", re.IGNORECASE)
+
+#: The shapes their codes take: EMDN a letter and two to ten digits in pairs
+#: ("V9001", "Q01010103"), GMDN five digits ("45247"), UMDNS five digits or
+#: ECRI's "16-411".
+_NOMENCLATURE_SHAPE = re.compile(r"^(?:[A-Z]\d{2}(?:\d{2}){0,4}|\d{5}|\d{2}-\d{3})$")
+
+
+def nomenclature_codes(codes, text: str) -> list[str]:
+    """The codes of `codes` the text prints as a nomenclature entry, in their
+    order: on a document that names GMDN, EMDN, UMDNS or CND, a code of their
+    shape printed right after such a label, or followed by its term ("14066,
+    Tongue Depressor", "Q01010102: Temporary and Permanent Dental Restoration
+    Cements"). A nomenclature code names a type of device, not an article.
+
+    Doc 622 (Task 9 replay): Ultradent's form prints its labels first and its
+    values after, so T1 read the GMDN and EMDN codes as the "Model Numbers",
+    every one printed, and the 95% check settled them. Measured 2026-10-14: no
+    code of the 17,133 in T0's REF lists on the 1,320 PDFs of the SFTP mirror,
+    and none in 415 cached REF-list reads but doc 622's, is found here."""
+    if not text or not _NOMENCLATURE_LABEL.search(text):
+        return []
+    out = []
+    for code in codes or []:
+        c = str(code).strip()
+        if not _NOMENCLATURE_SHAPE.match(c):
+            continue
+        esc = re.escape(c)
+        with_term = rf"(?<![\w.-]){esc}[ \t]*[,:/\u2013-]?[ \t]*[^\W\d_]{{3,}}"
+        after_label = rf"{_NOMENCLATURE_LABEL.pattern}[^\n]{{0,40}}\n?[ \t]*{esc}(?![\w.-])"
+        if re.search(with_term, text) or re.search(after_label, text, re.IGNORECASE):
+            out.append(code)
+    return out
+
+
+#: A read saying in its own quote that what it returned is not a REF code:
+#: "(these are type designations, not explicit REF codes)".
+_DISOWNED_REF = re.compile(r"\bnot\b[^.;:()\n]{0,30}?\b(?:REF|article|catalog(?:ue)?)\b",
+                           re.IGNORECASE)
+
+#: Below this a read is more unsure than sure of its own list.
+DISOWNED_REF_CONF = 0.5
+
+
+def not_the_field(field_name: str, evidence: dict | None, text: str = "") -> tuple[str | None, object]:
+    """Why a read's value is provably not `field_name`, and what of it stays:
+    (None, None) when nothing is wrong with it, (reason, None) when none of it
+    stays, (reason, kept) for a list that keeps some codes. The ladder treats
+    a value none of which stays as no answer for the field
+    (`tiers._read_step`); the read's record keeps the value and the reason.
+
+    `ref_list`: a list the read states under `DISOWNED_REF_CONF` while its own
+    quote says the values are not REF codes (doc 305, Barco type designations
+    at 0.4; real Ultradent model numbers were read at 0.55 to 0.7 with "not
+    labelled REF", and a real list as low as 0.35, so neither half alone);
+    and any code the text prints as a nomenclature entry
+    (`nomenclature_codes`, doc 622)."""
+    if not isinstance(evidence, dict):
+        return None, None
+    value = evidence.get("value")
+    if field_name == "ref_list" and isinstance(value, list) and value:
+        if (_conf(evidence) < DISOWNED_REF_CONF
+                and _DISOWNED_REF.search(str(evidence.get("verbatim") or ""))):
+            return "the read says these are not REF codes", None
+        bad = nomenclature_codes(value, text)
+        if bad:
+            kept = [c for c in value if c not in bad]
+            return f"nomenclature codes, not articles: {', '.join(map(str, bad))}", kept or None
+    return None, None
+
+
+# --------------------------------------------------------------------------- #
 # Reads off page images: shape and agreement, no text layer
 # --------------------------------------------------------------------------- #
 

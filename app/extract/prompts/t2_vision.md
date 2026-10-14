@@ -46,6 +46,9 @@ Read carefully:
 
 - Transcribe REF codes and certificate numbers CHARACTER FOR CHARACTER — do not
   normalise or "correct" them.
+- `ref_list` is never a GMDN, EMDN, UMDNS or CND nomenclature code (those name
+  a type of device, not an article), a Basic UDI-DI, an SRN or a certificate
+  number. Leave out any value you would have to say is not a REF code.
 - QMS / ISO 13485 certificates are manufacturer-scope: `ref_list` MUST be empty
   and `coverage_scope` MUST be `manufacturer`. Never invent REF codes.
 - If a REF list is delegated to an external attachment, return an empty
