@@ -1272,6 +1272,38 @@ def test_the_unreadable_cut_is_thirty_percent_letters(letters, kind):
     assert tiers._unreadable(text) is (kind == "image")
 
 
+#: A manual's table of contents: dot leaders make most of its characters.
+#: Real case: NSK's Perio Mate manual (OM-DT0912CS000, Czech), 0.28 letters
+#: with its leaders counted, 0.92 without.
+CONTENTS = "\n".join(f"{n} {title} " + "." * 60 + f" {n * 3}" for n, title in enumerate(
+    ("Safety", "Parts", "Use", "Cleaning", "Storage", "Service"), start=1))
+
+
+def test_a_table_of_contents_is_readable_text():
+    """Review of the Task 9 fixes: the letter share counted the dot leaders
+    of a table of contents, so manuals whose pages 1-2 are a contents page fell
+    under the cut with the garbled certificates. Leader runs (dots, an
+    ellipsis character, underscores) are not counted; garbled text still is."""
+    assert tiers._unreadable(CONTENTS) is False
+    assert tiers._unreadable(CONTENTS.replace(".", "…")) is False
+    assert tiers._unreadable(CONTENTS.replace(".", "_")) is False
+    assert tiers._unreadable(GARBLED * 4) is True
+
+
+def test_a_contents_page_keeps_the_text_doc_class_call(t0):
+    """The page holds the contents alone (no filler), as a manual's page 2."""
+    t0({}, doc_class="unknown")
+    llm = TextLlm({"T1": FAILED, "T2-first": FAILED, "T2": FAILED},
+                  text_class="IFU", image_class="IFU")
+    doc = pymupdf.open()
+    page = doc.new_page()
+    for i, line in enumerate(("Operation manual", *CONTENTS.splitlines())):
+        page.insert_text((40, 60 + 16 * i), line, fontsize=9)
+    assert pdf.page_classes(doc) == ["text"]
+    run(doc, llm)
+    assert llm.classified == ["text"]
+
+
 def test_text_on_pages_one_and_two_keeps_the_text_call(t0):
     """A scanned page after page 2 does not change what the text call sees."""
     t0({}, doc_class="unknown")

@@ -589,23 +589,30 @@ FOLLOWS_KEY, FOLLOWS_TYPE = "follows", "type"
 _SCOPE_FROM_TYPE = ("EC", "ISO", "IFU")
 
 
-#: Under this share of letters among its printed characters, a text layer is
-#: not text a reader can use (`_unreadable`). Measured 2026-10-13 on the 398
-#: files T0 leaves `unknown` that reach the text doc-class call (production's
-#: and the local fetch history's): 16 fall under it, every one a compliance
-#: document whose fonts map glyphs to arbitrary codes (10 certificates
-#: production holds; the next file up, a manual, is at 0.32); the first file
-#: that is not one is a Komet article list at 0.38, and no file labelled not
-#: a compliance document is under 0.4.
+#: Under this share of letters among its printed characters, leader runs
+#: left out (`_LEADERS`), a text layer is not text a reader can use
+#: (`_unreadable`). Measured 2026-10-14 on the 288 hand-labelled text files
+#: of the doc-class check (`eval/doc-class-check/20261013T203817`): 10 fall
+#: under it, every one a certificate production holds (ISO 13485, MDSAP, CE)
+#: whose fonts map glyphs to arbitrary codes; the next file up is at 0.34
+#: (labelled ambiguous), the first real document at 0.51 and the first file
+#: that is not one at 0.57. Counted with their leaders, 3 more fell under it
+#: (0.26 to 0.29): manuals and processing instructions whose pages 1-2 are a
+#: table of contents, readable text (review of the Task 9 fixes).
 UNREADABLE_LETTER_SHARE = 0.3
+
+#: A table of contents' leader runs: dots (spaced or not), an ellipsis
+#: character, underscores. Not letters and not noise.
+_LEADERS = re.compile(r"(?:\.\s*){3,}|\u2026+|_{3,}")
 
 
 def _unreadable(text: str) -> bool:
     """Fewer than `UNREADABLE_LETTER_SHARE` of the non-space characters are
-    letters. Haiku 5.5 refuses such a file as "unreadable binary/encoded
+    letters, once leader runs are taken out (`_LEADERS`: "Safety ........ 3"
+    is text). Haiku 5.5 refuses such a file as "unreadable binary/encoded
     content", which is terminal; its page images read as what they are (10 of
     10 certificates, doc-class check 2026-10-13)."""
-    chars = [c for c in text if not c.isspace()]
+    chars = [c for c in _LEADERS.sub(" ", text) if not c.isspace()]
     return bool(chars) and sum(c.isalpha() for c in chars) < UNREADABLE_LETTER_SHARE * len(chars)
 
 

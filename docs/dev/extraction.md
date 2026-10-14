@@ -110,10 +110,14 @@ Task 4). Steps and labels from `llm.READ_STEPS`:
    one of them is a scanned page (`pdf.page_classes` `image`; Task 9 replay,
    doc 520: a scanned USTOMED declaration on page 1, its article list as text
    on pages 2-3, which the text call read alone and refused for good), or
-   their text layer is under 30% letters (`tiers._unreadable`: fonts that map
-   glyphs to arbitrary codes; 10 ISO 13485, MDSAP and CE certificates
-   production holds, 8 of which Haiku 5.5 refused as "unreadable", and their
-   images read as what they are), their images are asked instead (`classify_image`,
+   their text layer is under 30% letters with leader runs left out
+   (`tiers._unreadable`: fonts that map glyphs to arbitrary codes; 10 ISO
+   13485, MDSAP and CE certificates production holds, 8 of which Haiku 5.5
+   refused as "unreadable", and their images read as what they are; a table
+   of contents' dot leaders and a form's underscores are not counted, review
+   of the Task 9 fixes 2026-10-14: with them, 3 manuals and processing
+   instructions of the 288 labelled text files of the doc-class check fell
+   under the cut too, and without them only the 10 certificates do), their images are asked instead (`classify_image`,
    `doc-class-image`), as on a scan; a client with no image call keeps the
    old refusal without a call. On the SFTP mirror (2026-10-13) this moves 4 of
    the 22 PDFs T0 leaves `unknown` with a text page to the image call (Dentsply
