@@ -63,6 +63,16 @@ LABELS = {
     "manufacturer": r"manufactur|hersteller|fabbricante|proizvajalec|proizvođač|fabricant",
 }
 
+#: Fields a single read's empty answer never settles, whatever the labels: a
+#: compliance document always names its manufacturer, often as a letterhead
+#: with no label at all, so a missing "Manufacturer" label proves nothing
+#: (Task 9 replay, doc 2173: a text layer in a private font encoding, T1
+#: could not read the name, the null rule settled it, and the image read that
+#: reads EURONDA S.P.A. at 0.95 was never asked). Two empty reads still
+#: settle it (`both_null_settled`). Its label stays in `LABELS` for the page
+#: choice of an image read (`tiers._image_pages`).
+NEVER_NULL_SETTLED = frozenset({"manufacturer"})
+
 #: A notified-body number is not a certificate number: "0482", "CE-0197",
 #: "NB1639" sit in `cert_number` today (decisions.md, 2026-08-26).
 _NOTIFIED_BODY = re.compile(r"^(?:CE|NB)?[\s-]?\d{4}$", re.IGNORECASE)
@@ -214,9 +224,10 @@ def null_settled(field_name: str, ctx: Ctx) -> bool:
     e-signature holding the issue date, is unread to a text read), and the
     text was not cut. Fails closed when the page classes are missing or do not
     match the pages, and when no page carries a text layer: an empty text
-    layer holds no label, which proves nothing."""
+    layer holds no label, which proves nothing. Never for a field every
+    document carries (`NEVER_NULL_SETTLED`: the manufacturer)."""
     pat = LABELS.get(field_name)
-    if pat is None:
+    if pat is None or field_name in NEVER_NULL_SETTLED:
         return False
     if ctx.truncated or ctx.unread_pages:
         return False

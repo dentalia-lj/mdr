@@ -117,7 +117,11 @@ Task 4). Steps and labels from `llm.READ_STEPS`:
    notified-body number; `type` and `coverage_scope` by a quote on the cited
    page), or when T1 ANSWERED it empty and `checks.null_settled` holds (no label
    for it in the text, no image or OCR page, no page where an annotation
-   paints an image, text not cut; see **Annotations** below). A T0 value under
+   paints an image, text not cut; see **Annotations** below; never the
+   `manufacturer`, `checks.NEVER_NULL_SETTLED`, since 2026-10-14: every
+   document names one, often as a letterhead with no label, and on doc 2173
+   a text layer in a private font encoding held no label to find while the
+   image read reads EURONDA S.P.A. at 0.95). A T0 value under
    0.95 settles the same way when the field still holds it (T1 read nothing
    better): never against a different value T1 read, which the image read then
    decides. A REF list stores the list that settled it (`_proven`, review

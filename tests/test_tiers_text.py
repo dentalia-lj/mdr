@@ -267,6 +267,21 @@ def test_t0_below_the_threshold_with_nothing_proving_it_stays_open(t0):
     assert fields["manufacturer"]["value"] == "GC EUROPE N.V."     # never erased
 
 
+def test_t1s_empty_manufacturer_goes_to_the_image_read_without_a_label(t0):
+    """Doc 2173: T1 could not read the name off a text layer in a private
+    encoding, and with no "Manufacturer" label in it the null rule settled the
+    empty answer. The image read is asked instead, and settles it where it
+    agrees or the text proves it."""
+    page = "EU Declaration of Conformity\nRegulation (EU) 2017/745\nDate of issue: 2025-08-25"
+    t0(_only_open("manufacturer"))
+    llm = TextLlm({"T1": {"manufacturer": (None, "", None, 0.3)},
+                   "T2-first": {"manufacturer": ("EURONDA S.P.A.", "EURONDA S.P.A.", 1, 0.95)},
+                   "T2": {"manufacturer": ("EURONDA S.P.A.", "EURONDA S.P.A.", 1, 0.9)}})
+    _, fields, used = run(_doc(page), llm)
+    assert "manufacturer" in llm.asked("T2-first")
+    assert fields["manufacturer"]["value"] == "EURONDA S.P.A."
+
+
 # --- the cheap image read ----------------------------------------------------
 
 #: A page whose OCR text layer misreads the UDI (the Ceramill case).
@@ -1343,7 +1358,9 @@ def test_voco_ceramic_bond_reads_its_issue_date_off_the_signature_image(fixture_
 
 def test_lumiwhites_sparse_signature_page_keeps_its_citation_proof_and_null_rule(fixture_pdf):
     """A signature page with no annotation stays a page the text reads in full:
-    `n.a.` is proven by the citation alone, and the empty fields settle on T1."""
+    `n.a.` is proven by the citation alone, and the empty fields settle on T1,
+    all but the manufacturer, which one empty read never settles (Task 9
+    replay, doc 2173): the image read is asked that field alone."""
     quote = ("LUMI SOOTHE Desensitising Gel", 1)
     llm = TextLlm({"T1": {"regulation": ("n.a.", "Regulation (EC) No. 1223/2009", 1, 0.85),
                           "validity_from": ("2025-04-20", "Date: 20 April 2025", 1, 0.9),
@@ -1354,4 +1371,5 @@ def test_lumiwhites_sparse_signature_page_keeps_its_citation_proof_and_null_rule
                    "T1-second": {"coverage_scope": ("group", *quote, 0.9)}})
     _, fields, used = _run_fixture(fixture_pdf(LUMIWHITE), llm)
     assert fields["regulation"][tiers.PROVEN_KEY] == tiers.CITATION
-    assert used == ["T0", "T1", "T1-second"]
+    assert used == ["T0", "T1", "T2-first", "T1-second"]
+    assert llm.asked("T2-first") == {"manufacturer"}

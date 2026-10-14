@@ -325,6 +325,18 @@ def test_semantic_fields_have_no_null_rule():
     assert checks.null_settled("type", ctx("anything")) is False
 
 
+def test_one_empty_read_never_settles_the_manufacturer():
+    """Doc 2173 (Task 9 replay): EURONDA's Euroseal declaration has a text
+    layer in a font with a private encoding ('(MVIGXMZI9)' for 'Directive'),
+    so T1 could not read the name and no "Manufacturer" label was there to
+    find. The null rule took that as proof the document names none, and the
+    image read, which reads EURONDA S.P.A. at 0.95, was never asked. Every
+    compliance document names its manufacturer, often as a letterhead with no
+    label, so a missing label never proves the name is absent."""
+    assert checks.null_settled("manufacturer", ctx("Plain body text.  " * 20)) is False
+    assert checks.null_settled("validity_to", ctx("Plain body text.  " * 20)) is True
+
+
 # --------------------------------------------------------------------------- #
 # two empty reads (PRD v3 section 5, corrected 2026-10-12 to the measured rule)
 # --------------------------------------------------------------------------- #
