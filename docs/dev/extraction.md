@@ -162,10 +162,13 @@ Task 4). Steps and labels from `llm.READ_STEPS`:
    quote on the page shows the read looked at the page, not that the class
    follows; under the floor GATE cannot pass the read or count it in an
    agreement and no `T1-second` is asked, so the image read is asked instead.
-   On the Task 8 eval this asks 4 of 79 text documents one more image read
-   (two scopes at 0.55-0.6, two Komet article lists typed `other` at 0.5),
-   on the Task 9 replay 1 of the 48 text documents it finished (doc 754); no T1 semantic read fell between
-   0.70 and 0.85 on either set. A `type` T1 read does not settle at all when
+   On the Task 8 eval this adds the image read to 1 of 79 text documents
+   (Siroseal, its scope at 0.6) and asks 3 others one more field in the image
+   read they made anyway (two Komet article lists their `type`, read `other`
+   at 0.5; Calibra its scope, at 0.55); on the Task 9 replay it adds the image
+   read to 1 of the 48 text documents it finished (doc 754). Five T1 semantic
+   reads on the Task 8 eval fall between 0.70 and 0.85 (scopes at 0.7 to 0.8)
+   and settle as before. A `type` T1 read does not settle at all when
    page 1 or 2 is a scanned page (T0 not holding the type at 0.95, or it
    would not be asked): what announces the document is on a page T1 never
    saw. Task 9 replay, USTOMED 507-530: page 1 is the scanned declaration and
