@@ -852,31 +852,36 @@ def _ref_pages(codes: list[str]) -> tuple[str, ...]:
                  for i in range(0, len(lines), 10))
 
 
-def test_a_t1_list_at_the_cap_does_not_settle_and_the_longer_list_wins(t0):
-    """Doc 839: T1 returned 150 of 184 printed codes, every one printed, so the
-    95% check settled a list the prompt had cut. A list at exactly the cap is
-    truncated by construction: it goes on to the image read and Sonnet, and the
-    longer list is kept."""
+def test_a_t1_list_at_the_cap_settles_and_is_flagged(t0):
+    """Doc 839 (Task 9 replay): T1 returned 150 of 184 printed codes, every
+    one printed, and the 95% check settled the list. A rule that let no list
+    at the cap settle sent it on to the image read and Sonnet, but every read
+    is capped at 150 too, so none could return more and the rule only added
+    reads (review of the Task 9 fixes, 2026-10-14). The list settles as any
+    other, and the truncation flag says it may be cut."""
     printed = _codes(184)
     t0(_only_open("ref_list"))
-    llm = TextLlm({"T1": {"ref_list": (printed[:CAP], "first 150 returned", 1, 0.8)},
-                   "T2-first": {"ref_list": (printed[:CAP], "first 150 returned", 1, 0.8)},
-                   "T2": {"ref_list": (printed[:160], "160 codes", 1, 0.9)}})
+    llm = TextLlm({"T1": {"ref_list": (printed[:CAP], "first 150 returned", 1, 0.8)}})
     _, fields, used = run(_doc(*_ref_pages(printed)), llm)
-    assert used == ["T0", "T1", "T2-first", "T2"]      # agreement at the cap settles nothing
-    assert fields["ref_list"]["value"] == printed[:160]
-    assert fields["ref_list"]["step"] == "T2"
-
-
-def test_a_list_at_the_cap_stays_when_the_later_reads_are_no_longer(t0):
-    printed = _codes(184)
-    t0(_only_open("ref_list"))
-    llm = TextLlm({"T1": {"ref_list": (printed[:CAP], "first 150 returned", 1, 0.8)},
-                   "T2-first": {"ref_list": (printed[:40], "40 codes", 1, 0.9)},
-                   "T2": {"ref_list": ([], "", None, 0.0)}})
-    _, fields, used = run(_doc(*_ref_pages(printed)), llm)
-    assert used == ["T0", "T1", "T2-first", "T2"]
+    assert used == ["T0", "T1"]
     assert fields["ref_list"]["value"] == printed[:CAP]
+    assert tiers.REF_TRUNCATION_FLAG in tiers.integrity_flags(fields)
+
+
+def test_a_list_at_the_cap_keeps_its_flag_when_codes_are_rejected(t0):
+    """The flag reads the length the read returned, before any code was set
+    aside: 150 codes, two of them nomenclature codes, is still a list the
+    prompt cut, though 148 are stored."""
+    printed = _codes(184)
+    pages = list(_ref_pages(printed))
+    pages[0] = ("EMDN code: Q010199 Conservative dentistry\n"
+                "GMDN code: 16668 Carbide dental bur\n" + pages[0])
+    t0(_only_open("ref_list"))
+    llm = TextLlm({"T1": {"ref_list": (printed[:148] + ["Q010199", "16668"],
+                                       "first 150 returned", 1, 0.8)}})
+    _, fields, used = run(_doc(*pages), llm)
+    assert used == ["T0", "T1"]
+    assert fields["ref_list"]["value"] == printed[:148]
     assert tiers.REF_TRUNCATION_FLAG in tiers.integrity_flags(fields)
 
 
