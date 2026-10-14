@@ -964,6 +964,21 @@ def test_an_ifu_keeps_the_revision_date_its_quote_prints(t0, value, quote, kept)
     assert "validity_to" not in fields and "cert_number" not in fields
 
 
+def test_an_ifu_keeps_a_proven_date_a_later_read_gave_malformed(t0):
+    """Doc 712: T1 read "REV.01_01-2024" as 2024-01-01; the image read, asked
+    while the type was still open, gave "2024-01", which as the stronger read
+    replaced it and is no date. The IFU keeps the date a read's quote proves."""
+    page = "Istruzioni d'uso\nManufacturer: Dental World S.r.l.\nREV.01_01-2024"
+    t0({"regulation": t0ev("MDR", 1.0), "manufacturer": t0ev("DENTAL WORLD", 0.97)})
+    llm = TextLlm({"T1": {"type": ("IFU", "Istruzioni d'uso / IFU", 1, 0.93),
+                          "validity_from": ("2024-01-01", "REV.01_01-2024", 1, 0.35)},
+                   "T2-first": {"type": ("IFU", "Istruzioni d'uso", 1, 0.9),
+                                "validity_from": ("2024-01", "REV.01_01-2024", 1, 0.4)}})
+    _, fields, used = run(_doc(page), llm)
+    assert "validity_from" in llm.asked("T2-first")
+    assert (fields["validity_from"]["value"], fields["validity_from"]["step"]) == ("2024-01-01", "T1")
+
+
 def test_the_drop_follows_a_type_the_image_read_settles(t0):
     t0({"regulation": t0ev("MDR", 1.0), "manufacturer": t0ev("GC EUROPE N.V.", 0.97)})
     llm = TextLlm({"T1": {"type": ("IFU", "a manual", 1, 0.6),

@@ -776,7 +776,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     fields = merge(fields, _asked(t1, open_fields), ctx=text_ctx)
     known |= {f for f in open_fields if _text_settles(f, fields, t1, text_ctx)}
     _scope_from_type(fields, known)
-    _drop_ifu_certificate_reads(fields, known, t0, threshold, text_ctx)
+    _drop_ifu_certificate_reads(fields, known, t0, threshold, text_ctx, reads)
     fields = _from_t1(fields, known, t1, reads, text_ctx)
 
     def choose(wanted):
@@ -795,7 +795,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
                   if _image_settles_text(f, fields, t1, first, image_ctx,
                                          image_pages, image_settle)}
         _scope_from_type(fields, known)
-        _drop_ifu_certificate_reads(fields, known, t0, threshold, text_ctx)
+        _drop_ifu_certificate_reads(fields, known, t0, threshold, text_ctx, reads)
         fields = _from_t1(fields, known, t1, reads, text_ctx)
 
     open_fields = _text_pursued(fields, known)
@@ -812,7 +812,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
                 fields[f] = sonnet[f]
         known |= set(open_fields)
         _scope_from_type(fields, known)
-        _drop_ifu_certificate_reads(fields, known, t0, threshold, text_ctx)
+        _drop_ifu_certificate_reads(fields, known, t0, threshold, text_ctx, reads)
         # Part of the document no read saw: text past the budget, or a scanned
         # page of a mixed PDF or an annotation's image no image read rendered.
         # A field every read left empty there is unread, not absent (PRD v3
@@ -976,7 +976,8 @@ def _asked(answer: dict, wanted) -> dict:
 
 
 def _drop_ifu_certificate_reads(fields: dict, known: set[str], t0: dict,
-                                threshold: float = 0.95, ctx=None) -> None:
+                                threshold: float = 0.95, ctx=None,
+                                reads: dict | None = None) -> None:
     """Once the type is known to be an IFU (`_NO_CERTIFICATE_TYPES`), the
     certificate fields a read wrote before the type was known are dropped
     (review 2026-10-13; both ladders): the suppression exists because a model asked for a
@@ -990,7 +991,11 @@ def _drop_ifu_certificate_reads(fields: dict, known: set[str], t0: dict,
     ladder). An IFU has no validity period and cites no certificate, but its
     revision date ("REV.00_06-2023") is its issue date and the only date it
     carries, and dropping it lost the date on six IFUs. The STRAUMANN read
-    still goes: its quote prints April 2026, not the 26th.
+    still goes: its quote prints April 2026, not the 26th. Where the field
+    holds a date no quote proves, the date another read's quote proves is
+    kept instead, the strongest such read (`reads`): on doc 712 the image
+    read, asked while the type was open, gave "2024-01", no date, and as the
+    stronger read it had replaced T1's proven 2024-01-01.
 
     Only for a type someone read (review round 2): T0 at or above the
     threshold, or a read's value (the doc-class call or a field read). A T0
@@ -1008,10 +1013,25 @@ def _drop_ifu_certificate_reads(fields: dict, known: set[str], t0: dict,
             continue
         if f == "validity_from" and checks.issue_date_proven(ev, ctx):
             continue
+        if f == "validity_from" and (proven := _proven_issue_date(reads, ctx)) is not None:
+            fields[f] = proven
+            continue
         if f in t0:
             fields[f] = dict(t0[f])
         else:
             del fields[f]
+
+
+def _proven_issue_date(reads: dict | None, ctx) -> dict | None:
+    """Of the `validity_from` answers the reads asked it gave (`reads`, raw),
+    one its own quote proves (`checks.issue_date_proven`): the strongest
+    read's (`_rank`), the surer on a tie. None when no read's is."""
+    found = [ans["validity_from"] for asked, ans in (reads or {}).values()
+             if "validity_from" in asked
+             and checks.issue_date_proven(ans.get("validity_from"), ctx)]
+    if not found:
+        return None
+    return dict(max(found, key=lambda e: (_rank(e) or 0, _conf(e))))
 
 
 def _text_pursued(fields: dict, known: set[str]) -> list[str]:
@@ -1421,7 +1441,7 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     fields = merge(fields, _asked(first, open_fields))
     known |= {f for f in open_fields if _image_settles(f, first.get(f), image_settle)}
     _scope_from_type(fields, known)
-    _drop_ifu_certificate_reads(fields, known, t0, threshold)
+    _drop_ifu_certificate_reads(fields, known, t0, threshold, reads=reads)
 
     unread: list[str] = []
     open_fields = _scan_pursued(fields, known)
@@ -1459,7 +1479,7 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
         _prefer_confirming(fields, known, second, confirm, None)
 
     _scope_from_type(fields, known)
-    _drop_ifu_certificate_reads(fields, known, t0, threshold)
+    _drop_ifu_certificate_reads(fields, known, t0, threshold, reads=reads)
 
     open_fields = [f for f in _scan_pursued(fields, known) if f not in unread]
     if open_fields:
@@ -1474,7 +1494,7 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
                 fields[f] = sonnet[f]
         known |= set(open_fields)
         _scope_from_type(fields, known)
-        _drop_ifu_certificate_reads(fields, known, t0, threshold)
+        _drop_ifu_certificate_reads(fields, known, t0, threshold, reads=reads)
 
     if unread:
         fields[PAGES_UNREAD_KEY] = unread

@@ -159,8 +159,12 @@ Task 4). Steps and labels from `llm.READ_STEPS`:
    One exception since 2026-10-14 (Task 9 replay): a `validity_from` its own
    quote prints stays (`checks.issue_date_proven`): a whole date the T0
    parser reads out of the quote, or the first of a month whose month and
-   year the quote prints ("REV.00_06-2023" for 2023-06-01), the quote on its
-   page where that page is text. An IFU's revision date is its issue date and
+   year the quote prints ("REV.00_06-2023" for 2023-06-01), that part of the
+   quote on its page where that page is text (a reader's note after it, "04/2025
+   (no day given; document revision date)", doc 1059, does not count against
+   it). Where the field holds a date no quote proves, the date the strongest
+   read asked it proves is kept instead (doc 712: the image read, asked while
+   the type was open, gave "2024-01" over T1's proven 2024-01-01). An IFU's revision date is its issue date and
    the only date it carries (six IFUs lost it in the replay). The STRAUMANN
    read still goes: "701593/M/12 04/26" prints April 2026 (decisions.md
    2026-10-02), and 2026-04-26 is a day nobody printed. `validity_to` and

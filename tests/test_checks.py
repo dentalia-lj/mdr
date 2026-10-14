@@ -114,6 +114,15 @@ def test_an_ifu_date_is_one_its_own_quote_prints(value, quote, proven):
     assert checks.issue_date_proven(ev(value, quote)) is proven
 
 
+def test_an_ifu_date_quote_may_carry_the_readers_note():
+    """Doc 1059: "Latest document update 04/2025 (no day given; document
+    revision date)". What must be on the page is the date the quote prints,
+    not the reader's note after it."""
+    quote = "Latest document update 04/2025 (no day given; document revision date)"
+    assert checks.issue_date_proven(ev("2025-04-01", quote), ctx(LONG + "Latest document update 04/2025"))
+    assert not checks.issue_date_proven(ev("2025-04-01", quote), ctx(LONG + "Latest document update"))
+
+
 def test_an_ifu_date_quote_must_be_on_its_text_page():
     c = ctx(LONG + "REV.00_06-2023")
     assert checks.issue_date_proven(ev("2023-06-01", "REV.00_06-2023"), c) is True

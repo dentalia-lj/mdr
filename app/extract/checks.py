@@ -150,14 +150,14 @@ def dates_in(text: str) -> set[str]:
     return out | set(re.findall(r"\d{4}-\d{2}-\d{2}", text))
 
 
-def _month_year_in(value: str, quote: str) -> bool:
-    """`value` is the first of a month, and `quote` prints that month and year
-    as a revision line does: "06-2023", "01/2024", "04/26", "2023-06", "June
-    2023". Never as part of a whole date ("15-06-2023", "2023-06-15"), whose
-    day the value would drop."""
+def _month_year_in(value: str, quote: str) -> str | None:
+    """Where `quote` prints the month and year of `value`, the first of a
+    month, as a revision line does: "06-2023", "01/2024", "04/26", "2023-06",
+    "June 2023". Never as part of a whole date ("15-06-2023", "2023-06-15"),
+    whose day the value would drop. None when it does not."""
     y, m, d = value.split("-")
     if d != "01":
-        return False
+        return None
     mo = int(m)
     names = "|".join(re.escape(n) for n, k in _MONTH_NUMBERS.items() if k == mo)
     patterns = (
@@ -165,33 +165,53 @@ def _month_year_in(value: str, quote: str) -> bool:
         rf"(?<!\d){y}\s*[-/.]\s*0?{mo}(?![-/.]?\d)",
         rf"\b(?:{names})\.?,?\s*{y}(?!\d)",
     )
-    return any(re.search(p, quote, re.IGNORECASE) for p in patterns)
+    for p in patterns:
+        m_ = re.search(p, quote, re.IGNORECASE)
+        if m_:
+            return m_.group(0)
+    return None
+
+
+def _printed_date(value: str, quote: str) -> str | None:
+    """The part of `quote` that prints `value`: a whole date the T0 parser
+    reads as `value`, the ISO date itself, or its month and year
+    (`_month_year_in`). None when the quote does not print it."""
+    for m in _DATE_RE.finditer(quote):
+        if _parse_date(m.group(0)) == value:
+            return m.group(0)
+    if value in quote:
+        return value
+    return _month_year_in(value, quote)
 
 
 def issue_date_proven(evidence: dict | None, ctx: Ctx | None = None) -> bool:
     """A read's `validity_from` that its own quote prints: a whole date the
-    T0 parser reads out of the quote (`dates_in`), or the first of a month
-    whose month and year the quote prints ("REV.00_06-2023" for 2023-06-01).
-    For an IFU, whose only date is its revision date (Task 9 replay, 2026-10-14:
-    six IFUs lost it). A day the quote does not print is not read off it: the
-    STRAUMANN read "701593/M/12 04/26" as 2026-04-26, a day made up from a
-    revision code, where the code prints April 2026 (decisions.md 2026-10-02).
+    T0 parser reads out of the quote, or the first of a month whose month and
+    year the quote prints ("REV.00_06-2023" for 2023-06-01). For an IFU, whose
+    only date is its revision date (Task 9 replay, 2026-10-14: six IFUs lost
+    it). A day the quote does not print is not read off it: the STRAUMANN read
+    "701593/M/12 04/26" as 2026-04-26, a day made up from a revision code,
+    where the code prints April 2026 (decisions.md 2026-10-02).
 
-    With `ctx`, a quote cited on a page the text reads in full must be on that
-    page, as `settled` requires; on a page no text read sees (a scan, an image
-    page), and without `ctx`, the quote stands alone."""
+    With `ctx`, the part of the quote that prints the date must be on the
+    cited page when the text reads that page in full; the reader's note
+    around it need not be ("04/2025 (no day given; document revision date)",
+    doc 1059). On a page no text read sees (a scan, an image page), and
+    without `ctx`, the quote stands alone."""
     if not isinstance(evidence, dict):
         return False
     value, quote = evidence.get("value"), str(evidence.get("verbatim") or "")
     if not well_formed("validity_from", value):
         return False
+    printed = _printed_date(str(value), quote)
+    if printed is None:
+        return False
     page = evidence.get("page")
     if (ctx is not None and isinstance(page, int) and not isinstance(page, bool)
             and 1 <= page <= len(ctx.pages) and page not in ctx.unread_pages
-            and (not _classes_known(ctx) or ctx.classes[page - 1] in TEXT_BEARING)
-            and not quote_on_page(quote, page, ctx.pages)):
-        return False
-    return str(value) in dates_in(quote) or _month_year_in(str(value), quote)
+            and (not _classes_known(ctx) or ctx.classes[page - 1] in TEXT_BEARING)):
+        return compact(printed) in compact(ctx.pages[page - 1])
+    return True
 
 
 def udi_check_valid(value) -> bool:
