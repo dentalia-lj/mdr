@@ -369,6 +369,21 @@ def test_a_semantic_t1_read_under_the_floor_settles_by_agreement_with_the_image_
     assert fields["coverage_scope"]["value"] == "manufacturer"
 
 
+def test_t1s_empty_manufacturer_goes_to_the_image_read_without_a_label(t0):
+    """Doc 2173: T1 could not read the name off a text layer in a private
+    encoding, and with no "Manufacturer" label in it the null rule settled the
+    empty answer. The image read is asked instead, and settles it where it
+    agrees or the text proves it."""
+    page = "EU Declaration of Conformity\nRegulation (EU) 2017/745\nDate of issue: 2025-08-25"
+    t0(_only_open("manufacturer"))
+    llm = TextLlm({"T1": {"manufacturer": (None, "", None, 0.3)},
+                   "T2-first": {"manufacturer": ("EURONDA S.P.A.", "EURONDA S.P.A.", 1, 0.95)},
+                   "T2": {"manufacturer": ("EURONDA S.P.A.", "EURONDA S.P.A.", 1, 0.9)}})
+    _, fields, used = run(_doc(page), llm)
+    assert "manufacturer" in llm.asked("T2-first")
+    assert fields["manufacturer"]["value"] == "EURONDA S.P.A."
+
+
 # --- the cheap image read ----------------------------------------------------
 
 #: A page whose OCR text layer misreads the UDI (the Ceramill case).
@@ -821,6 +836,188 @@ def test_a_t0_list_at_the_threshold_is_never_asked_or_replaced(t0):
     assert fields["ref_list"]["value"] == ["003477", "999999"]
 
 
+# --- a REF list at the prompt cap (Task 9 replay, doc 839) -----------------------
+
+CAP = tiers.REF_LIST_PROMPT_CAP
+
+
+def _codes(n: int) -> list[str]:
+    return [str(100000 + i) for i in range(n)]
+
+
+def _ref_pages(codes: list[str]) -> tuple[str, ...]:
+    """The codes printed ten to a line, 100 to a page, under a REF label."""
+    lines = [" ".join(codes[i:i + 10]) for i in range(0, len(codes), 10)]
+    return tuple("Article list REF\n" + "\n".join(lines[i:i + 10])
+                 for i in range(0, len(lines), 10))
+
+
+def test_a_t1_list_at_the_cap_does_not_settle_and_the_longer_list_wins(t0):
+    """Doc 839: T1 returned 150 of 184 printed codes, every one printed, so the
+    95% check settled a list the prompt had cut. A list at exactly the cap is
+    truncated by construction: it goes on to the image read and Sonnet, and the
+    longer list is kept."""
+    printed = _codes(184)
+    t0(_only_open("ref_list"))
+    llm = TextLlm({"T1": {"ref_list": (printed[:CAP], "first 150 returned", 1, 0.8)},
+                   "T2-first": {"ref_list": (printed[:CAP], "first 150 returned", 1, 0.8)},
+                   "T2": {"ref_list": (printed[:160], "160 codes", 1, 0.9)}})
+    _, fields, used = run(_doc(*_ref_pages(printed)), llm)
+    assert used == ["T0", "T1", "T2-first", "T2"]      # agreement at the cap settles nothing
+    assert fields["ref_list"]["value"] == printed[:160]
+    assert fields["ref_list"]["step"] == "T2"
+
+
+def test_a_list_at_the_cap_stays_when_the_later_reads_are_no_longer(t0):
+    printed = _codes(184)
+    t0(_only_open("ref_list"))
+    llm = TextLlm({"T1": {"ref_list": (printed[:CAP], "first 150 returned", 1, 0.8)},
+                   "T2-first": {"ref_list": (printed[:40], "40 codes", 1, 0.9)},
+                   "T2": {"ref_list": ([], "", None, 0.0)}})
+    _, fields, used = run(_doc(*_ref_pages(printed)), llm)
+    assert used == ["T0", "T1", "T2-first", "T2"]
+    assert fields["ref_list"]["value"] == printed[:CAP]
+    assert tiers.REF_TRUNCATION_FLAG in tiers.integrity_flags(fields)
+
+
+def test_a_list_one_under_the_cap_still_settles_on_t1(t0):
+    printed = _codes(CAP - 1)
+    t0(_only_open("ref_list"))
+    llm = TextLlm({"T1": {"ref_list": (printed, "all codes", 1, 0.8)}})
+    _, fields, used = run(_doc(*_ref_pages(printed)), llm)
+    assert used == ["T0", "T1"]
+    assert fields["ref_list"]["value"] == printed
+
+
+def test_a_t0_list_of_exactly_the_cap_is_a_real_count(t0):
+    """T0 enumerates the document; the cap is a prompt's, so a T0 list of 150
+    codes proven by the text still settles where T0 held it below 0.95."""
+    printed = _codes(CAP)
+    fields0 = _only_open("ref_list")
+    fields0["ref_list"] = t0ev(printed, 0.9, "150 REF codes", 1)
+    t0(fields0)
+    llm = TextLlm({"T1": {"ref_list": ([], "", None, 0.0)}})
+    _, fields, used = run(_doc(*_ref_pages(printed)), llm)
+    assert used == ["T0", "T1"]
+    assert fields["ref_list"]["tier"] == "T0"
+
+
+# --- a read's value that is provably not the field (Task 9 replay) ---------------
+
+#: Doc 622's text layer: the form's labels first, then its values.
+ULTRADENT_FORM = ("DECLARATION OF CONFORMITY\nRegulation (EU) 2017/745\nGMDN Code:\nEMDN Code:\n"
+                  "Model Numbers:\n14066, Tongue Depressor\n36311, Occlusal splint\n"
+                  "V9001, Tongue Depressors, Single-Use\n331-")
+
+
+def test_nomenclature_codes_t1_read_as_ref_codes_are_rejected(t0):
+    """Doc 622: T1 read the GMDN and EMDN codes as the REF list, every one
+    printed, so the 95% check settled them. They are not the field: the read
+    counts as no answer for it, the image read is asked, and the read keeps
+    its value and the reason in the record."""
+    t0(_only_open("ref_list"))
+    llm = TextLlm({"T1": {"ref_list": (["14066", "36311", "V9001"], "Model Numbers: 14066", 1, 0.8)},
+                   "T2-first": {"ref_list": (["331-"], "Model Numbers: 331-", 1, 0.6)}})
+    _, fields, used = run(_doc(ULTRADENT_FORM), llm)
+    assert used[:3] == ["T0", "T1", "T2-first"]
+    assert fields["ref_list"]["value"] == ["331-"]
+    record = next(r for r in fields[tiers.READS_KEY] if r["step"] == "T1")
+    assert record["fields"]["ref_list"]["value"] == ["14066", "36311", "V9001"]
+    assert "nomenclature" in record["fields"]["ref_list"]["rejected"]
+    assert tiers.rejected_values(fields) == [
+        {"step": "T1", "field": "ref_list", "reason": record["fields"]["ref_list"]["rejected"]}]
+
+
+def test_a_rejected_value_t1_gave_for_a_field_pursued_later_is_recorded(t0):
+    """T1 changes the scope to `group`, which brings the item identifiers in
+    after T1 (`_from_t1`). Its REF list was rejected, so it is not taken; it is
+    still recorded as T1's, so the job result counts it."""
+    fields0 = _only_open("coverage_scope", "ref_list")
+    fields0["coverage_scope"] = t0ev("manufacturer", 0.6)
+    t0(fields0)
+    llm = TextLlm({"T1": {"coverage_scope": ("group", "Model Numbers:", 1, 0.9),
+                          "ref_list": (["14066", "36311"], "Model Numbers: 14066", 1, 0.8)},
+                   "T2-first": {"ref_list": (["331-"], "Model Numbers: 331-", 1, 0.6)}})
+    _, fields, _ = run(_doc(ULTRADENT_FORM), llm)
+    assert "ref_list" not in llm.asked("T1")
+    assert fields["ref_list"]["value"] == ["331-"]
+    assert [(r["step"], r["field"]) for r in tiers.rejected_values(fields)] == [("T1", "ref_list")]
+
+
+def test_a_real_code_beside_nomenclature_codes_stays(t0):
+    t0(_only_open("ref_list"))
+    llm = TextLlm({"T1": {"ref_list": (["331-", "14066"], "Model Numbers: 331-", 1, 0.8)}})
+    _, fields, used = run(_doc(ULTRADENT_FORM), llm)
+    assert used == ["T0", "T1"]
+    assert fields["ref_list"]["value"] == ["331-"]
+
+
+def test_a_list_the_read_disowns_is_no_answer(t0):
+    """Doc 305: type designations T1 returned at 0.4 while saying they are
+    not REF codes."""
+    page = DOC_PAGE + "\nType: MDAC-2422 SNIB TER, MDAC-2422 SNNB ESA"
+    t0(_only_open("ref_list"))
+    quote = "Type: MDAC-2422 SNIB TER (these are type designations, not explicit REF codes)"
+    llm = TextLlm({"T1": {"ref_list": (["MDAC-2422 SNIB TER", "MDAC-2422 SNNB ESA"], quote, 1, 0.4)},
+                   "T2-first": {"ref_list": ([], "", None, 0.0)},
+                   "T2": {"ref_list": ([], "", None, 0.0)}})
+    _, fields, used = run(_doc(page), llm)
+    assert "T2-first" in used
+    assert not fields["ref_list"]["value"]
+
+
+def test_sonnets_own_reference_for_a_certificate_keeps_the_cheap_reads_number(t0):
+    """Doc 1406 (RTD, Dentsply Sirona): pages 2-3 are scans. The cheap image
+    read gave the cited certificate, "8445 rev.18", at 0.8 (under
+    image_settle), and Sonnet then gave the declaration's own reference. That
+    is not a certificate number: Sonnet's read counts as no answer for the
+    field, which keeps the number it holds."""
+    t0(_only_open("cert_number"))
+    llm = TextLlm({"T2-first": {"cert_number": ("8445 rev.18", "EC certificate n° 8445 rev.18", 3, 0.8)},
+                   "T2": {"cert_number": ("1000-TF_8_EUDOC_000219 [5]",
+                                          "Declaration of conformity reference: 1000-TF_8_EUDOC_000219 [5]",
+                                          2, 0.6)}})
+    _, fields, used = run(_doc(DOC_PAGE.replace("Certificate G1 021108 0031\n", ""), IMAGE, IMAGE), llm)
+    assert used == ["T0", "T1", "T2-first", "T2"]
+    assert fields["cert_number"]["value"] == "8445 rev.18"
+    assert [(r["step"], r["field"]) for r in tiers.rejected_values(fields)] == [("T2", "cert_number")]
+
+
+#: Doc 617's text layer (Ultradent UltraTemp): the declaration's own date is
+#: in the notary's stamp, which is no text; the template's is in the footer.
+ULTRADENT_617 = ("DECLARATION OF CONFORMITY\nRegulation (EU) 2017/745\nModel Numbers:\n"
+                 "5916-, S5917-\nTemplate RP00S0.07 Released May 31, 2024")
+
+
+def test_a_template_release_date_is_not_the_declarations(t0):
+    """Doc 617: T1 gave the template's release date, which its quote prints,
+    so the checks settled it and no image read was asked the date the stamp
+    shows. A date the quote gives as a template's is no answer."""
+    t0(_only_open("validity_from"))
+    llm = TextLlm({"T1": {"validity_from": ("2024-05-31", "Template RP00S0.07 Released May 31, 2024",
+                                            1, 0.3)},
+                   "T2-first": {"validity_from": ("2024-08-08", "08 August 2024", 2, 0.9)},
+                   "T2": {"validity_from": ("2024-08-08", "08 August 2024", 2, 0.9)}})
+    _, fields, used = run(_doc(ULTRADENT_617, "Notary Public\nSubscribed and sworn to before me"),
+                          llm)
+    assert "T2-first" in used
+    assert fields["validity_from"]["value"] == "2024-08-08"
+
+
+def test_model_numbers_an_empty_t1_answer_missed_go_to_the_image_read(t0):
+    """Doc 617: T1 answered the REF list empty ("not extracted as field in
+    scope"), and with no REF label in the text the null rule settled it. The
+    "Model Numbers" label keeps it open; the image read's codes are printed,
+    so they settle it."""
+    t0(_only_open("ref_list"))
+    llm = TextLlm({"T1": {"ref_list": ([], "Model Numbers: not extracted", 1, 0.2)},
+                   "T2-first": {"ref_list": (["5916-", "S5917-"], "Model Numbers: 5916-, S5917-",
+                                             1, 0.6)}})
+    _, fields, used = run(_doc(ULTRADENT_617), llm)
+    assert used == ["T0", "T1", "T2-first"]
+    assert fields["ref_list"]["value"] == ["5916-", "S5917-"]
+
+
 # --- an IFU's certificate fields (review 2026-10-13) -----------------------------
 
 IFU_PAGE = ("Instructions for use\nManufacturer: GC EUROPE N.V.\nRegulation (EU) 2017/745\n"
@@ -841,6 +1038,47 @@ def test_certificate_fields_t1_read_before_the_type_was_known_are_dropped(t0):
     assert "validity_from" not in fields and "cert_number" not in fields
     t1_record = next(r for r in fields[tiers.READS_KEY] if r["step"] == "T1")
     assert t1_record["fields"]["validity_from"]["value"] == "2026-04-26"   # still recorded
+
+
+@pytest.mark.parametrize("value, quote, kept", [
+    ("2023-06-01", "REV.00_06-2023", True),          # docs 709, 712, 714, 717, 719
+    ("2025-04-01", "04/2025", True),                 # doc 1059
+    ("2026-04-01", "701593/M/12 04/26", True),       # decisions.md 2026-10-02
+    ("2026-04-26", "701593/M/12 04/26", False),      # the STRAUMANN read: a made-up day
+])
+def test_an_ifu_keeps_the_revision_date_its_quote_prints(t0, value, quote, kept):
+    """Task 9 replay: an IFU's revision date ("REV.00_06-2023") is the only
+    date it carries, and dropping every date a read gave before the type was
+    known lost it on six documents. A date the quote prints, as a whole date
+    or as month and year stored as the first of the month, stays; one the
+    quote does not print (a day read off a revision code) still goes, and
+    `validity_to` and `cert_number` go whatever the quote."""
+    page = "Instructions for use\nManufacturer: Dental World S.r.l.\n" + quote
+    t0({"regulation": t0ev("MDR", 1.0)})
+    llm = TextLlm({"T1": {"type": ("IFU", "Instructions for use", 1, 0.97),
+                          "validity_from": (value, quote, 1, 0.4),
+                          "validity_to": ("2030-01-01", quote, 1, 0.5),
+                          "cert_number": ("701593/M/12", quote, 1, 0.5)}})
+    _, fields, _ = run(_doc(page), llm)
+    assert ("validity_from" in fields) is kept
+    if kept:
+        assert (fields["validity_from"]["value"], fields["validity_from"]["step"]) == (value, "T1")
+    assert "validity_to" not in fields and "cert_number" not in fields
+
+
+def test_an_ifu_keeps_a_proven_date_a_later_read_gave_malformed(t0):
+    """Doc 712: T1 read "REV.01_01-2024" as 2024-01-01; the image read, asked
+    while the type was still open, gave "2024-01", which as the stronger read
+    replaced it and is no date. The IFU keeps the date a read's quote proves."""
+    page = "Istruzioni d'uso\nManufacturer: Dental World S.r.l.\nREV.01_01-2024"
+    t0({"regulation": t0ev("MDR", 1.0), "manufacturer": t0ev("DENTAL WORLD", 0.97)})
+    llm = TextLlm({"T1": {"type": ("IFU", "Istruzioni d'uso / IFU", 1, 0.93),
+                          "validity_from": ("2024-01-01", "REV.01_01-2024", 1, 0.35)},
+                   "T2-first": {"type": ("IFU", "Istruzioni d'uso", 1, 0.9),
+                                "validity_from": ("2024-01", "REV.01_01-2024", 1, 0.4)}})
+    _, fields, used = run(_doc(page), llm)
+    assert "validity_from" in llm.asked("T2-first")
+    assert (fields["validity_from"]["value"], fields["validity_from"]["step"]) == ("2024-01-01", "T1")
 
 
 def test_the_drop_follows_a_type_the_image_read_settles(t0):
@@ -1450,7 +1688,9 @@ def test_voco_ceramic_bond_reads_its_issue_date_off_the_signature_image(fixture_
 
 def test_lumiwhites_sparse_signature_page_keeps_its_citation_proof_and_null_rule(fixture_pdf):
     """A signature page with no annotation stays a page the text reads in full:
-    `n.a.` is proven by the citation alone, and the empty fields settle on T1."""
+    `n.a.` is proven by the citation alone, and the empty fields settle on T1,
+    all but the manufacturer, which one empty read never settles (Task 9
+    replay, doc 2173): the image read is asked that field alone."""
     quote = ("LUMI SOOTHE Desensitising Gel", 1)
     llm = TextLlm({"T1": {"regulation": ("n.a.", "Regulation (EC) No. 1223/2009", 1, 0.85),
                           "validity_from": ("2025-04-20", "Date: 20 April 2025", 1, 0.9),
@@ -1461,4 +1701,5 @@ def test_lumiwhites_sparse_signature_page_keeps_its_citation_proof_and_null_rule
                    "T1-second": {"coverage_scope": ("group", *quote, 0.9)}})
     _, fields, used = _run_fixture(fixture_pdf(LUMIWHITE), llm)
     assert fields["regulation"][tiers.PROVEN_KEY] == tiers.CITATION
-    assert used == ["T0", "T1", "T1-second"]
+    assert used == ["T0", "T1", "T2-first", "T1-second"]
+    assert llm.asked("T2-first") == {"manufacturer"}

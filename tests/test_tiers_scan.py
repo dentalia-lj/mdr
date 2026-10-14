@@ -94,7 +94,8 @@ class ScanLlm:
         given = self.answers.get(label, {})
         if given == FAILED:
             return {}
-        return {f: ev(*given[f]) if f in given else null_ev() for f in missing}
+        return {f: (dict(given[f]) if isinstance(given[f], dict) else ev(*given[f]))
+                if f in given else null_ev() for f in missing}
 
     def asked(self, label):
         return next((set(m) for lb, m in self.calls if lb == label), None)
@@ -284,6 +285,22 @@ def test_the_configured_threshold_is_the_one_used(t0):
     llm = ScanLlm({"T2-first": first, "T2-second": {}, "T2": {}})
     run(_scan(1), llm, image_settle=0.90)
     assert llm.asked("T2-second") == {"cert_number"} | GATE
+
+
+def test_a_ref_list_at_the_prompt_cap_never_settles_on_the_cheap_reads(t0):
+    """Doc 839 (Task 9 replay): a list of exactly the prompt cap is cut by
+    construction. Neither the first read's own confidence nor two reads
+    agreeing settles it; Sonnet is asked, and the longer list is kept."""
+    cap = [str(100000 + i) for i in range(tiers.REF_LIST_PROMPT_CAP)]
+    longer = cap + ["200000", "200001"]
+    llm = ScanLlm({"T2-first": dict(EVERYTHING, ref_list=(cap, 0.95)),
+                   "T2-second": {"ref_list": (cap, 0.95)},
+                   "T2": {"ref_list": (longer, 0.9)}})
+    t0()
+    _, fields, used = run(_scan(1), llm)
+    assert "ref_list" in llm.asked("T2-second") and llm.asked("T2") == {"ref_list"}
+    assert used == ["T0", "T2-first", "T2-second", "T2"]
+    assert fields["ref_list"]["value"] == longer
 
 
 # --- the second read: agreement ----------------------------------------------
@@ -739,7 +756,8 @@ def test_certificate_fields_a_read_wrote_before_the_type_was_an_ifu_are_dropped(
     be an IFU they are dropped; T0's own value comes back, the read stays in
     the record."""
     t0("compliance-doc", {"validity_to": t0ev("2030-01-01", 0.6)})
-    first = dict(EVERYTHING, type=("IFU", 0.95), validity_from=("2026-04-26", 0.9),
+    made_up_day = dict(ev("2026-04-26", 0.9), verbatim="701593/M/12 04/26")
+    first = dict(EVERYTHING, type=("IFU", 0.95), validity_from=made_up_day,
                  validity_to=("2031-01-01", 0.9), cert_number=("701593/M/12", 0.9))
     llm = ScanLlm({"T2-first": first})
     _, fields, _ = run(_scan(1), llm)
@@ -748,6 +766,19 @@ def test_certificate_fields_a_read_wrote_before_the_type_was_an_ifu_are_dropped(
     assert (fields["validity_to"]["value"], fields["validity_to"]["tier"]) == ("2030-01-01", "T0")
     record = next(r for r in fields[tiers.READS_KEY] if r["step"] == "T2-first")
     assert record["fields"]["validity_from"]["value"] == "2026-04-26"
+
+
+def test_an_ifu_scan_keeps_the_revision_date_its_quote_prints(t0):
+    """Task 9 replay, as on text: the month and year a revision line prints
+    stay as the first of the month; the other certificate fields still go."""
+    t0("compliance-doc")
+    revision = dict(ev("2023-06-01", 0.9), verbatim="REV.00_06-2023")
+    first = dict(EVERYTHING, type=("IFU", 0.95), validity_from=revision,
+                 validity_to=("2031-01-01", 0.9), cert_number=("701593/M/12", 0.9))
+    llm = ScanLlm({"T2-first": first})
+    _, fields, _ = run(_scan(1), llm)
+    assert fields["validity_from"]["value"] == "2023-06-01"
+    assert "validity_to" not in fields and "cert_number" not in fields
 
 
 def test_a_file_name_guess_of_ifu_drops_nothing_on_a_scan(t0):

@@ -80,6 +80,13 @@ _ESCALATE_ITEM_ID = ["ref_list", "basic_udi_di"]
 # The second is the dangerous one: a plausible date derived from a part number is
 # invisible to every downstream guard, and validity_from drives supersession.
 # Two documents, two fabricated dates, zero real ones.
+#
+# Not pursued is not dropped (2026-10-14, Task 9 replay): a `validity_from` a
+# read gave before the type was known stays when its own quote prints it
+# (`_drop_ifu_certificate_reads`, `checks.issue_date_proven`). An IFU's
+# revision line ("REV.00_06-2023") is its issue date, and "701593/M/12 04/26"
+# turned out to print one too, April 2026 (decisions.md 2026-10-02): the
+# failure was the day, 26, which no quote prints.
 _ESCALATE_CERTIFICATE = ["validity_from", "validity_to", "cert_number"]
 
 #: Document types that carry no certificate and no validity period by nature.
@@ -372,6 +379,19 @@ _PROMPT_CAPPED_TIERS = frozenset({"T1", "T2"})
 #: Informational (gate.py `INFORMATIONAL_FLAGS`): it describes the SHAPE of the
 #: answer, not a defect in the document, so it must never gate.
 REF_TRUNCATION_FLAG = "ref-list-possibly-truncated"
+
+
+def _at_prompt_cap(evidence) -> bool:
+    """A REF list a prompt-capped read returned at exactly the cap: cut by
+    construction, so no rule settles it (Task 9 replay, doc 839: T1 returned
+    150 of 184 codes, every one printed, and the 95% check settled the list).
+    It goes on to the next read, Sonnet included, whose answer closes it, and
+    `merge` keeps the longer list. A T0 or T3 list of that length is a real
+    count (`_PROMPT_CAPPED_TIERS`) and settles as any other list."""
+    if not isinstance(evidence, dict) or evidence.get("tier") not in _PROMPT_CAPPED_TIERS:
+        return False
+    value = evidence.get("value")
+    return isinstance(value, list) and len(value) == REF_LIST_PROMPT_CAP
 
 #: `type='ISO'` on a document whose evidence names no ISO standard number.
 #:
@@ -778,12 +798,13 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     reads: dict[str, tuple[list[str], dict]] = {}
     rendered: set[int] = set()
 
-    t1 = _read_step(read, used, reads, TEXT_READ, open_fields)
+    text = "\n".join(pages)
+    t1 = _read_step(read, used, reads, TEXT_READ, open_fields, text=text)
     fields = merge(fields, _asked(t1, open_fields), ctx=text_ctx)
     known |= {f for f in open_fields
               if _text_settles(f, fields, t1, text_ctx, agreement_min)}
     _scope_from_type(fields, known)
-    _drop_ifu_certificate_reads(fields, known, t0, threshold)
+    _drop_ifu_certificate_reads(fields, known, t0, threshold, text_ctx, reads)
     fields = _from_t1(fields, known, t1, reads, text_ctx, agreement_min)
 
     def choose(wanted):
@@ -793,7 +814,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     open_fields = _text_pursued(fields, known)
     if open_fields:
         sel = choose(open_fields)
-        first = _read_step(read, used, reads, FIRST_IMAGE, open_fields, pages=sel)
+        first = _read_step(read, used, reads, FIRST_IMAGE, open_fields, pages=sel, text=text)
         fields = merge(fields, _asked(first, open_fields), ctx=text_ctx)
         rendered |= set(sel or range(1, min(doc.page_count, _max_vision_pages()) + 1))
         image_ctx = checks.Ctx(pages=pages, classes=classes, truncated=truncated,
@@ -802,13 +823,13 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
                   if _image_settles_text(f, fields, t1, first, image_ctx,
                                          image_pages, image_settle)}
         _scope_from_type(fields, known)
-        _drop_ifu_certificate_reads(fields, known, t0, threshold)
+        _drop_ifu_certificate_reads(fields, known, t0, threshold, text_ctx, reads)
         fields = _from_t1(fields, known, t1, reads, text_ctx, agreement_min)
 
     open_fields = _text_pursued(fields, known)
     if open_fields:
         sel = choose(open_fields)
-        sonnet = _read_step(read, used, reads, SONNET_IMAGE, open_fields, pages=sel)
+        sonnet = _read_step(read, used, reads, SONNET_IMAGE, open_fields, pages=sel, text=text)
         fields = merge(fields, _asked(sonnet, open_fields), ctx=text_ctx)
         rendered |= set(sel or range(1, min(doc.page_count, _max_vision_pages()) + 1))
         # The last read closes what it was asked, an empty answer included, as
@@ -819,7 +840,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
                 fields[f] = sonnet[f]
         known |= set(open_fields)
         _scope_from_type(fields, known)
-        _drop_ifu_certificate_reads(fields, known, t0, threshold)
+        _drop_ifu_certificate_reads(fields, known, t0, threshold, text_ctx, reads)
         # Part of the document no read saw: text past the budget, or a scanned
         # page of a mixed PDF or an annotation's image no image read rendered.
         # A field every read left empty there is unread, not absent (PRD v3
@@ -839,7 +860,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     _stamp_agreement(fields, reads)
     confirm = _to_confirm(fields, agreement_min)
     if confirm:
-        second = _read_step(read, used, reads, SECOND_TEXT, confirm)
+        second = _read_step(read, used, reads, SECOND_TEXT, confirm, text=text)
         _prefer_confirming(fields, known, second, confirm, text_ctx)
         _stamp_agreement(fields, reads)
 
@@ -854,16 +875,46 @@ def _max_vision_pages() -> int:
 
 
 def _read_step(read, used: list[str], reads: dict, label: str, missing: list[str],
-               pages=None) -> dict:
+               pages=None, text: str = "") -> dict:
     """One read: its whole answer, each field marked with the step
     (`_stamp`). Recorded under `reads[label]` with the fields it was asked;
     `pages` is passed to `read` only when given, so a protocol stub without
-    read options keeps working."""
+    read options keeps working.
+
+    Returned without what is provably not its field (`_without_rejected`,
+    against `text`, the document's text layer): the ladder sees no answer
+    there, as from a read that gave none, while the record keeps the value
+    and the reason."""
     opts = {"pages": pages} if pages is not None else {}
     answer = _stamp(read(label, missing, **opts), label)
     used.append(label)
     reads[label] = (list(missing), answer)
-    return answer
+    return _without_rejected(answer, text)
+
+
+#: On a read's own evidence in `reads` (and so in `READS_KEY`): why its value
+#: is not the field (`checks.not_the_field`).
+REJECTED_KEY = "rejected"
+
+
+def _without_rejected(answer: dict, text: str) -> dict:
+    """A read's answer without the values `checks.not_the_field` rejects
+    (Task 9 replay, 2026-10-14): a field none of whose value stays is left
+    out, so the ladder treats it as unanswered (open, never an empty answer
+    that could settle or close it); a list that keeps some codes keeps those.
+    The read's own evidence is marked with the reason (`REJECTED_KEY`) and
+    keeps its value, for the record (`_reads_record`, `rejected_values`)."""
+    out = dict(answer)
+    for f, ev in answer.items():
+        reason, kept = checks.not_the_field(f, ev, text)
+        if reason is None:
+            continue
+        ev[REJECTED_KEY] = reason
+        if kept is None:
+            del out[f]
+        else:
+            out[f] = {**{k: v for k, v in ev.items() if k != REJECTED_KEY}, "value": kept}
+    return out
 
 
 def _stamp_agreement(fields: dict, reads: dict) -> None:
@@ -953,7 +1004,8 @@ def _asked(answer: dict, wanted) -> dict:
 
 
 def _drop_ifu_certificate_reads(fields: dict, known: set[str], t0: dict,
-                                threshold: float = 0.95) -> None:
+                                threshold: float = 0.95, ctx=None,
+                                reads: dict | None = None) -> None:
     """Once the type is known to be an IFU (`_NO_CERTIFICATE_TYPES`), the
     certificate fields a read wrote before the type was known are dropped
     (review 2026-10-13; both ladders): the suppression exists because a model asked for a
@@ -961,6 +1013,17 @@ def _drop_ifu_certificate_reads(fields: dict, known: set[str], t0: dict,
     read as 2026-04-26), and that is as true of an answer given before the
     type was known as after. T0's own read of the field comes back where there
     was one; otherwise the field is removed. The read stays in `READS_KEY`.
+
+    One exception (Task 9 replay, 2026-10-14): a `validity_from` its own quote
+    prints stays (`checks.issue_date_proven`, against `ctx` on the text
+    ladder). An IFU has no validity period and cites no certificate, but its
+    revision date ("REV.00_06-2023") is its issue date and the only date it
+    carries, and dropping it lost the date on six IFUs. The STRAUMANN read
+    still goes: its quote prints April 2026, not the 26th. Where the field
+    holds a date no quote proves, the date another read's quote proves is
+    kept instead, the strongest such read (`reads`): on doc 712 the image
+    read, asked while the type was open, gave "2024-01", no date, and as the
+    stronger read it had replaced T1's proven 2024-01-01.
 
     Only for a type someone read (review round 2): T0 at or above the
     threshold, or a read's value (the doc-class call or a field read). A T0
@@ -976,10 +1039,27 @@ def _drop_ifu_certificate_reads(fields: dict, known: set[str], t0: dict,
         ev = fields.get(f)
         if not isinstance(ev, dict) or ev.get("tier") == "T0":
             continue
+        if f == "validity_from" and checks.issue_date_proven(ev, ctx):
+            continue
+        if f == "validity_from" and (proven := _proven_issue_date(reads, ctx)) is not None:
+            fields[f] = proven
+            continue
         if f in t0:
             fields[f] = dict(t0[f])
         else:
             del fields[f]
+
+
+def _proven_issue_date(reads: dict | None, ctx) -> dict | None:
+    """Of the `validity_from` answers the reads asked it gave (`reads`, raw),
+    one its own quote proves (`checks.issue_date_proven`): the strongest
+    read's (`_rank`), the surer on a tie. None when no read's is."""
+    found = [ans["validity_from"] for asked, ans in (reads or {}).values()
+             if "validity_from" in asked
+             and checks.issue_date_proven(ans.get("validity_from"), ctx)]
+    if not found:
+        return None
+    return dict(max(found, key=lambda e: (_rank(e) or 0, _conf(e))))
 
 
 def _text_pursued(fields: dict, known: set[str]) -> list[str]:
@@ -1044,7 +1124,8 @@ def _proven(f: str, fields: dict, own: dict | None, ctx) -> bool:
     `checks.settled`, or the read's OWN value does (review 2026-10-13). The two
     differ only for an enumeration, where `merge` lets the longer list win:
     of two reads that agree, `merge` has already stored a verified one where
-    either is (ruling D1, 2026-10-13).
+    either is (ruling D1, 2026-10-13). A REF list a read returned at exactly
+    the prompt cap is proven by nothing (`_at_prompt_cap`, Task 9 replay).
 
     When the read's own list settles it, the field takes that list if the list
     it holds was written by a read: a longer read list that fails the check (a
@@ -1055,9 +1136,15 @@ def _proven(f: str, fields: dict, own: dict | None, ctx) -> bool:
     declaration, 63 of 63 on the mirror). When both pass, the longer list the
     field holds stays. T0 at or above the threshold is never asked at all."""
     held = fields.get(f)
+    # A list held at the prompt cap is proven by nothing: not by its own
+    # codes being printed, and not by a shorter read's list, which would
+    # replace it here although `merge` kept the longer one.
+    if _at_prompt_cap(held):
+        return False
     if checks.settled(f, held, ctx):
         return True
-    if own is not None and not _is_blank(own) and checks.settled(f, own, ctx):
+    if (own is not None and not _is_blank(own) and checks.settled(f, own, ctx)
+            and not _at_prompt_cap(own)):
         if not (isinstance(held, dict) and held.get("tier") == "T0"):
             fields[f] = own
         return True
@@ -1071,8 +1158,12 @@ def _from_t1(fields: dict, known: set[str], t1: dict, reads: dict, ctx,
     T1's answer and settle as T1's asked fields do (`_text_settles`, `floor`
     included), before any image read is asked them. Recorded as T1's, so the
     record and the disagreement count see them. Returns the merged fields."""
-    asked = reads.get(TEXT_READ, ([], {}))[0]
-    pulled = [f for f in _text_pursued(fields, known) if f not in asked and f in t1]
+    asked, raw = reads.get(TEXT_READ, ([], {}))
+    now = [f for f in _text_pursued(fields, known) if f not in asked]
+    # A value T1 gave that was rejected (`_without_rejected`) is not in `t1`:
+    # recorded as asked all the same, so the record and the job result count it.
+    asked.extend(f for f in now if f not in t1 and REJECTED_KEY in (raw.get(f) or {}))
+    pulled = [f for f in now if f in t1]
     if not pulled:
         return fields
     asked.extend(pulled)
@@ -1098,7 +1189,7 @@ def _image_settles_text(f: str, fields: dict, t1: dict, image: dict, ctx,
             return True
         if f == "basic_udi_di" and checks.udi_check_valid(b.get("value")):
             return True
-        if checks.agree(f, t1.get(f), b, 0.0):
+        if checks.agree(f, t1.get(f), b, 0.0) and not _at_prompt_cap(b):
             return True
         return _image_only(f, fields, b, ctx, image_pages, image_settle)
     a = t1.get(f)
@@ -1179,7 +1270,8 @@ def _image_settles(field: str, evidence: dict | None, image_settle: float) -> bo
     and the read states at least `extract.image_settle` (0.85, measured)."""
     return (isinstance(evidence, dict)
             and checks.well_formed(field, evidence.get("value"))
-            and float(evidence.get("conf") or 0.0) >= image_settle)
+            and float(evidence.get("conf") or 0.0) >= image_settle
+            and not _at_prompt_cap(evidence))
 
 
 def _scan_pursued(fields: dict, known: set[str]) -> list[str]:
@@ -1280,12 +1372,20 @@ def _reads_record(reads: dict[str, tuple[list[str], dict]]) -> list[dict]:
     for label, (asked, answer) in reads.items():
         model = next((ev.get("model_id") for ev in answer.values() if ev.get("model_id")), None)
         entry = {"step": label, "model_id": model, "fields": {
-            f: ({"value": answer[f].get("value"), "conf": answer[f].get("conf"),
-                 "page": answer[f].get("page")} if f in answer else None)
-            for f in asked}}
+            f: (_recorded(answer[f]) if f in answer else None) for f in asked}}
         if asked and not answer:
             entry["failed"] = True
         out.append(entry)
+    return out
+
+
+def _recorded(evidence: dict) -> dict:
+    """One field of one read in `READS_KEY`: value, confidence, page, and the
+    reason it was not taken where it was rejected (`REJECTED_KEY`)."""
+    out = {"value": evidence.get("value"), "conf": evidence.get("conf"),
+           "page": evidence.get("page")}
+    if evidence.get(REJECTED_KEY):
+        out[REJECTED_KEY] = evidence[REJECTED_KEY]
     return out
 
 
@@ -1387,13 +1487,13 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     def step(label: str, missing: list[str]) -> dict:
         # The whole answer is kept for the record; only the asked fields are
         # merged (`_asked`), since a read answers every field.
-        return _read_step(read, used, reads, label, missing)
+        return _read_step(read, used, reads, label, missing, text=ctx.text)
 
     first = step(FIRST_IMAGE, open_fields)
     fields = merge(fields, _asked(first, open_fields))
     known |= {f for f in open_fields if _image_settles(f, first.get(f), image_settle)}
     _scope_from_type(fields, known)
-    _drop_ifu_certificate_reads(fields, known, t0, threshold)
+    _drop_ifu_certificate_reads(fields, known, t0, threshold, reads=reads)
 
     unread: list[str] = []
     open_fields = _scan_pursued(fields, known)
@@ -1416,7 +1516,8 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
                     known.add(f)
                 continue
             a = first.get(f)
-            if checks.agree(f, a, b, agreement_min):
+            if (checks.agree(f, a, b, agreement_min)
+                    and not (_at_prompt_cap(a) or _at_prompt_cap(b))):
                 known.add(f)
             elif f in first and f in second and _is_blank(a) and _is_blank(b):
                 # Both reads ANSWERED it empty. A field missing from an answer
@@ -1430,7 +1531,7 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
         _prefer_confirming(fields, known, second, confirm, None)
 
     _scope_from_type(fields, known)
-    _drop_ifu_certificate_reads(fields, known, t0, threshold)
+    _drop_ifu_certificate_reads(fields, known, t0, threshold, reads=reads)
 
     open_fields = [f for f in _scan_pursued(fields, known) if f not in unread]
     if open_fields:
@@ -1445,7 +1546,7 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
                 fields[f] = sonnet[f]
         known |= set(open_fields)
         _scope_from_type(fields, known)
-        _drop_ifu_certificate_reads(fields, known, t0, threshold)
+        _drop_ifu_certificate_reads(fields, known, t0, threshold, reads=reads)
 
     if unread:
         fields[PAGES_UNREAD_KEY] = unread
@@ -1468,6 +1569,17 @@ def failed_reads(fields: dict) -> list[str]:
     """The steps whose read failed (`_reads_record`), in read order. For the
     extract job result, so a failed read is counted rather than silent."""
     return [e.get("step") for e in fields.get(READS_KEY) or [] if e.get("failed")]
+
+
+def rejected_values(fields: dict) -> list[dict]:
+    """Every value a read gave that was not taken because it is provably not
+    its field (`checks.not_the_field`), from `READS_KEY`, in read order:
+    `{step, field, reason}`. For the extract job result: a dropped value is
+    counted, never silent."""
+    return [{"step": e.get("step"), "field": f, "reason": ev[REJECTED_KEY]}
+            for e in fields.get(READS_KEY) or []
+            for f, ev in (e.get("fields") or {}).items()
+            if isinstance(ev, dict) and ev.get(REJECTED_KEY)]
 
 
 def read_disagreements(fields: dict) -> list[dict]:

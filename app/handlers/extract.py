@@ -208,6 +208,13 @@ def _finalize(conn, content_hash, group_id, doc_class, tiers_used, fields,
     if failed:
         out["failed_reads"] = failed
         out.setdefault("counts", {})["read_failures"] = len(failed)
+    # A read's value that is provably not its field (a nomenclature code as a
+    # REF code, a list the read itself disowns; Task 9 replay) was treated as
+    # no answer. Counted so the drop is never silent; absent when there are none.
+    rejected = tiers.rejected_values(fields)
+    if rejected:
+        out["rejected_values"] = rejected
+        out.setdefault("counts", {})["rejected_values"] = len(rejected)
     return out
 
 

@@ -66,3 +66,16 @@ def test_prompt_still_bars_a_signing_date_from_validity_to(name):
         f"{name} prompt no longer requires an explicit expiry phrase before "
         "returning validity_to"
     )
+
+
+@pytest.mark.parametrize("name", sorted(PROMPTS))
+def test_prompt_dates_an_ifu_by_its_revision_line(name):
+    """Task 9 replay (2026-10-14): an IFU's revision date ("REV.00_06-2023")
+    is its only date, and Haiku 5.5 answered none on two of six IFUs where
+    production held one. The code keeps such a date only when the quote
+    prints its month and year (`checks.issue_date_proven`), so the prompt
+    must ask for the first of the month and never a day read off a code."""
+    body = " ".join(PROMPTS[name].lower().split())
+    assert "revision" in body
+    assert "first of that month" in body
+    assert "part or document number" in body

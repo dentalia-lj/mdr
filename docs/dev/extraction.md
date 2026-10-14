@@ -44,8 +44,8 @@ itself.
 | `app/extract/t0_templates.py` | 1546 | T0: doc-class classification, keyword tables, REF-list extraction, `field_ev()` evidence shape |
 | `app/extract/t0_layout.py` | 307 | The T0 REF-list layout-template engine (anchors + text-relative regions, read from playbooks) |
 | `app/extract/udi.py` | 159 | Offline Basic UDI-DI check-character validation (HIBCC + GS1, MOD 1021/32); `is_word` (no agency shape, no digit) |
-| `app/extract/tiers.py` | 1507 | The ladder itself: `needs_escalation`, `merge` (stronger read prevails; of two agreeing reads a verified one, then the surer), `calibrate`, `run_extraction` (splits text / scan), `run_text_ladder` (T-3) and `_image_pages` (its page choice), `run_scan_ladder` (S-2), `_stamp_agreement` / `_to_confirm` (the gate fields' second reads), `read_disagreements`, `failed_reads`, `next_extract_rev`, `extraction_attempt`/`extraction_cost` writers |
-| `app/extract/checks.py` | 366 | Evidence checks, pure: `settled` / `null_settled` / `both_null_settled` against the text layer; `citation_proven` (a regulation proven by its one printed citation, for GATE's 1.0); `well_formed`, `normalized` and `agree` (shape and agreement between two reads); a Basic UDI-DI that is a word never passes (`udi.is_word`) |
+| `app/extract/tiers.py` | 1507 | The ladder itself: `needs_escalation`, `merge` (stronger read prevails; of two agreeing reads a verified one, then the surer), `calibrate`, `run_extraction` (splits text / scan), `run_text_ladder` (T-3) and `_image_pages` (its page choice), `run_scan_ladder` (S-2), `_stamp_agreement` / `_to_confirm` (the gate fields' second reads), `_without_rejected` (a read's value provably not its field), `read_disagreements`, `failed_reads`, `rejected_values`, `next_extract_rev`, `extraction_attempt`/`extraction_cost` writers |
+| `app/extract/checks.py` | 366 | Evidence checks, pure: `settled` / `null_settled` / `both_null_settled` against the text layer; `citation_proven` (a regulation proven by its one printed citation, for GATE's 1.0); `not_the_field` / `nomenclature_codes` (a read's value provably not its field); `issue_date_proven` (an IFU's revision date its quote prints); `well_formed`, `normalized` and `agree` (shape and agreement between two reads); a Basic UDI-DI that is a word never passes (`udi.is_word`) |
 | `app/extract/llm.py` | 766 | T1/T2 Anthropic clients (sync `AnthropicLlm`, batch `AnthropicBatchClient`), `READ_STEPS`, the JSON schema, per-field evidence construction, the doc-class calls (`classify` on page 1-2 text, `classify_image` on page 1-2 images) |
 | `app/extract/batching.py` | 66 | Batch API state machine (`advance_batch`) over the `batch_ref` side table |
 | `app/extract/economics.py` | 153 | Token usage → USD, per-model `PRICES`, `UnknownModelPricing` |
@@ -131,7 +131,11 @@ Task 4). Steps and labels from `llm.READ_STEPS`:
    notified-body number; `type` and `coverage_scope` by a quote on the cited
    page), or when T1 ANSWERED it empty and `checks.null_settled` holds (no label
    for it in the text, no image or OCR page, no page where an annotation
-   paints an image, text not cut; see **Annotations** below). A T0 value under
+   paints an image, text not cut; see **Annotations** below; never the
+   `manufacturer`, `checks.NEVER_NULL_SETTLED`, since 2026-10-14: every
+   document names one, often as a letterhead with no label, and on doc 2173
+   a text layer in a private font encoding held no label to find while the
+   image read reads EURONDA S.P.A. at 0.95). A T0 value under
    0.95 settles the same way when the field still holds it (T1 read nothing
    better): never against a different value T1 read, which the image read then
    decides. A REF list stores the list that settled it (`_proven`, review
@@ -190,6 +194,20 @@ Task 4). Steps and labels from `llm.READ_STEPS`:
    2026-10-13): T1 is asked `validity_from` while the type is still open, and on
    an IFU it reads one off a revision code. T0's own value comes back where it
    had one; the read stays in `_reads`. The scan ladder applies the same rule.
+   One exception since 2026-10-14 (Task 9 replay): a `validity_from` its own
+   quote prints stays (`checks.issue_date_proven`): a whole date the T0
+   parser reads out of the quote, or the first of a month whose month and
+   year the quote prints ("REV.00_06-2023" for 2023-06-01), that part of the
+   quote on its page where that page is text (a reader's note after it, "04/2025
+   (no day given; document revision date)", doc 1059, does not count against
+   it). Where the field holds a date no quote proves, the date the strongest
+   read asked it proves is kept instead (doc 712: the image read, asked while
+   the type was open, gave "2024-01" over T1's proven 2024-01-01). An IFU's revision date is its issue date and
+   the only date it carries (six IFUs lost it in the replay). The STRAUMANN
+   read still goes: "701593/M/12 04/26" prints April 2026 (decisions.md
+   2026-10-02), and 2026-04-26 is a day nobody printed. `validity_to` and
+   `cert_number` go whatever the quote. The fields are still not PURSUED on a
+   known IFU: no read is asked for a date it does not already hold.
    Only for a type someone read: T0 at 0.95 or more, or a read's value. A T0
    guess under 0.95 (a file named "IFU") that became known because both reads
    answered `type` empty drops nothing.
@@ -327,7 +345,8 @@ Steps and labels from `llm.READ_STEPS`:
    A read's own scope kept because it agrees is not marked.
    Once the type is known to be an IFU, the certificate fields a read wrote
    before that are dropped, as on text (`_drop_ifu_certificate_reads`, review
-   2026-10-13): the first image read is asked them while the type is open. Runs after each read, so a type the first read
+   2026-10-13): the first image read is asked them while the type is open,
+   and a `validity_from` its quote prints stays, as on text. Runs after each read, so a type the first read
    settles spares the second read the scope. Measured: two cheap reads agreed on
    `group` for an MDD certificate in the eval; this caught it.
 6. `T2` (`models.t2`, Sonnet) for what is still open, never when nothing is.
@@ -363,6 +382,54 @@ sent to review (Denis, 2026-10-12). Failed reads are on the job result as
 `failed_reads` (their steps) and counted as `counts.read_failures`
 (`tiers.failed_reads`). A scan field's evidence carries `step` (its label), which
 GATE ignores and `merge` ranks by.
+
+**A read's value that is provably not its field** (Task 9 replay, 2026-10-14)
+is not taken: `_read_step` hands the ladder each read's answer without it
+(`_without_rejected`, `checks.not_the_field`), so the field is unanswered by
+that read, exactly as from a read that gave no answer for it: still open,
+never an empty answer that could settle it or, from Sonnet, close it over a
+value an earlier read holds. A list keeps the codes that pass. The record
+keeps the read's value with the reason (`rejected` on its `_reads` entry), and
+the job result lists them as `rejected_values` (`{step, field, reason}`) and
+counts them as `counts.rejected_values` (`tiers.rejected_values`). The rules,
+each measured on every cached read and the SFTP mirror before it was added:
+
+- `ref_list`: a code the text prints as a GMDN, EMDN, UMDNS or CND entry
+  (`checks.nomenclature_codes`: a document naming one of them, a code of
+  their shape right after the label or followed by its term, "14066, Tongue
+  Depressor"). Doc 622's form prints its labels before its values, and T1
+  read the GMDN and EMDN codes as the "Model Numbers"; every one is printed,
+  so the 95% check had settled them. No code of the 17,133 in T0's lists on
+  the 1,320 mirror PDFs, and none in 415 cached list reads but doc 622's,
+  matches.
+- `ref_list`: a list the read states under 0.5 while its own quote says the
+  values are not REF codes (doc 305: Barco type designations at 0.4,
+  "(these are type designations, not explicit REF codes)"). Both halves:
+  real Ultradent model numbers were read at 0.55 to 0.7 with "not labelled
+  REF", and real lists as low as 0.35. Three of 415 cached list reads match,
+  all three not article numbers (doc 305, a series of ranges "1-9999", a
+  column of Basic UDI-DIs).
+- `cert_number`: a number the quote labels as the declaration's own
+  ("Declaration of conformity reference: 1000-TF_8_EUDOC_000219 [5]", doc
+  1406, from Sonnet, over the cheap image read's right "8445 rev.18"). Ruling
+  A makes a DoC's `cert_number` the certificate it cites, never its own
+  number, as a notified body's four-digit number never is; that rule is a
+  shape test on the value (`is_notified_body_number`, it keeps a read from
+  settling), this one needs the label in the quote. 1 of 377 cached
+  certificate-number reads matches, doc 1406's. Since the image prompt named
+  `cert_number` without defining it, it now carries ruling A's definition and
+  both exclusions; the T1 line is the measured ruling-A wording and is
+  unchanged.
+- `validity_from` / `validity_to`: a date its quote gives as a template's
+  ("Template RP00S0.07 Released May 31, 2024", doc 617, T1 at 0.3). The quote
+  prints the date, so the checks had settled it, and the declaration's own
+  date (a notary's stamp, in no text layer) was never asked of an image read.
+  1 of 1,143 cached date reads matches, doc 617's. Both prompts say so too.
+
+On the same document T1 answered the REF list empty: Ultradent prints its
+article numbers as "Model Numbers", which T1 took as out of scope, and with
+no REF label in the text the null rule settled the empty answer. `model` is
+a REF label now (`checks.LABELS`), and both prompts name model numbers.
 
 **The gate fields' evidence** (plan Task 5, "Split 2026-10-12"; GATE reads it in
 `gate._confidences`). On `type`, `regulation` and `coverage_scope` (`tiers.
@@ -449,6 +516,14 @@ LLM list overwriting a full T0 one (`tiers.py:167-182`). `integrity_flags`
 when a T1/T2 list lands at exactly the cap — length is deterministic and
 doesn't trust the model's own truncation self-report, which was measured
 lying (doc 258: claimed "40 returned", actually 46 against a true 53).
+Since 2026-10-14 such a list also **settles by no rule** (`_at_prompt_cap`):
+not the 95% check, not two reads agreeing, not an image read at
+`extract.image_settle`, and while the field holds it a shorter read's list
+neither settles nor replaces it. It goes on to Sonnet, whose answer closes it,
+and the longer list is kept. Found in the Task 9 replay (doc 839: T1 returned
+150 of 184 printed codes, every one printed, and the check settled it). Every
+read is capped at 150 too, so on a document longer than the cap this buys a
+longer list only where a later read returns one; the flag stays when none does.
 
 **Calibration** (`calibrate`, `tiers.py:254-262`): `effective = raw *
 factor(model_id, field)`, clamped `[0,1]`; T0 (`model_id is None`) is never
@@ -535,8 +610,10 @@ returns a list of blocks now: the static T1 or T2 prompt first, carrying
 `cache_control: {"type": "ephemeral"}` (the default 5-minute cache), then the
 playbook hints block when there is one, never marked. Sync reads and batch
 requests share `_request`, so both carry it. What is cached is the marked block
-alone, the prompt file's text: `t1_text.md` is 7,473 characters and
-`t2_vision.md` 4,252, roughly 2,700 and 1,550 tokens on the 5.5 models. That is
+alone, the prompt file's text as rendered: `t1_text.md` is 8,678 characters and
+`t2_vision.md` 5,758 since the Task 9 replay's rules (2026-10-14; 7,473 and
+4,252 when Task 6 measured), roughly 3,200 and 2,150 tokens on the 5.5
+models. That is
 an estimate, not a count: the research doc's fixed part of a call (system prompt,
 schema and request line, counted with `count_tokens` on the 5.5 models) is 4,870
 tokens for T1 and 3,696 for T2, and the 3,221 characters between the two prompts
@@ -663,6 +740,17 @@ schema enforces it.
   branch did; type to scope derives the scope again once a read settles the type.
   On the eval this changed T0's scope on 7 of 79 text documents and 5 of 34
   scans, and no routing or disposition (cached replay, 2026-10-12).
+- **A declaration citing both regulations is read by what it declares
+  conformity with** (decisions.md 2026-10-13, "Regulation of a legacy-device
+  declaration"). Both prompts say so: conformity with Directive 93/42/EEC,
+  with 2017/745 cited only for its transition obligations (Article 120,
+  2023/607, "relevant articles"), is `MDD`. Until then the T1 prompt said
+  "usually the most recent reference" and the image prompt said nothing, and
+  the Task 9 replay read MDR on 12 Komet RA_810 declarations production holds
+  as MDD, mostly from the image reads (T1 said MDD on 9 of the 12). Nothing in
+  the code decides it: where both citations are printed `checks.settled`
+  proves neither, so the reads decide, and invariant 5 keeps an MDR document
+  from superseding an MDD one only if the regulation is read right.
 - **A word after a Basic UDI-DI label is not a Basic UDI-DI** (review
   2026-10-13). T0's UDI regex took the token after the label, and
   `udi.validate_basic_udi` calls a plain word "unscorable", not invalid, so the

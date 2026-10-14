@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from rapidfuzz import fuzz
 
 from app.extract.pdf import TEXT_BEARING
-from app.extract.t0_templates import _DATE_RE, _parse_date
+from app.extract.t0_templates import _DATE_RE, _MONTH_NUMBERS, _parse_date
 from app.extract.udi import INVALID, VALID, is_word, validate_basic_udi
 
 DATE_FIELDS = ("validity_from", "validity_to")
@@ -54,16 +54,29 @@ SEMANTIC_FIELDS = frozenset({"type", "coverage_scope"})
 #: Labels whose presence in the text means a field may be stated somewhere.
 #: From `tools/ladder_probe.py` LABELS, with one fix: the UDI label is a word.
 #: `udi` as a substring matches "including" and "guidelines", which would
-#: veto every null for the field.
+#: veto every null for the field. `model` joined the REF labels on 2026-10-14
+#: (Task 9 replay, doc 617): Ultradent prints its article numbers as "Model
+#: Numbers", T1 left them out, and with no other label the null rule settled
+#: the empty list.
 LABELS = {
     "validity_to": r"valid until|valid to|expir|gültig bis|gueltig bis|scadenza|valido fino|velja do|vrijedi do|valable jusqu",
     "validity_from": r"date|datum|issued|gültig ab|valid from|data|izdan",
     "cert_number": r"certific|zertifikat|certifikat|certificato|registration no",
     "basic_udi_di": r"\budi\b",
-    "ref_list": r"\bref\b|article|artikel|art\.|item|catalog|katalog|šifra|codice",
+    "ref_list": r"\bref\b|article|artikel|art\.|item|catalog|katalog|šifra|codice|\bmodel",
     "regulation": r"2017/745|93/42|regulation|richtlinie|directive|uredb|direktiv",
     "manufacturer": r"manufactur|hersteller|fabbricante|proizvajalec|proizvođač|fabricant",
 }
+
+#: Fields a single read's empty answer never settles, whatever the labels: a
+#: compliance document always names its manufacturer, often as a letterhead
+#: with no label at all, so a missing "Manufacturer" label proves nothing
+#: (Task 9 replay, doc 2173: a text layer in a private font encoding, T1
+#: could not read the name, the null rule settled it, and the image read that
+#: reads EURONDA S.P.A. at 0.95 was never asked). Two empty reads still
+#: settle it (`both_null_settled`). Its label stays in `LABELS` for the page
+#: choice of an image read (`tiers._image_pages`).
+NEVER_NULL_SETTLED = frozenset({"manufacturer"})
 
 #: A notified-body number is not a certificate number: "0482", "CE-0197",
 #: "NB1639" sit in `cert_number` today (decisions.md, 2026-08-26).
@@ -137,6 +150,70 @@ def dates_in(text: str) -> set[str]:
     """Every ISO date the T0 parser reads out of `text`."""
     out = {d for m in _DATE_RE.finditer(text) if (d := _parse_date(m.group(0)))}
     return out | set(re.findall(r"\d{4}-\d{2}-\d{2}", text))
+
+
+def _month_year_in(value: str, quote: str) -> str | None:
+    """Where `quote` prints the month and year of `value`, the first of a
+    month, as a revision line does: "06-2023", "01/2024", "04/26", "2023-06",
+    "June 2023". Never as part of a whole date ("15-06-2023", "2023-06-15"),
+    whose day the value would drop. None when it does not."""
+    y, m, d = value.split("-")
+    if d != "01":
+        return None
+    mo = int(m)
+    names = "|".join(re.escape(n) for n, k in _MONTH_NUMBERS.items() if k == mo)
+    patterns = (
+        rf"(?<!\d)(?<!\d[-/.])0?{mo}\s*[-/._]\s*(?:{y}|{y[2:]})(?!\d)",
+        rf"(?<!\d){y}\s*[-/.]\s*0?{mo}(?![-/.]?\d)",
+        rf"\b(?:{names})\.?,?\s*{y}(?!\d)",
+    )
+    for p in patterns:
+        m_ = re.search(p, quote, re.IGNORECASE)
+        if m_:
+            return m_.group(0)
+    return None
+
+
+def _printed_date(value: str, quote: str) -> str | None:
+    """The part of `quote` that prints `value`: a whole date the T0 parser
+    reads as `value`, the ISO date itself, or its month and year
+    (`_month_year_in`). None when the quote does not print it."""
+    for m in _DATE_RE.finditer(quote):
+        if _parse_date(m.group(0)) == value:
+            return m.group(0)
+    if value in quote:
+        return value
+    return _month_year_in(value, quote)
+
+
+def issue_date_proven(evidence: dict | None, ctx: Ctx | None = None) -> bool:
+    """A read's `validity_from` that its own quote prints: a whole date the
+    T0 parser reads out of the quote, or the first of a month whose month and
+    year the quote prints ("REV.00_06-2023" for 2023-06-01). For an IFU, whose
+    only date is its revision date (Task 9 replay, 2026-10-14: six IFUs lost
+    it). A day the quote does not print is not read off it: the STRAUMANN read
+    "701593/M/12 04/26" as 2026-04-26, a day made up from a revision code,
+    where the code prints April 2026 (decisions.md 2026-10-02).
+
+    With `ctx`, the part of the quote that prints the date must be on the
+    cited page when the text reads that page in full; the reader's note
+    around it need not be ("04/2025 (no day given; document revision date)",
+    doc 1059). On a page no text read sees (a scan, an image page), and
+    without `ctx`, the quote stands alone."""
+    if not isinstance(evidence, dict):
+        return False
+    value, quote = evidence.get("value"), str(evidence.get("verbatim") or "")
+    if not well_formed("validity_from", value):
+        return False
+    printed = _printed_date(str(value), quote)
+    if printed is None:
+        return False
+    page = evidence.get("page")
+    if (ctx is not None and isinstance(page, int) and not isinstance(page, bool)
+            and 1 <= page <= len(ctx.pages) and page not in ctx.unread_pages
+            and (not _classes_known(ctx) or ctx.classes[page - 1] in TEXT_BEARING)):
+        return compact(printed) in compact(ctx.pages[page - 1])
+    return True
 
 
 def udi_check_valid(value) -> bool:
@@ -233,9 +310,10 @@ def null_settled(field_name: str, ctx: Ctx) -> bool:
     e-signature holding the issue date, is unread to a text read), and the
     text was not cut. Fails closed when the page classes are missing or do not
     match the pages, and when no page carries a text layer: an empty text
-    layer holds no label, which proves nothing."""
+    layer holds no label, which proves nothing. Never for a field every
+    document carries (`NEVER_NULL_SETTLED`: the manufacturer)."""
     pat = LABELS.get(field_name)
-    if pat is None:
+    if pat is None or field_name in NEVER_NULL_SETTLED:
         return False
     if ctx.truncated or ctx.unread_pages:
         return False
@@ -297,6 +375,132 @@ def both_null_settled(field_name: str, ctx: Ctx) -> bool:
         if re.search(LABELS["basic_udi_di"], ctx.text, re.IGNORECASE):
             return False
     return True
+
+
+# --------------------------------------------------------------------------- #
+# A read's value that is provably not the field (Task 9 replay, 2026-10-14)
+# --------------------------------------------------------------------------- #
+#: A nomenclature that codes device TYPES, not articles: GMDN, EMDN, UMDNS,
+#: and EMDN's Italian origin CND.
+_NOMENCLATURE_LABEL = re.compile(r"\b(?:GMDN|EMDN|UMDNS|CND)\b", re.IGNORECASE)
+
+#: The shapes their codes take: EMDN a letter and two to ten digits in pairs
+#: ("V9001", "Q01010103"), GMDN five digits ("45247"), UMDNS five digits or
+#: ECRI's "16-411".
+_NOMENCLATURE_SHAPE = re.compile(r"^(?:[A-Z]\d{2}(?:\d{2}){0,4}|\d{5}|\d{2}-\d{3})$")
+
+
+def nomenclature_codes(codes, text: str) -> list[str]:
+    """The codes of `codes` the text prints as a nomenclature entry, in their
+    order: on a document that names GMDN, EMDN, UMDNS or CND, a code of their
+    shape printed right after such a label, or followed by its term ("14066,
+    Tongue Depressor", "Q01010102: Temporary and Permanent Dental Restoration
+    Cements"). A nomenclature code names a type of device, not an article.
+
+    Doc 622 (Task 9 replay): Ultradent's form prints its labels first and its
+    values after, so T1 read the GMDN and EMDN codes as the "Model Numbers",
+    every one printed, and the 95% check settled them. Measured 2026-10-14: no
+    code of the 17,133 in T0's REF lists on the 1,320 PDFs of the SFTP mirror,
+    and none in 415 cached REF-list reads but doc 622's, is found here."""
+    if not text or not _NOMENCLATURE_LABEL.search(text):
+        return []
+    out = []
+    for code in codes or []:
+        c = str(code).strip()
+        if not _NOMENCLATURE_SHAPE.match(c):
+            continue
+        esc = re.escape(c)
+        with_term = rf"(?<![\w.-]){esc}[ \t]*[,:/\u2013-]?[ \t]*[^\W\d_]{{3,}}"
+        after_label = rf"{_NOMENCLATURE_LABEL.pattern}[^\n]{{0,40}}\n?[ \t]*{esc}(?![\w.-])"
+        if re.search(with_term, text) or re.search(after_label, text, re.IGNORECASE):
+            out.append(code)
+    return out
+
+
+#: A read saying in its own quote that what it returned is not a REF code:
+#: "(these are type designations, not explicit REF codes)".
+_DISOWNED_REF = re.compile(r"\bnot\b[^.;:()\n]{0,30}?\b(?:REF|article|catalog(?:ue)?)\b",
+                           re.IGNORECASE)
+
+#: Below this a read is more unsure than sure of its own list.
+DISOWNED_REF_CONF = 0.5
+
+#: The label of a declaration's OWN number, ending the quote just before the
+#: value: "Declaration of conformity reference:", "DoC No.", "Konformitäts-
+#: erklärung Nr.", "Référence de la déclaration de conformité :". It names the
+#: declaration, so an EC or ISO certificate's own number ("Certificate No.")
+#: never matches.
+_OWN_REFERENCE = re.compile(
+    r"(?:declaration|\bDoC\b|dichiarazione|erkl[äa]rung|izjava)[^:\n]{0,40}?"
+    r"(?:reference|\bref\b\.?|\bno\b\.?|\bnr\b\.?|n°|number|nummer|num[ée]ro|\bšt\b\.?)"
+    r"\s*[:.]?\s*$"
+    r"|(?:r[ée]f[ée]rence|\bref\b\.?|\bno\b\.?|\bnr\b\.?|n°|number|nummer|num[ée]ro)"
+    r"\s+(?:de\s+la\s+|of\s+the\s+|der\s+)?(?:d[ée]claration|declaration|erkl[äa]rung)"
+    r"[^:\n]{0,40}?\s*[:.]?\s*$",
+    re.IGNORECASE)
+
+
+#: A date quoted from the line of the form a document is printed on:
+#: "Template RP00S0.07 Released May 31, 2024" (doc 617).
+_TEMPLATE = re.compile(r"\btemplate\b", re.IGNORECASE)
+
+
+def _before(quote: str, value) -> str | None:
+    """The quote up to where `value` starts in it, spacing ignored; None when
+    the quote does not hold the value."""
+    chars = "".join(str(value).split())
+    if not chars:
+        return None
+    m = re.search(r"\s*".join(re.escape(ch) for ch in chars), quote, re.IGNORECASE)
+    return quote[:m.start()] if m else None
+
+
+def not_the_field(field_name: str, evidence: dict | None, text: str = "") -> tuple[str | None, object]:
+    """Why a read's value is provably not `field_name`, and what of it stays:
+    (None, None) when nothing is wrong with it, (reason, None) when none of it
+    stays, (reason, kept) for a list that keeps some codes. The ladder treats
+    a value none of which stays as no answer for the field
+    (`tiers._read_step`); the read's record keeps the value and the reason.
+
+    `ref_list`: a list the read states under `DISOWNED_REF_CONF` while its own
+    quote says the values are not REF codes (doc 305, Barco type designations
+    at 0.4; real Ultradent model numbers were read at 0.55 to 0.7 with "not
+    labelled REF", and a real list as low as 0.35, so neither half alone);
+    and any code the text prints as a nomenclature entry
+    (`nomenclature_codes`, doc 622).
+
+    `cert_number`: a number the quote labels as the declaration's own
+    ("Declaration of conformity reference: 1000-TF_8_EUDOC_000219 [5]", doc
+    1406, Sonnet). Ruling A (2026-10-12) makes a DoC's `cert_number` the
+    certificate it cites; its own number is never one, as a notified body's
+    four-digit number never is (`is_notified_body_number`, a shape rule on
+    the value, which keeps a read from settling the field). This one needs
+    the label in the quote. Measured 2026-10-14: 1 of 377 cached
+    certificate-number reads matches, doc 1406's.
+
+    `validity_from` / `validity_to`: a date its quote gives as a template's
+    ("Template RP00S0.07 Released May 31, 2024", doc 617, T1 at 0.3). The
+    quote prints the date, so the checks settled it, and the declaration's
+    own date, in a notary's stamp no text layer holds, was never asked of an
+    image read. 1 of 1,143 cached date reads matches, doc 617's."""
+    if not isinstance(evidence, dict):
+        return None, None
+    value = evidence.get("value")
+    if field_name == "ref_list" and isinstance(value, list) and value:
+        if (_conf(evidence) < DISOWNED_REF_CONF
+                and _DISOWNED_REF.search(str(evidence.get("verbatim") or ""))):
+            return "the read says these are not REF codes", None
+        bad = nomenclature_codes(value, text)
+        if bad:
+            kept = [c for c in value if c not in bad]
+            return f"nomenclature codes, not articles: {', '.join(map(str, bad))}", kept or None
+    if field_name == "cert_number" and value:
+        head = _before(str(evidence.get("verbatim") or ""), value)
+        if head is not None and _OWN_REFERENCE.search(head):
+            return "the declaration's own reference, not a certificate", None
+    if field_name in DATE_FIELDS and value and _TEMPLATE.search(str(evidence.get("verbatim") or "")):
+        return "a template's release date, not the document's", None
+    return None, None
 
 
 # --------------------------------------------------------------------------- #
