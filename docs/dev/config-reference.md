@@ -38,6 +38,7 @@ adapter that raises.
 | `ingest.process_md_unknown` | `False` silently drops rows with a blank device class — possibly medical devices — out of the pipeline |
 | `email.zip_*` | Zip-bomb guards. Raising any of them re-opens a measured 42 KB → 4.5 GB expansion |
 | `models.t1` / `models.t2` | A tier swap requires the Phase 0 diff protocol to be re-run |
+| `models.vision_first` / `models.second_read` | Same rule. Every scan is read by them since 2026-10-12 (the scan ladder, plan Task 3), and every text document T1 leaves a field open on reads `vision_first` (plan Task 4) |
 | `adapters.storage` | `"gdrive"` makes every archive write raise until gap G7 lands |
 | `storage.local_root` | A relative path means archived files are lost on container restart |
 | `budget.*` | **Displayed, never enforced.** `sweep_cap_eur` and `monthly_cap_eur` appear only in the status board's display dict. No code in `app/` stops or throttles anything when spend passes either. They read like safety valves and are labels |
@@ -68,10 +69,12 @@ Full list, the placement rule, and the implementation traps:
 
 ### Keys that do nothing
 
-Two kinds. The second kind is the dangerous one.
+Two kinds. The second kind is the dangerous one. (`extract.image_settle`,
+`gate.agreement_min`, `models.vision_first` and `models.second_read` were
+listed here until the scan ladder wired them, 2026-10-12.)
 
 **Never referenced anywhere.** The identifier does not appear in `app/`, `web/`
-or `tools/` at all.
+or `tools/` at all (outside `app/config.py`, which loads it).
 
 | Key | Env var | Note |
 |---|---|---|
@@ -120,9 +123,43 @@ name shown, unless noted.
 |---|---|---|---|
 | `gate.high` | float | `0.92` | `GATE_THRESHOLD_HIGH` |
 | `gate.med` | float | `0.75` | `GATE_THRESHOLD_MED` |
+| `gate.agreement_min` | float | `0.70` | `GATE_AGREEMENT_MIN` |
 
 TOML paths are `gate.threshold_high` / `gate.threshold_med` — the only section
-whose TOML names differ from its field names.
+whose TOML names differ from its field names. `gate.agreement_min` is
+`gate.agreement_min` in TOML too.
+
+`agreement_min` (rulings of 2026-10-12) is the confidence each of two agreeing
+reads must state before their agreement counts: for GATE's combined score
+`1 - (1 - c1)(1 - c2)`, and for a scan field settled by two cheap image reads.
+It sits under `gate` because PRD v3 § 11 names it `gate.agreement_min` and GATE
+is where the combined number is used; the plan's Task 1 had put it under
+`extract`. Read since 2026-10-12 by three places. The scan ladder (`tiers.
+run_scan_ladder`, `checks.agree`): two cheap image reads of a scan that give
+one well-formed value, each at least this sure, settle the field without
+Sonnet. The text ladder settles on T1 and the cheap image read agreeing at any
+confidence (ruling 4, "as measured, no per-read minimum"); both ladders read
+the key since 2026-10-13 (plan Task 5b) only to decide whether a gate field's
+agreement already counts at GATE, which spares it the confirming read, and
+whether the stored read reaches it at all, without which no agreement can
+count (`tiers._to_confirm`: `T1-second`, or the gate fields in `T2-second`). GATE
+(`gate._confidences`, extraction-ladder plan Task 5): a
+required field two reads agreed on counts `1 - (1 - c1)(1 - c2)` in the score
+only when both calibrated numbers are at least this, and `evidence.confidence`
+stores the raw combination when it counted. The confidence note under both
+evidence tables and on `/api-reference` quotes this value, read at web
+start-up. Blast radius:
+lower lets two weak cheap reads settle a scan field Sonnet would have read,
+and lets two weak reads combine past `gate.high` and publish a document and
+its trusted links without a person (0.6 + 0.85 combines to 0.94, the case the
+floor was set to keep out); higher sends more scan fields to Sonnet and holds
+more agreed documents at `staged`, and changes which gate fields get the
+confirming read: more where an existing agreement now falls under it, fewer
+where the stored read itself does (no agreement could count then).
+GATE's half acts on fields whose evidence names an agreeing read, which both
+ladders stamp since 2026-10-13 (plan Task 5b). It never moves the manufacturer
+auto-bind, the manufacturer-name check or the supersede fast path: those read
+the stored read's own number.
 
 Not to be confused with the extraction escalation threshold, which is a hardcoded
 `0.95` parameter of `tiers.run_extraction` and is not config at all.
@@ -171,13 +208,79 @@ Not to be confused with the extraction escalation threshold, which is a hardcode
 
 | Key | Type | Default | Env var |
 |---|---|---|---|
-| `models.t1` | str | `claude-haiku-4-5` | `MODELS_T1` |
+| `models.t1` | str | `claude-haiku-5-5` | `MODELS_T1` |
 | `models.t2` | str | `claude-sonnet-5-5` | `MODELS_T2` |
 | `models.rank` | str | `claude-haiku-4-5` | `MODELS_RANK` |
 | `models.email_summary` | str | `claude-haiku-4-5` | `MODELS_EMAIL_SUMMARY` |
+| `models.vision_first` | str | `claude-haiku-5-5` | `MODELS_VISION_FIRST` |
+| `models.second_read` | str | `claude-haiku-5-5` | `MODELS_SECOND_READ` |
 
 `email_summary` is its own key so a tier swap cannot drag it along with `rank`.
 Invariant 12 caps it at the cheap tier.
+
+`t1` moved from `claude-haiku-4-5` to `claude-haiku-5-5` on 2026-10-12
+(extraction-ladder ruling 1, plan Task 4), the dataclass default and the
+loader's fallback both (`tests/test_config.py` guards the pair). It serves the
+T1 read and the text doc-class call (`doc-class`, sent with thinking off since
+then: Haiku 5.5 thinks by default and the call answers in 256 tokens). Blast
+radius: every text document T0 does not settle; Haiku 5.5 costs a tenth of
+Haiku 4.5 per token ($0.10 / $0.50 against $1 / $5 per MTok) but thinks by
+default, so its output tokens per call are higher. Rollback (Denis,
+2026-10-13): no `MODELS_*` key is added on the server, and going back means
+redeploying the previous commit, not pointing `models.t1` at
+`claude-haiku-4-5` under the new ladder, because the ladder's settle and
+agreement thresholds were measured on Haiku 5.5 (plan commit 74d5814). The
+eval of 2026-10-08 also measured Haiku 4.5 lower (87% against 90% of 130
+labelled fields).
+
+`vision_first` and `second_read` (2026-10-12) name the models of the extraction
+ladder's newer read steps, `app/extract/llm.py` `READ_STEPS`: `vision_first`
+serves `T2-first` (the cheap image read before Sonnet) and `doc-class-image`
+(the scan doc-class call); `second_read` serves `T1-second` and `T2-second`,
+both sent with thinking off. Since 2026-10-12 the scan ladder sends
+`doc-class-image`, `T2-first` and `T2-second`, and the text ladder (plan Task 4)
+`T2-first` for what T1 leaves unproven. Since 2026-10-13 (plan Task 5b) the
+text ladder also sends `T1-second`, on the whole text, for the gate fields
+(`type`, `regulation`, `coverage_scope`) nothing proves or confirms, and the
+scan ladder's `T2-second` carries those fields too, so it is sent even when the
+first read settled everything else. Blast radius: every scan and every text
+document T1 does not settle (31 of 79 on the eval) takes a `vision_first` read,
+so pointing it at a Sonnet-class model multiplies the image-read bill roughly
+twentyfold (Haiku 5.5 $0.10 / $0.50 per MTok against Sonnet 5.5's $2 / $10);
+`second_read` reads 35 of 79 text documents a second time (a whole-text read)
+and every scan, and decides the agreement GATE combines into the gate fields'
+score, so a model swap there needs the eval re-run.
+
+None of the `models.*` keys is in any compose service's `environment:` block,
+so on a deployed stack every one of them runs on its code default (see "Keys
+that cannot be set on a deployed stack").
+
+### `extract`: the extraction ladder
+
+| Key | Type | Default | Env var |
+|---|---|---|---|
+| `extract.image_settle` | float | `0.85` | `EXTRACT_IMAGE_SETTLE` |
+
+On a scan, a field the cheap image read (`T2-first`) states at or above this
+confidence is settled and goes no further. 0.85 is the measured setting
+(`tools/ladder_probe.py`). Read by the scan ladder (`tiers.run_scan_ladder`,
+2026-10-12) and, since 2026-10-13 (Denis's ruling), by the text ladder for one
+case only (`tiers._image_only`): a value the cheap image read cites on a page no
+text read sees in full, a scanned page of a mixed PDF or a page where an
+annotation paints an image (VOCO's e-signature stamp, which alone prints the
+issue date). Every other value a text document's image read gives settles by
+the evidence checks, a check-valid Basic UDI-DI or agreement with T1, never by
+its confidence; a Basic UDI-DI the text labels never settles by it. The
+extract handler passes it on every extraction, sync and batch. The value must
+also be well-formed (`checks.well_formed`: an ISO date, a type, scope or
+regulation from its vocabulary, a certificate that is not a notified-body
+number) whatever the confidence. Blast radius: lower lets a less certain cheap
+read stand on a scan and on those pages of a text document; higher sends more
+of them to the second read (scans) and to Sonnet (both). On the SFTP mirror
+(2026-10-13) 148 of the 1,057 text documents carry such a page: 53 a scanned
+page, 95 an annotation's image (90 of them VOCO e-signed declarations). `EXTRACT_MODE` is a
+different thing: a compose variable that becomes `DENTALIA_EXTRACT_MODE`, the
+sync / batch transport switch, and is not part of this section.
 
 ### `batch` and `fetch`
 

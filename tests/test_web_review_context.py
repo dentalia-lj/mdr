@@ -347,6 +347,7 @@ EXPECTED_CHIP = {
     "expiry-on-certless-doc": "other", "auto-superseded": "other",
     "evidence-page-missing": "other", "iso-without-standard-number": "other",
     "date-label-not-adjacent": "other",
+    "pages-unread": "other",
 }
 
 

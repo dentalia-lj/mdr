@@ -119,7 +119,7 @@ to browse everything.
 | **Coverage scope**, shown as *manufacturer* | This document covers everything you stock from that supplier |
 | **Cited certificate** | The notified-body certificate this declaration refers to, if any |
 | A date marked *(review)* or *(inherited)* | Not a real expiry printed on the document — see [the 5-year rule](../glossary.md#the-5-year-rule) |
-| **Where every value came from** | The evidence behind each fact, folded under **Technical details** along with the file's fingerprint and how each product link was made. Open it when an auditor asks; ignore it day to day |
+| **Where every value came from** | The evidence behind each fact, folded under **Technical details** along with the file's fingerprint and how each product link was made. Open it when an auditor asks; ignore it day to day. Its **Confidence** column is the model's own number and is not calibrated. Where two reads agreed on a value, each at least 0.70 sure, it combines the two; for a regulation proven by the citation printed on the document, it is 1.0 |
 
 ---
 

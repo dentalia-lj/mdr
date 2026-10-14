@@ -44,13 +44,15 @@ _NULL = {"ref_list", "basic_udi_di", "referenced_docs"}
 
 
 class StubLlm:
-    """Fills escalated scalars with values the schema accepts."""
+    """Fills escalated scalars with values the schema accepts. The evidence
+    tier is the read's kind, as `llm.Read.evidence_tier` stamps it: `T1` for a
+    text read (`T1`, `T1-second`), `T2` for an image read."""
 
     def extract(self, tier, doc, filename, missing):
         return {
             f: {"value": None if f in _NULL else _VOCABULARY.get(f, "x"),
-                "conf": 0.96, "tier": tier, "verbatim": "x", "page": 1,
-                "model_id": "stub"}
+                "conf": 0.96, "tier": "T1" if tier.startswith("T1") else "T2",
+                "verbatim": "x", "page": 1, "model_id": "stub"}
             for f in missing
         }
 
@@ -137,3 +139,24 @@ def test_a_second_drain_over_unchanged_content_moves_nothing(walked, conn):
         "extract.doc": functools.partial(eh.handle_extract_doc, llm=StubLlm()),
     })
     assert again.tags == []
+
+
+def test_an_agreeing_second_read_reaches_the_evidence_row(walked, conn):
+    """Task 5b across the chain: the extraction names the read that agreed on a
+    gate field (`agreed_model_id` / `agreed_conf` on the attempt), and GATE,
+    three hand-offs later, writes it into the evidence row (migration 071) and
+    stores the combined confidence. Here the stub answers every read the same,
+    so the second text read (`T1-second`) agrees with T1 at 0.96 each."""
+    fields = conn.execute("SELECT fields FROM extraction_attempt").fetchone()["fields"]
+    agreed = {f: ev for f, ev in fields.items()
+              if f in ("type", "regulation", "coverage_scope") and isinstance(ev, dict)
+              and ev.get("agreed_model_id")}
+    assert agreed, "no gate field carried an agreeing read"
+    assert "T1-second" in [r["step"] for r in fields["_reads"]]
+    rows = {r["field"]: r for r in conn.execute(
+        "SELECT field, confidence, agreed_model_id, agreed_confidence FROM evidence "
+        "WHERE field = ANY(%s)", (list(agreed),)).fetchall()}
+    for f, ev in agreed.items():
+        assert rows[f]["agreed_model_id"] == "stub"
+        assert float(rows[f]["agreed_confidence"]) == pytest.approx(ev["agreed_conf"])
+        assert float(rows[f]["confidence"]) == pytest.approx(1 - (1 - 0.96) ** 2)

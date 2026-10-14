@@ -727,6 +727,17 @@ $0.027 per PDF. Folders full of scans cost more: on the server 185 of
 DENSTPLY's 405 PDFs, 62 of DURR DENTAL's 85 and 33 of DENTAURUM's 37 have no
 text layer, so every page goes to the image tiers.
 
+**Since the extraction ladder (2026-10-12) these figures are history.** T1 runs
+on Haiku 5.5, a field the text proves stops there, the rest goes to a cheap
+Haiku 5.5 image read, and Sonnet reads only what neither settles: on the
+2026-10-08 evaluation (cached reads) 7 to 10 of 79 text documents reached
+Sonnet, against 55 of 79 before, and 24 of 34 scans. Re-measure per PDF on the
+first wave after the deploy (`/status` → Spend, per label). In batch mode
+(`EXTRACT_MODE=batch`) each of these steps is its own batch, so a document
+waits on up to four batches in turn (`doc-class`, `T1`, `T2-first`, `T2`), and
+a text document's image reads see pages 1-4 rather than the pages its open
+fields point at (`docs/dev/limits.md`). Sync stays the mode for a backfill.
+
 **Before a wave, find the legal names its folders print.** A document whose
 printed manufacturer no alias knows stops as `manufacturer-unresolved`, and its
 article numbers are never compared. Adding the alias afterwards and running

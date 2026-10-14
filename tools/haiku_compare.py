@@ -61,10 +61,14 @@ class Arm:
 
 
 #: In-memory edits of the T1 prompt for an arm. The prompt file is never changed;
-#: each edit must match exactly once or the capture fails.
+#: each edit must match exactly once or the capture fails, unless the prompt
+#: already carries the edit, which then applies as is.
 PROMPT_VARIANTS = {
     # Denis, 2026-10-12 (docs/decisions.md): a DoC's cert_number holds the
-    # certificate it cites, in every tier.
+    # certificate it cites, in every tier. The pipeline prompt carries this
+    # line since extraction-ladder Task 4, so the edit is a no-op now and the
+    # h55a arm sends the default prompt: the same system text it was cached
+    # under, so its request keys still find the cached responses.
     "ruling-a": [(
         "- `cert_number` — the certificate number (EC / ISO certs), or `null` (DoCs\n"
         "  themselves have none).",
@@ -74,13 +78,22 @@ PROMPT_VARIANTS = {
         "  four-digit identification number (e.g. `0482`).",
     )],
 }
+#: The reverse edit: the T1 prompt as it stood before ruling A. The baseline
+#: arms (h45, h55, h55n, h55hi) were measured and cached with it, so they put
+#: the old line back; without it their requests miss the cache and a fresh
+#: capture would measure "today's T1" on a prompt it never ran with.
+PROMPT_VARIANTS["pre-ruling-a"] = [(new, old) for old, new in PROMPT_VARIANTS["ruling-a"]]
 
 
 ARMS = {
-    "h45": Arm("claude-haiku-4-5", None, "Haiku 4.5 (today's T1)"),
-    "h55": Arm("claude-haiku-5-5", None, "Haiku 5.5, model swap only (adaptive thinking, effort medium)"),
-    "h55n": Arm("claude-haiku-5-5", {"type": "disabled"}, "Haiku 5.5, thinking disabled"),
-    "h55hi": Arm("claude-haiku-5-5", None, "Haiku 5.5, adaptive thinking, effort high", "high"),
+    "h45": Arm("claude-haiku-4-5", None, "Haiku 4.5 (the T1 before 2026-10-12)",
+               prompt="pre-ruling-a"),
+    "h55": Arm("claude-haiku-5-5", None, "Haiku 5.5, model swap only (adaptive thinking, effort medium)",
+               prompt="pre-ruling-a"),
+    "h55n": Arm("claude-haiku-5-5", {"type": "disabled"}, "Haiku 5.5, thinking disabled",
+                prompt="pre-ruling-a"),
+    "h55hi": Arm("claude-haiku-5-5", None, "Haiku 5.5, adaptive thinking, effort high", "high",
+                 prompt="pre-ruling-a"),
     "h55a": Arm("claude-haiku-5-5", None, "Haiku 5.5, T1 prompt with the DoC certificate ruling",
                 prompt="ruling-a"),
 }
@@ -132,6 +145,11 @@ class _Captured(Exception):
 def arm_params(params: dict, arm: Arm) -> dict:
     out = dict(params)
     assert out["model"] == arm.model, (out["model"], arm.model)
+    if out["output_config"]["format"].get("schema") == llm_mod.DOC_CLASS_SCHEMA:
+        # The pipeline's doc-class call sends thinking off since the text
+        # ladder (`llm.READ_STEPS`); an arm's doc-class request carries the
+        # arm's own setting, none when it names none, as it was cached.
+        out.pop("thinking", None)
     if arm.thinking is not None:
         out["thinking"] = arm.thinking
     if arm.effort is not None:
@@ -139,8 +157,23 @@ def arm_params(params: dict, arm: Arm) -> dict:
     return out
 
 
+def _key_params(params: dict) -> dict:
+    """The request as it was keyed before prompt caching (extraction-ladder
+    Task 6, 2026-10-12). `cache_control` changes what is billed, not what the
+    model reads, so it is dropped, and a system that is one block again becomes
+    the plain string it was. Without this every response cached before Task 6
+    misses on replay, and replay raises KeyError."""
+    system = params.get("system")
+    if not isinstance(system, list):
+        return params
+    blocks = [{k: v for k, v in b.items() if k != "cache_control"} for b in system]
+    if len(blocks) == 1 and set(blocks[0]) == {"type", "text"}:
+        return {**params, "system": blocks[0]["text"]}
+    return {**params, "system": blocks}
+
+
 def request_key(params: dict) -> str:
-    return hashlib.sha256(json.dumps(params, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(json.dumps(_key_params(params), sort_keys=True, ensure_ascii=False)
                           .encode()).hexdigest()
 
 
@@ -182,6 +215,8 @@ def _prompt_variant(name: str | None):
     original = llm_mod.T1_SYSTEM
     text = original
     for old, new in PROMPT_VARIANTS[name]:
+        if text.count(old) == 0 and text.count(new) == 1:
+            continue          # the prompt already carries this edit
         if text.count(old) != 1:
             raise AssertionError(f"prompt variant {name}: edit does not match exactly once")
         text = text.replace(old, new)
@@ -665,6 +700,12 @@ def _schema_problems(data: dict) -> list[str]:
     return probs
 
 
+class AnyOf(tuple):
+    """A label with several right answers: a value equal to any of them scores
+    right (`_correct`). For a document that prints more than one value of a
+    single-value field."""
+
+
 #: Scoring corrections to `tests/fixtures/corpus_manifest.py` ground truth, applied
 #: here and never written back (the fixture fix is `[corpus-manifest-label-errors]`).
 #: The labels date from 2026-07-06 and the prompt's field definitions moved since;
@@ -673,14 +714,15 @@ LABEL_OVERRIDES: dict[tuple[str, str], object] = {
     # printed in the document, check pair valid (validate_basic_udi)
     ("Izjava o skladnosti za vsadke TL SP.pdf", "basic_udi_di"): "0763003170058QZ",   # pages 3-8
     ("everX_Posterior_12022026.pdf", "basic_udi_di"): "++J022MD0126K9",                 # page 2
-    # t1_text.md: "the certificate number (EC / ISO certs), or null (DoCs themselves have none)"
-    ("VOCO_DoC_MDR_Ceramic Bond_2026-1-signed.pdf", "cert_number"): None,
-    ("Unifast_III_23042025.pdf", "cert_number"): None,
-    ("Izjava o skladnosti za vsadke TL SP.pdf", "cert_number"): None,
-    ("Viso G1 MDR EN.pdf", "cert_number"): None,
-    ("neodent izjava o skaldnosti za T-baze.pdf", "cert_number"): None,
-    ("532862_RA_810_DoC_EU_MDR_SIGNED.pdf", "cert_number"): None,
-    ("IPS e.max Ceram.pdf", "cert_number"): None,
+    # The label `++E2265330681` fails its check pair; it is the prefix the page's
+    # UDIs share. Page 1 prints four, each check pair valid: KSCH (rows 1-4 and
+    # 11-14), StSEF (10 rows), PQ and PS (one row each). A multi-value basic_udi_di
+    # is out of scope, so a read naming any one of them is right (Denis,
+    # 2026-10-13; research doc section 13, the 15th label error).
+    ("533068_RA_812_Liste_DoC.pdf", "basic_udi_di"): AnyOf((
+        "++E2265330681KSCH", "++E2265330681StSEF", "++E2265330682PQ", "++E2265330683PS")),
+    # The 7 DoC cert_number entries that stood here are gone: ruling A (2026-10-12)
+    # says a DoC's cert_number is the certificate it cites, so the labels are right.
     # t1_text.md: "a declaration naming one product is still `group`"
     ("Viso G1 MDR EN.pdf", "coverage_scope"): "group",
     ("VOCO_DoC_(EU)2023-1542_Celalux 3.pdf", "coverage_scope"): "group",
@@ -690,6 +732,7 @@ LABEL_OVERRIDES: dict[tuple[str, str], object] = {
     ("VOCO_DoC_(EU)2023-1542_Celalux 3.pdf", "ref_list"): ["9092", "9090"],
     # the label describes the declaration + annex pair; the eval reads the annex alone
     ("533068_RA_812_Liste_DoC.pdf", "regulation"): "SKIP",
+    ("533068_RA_812_Liste_DoC.pdf", "type"): "SKIP",   # same reason (Denis, 2026-10-14)
 }
 
 
@@ -733,7 +776,14 @@ def _evaluate(run: pathlib.Path, only: set[str] | None = None) -> list[dict]:
                 entry = cached(reqs[h][(arm_id, "extract")]["key"])
                 msg = load_message(entry["request_key"])
                 llm = _llm(arm_id, "replay")
-                answer = llm.extract("T1", doc, path, d["missing"], **kwargs)
+                # `llm.extract` returns every parsed field since Task 4 of the
+                # extraction ladder; this report is about the fields T1 was
+                # asked, as before, so the rest stays out of `answer` and `merged`.
+                # The arm's prompt variant, as at capture: the replay must send
+                # the request the response was cached under.
+                with _prompt_variant(ARMS[arm_id].prompt):
+                    answer = llm.extract("T1", doc, path, d["missing"], **kwargs)
+                answer = {f: ev for f, ev in answer.items() if f in d["missing"]}
                 data = llm_mod._response_json(msg)
                 raw = llm_mod._fields_from_json(data, "T1", ARMS[arm_id].model)
                 merged = tiers.merge(d["t0"], answer)
@@ -790,6 +840,8 @@ SKIP = object()
 def _correct(field: str, model_value, gt_value) -> bool | None:
     if gt_value is SKIP:
         return None
+    if isinstance(gt_value, AnyOf):
+        return any(_correct(field, model_value, g) for g in gt_value)
     if field == "ref_list" and isinstance(gt_value, str):
         m = re.match(r"(~?)(\d+)\s+codes?", gt_value)
         if not m:

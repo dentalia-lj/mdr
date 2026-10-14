@@ -26,7 +26,7 @@ corpus-grounded, CI-runnable dimension.
 ```json
 {
   "content_hash": "sha256:<hex>",   // sha256 of the fixture PDF bytes
-  "tier": "T1",                      // T1 (text) or T2 (vision)
+  "tier": "T1",                      // the read label: T1, T2, T2-first, T1-second, ...
   "model_id": "haiku-4.5",
   "fields": {
     "<field>": {"value": ..., "conf": 0.0-1.0, "verbatim": "...", "page": <int|null>}
@@ -36,12 +36,15 @@ corpus-grounded, CI-runnable dimension.
 
 `content_hash` is the real digest of the fixture (`RecordedLlm.hash_file`), so when
 the ladder hashes the same file the matching response is selected. `tier`/`model_id`
-are stamped onto each returned field by the stub.
+are stamped onto each returned field by the stub. The file's `tier` is the read
+step's label (`app.extract.llm.READ_STEPS`, 2026-10-12), so two reads of one kind
+record separately; the stamped evidence tier is `T1` for a text read and `T2` for
+an image read, whatever the label, as `AnthropicLlm` stamps it.
 
 | file | fixture | tier | fills |
 |---|---|---|---|
 | `ivoclar_emax_t1_udi.json` | IVOCLAR/IPS e.max Ceram.pdf | T1 | `basic_udi_di` |
-| `dentsply_scan_t2.json` | DENSTPLY/IMP - DOC - ATIS TX ... .pdf | T2 | `regulation`, `validity_to` (scanned → vision) |
+| `dentsply_scan_t2.json` | DENSTPLY/IMP - DOC - ATIS TX ... .pdf | T2-first | `regulation`, `validity_to`, `cert_number`, `coverage_scope` (scanned → the cheap image read; relabelled from `T2` 2026-10-12, when scans began with `T2-first`) |
 
 `ivoclar_emax_t1_udi.json` no longer serves the ladder: S1.5 broadened `_UDI_LABEL`
 so T0 reads e.max's `basic_udi_di` itself (tier T0, conf 1.0) and the T1 escalation

@@ -525,13 +525,25 @@ def handle_extract_doc(job):
     fields |= t0_extract(pdf, job)          # filename conventions ("(MDR)"), playbook
                                             # layout templates, pdfplumber REF tables
                                             # every T0 hit: confidence 1.0 + evidence
-    missing = low_confidence(fields, TARGET)
-    if missing:
-        fields |= run_llm_tier("T1", pdf, missing, job)     # batch-aware — see below
-        missing = low_confidence(fields, TARGET)
-    if missing or is_scan(pdf):
-        fields |= run_llm_tier("T2", pdf, missing, job)
-    # per-FIELD escalation: clean date + unreadable REF list -> only REF goes to T2
+    # Amended 2026-10-12 (PRD v3 §5; app/extract/tiers.py run_text_ladder and
+    # run_scan_ladder). A field leaves the ladder when it is SETTLED: the text
+    # proves it (checks.settled), two reads agree, or the null rule holds; a
+    # model's own confidence no longer moves it. Every read is batch-aware.
+    if has_text_page(pdf):                                   # text ladder, T-3
+        open_ = pursued(fields)                              # T0 under 0.95, IFU/scope suppressions
+        fields |= run_llm_tier("T1", pdf, open_, job)        # Haiku 5.5, whole text
+        open_ = [f for f in open_ if not settled(f, fields)]
+        fields |= run_llm_tier("T2-first", pdf, open_, job)  # Haiku 5.5, pages pointing at open_
+        open_ = [f for f in open_ if not (settled(f, fields) or agrees_with_t1(f))]
+        if open_:
+            fields |= run_llm_tier("T2", pdf, open_, job)    # Sonnet; its null closes a field
+        confirm = [f for f in GATE_FIELDS if unproven(f, fields)]   # Task 5b
+        if confirm:                                          # Haiku 5.5, thinking off, whole text:
+            stamp_agreement(fields, run_llm_tier("T1-second", pdf, confirm, job))  # value never stored
+    else:                                                    # scan ladder, S-2
+        ...  # doc-class on page images, T2-first, T2-second (+ the unproven gate
+             # fields, even when nothing else is open), Sonnet for what stays open
+    # per-FIELD escalation: clean date + unreadable REF list -> only REF goes on
 
     db.extraction_attempt.insert(job.payload["content_hash"],
                                  tiers_used, fields, extract_rev)
@@ -559,7 +571,7 @@ def run_llm_tier(tier, pdf, missing, job):
     return per_field_results(results)                 # conf + verbatim + page + model_id each
 ```
 
-Self-rescheduling via `run_after`; the job payload is never mutated. A crash between submit and record resolves on retry via the `batch_ref` lookup — existing row for this `content_hash` + tier means never resubmit.
+Self-rescheduling via `run_after`; the job payload is never mutated. A crash between submit and record resolves on retry via the `batch_ref` lookup: an existing row for this `content_hash` + tier means never resubmit. `tier` is the read step's label (`doc-class`, `T1`, `T2-first`, `T2`, ...) since 2026-10-12, and the batch path runs the sync path's own ladder function, re-run from the top on every poll (a resolved step is re-fetched); a batch image read is always pages 1-4 (`docs/dev/limits.md`).
 
 ### Example extraction result (stored in extraction_attempt.fields)
 
@@ -571,7 +583,7 @@ Self-rescheduling via `run_after`; the job payload is never mutated. A crash bet
   "coverage_scope":{"value":"group","conf":0.9,"tier":"T1"},
   "ref_list":      {"value":["613289","613290","613291"],"conf":1.0,"tier":"T0","page":3},
   "basic_udi_di":  {"value":"7612147BDTPFEW","conf":0.88,"tier":"T2","page":1},
-  "cert_number":   {"value":null,"conf":0.9,"tier":"T1"},
+  "cert_number":   {"value":"G1 021108 0031","conf":0.9,"tier":"T1","step":"T1","verbatim":"Certificate No. G1 021108 0031","page":1},
   "stated_class":  {"value":"IIa","conf":0.95,"tier":"T0","verbatim":"Class: IIa","page":null} }
 ```
 
@@ -741,7 +753,10 @@ def handle_gate_candidate(job):
     require_complete_evidence(ext)                # missing evidence -> hard error, never write
 
     # document level
-    score = min(f.conf for f in ext.required_fields)     # REQUIRED_FIELDS only — validity_from NOT included
+    score = min(gate_confidence(f) for f in ext.required_fields)   # REQUIRED_FIELDS only — validity_from NOT included;
+                                                  # 2026-10-12: two agreeing reads each >= agreement_min
+                                                  # count 1-(1-c1)(1-c2), citation-proven regulation 1.0,
+                                                  # T0 unchanged. calibrated_confidence() below stays OWN.
     auto_superseded = p.get("superseded_by_doc_id")
     # task 5, fix round 1: the fast path is NARROW — all three must hold, or
     # this falls through to the ordinary chain below, where "older-than-current"
@@ -759,6 +774,18 @@ def handle_gate_candidate(job):
         doc_status = "staged"
     else:
         doc_status = "manual"
+
+    # 2026-10-12/13: a published document is replaced only by a candidate that
+    # is itself production; a superseded or rejected one by none. Kept means
+    # nothing written but the candidate's links at staged (never production,
+    # never retracted), and on a rejected document not even those. A production
+    # candidate that would re-identify a published chain member is kept too
+    # (chain_identity_changed); reviewer-edited fields are held on every write
+    # (reviewer_edits_kept). Row read FOR UPDATE.
+    prev = db.document.get_by_hash_for_update(p["content_hash"])
+    if chain_identity_change(prev, ext) or keeps(prev.status, doc_status == "production"):
+        if prev.status != "rejected": stage_links(p["links"])
+        return kept(prev, ext)
 
     with db.tx():                                 # single transaction: claim+write+audit
         doc = db.document.upsert_by_hash(ext, status=

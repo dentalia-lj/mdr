@@ -65,7 +65,12 @@ Field definitions:
   "Izdano", or the date half of a place-and-date signature line ("Leuven,
   12/02/2026", "Ort, Datum", "Done at ... on ..."). A declaration takes effect
   when it is issued, so that date is its start. Return `null` only when the
-  document carries no date of its own at all.
+  document carries no date of its own at all. An IFU prints no issue date as
+  such: its date is its own revision or edition line ("REV.01_01-2024",
+  "Rev. 04/2025"), as the first of that month when only the month and year
+  are printed. Never a day you did not read: a part or document number is not
+  a date. Never the release date of a template or form the document is
+  printed on ("Template RP00S0.07 Released May 31, 2024").
 - `validity_to` — expiry date, ISO 8601, or `null`. Many documents legitimately
   have no expiry — that is correct, not a missing value.
   A place-and-date signature line is where the document was SIGNED. It is
@@ -85,13 +90,19 @@ Field definitions:
   covers the company or its whole catalogue (QMS / ISO certificates, which carry
   no product identifiers). There is no per-item value — a declaration naming one
   product is still `group`.
-- `ref_list` — the manufacturer article numbers / REF codes, VERBATIM. Do not
-  strip dots, dashes, spaces, or leading zeros; copy each code exactly.
+- `ref_list` — the manufacturer article numbers / REF codes (also printed as
+  catalogue or model numbers, "Model Numbers: 5916-, S5917-"), VERBATIM. Do not
+  strip dots, dashes, spaces, or leading zeros; copy each code exactly. Never a
+  GMDN, EMDN, UMDNS or CND nomenclature code (those name a type of device, not
+  an article), a Basic UDI-DI, an SRN or a certificate number. Leave out any
+  value you would have to say is not a REF code.
 - `basic_udi_di` — the Basic UDI-DI string, or `null`.
 - `referenced_docs` — other documents this one references (e.g. an underlying
   EC certificate number), as strings.
-- `cert_number` — the certificate number (EC / ISO certs), or `null` (DoCs
-  themselves have none).
+- `cert_number` — for an EC / ISO certificate, its own number. For a DoC, the
+  number of the notified-body certificate the declaration cites (e.g.
+  `G1 021108 0031`), or `null` if it cites none. Never a notified body's
+  four-digit identification number (e.g. `0482`).
 - `manufacturer` — the LEGAL ENTITY that manufactures the devices, exactly as
   printed, including its legal form (`GC EUROPE N.V.`, `Gebr. Brasseler GmbH &
   Co. KG`, `Ivoclar Vivadent AG`). This is who DECLARES conformity, normally
@@ -112,8 +123,12 @@ Guardrails:
   "Gemäß Anhang", "Artikelliste", "Article List", "According to the Attachment"),
   return an empty `ref_list` at low confidence and say so in `verbatim`.
 - If the document cites BOTH MDR and MDD (transition period), choose the
-  regulation the declaration is actually issued under (usually the most recent
-  reference) and lower your confidence.
+  regulation the device is declared to CONFORM with, which is not necessarily
+  the newer one. A declaration of conformity with Directive 93/42/EEC that cites
+  Regulation (EU) 2017/745 only for its transition obligations (Article 120,
+  Regulation (EU) 2023/607, "relevant articles of Regulation (EU) 2017/745") is
+  a legacy device and is `MDD`. Only conformity with Regulation (EU) 2017/745
+  itself is `MDR`. Lower your confidence when the document does not say which.
 - The document may be in English, German, Slovenian, French, or Italian.
 - Never fabricate a value or its evidence. Prefer `null` with a reason over a
   guess.

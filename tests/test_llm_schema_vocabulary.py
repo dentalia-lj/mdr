@@ -103,6 +103,92 @@ def test_the_cap_fits_the_token_budget():
     assert worst_case_tokens < llm.DEFAULT_MAX_TOKENS / 2
 
 
+#: The T1 prompt's `cert_number` line, verbatim as measured: the `ruling-a`
+#: prompt variant of `tools/haiku_compare.py` (arm h55a, 2026-10-12), which put
+#: 11 of 15 labelled DoC certificate numbers right against 8 of 15 for the old
+#: line. Pinned whole, because the measurement holds for these words only.
+RULING_A_CERT_LINE = (
+    "- `cert_number` \u2014 for an EC / ISO certificate, its own number. For a DoC, the\n"
+    "  number of the notified-body certificate the declaration cites (e.g.\n"
+    "  `G1 021108 0031`), or `null` if it cites none. Never a notified body's\n"
+    "  four-digit identification number (e.g. `0482`)."
+)
+
+
+def test_t1_asks_a_doc_for_the_certificate_it_cites():
+    """Ruling 2026-10-12 (docs/decisions.md, "Certificate number on a DoC"): a
+    DoC's `cert_number` holds the certificate it cites, in every tier. The old
+    line told T1 to leave it empty ("DoCs themselves have none"), and 654
+    production DoCs lost the certificate they cite."""
+    assert llm.T1_SYSTEM.count(RULING_A_CERT_LINE) == 1
+    assert "DoCs\n  themselves have none" not in llm.T1_SYSTEM
+    assert "themselves have none" not in llm.T1_SYSTEM
+
+
+def test_the_image_prompt_already_asks_for_the_cited_certificate():
+    """Ruling A needed no image-prompt change when it was made: the prompt
+    named `cert_number` with no DoC exception, which is why T0 and the image
+    reads already stored the certificate a DoC cites. Since the Task 9 replay
+    (2026-10-14) the image prompt also defines the field and what it never is
+    (the next test)."""
+    assert "themselves have none" not in llm.T2_SYSTEM
+    assert "`cert_number`" in llm.T2_SYSTEM
+
+
+def test_the_image_prompt_bars_the_declarations_own_number():
+    """Task 9 replay, doc 1406: with `cert_number` named and never defined,
+    Sonnet gave the declaration's own reference ("Declaration of conformity
+    reference: 1000-TF_8_EUDOC_000219 [5]") over the certificate it cites.
+    The image prompt now says what ruling A says, and what it never is."""
+    flat = " ".join(llm.T2_SYSTEM.split())
+    assert "the notified-body certificate the declaration cites" in flat
+    assert "never the declaration's own document or reference number" in flat
+
+
+#: The legacy-device rule (decisions.md, 2026-10-13, "Regulation of a
+#: legacy-device declaration"), as both prompts must state it.
+LEGACY_DEVICE_RULE = (
+    "A declaration of conformity with Directive 93/42/EEC that cites Regulation "
+    "(EU) 2017/745 only for its transition obligations"
+)
+
+
+def test_both_prompts_read_a_legacy_device_declaration_as_mdd():
+    """Task 9 replay: Komet's RA_810 declarations declare conformity with
+    Directive 93/42 (Annex II) and cite 2017/745 for its Article 120
+    transition only. The T1 prompt's "usually the most recent reference" and
+    the image prompt's silence on a document citing both sent 12 of them to
+    MDR. Denis ruled MDD (2026-10-13): the device conforms under the
+    directive, and MDR must not supersede MDD (invariant 5)."""
+    for text in (llm.T1_SYSTEM, llm.T2_SYSTEM):
+        flat = " ".join(text.split())
+        assert "most recent" not in flat
+        assert flat.count(LEGACY_DEVICE_RULE) == 1
+        rule = flat[flat.index(LEGACY_DEVICE_RULE):][:600]
+        assert "Article 120" in rule and "is `MDD`" in rule
+
+
+def test_both_prompts_keep_nomenclature_codes_out_of_the_ref_list():
+    """Task 9 replay: doc 622's GMDN and EMDN codes read as its REF list, and
+    doc 305's type designations returned at 0.4 by a read that said they were
+    not REF codes. The code rejects both (`checks.not_the_field`); the prompts
+    ask for neither."""
+    for text in (llm.T1_SYSTEM, llm.T2_SYSTEM):
+        flat = " ".join(text.split())
+        assert "GMDN, EMDN, UMDNS or CND" in flat
+        assert "would have to say is not a REF code" in flat
+
+
+def test_both_prompts_name_model_numbers_and_bar_a_template_date():
+    """Doc 617 (Task 9 replay): T1 left Ultradent's "Model Numbers" out of the
+    REF list as "not in scope", and gave the date of the template the
+    declaration was made on."""
+    for text in (llm.T1_SYSTEM, llm.T2_SYSTEM):
+        flat = " ".join(text.split())
+        assert "model numbers" in flat.lower()
+        assert "template" in flat.lower()
+
+
 def test_manufacturer_is_in_the_structured_output_schema():
     # SCHEMA is generated from _FIELD_VALUE so both tiers stay in step; a field
     # in TARGET but not here would be requested and never returned.

@@ -10,6 +10,8 @@ Each table is annotated with the **queue tags** (job types) that write it / read
 
 **Sync 2026-07-24 (drift-check; migrations 010–013):** `report.weekly` tag (013) · `extraction_cost` + `extraction_spend` view (010, §4) · `item_mirror.mirror_rev` sequence default (011) · `scheduler_run` restart-safety ledger (013, §5c) · dedupe-key extensions beyond the PRD table (§1 note) · C5 CHECK is live in 005, no longer just intent.
 
+**Sync 2026-10-12 (migration 071):** `evidence.agreed_model_id` / `evidence.agreed_confidence`, nullable: the second read that agreed on a field's value and its own confidence; `evidence.confidence` then stores the two combined, or 1.0 for a citation-proven regulation (§5 evidence table). No grant: 007's table-level SELECT covers new columns, and `dentalia_api` keeps zero write grant on `evidence`.
+
 **Sync 2026-09-15 (migration 069):** `email_draft.kind` gains `review-confirm` — a fifth letter, asking whether a declaration past Dentalia's own five-year review horizon (`document_effective_expiry.basis='staleness'`) is still current. Never a renewal demand: these documents have not expired, and a class I declaration has no certificate, so this horizon is the only trigger it will ever produce. Vocabulary only; nothing sends.
 
 **Sync 2026-09-15 (migration 068):** two immutable SQL functions, `fold_bur_code` and `eudamed_ref_key`, and `eudamed_article_status` joins through them for a manufacturer whose playbook body declares `ref_normalize.strategy = 'reorder-shank-figure-size'` (KOMET alone). `fold_bur_code` mirrors `app/handlers/validate.py::_fold_bur_code`; `eudamed_ref_key` additionally drops EUDAMED's trailing variant segment (`8885.314.012.K3`), which our catalogue never prints. Measured the same day: KOMET goes from 0 to 108 of its 258 flagged device items matched, with zero trimmed keys spanning more than one Basic UDI-DI. Every other manufacturer keeps the exact comparison. The two implementations are pinned together by `tests/test_eudamed_ref_fold.py`.
@@ -143,7 +145,7 @@ CREATE TABLE robots_cache (
 -- record resolves via lookup here (existing row for hash+tier => never resubmit)
 CREATE TABLE batch_ref (
   content_hash text NOT NULL,
-  tier         text NOT NULL,             -- T1 | T2
+  tier         text NOT NULL,             -- read label: T1, T2, T2-first, ... (2026-10-12)
   batch_id     text NOT NULL,
   submitted_at timestamptz NOT NULL DEFAULT now(),
   resolved_at  timestamptz,
@@ -392,7 +394,7 @@ CREATE INDEX extraction_hash_idx ON extraction_attempt (content_hash);
 CREATE TABLE extraction_cost (
   id                    bigserial PRIMARY KEY,
   content_hash          text NOT NULL,
-  tier                  text NOT NULL,        -- T1|T2 (T0 is free, never priced)
+  tier                  text NOT NULL,        -- read label: doc-class, T1, T2, T2-first, ... (llm.READ_STEPS, 2026-10-12); T0 is free, never priced
   extract_rev           int  NOT NULL DEFAULT 1,
   model_id              text NOT NULL,
   batch                 boolean NOT NULL DEFAULT false,
@@ -666,6 +668,17 @@ CREATE TABLE evidence (
                                               -- always gets matching evidence instead
                                               -- of being blocked by an older rev's row.
                                               -- "Current" = MAX(extract_rev) per field.
+  agreed_model_id   text,                     -- 071: the read that agreed with this
+  agreed_confidence numeric                   -- one on the same value, and its own raw
+                                              -- confidence. `model_id`/`verbatim`/`page`
+                                              -- stay the stored read's. `confidence` is
+                                              -- what GATE scored, uncalibrated: the raw
+                                              -- 1-(1-c1)(1-c2) when the agreement counted
+                                              -- (both >= gate.agreement_min calibrated),
+                                              -- 1.0 for a citation-proven regulation,
+                                              -- else the read's own. NULL on T0, T3 and
+                                              -- single-read rows (PRD v3 §5, §7,
+                                              -- amended 2026-10-12)
 );
 
 -- append-only; no UPDATE/DELETE grants

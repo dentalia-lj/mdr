@@ -494,6 +494,15 @@ def test_shipped_playbooks_are_valid():
     playbooks.validate(loaded)
 
 
+def test_ustomed_answers_to_the_legal_name_without_the_brand():
+    """Task 9 replay: the image read of USTOMED's scanned declarations (512,
+    514, 519, 526) gives the legal name alone; with no alias for it VALIDATE
+    left them `manufacturer-unresolved`, with no links."""
+    loaded = playbooks.load_playbooks()
+
+    assert playbooks.for_manufacturer("Ulrich Storz GmbH & Co. KG", loaded).slug == "ustomed"
+
+
 def test_load_parses_exclude(tmp_path):
     # Neodent's corpus folder is the first to hold files that are not
     # documents at all (28 invoices, delivery notes and quotations). BACKFILL

@@ -102,6 +102,17 @@ def agency_of(value: str | None) -> str:
     return UNKNOWN
 
 
+def is_word(value: str | None) -> bool:
+    """A value shaped like no agency's code and holding no digit: a word, not
+    a Basic UDI-DI. GS1 codes start with a digit, HIBCC with `+`, EUDAMED's
+    own with `B-`; every other code still carries digits. Measured on the SFTP
+    mirror (review 2026-10-13): T0 read the word after the label on 12
+    documents ("PRODUCT", "Thermaprep", "Document", ...), and each scored
+    UNSCORABLE rather than INVALID, so nothing downstream refused it."""
+    v = (value or "").strip()
+    return agency_of(v) == UNKNOWN and not any(ch.isdigit() for ch in v)
+
+
 def check_pair(payload: str) -> str | None:
     """The two check characters that belong on the end of `payload`.
 
