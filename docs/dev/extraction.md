@@ -412,9 +412,15 @@ each measured on every cached read and the SFTP mirror before it was added:
   values are not REF codes (doc 305: Barco type designations at 0.4,
   "(these are type designations, not explicit REF codes)"). Both halves:
   real Ultradent model numbers were read at 0.55 to 0.7 with "not labelled
-  REF", and real lists as low as 0.35. Three of 415 cached list reads match,
-  all three not article numbers (doc 305, a series of ranges "1-9999", a
-  column of Basic UDI-DIs).
+  REF", and real lists as low as 0.35. Disowning phrasing only (review of
+  the Task 9 fixes, 2026-10-14): "not", at most two words, then "REF codes",
+  "article numbers" or "catalogue numbers"; a word that says how the list is
+  printed ("labelled", "shown", "all") breaks it, so "(not labelled as REF)",
+  "List not complete, see catalogue" and "not all article numbers are shown"
+  never match. Three of 413 cached non-empty list reads match under 0.5, all
+  three not article numbers (doc 305, a series of ranges "1-9999", "not
+  enumerated discrete REF codes", a column of Basic UDI-DIs, "not confirmed
+  REF codes"); no Ultradent model-number read matches at any confidence.
 - `cert_number`: a number the quote labels as the declaration's own
   ("Declaration of conformity reference: 1000-TF_8_EUDOC_000219 [5]", doc
   1406, from Sonnet, over the cheap image read's right "8445 rev.18"). Ruling

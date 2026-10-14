@@ -441,9 +441,16 @@ def nomenclature_codes(codes, text: str, listed=()) -> list[str]:
 
 
 #: A read saying in its own quote that what it returned is not a REF code:
-#: "(these are type designations, not explicit REF codes)".
-_DISOWNED_REF = re.compile(r"\bnot\b[^.;:()\n]{0,30}?\b(?:REF|article|catalog(?:ue)?)\b",
-                           re.IGNORECASE)
+#: "(these are type designations, not explicit REF codes)", "not enumerated
+#: discrete REF codes", "not article numbers". Disowning phrasing only
+#: (review of the Task 9 fixes, 2026-10-14): "not", at most two words that do
+#: not describe how the list is printed, then the codes or numbers themselves.
+#: "(not labelled as REF)", "List not complete, see catalogue" and "not all
+#: article numbers are shown" describe a real list.
+_DISOWNED_REF = re.compile(
+    r"\bnot\s+(?:(?!(?:all|every|each|as|labell?ed|marked|printed|shown|listed|stated|given)\b)"
+    r"[a-z-]+\s+){0,2}(?:REF|article|catalog(?:ue)?)\s*(?:codes?|numbers?|nos?\b\.?)",
+    re.IGNORECASE)
 
 #: Below this a read is more unsure than sure of its own list.
 DISOWNED_REF_CONF = 0.5

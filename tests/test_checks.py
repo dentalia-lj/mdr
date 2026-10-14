@@ -802,6 +802,25 @@ def test_a_list_the_read_itself_disowns_is_rejected():
                                               "verbatim": "Model Numbers: '5941-' as printed"})[0] is None
 
 
+@pytest.mark.parametrize("quote, rejected", [
+    ("Type: MDAC-2422 (these are type designations, not explicit REF codes)", True),
+    ("5916-, S5917- (these are not REF codes)", True),
+    ("1-9999 (ranges, not article numbers)", True),
+    # a note about the list, not a disowning of it (review of the Task 9 fixes)
+    ("Model Numbers: 5916-, S5917- (not labelled as REF)", False),
+    ("List not complete, see catalogue", False),
+    ("not all article numbers are shown", False),
+    ("REF not printed; article numbers from the table", False),
+])
+def test_only_disowning_phrasing_rejects_a_list(quote, rejected):
+    """A read under 0.5 whose quote says the values ARE NOT REF codes or
+    article numbers. A quote that says the list is not labelled REF, not
+    complete, or not all shown describes a real list."""
+    reason, _ = checks.not_the_field("ref_list", {"value": ["5916-"], "conf": 0.4,
+                                                  "verbatim": quote})
+    assert (reason is not None) is rejected
+
+
 def test_nomenclature_codes_leave_the_rest_of_the_list():
     ev_ = {"value": ["331-", "14066"], "conf": 0.8, "verbatim": "Model Numbers"}
     reason, kept = checks.not_the_field("ref_list", ev_, ULTRADENT_FORM)
