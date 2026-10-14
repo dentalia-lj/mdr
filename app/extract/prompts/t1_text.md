@@ -114,8 +114,12 @@ Guardrails:
   "Gemäß Anhang", "Artikelliste", "Article List", "According to the Attachment"),
   return an empty `ref_list` at low confidence and say so in `verbatim`.
 - If the document cites BOTH MDR and MDD (transition period), choose the
-  regulation the declaration is actually issued under (usually the most recent
-  reference) and lower your confidence.
+  regulation the device is declared to CONFORM with, which is not necessarily
+  the newer one. A declaration of conformity with Directive 93/42/EEC that cites
+  Regulation (EU) 2017/745 only for its transition obligations (Article 120,
+  Regulation (EU) 2023/607, "relevant articles of Regulation (EU) 2017/745") is
+  a legacy device and is `MDD`. Only conformity with Regulation (EU) 2017/745
+  itself is `MDR`. Lower your confidence when the document does not say which.
 - The document may be in English, German, Slovenian, French, or Italian.
 - Never fabricate a value or its evidence. Prefer `null` with a reason over a
   guess.

@@ -46,6 +46,13 @@ Read carefully:
   and `coverage_scope` MUST be `manufacturer`. Never invent REF codes.
 - If a REF list is delegated to an external attachment, return an empty
   `ref_list` at low confidence and note it in `verbatim`.
+- If the document cites BOTH MDR and MDD (transition period), choose the
+  regulation the device is declared to CONFORM with, which is not necessarily
+  the newer one. A declaration of conformity with Directive 93/42/EEC that cites
+  Regulation (EU) 2017/745 only for its transition obligations (Article 120,
+  Regulation (EU) 2023/607, "relevant articles of Regulation (EU) 2017/745") is
+  a legacy device and is `MDD`. Only conformity with Regulation (EU) 2017/745
+  itself is `MDR`. Lower your confidence when the document does not say which.
 - For `ref_list`, return **at most {{REF_LIST_CAP}}** codes, in the order the document lists
   them; if there are more, return the first {{REF_LIST_CAP}} and say so in `verbatim`. Do not
   stop early and do not return a representative sample — a code you omit is

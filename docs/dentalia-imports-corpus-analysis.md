@@ -207,7 +207,7 @@ Almost every compliance document self-identifies in the first 200 characters of 
 
 Explicit legal references: "(EU) 2017/745" for MDR, "93/42/EEC" or "RL 93/42" for MDD. Usually on page 1.
 
-**Edge case:** Some documents reference BOTH regulations (transition-period docs). The active regulation is what the declaration is issued under — the most recent reference. If ambiguous, flag for human.
+**Edge case:** Some documents reference BOTH regulations (transition-period docs). The active regulation is what the declaration is issued under — the most recent reference. If ambiguous, flag for human. **[corrected 2026-10-14]** Not the most recent reference: what the device is declared to conform with. A declaration of conformity with 93/42 that cites 2017/745 only for its transition obligations (Article 120, 2023/607) is MDD (`docs/decisions.md`, 2026-10-13); the T1 prompt said the same ("usually the most recent reference") until then, and the Task 9 replay read 12 Komet legacy-device declarations as MDR.
 
 ### `manufacturer` — HIGH for text PDFs, MEDIUM for scans
 

@@ -132,6 +132,29 @@ def test_the_image_prompt_already_asks_for_the_cited_certificate():
     assert "`cert_number`" in llm.T2_SYSTEM
 
 
+#: The legacy-device rule (decisions.md, 2026-10-13, "Regulation of a
+#: legacy-device declaration"), as both prompts must state it.
+LEGACY_DEVICE_RULE = (
+    "A declaration of conformity with Directive 93/42/EEC that cites Regulation "
+    "(EU) 2017/745 only for its transition obligations"
+)
+
+
+def test_both_prompts_read_a_legacy_device_declaration_as_mdd():
+    """Task 9 replay: Komet's RA_810 declarations declare conformity with
+    Directive 93/42 (Annex II) and cite 2017/745 for its Article 120
+    transition only. The T1 prompt's "usually the most recent reference" and
+    the image prompt's silence on a document citing both sent 12 of them to
+    MDR. Denis ruled MDD (2026-10-13): the device conforms under the
+    directive, and MDR must not supersede MDD (invariant 5)."""
+    for text in (llm.T1_SYSTEM, llm.T2_SYSTEM):
+        flat = " ".join(text.split())
+        assert "most recent" not in flat
+        assert flat.count(LEGACY_DEVICE_RULE) == 1
+        rule = flat[flat.index(LEGACY_DEVICE_RULE):][:600]
+        assert "Article 120" in rule and "is `MDD`" in rule
+
+
 def test_manufacturer_is_in_the_structured_output_schema():
     # SCHEMA is generated from _FIELD_VALUE so both tiers stay in step; a field
     # in TARGET but not here would be requested and never returned.

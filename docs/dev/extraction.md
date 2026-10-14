@@ -497,8 +497,9 @@ returns a list of blocks now: the static T1 or T2 prompt first, carrying
 `cache_control: {"type": "ephemeral"}` (the default 5-minute cache), then the
 playbook hints block when there is one, never marked. Sync reads and batch
 requests share `_request`, so both carry it. What is cached is the marked block
-alone, the prompt file's text: `t1_text.md` is 7,473 characters and
-`t2_vision.md` 4,252, roughly 2,700 and 1,550 tokens on the 5.5 models. That is
+alone, the prompt file's text as rendered: `t1_text.md` is 8,000 characters and
+`t2_vision.md` 4,800 since the legacy-device rule (2026-10-14; 7,473 and 4,252
+when Task 6 measured), roughly 2,950 and 1,750 tokens on the 5.5 models. That is
 an estimate, not a count: the research doc's fixed part of a call (system prompt,
 schema and request line, counted with `count_tokens` on the 5.5 models) is 4,870
 tokens for T1 and 3,696 for T2, and the 3,221 characters between the two prompts
@@ -625,6 +626,17 @@ schema enforces it.
   branch did; type to scope derives the scope again once a read settles the type.
   On the eval this changed T0's scope on 7 of 79 text documents and 5 of 34
   scans, and no routing or disposition (cached replay, 2026-10-12).
+- **A declaration citing both regulations is read by what it declares
+  conformity with** (decisions.md 2026-10-13, "Regulation of a legacy-device
+  declaration"). Both prompts say so: conformity with Directive 93/42/EEC,
+  with 2017/745 cited only for its transition obligations (Article 120,
+  2023/607, "relevant articles"), is `MDD`. Until then the T1 prompt said
+  "usually the most recent reference" and the image prompt said nothing, and
+  the Task 9 replay read MDR on 12 Komet RA_810 declarations production holds
+  as MDD, mostly from the image reads (T1 said MDD on 9 of the 12). Nothing in
+  the code decides it: where both citations are printed `checks.settled`
+  proves neither, so the reads decide, and invariant 5 keeps an MDR document
+  from superseding an MDD one only if the regulation is read right.
 - **A word after a Basic UDI-DI label is not a Basic UDI-DI** (review
   2026-10-13). T0's UDI regex took the token after the label, and
   `udi.validate_basic_udi` calls a plain word "unscorable", not invalid, so the
