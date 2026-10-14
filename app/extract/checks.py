@@ -595,7 +595,8 @@ def not_the_field(field_name: str, evidence: dict | None, text: str = "",
         head = _before(str(evidence.get("verbatim") or ""), value)
         if head is not None and _OWN_REFERENCE.search(head):
             return "the declaration's own reference, not a certificate", None
-    if field_name in DATE_FIELDS and value and _template_date(value, str(evidence.get("verbatim") or "")):
+    if (field_name in DATE_FIELDS and value
+            and _template_date(value, str(evidence.get("verbatim") or ""))):
         return "a template's release date, not the document's", None
     return None, None
 

@@ -126,8 +126,11 @@ def test_t1_asks_a_doc_for_the_certificate_it_cites():
 
 
 def test_the_image_prompt_already_asks_for_the_cited_certificate():
-    """The ruling needed no image-prompt change: it names `cert_number` with no
-    DoC exception, which is why T0 and the image reads already stored it."""
+    """Ruling A needed no image-prompt change when it was made: the prompt
+    named `cert_number` with no DoC exception, which is why T0 and the image
+    reads already stored the certificate a DoC cites. Since the Task 9 replay
+    (2026-10-14) the image prompt also defines the field and what it never is
+    (the next test)."""
     assert "themselves have none" not in llm.T2_SYSTEM
     assert "`cert_number`" in llm.T2_SYSTEM
 
