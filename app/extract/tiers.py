@@ -768,10 +768,11 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
 
     t1 = _read_step(read, used, reads, TEXT_READ, open_fields)
     fields = merge(fields, _asked(t1, open_fields), ctx=text_ctx)
-    known |= {f for f in open_fields if _text_settles(f, fields, t1, text_ctx)}
+    known |= {f for f in open_fields
+              if _text_settles(f, fields, t1, text_ctx, agreement_min)}
     _scope_from_type(fields, known)
     _drop_ifu_certificate_reads(fields, known, t0, threshold)
-    fields = _from_t1(fields, known, t1, reads, text_ctx)
+    fields = _from_t1(fields, known, t1, reads, text_ctx, agreement_min)
 
     def choose(wanted):
         return (_image_pages(doc.page_count, wanted, t1, pages, image_pages)
@@ -789,7 +790,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
                   if _image_settles_text(f, fields, t1, first, image_ctx)}
         _scope_from_type(fields, known)
         _drop_ifu_certificate_reads(fields, known, t0, threshold)
-        fields = _from_t1(fields, known, t1, reads, text_ctx)
+        fields = _from_t1(fields, known, t1, reads, text_ctx, agreement_min)
 
     open_fields = _text_pursued(fields, known)
     if open_fields:
@@ -980,7 +981,8 @@ def _text_pursued(fields: dict, known: set[str]) -> list[str]:
         (fields.get("coverage_scope") or {}).get("value") == "manufacturer"))
 
 
-def _text_settles(f: str, fields: dict, answer: dict, ctx) -> bool:
+def _text_settles(f: str, fields: dict, answer: dict, ctx,
+                  floor: float = AGREEMENT_MIN) -> bool:
     """Step 2 of `run_text_ladder` for one field, after T1: the value the field
     holds is proven by the text; or T1 ANSWERED the field empty, the field
     holds nothing, and the null rule holds. A field missing from T1's answer
@@ -993,8 +995,30 @@ def _text_settles(f: str, fields: dict, answer: dict, ctx) -> bool:
     different value T1 read: then the two disagree and the image read decides.
     Measured on the eval: Ceramill's T0 read the word after its UDI label
     ("Document", unscorable, 0.9) and T1 the OCR layer's invalid code; the
-    image read's check-valid code settles it."""
+    image read's check-valid code settles it.
+
+    A `type` or `coverage_scope` (`checks.SEMANTIC_FIELDS`) settles on its
+    quote only when the value it holds is at least `floor`
+    (`gate.agreement_min`; Task 9 replay, 2026-10-13). A quote on the page
+    proves the read looked at the page, not that the class follows from it:
+    doc 754, a single-product declaration, was read `manufacturer` at 0.6 on
+    the quote "Product name: Euroklav 29 VS+". Under the floor GATE can
+    neither pass the read (0.75) nor count it in an agreement, and
+    `_to_confirm` asks no second read for it, so settled there the field
+    would end the ladder on the one read that said it was unsure. The image
+    read is asked instead and settles it as step 4 does (agreeing included).
+
+    Nor does a `type` T1 read when page 1 or 2 is a scanned page (Task 9
+    replay, 2026-10-13). T0 did not type the file at the threshold, or the
+    type would not be asked, so what announces it is on a page T1 never saw:
+    USTOMED's declarations scan page 1 and print only the article list as
+    text, and T1 typed them `other` quoting the list. The image read renders
+    the scanned page (`_image_pages`)."""
     ev = fields.get(f)
+    if f in checks.SEMANTIC_FIELDS and not _is_blank(ev) and _conf(ev) < floor:
+        return False
+    if f == "type" and "image" in ctx.classes[:t0_keys._HEADER_PAGES]:
+        return False
     if _proven(f, fields, answer.get(f), ctx):
         return True
     return (f in answer and _is_blank(answer[f]) and _is_blank(ev)
@@ -1026,19 +1050,20 @@ def _proven(f: str, fields: dict, own: dict | None, ctx) -> bool:
     return False
 
 
-def _from_t1(fields: dict, known: set[str], t1: dict, reads: dict, ctx) -> dict:
+def _from_t1(fields: dict, known: set[str], t1: dict, reads: dict, ctx,
+             floor: float = AGREEMENT_MIN) -> dict:
     """Fields pursued only now, after a read changed the scope or the type:
     T1 answered them anyway (its response carries every field), so they take
-    T1's answer and settle as T1's asked fields do, before any image read is
-    asked them. Recorded as T1's, so the record and the disagreement count see
-    them. Returns the merged fields."""
+    T1's answer and settle as T1's asked fields do (`_text_settles`, `floor`
+    included), before any image read is asked them. Recorded as T1's, so the
+    record and the disagreement count see them. Returns the merged fields."""
     asked = reads.get(TEXT_READ, ([], {}))[0]
     pulled = [f for f in _text_pursued(fields, known) if f not in asked and f in t1]
     if not pulled:
         return fields
     asked.extend(pulled)
     fields = merge(fields, _asked(t1, pulled), ctx=ctx)
-    known |= {f for f in pulled if _text_settles(f, fields, t1, ctx)}
+    known |= {f for f in pulled if _text_settles(f, fields, t1, ctx, floor)}
     _scope_from_type(fields, known)
     return fields
 

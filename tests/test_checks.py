@@ -205,6 +205,31 @@ def test_regulation_is_proven_by_the_printed_citation_alone(text, value, ok):
     assert checks.settled("regulation", ev(value), ctx(LONG + text)) is ok
 
 
+@pytest.mark.parametrize("value, text, kw, ok", [
+    # Task 9 replay: USTOMED's scanned declaration on page 1, its article list
+    # as text on page 2. Neither citation is in the text, which proved `n.a.`
+    # while page 1 printed 93/42.
+    ("n.a.", "Nothing cited here", {"classes": ["image", "text"]}, False),
+    # "only 2017/745 printed" also says 93/42 is not: unknown over a scan
+    ("MDR", "Regulation (EU) 2017/745", {"classes": ["text", "image"]}, False),
+    ("MDR", "Regulation (EU) 2017/745", {"unread": (2,)}, False),
+    ("MDR", "Regulation (EU) 2017/745", {"truncated": True}, False),
+    ("MDR", "Regulation (EU) 2017/745", {"classes": ["text"]}, False),     # classes unknown
+    ("n.a.", "", {"classes": ["sparse", "sparse"]}, False),              # no text layer
+    ("MDR", "Regulation (EU) 2017/745", {"classes": ["text", "ocr"]}, True),
+    ("n.a.", "Nothing cited here", {"classes": ["text", "sparse"]}, True),
+    ("n.a.", "Nothing cited here", {}, True),
+], ids=["na-over-a-scanned-page-1", "mdr-over-a-scanned-page", "unread", "truncated",
+        "classes-unknown", "no-text-layer", "ocr-is-text", "sparse-is-text", "all-text"])
+def test_a_regulation_is_never_proven_by_absence_over_text_nobody_read(value, text, kw, ok):
+    """Every value the regulation check accepts rests on what is NOT printed
+    (`n.a.`: neither citation; MDR or MDD: not the other one), so it holds only
+    where the text covers the whole document, as `citation_proven` has it."""
+    c = Ctx(pages=[LONG + text, LONG], classes=kw.get("classes", ["text", "text"]),
+            truncated=kw.get("truncated", False), unread_pages=frozenset(kw.get("unread", ())))
+    assert checks.settled("regulation", ev(value), c) is ok
+
+
 #: Citation proof for GATE (plan Task 5b): `settled`, and text for the whole
 #: document, since "only one citation printed" (or none, for `n.a.`) is a
 #: claim about what is NOT printed, which a page with no text (a scanned page,

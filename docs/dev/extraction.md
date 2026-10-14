@@ -140,7 +140,31 @@ Task 4). Steps and labels from `llm.READ_STEPS`:
    replaced (review round 2): it fails the check only where its codes sit in a
    companion annex (Komet's RA_812 list beside the RA_810 declaration, 63 of 63
    on the mirror), and a read's passing list then settles the field with T0's
-   list kept. T0 at 0.95 is never asked.
+   list kept. T0 at 0.95 is never asked. A `type` or `coverage_scope` settles
+   on its quote only when the value it holds is at least `gate.agreement_min`
+   (`_text_settles`, Task 9 replay 2026-10-13): doc 754, a single-product
+   declaration, was read `manufacturer` at 0.6 on the quote "Product name:
+   Euroklav 29 VS+", settled, and sent to the manufacturer binding route. A
+   quote on the page shows the read looked at the page, not that the class
+   follows; under the floor GATE cannot pass the read or count it in an
+   agreement and no `T1-second` is asked, so the image read is asked instead.
+   On the Task 8 eval this asks 4 of 79 text documents one more image read
+   (two scopes at 0.55-0.6, two Komet article lists typed `other` at 0.5),
+   on the Task 9 replay 1 of the 48 text documents it finished (doc 754); no T1 semantic read fell between
+   0.70 and 0.85 on either set. A `type` T1 read does not settle at all when
+   page 1 or 2 is a scanned page (T0 not holding the type at 0.95, or it
+   would not be asked): what announces the document is on a page T1 never
+   saw. Task 9 replay, USTOMED 507-530: page 1 is the scanned declaration and
+   T1 typed the article list `other`. The image read is asked, and renders
+   the scanned page. A `regulation` is proven by its citation only where the
+   text covers the whole document (`checks.settled`, as `citation_proven`):
+   every value the check accepts rests on what is NOT printed, and on the
+   same documents the article list proved `n.a.` while the scan printed
+   93/42. Re-checked from the Task 9 cache on its 22 mixed PDFs: every one
+   now asks the image read for `regulation` (and for `type` on the 10
+   USTOMED declarations); the values those reads give are not in the cache.
+   On the Task 8 eval 1 of 79 text documents (Calibra, a scanned page 2)
+   asks the image read for `regulation`.
 3. Fields pursued only after T1 (a scope T1 changed from `manufacturer` brings
    the item identifiers in) are taken from T1's answer, which carries every
    field, and settle as in step 2; recorded as T1's.
@@ -653,9 +677,9 @@ schema enforces it.
 | File | Pins |
 |---|---|
 | `tests/test_tiers.py` | Escalation gating, `merge`/shrink-guard, two agreeing reads in `merge` (a verified one first, then the surer; with no text, the surer; T0 and the doc-class answer are not reads), `GATE_FIELDS` equal to GATE's, `next_extract_rev` past evidence revs, `run_extraction`, `test_a_scan_takes_the_image_ladder_and_never_a_text_read` |
-| `tests/test_tiers_text.py` | The text ladder: T0 settled fields never asked, what the text proves after T1, T1's empty answer and the null rule (labels, image pages, truncation), a failed read, T0 under 0.95, the image read's check / check-valid UDI / agreement / both empty, Sonnet prevailing and closing, the two suppressions, T1's pool, type to scope, the page choice, the reads record, hints, the text doc-class call, `T1-second` (agrees / disagrees / empty / failed, one call, what is not asked, a stored read under the floor, citation proof, an agreement under the floor, the verified read stored, Sonnet as the agreeing read or the stored one, the `asked` guard, a confirming read stored by ruling D1 and the scope following the type it took), the type-derived scope marked, the image doc-class route (a scanned page or an unreadable text layer among pages 1-2) |
+| `tests/test_tiers_text.py` | The text ladder: T0 settled fields never asked, what the text proves after T1, T1's empty answer and the null rule (labels, image pages, truncation), a failed read, T0 under 0.95, the image read's check / check-valid UDI / agreement / both empty, Sonnet prevailing and closing, the two suppressions, T1's pool, type to scope, the page choice, the reads record, hints, the text doc-class call, `T1-second` (agrees / disagrees / empty / failed, one call, what is not asked, a stored read under the floor, citation proof, an agreement under the floor, the verified read stored, Sonnet as the agreeing read or the stored one, the `asked` guard, a confirming read stored by ruling D1 and the scope following the type it took), the type-derived scope marked, the image doc-class route (a scanned page or an unreadable text layer among pages 1-2), a semantic T1 read under `gate.agreement_min`, a mixed PDF's `type` and `regulation` |
 | `tests/test_tiers_scan.py` | The scan ladder: routing (a mixed PDF stays text), the image doc-class call, 1/3/6-page scans and `pages-unread`, settle at 0.85, agreement at 0.70, both-null except the UDI, failed reads (never an empty answer, counted), type to scope, Sonnet only for what is open and its empty answer closing a field, the reads record, disagreements, `merge` by strength, `T2-second` confirming the gate fields (one call, its value never stored, never sent on, the surer of two agreeing reads stored, the derived scope following a type it took, no citation proof on a scan), the type-derived scope marked (an IFU's too) |
-| `tests/test_checks.py` | `checks.py`: the text checks, page classes (a scan with a short overlay is an image page), `citation_proven` (also over real documents), and the scan shape / agreement checks |
+| `tests/test_checks.py` | `checks.py`: the text checks (a regulation never proven by absence over a scanned, unread or cut page), page classes (a scan with a short overlay is an image page), `citation_proven` (also over real documents), and the scan shape / agreement checks |
 | `tests/test_tiers_corpus.py` | Ladder behaviour against the seed corpus |
 | `tests/test_t0.py`, `tests/test_t0_corpus.py` | `t0_templates.py` classification and field extraction |
 | `tests/test_t0_layout.py` | The layout-template engine (`t0_layout.py`) |
