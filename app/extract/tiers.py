@@ -59,7 +59,7 @@ _ESCALATE_ALWAYS = ["type", "regulation", "validity_from", "validity_to",
 # degrade; T0/pdfplumber is the full-list enumerator, the LLM the fallback.
 _ESCALATE_ITEM_ID = ["ref_list", "basic_udi_di"]
 
-# Certificate/validity fields — the expiry and the certificate number are
+# Certificate/validity fields: the expiry and the certificate number are
 # suppressed for an IFU (`_NOT_ON_AN_IFU`; its own date is not, see below), on
 # the same "carries none by nature" argument that suppresses the item-id fields
 # for a manufacturer-scope certificate. Instructions for use accompany a
