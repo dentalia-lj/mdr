@@ -777,11 +777,19 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     # declaration and page 2 its article list as text; the text call read the
     # list alone and refused the file for good. A client with no image call
     # keeps the text call (and its refusal), as before.
+    # The page classes, computed once (review of the Task 9 fixes, 2026-10-14):
+    # the route below and the ladder both read them, and they cost a pass over
+    # every page. Only when needed: a document T0 settles reads none.
+    classes: list[str] | None = None
     if doc_class == "unknown" and classify_image is not None:
         from app.extract.llm import DOC_CLASS_PAGES, doc_class_text   # `llm` imports this module
         header = doc_class_text(doc)
-        if (not header or _unreadable(header)
-                or "image" in pdfutil.page_classes(doc)[:DOC_CLASS_PAGES]):
+        if not header or _unreadable(header):
+            images = True
+        else:
+            classes = pdfutil.page_classes(doc)
+            images = "image" in classes[:DOC_CLASS_PAGES]
+        if images:
             classify, label, tier = classify_image, DOC_CLASS_IMAGE, "T2"
         else:
             label, tier = DOC_CLASS_TEXT, "T1"
@@ -808,7 +816,8 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
         return doc_class, fields
 
     pages = pdfutil.page_texts(doc)
-    classes = pdfutil.page_classes(doc)
+    if classes is None:
+        classes = pdfutil.page_classes(doc)
     # The pages a text read does not see in full: a scanned page of a mixed
     # PDF, and a page where an annotation paints an image (VOCO's e-signature,
     # the only print of its issue date; Task 8, 2026-10-13).

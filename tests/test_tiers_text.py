@@ -1304,6 +1304,25 @@ def test_a_contents_page_keeps_the_text_doc_class_call(t0):
     assert llm.classified == ["text"]
 
 
+@pytest.mark.parametrize("pages", [(DOC_PAGE,), (DOC_PAGE, IMAGE)], ids=["text", "mixed"])
+def test_the_page_classes_are_computed_once(monkeypatch, pages):
+    """Review of the Task 9 fixes: the doc-class route and the ladder each
+    classified every page of the document, a cost that grows with its page
+    count. One classification serves both."""
+    calls = []
+    real = pdf.page_classes
+    monkeypatch.setattr(pdf, "page_classes", lambda doc: calls.append(1) or real(doc))
+    llm = TextLlm({"T1": {}, "T2-first": {}, "T2": {}}, text_class="DoC", image_class="DoC")
+    doc = _doc(*pages)
+
+    def read(label, missing, **kw):
+        return llm.extract(label, doc, "d.pdf", missing, **kw)
+
+    tiers.run_text_ladder(doc, "d.pdf", "unknown", {}, ["T0"], read,
+                          classify=llm.classify, classify_image=llm.classify_image)
+    assert len(calls) == 1
+
+
 def test_text_on_pages_one_and_two_keeps_the_text_call(t0):
     """A scanned page after page 2 does not change what the text call sees."""
     t0({}, doc_class="unknown")
