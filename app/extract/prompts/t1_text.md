@@ -67,10 +67,13 @@ Field definitions:
   when it is issued, so that date is its start. Return `null` only when the
   document carries no date of its own at all. An IFU prints no issue date as
   such: its date is its own revision or edition line ("REV.01_01-2024",
-  "Rev. 04/2025"), as the first of that month when only the month and year
-  are printed. Never a day you did not read: a part or document number is not
-  a date. Never the release date of a template or form the document is
-  printed on ("Template RP00S0.07 Released May 31, 2024").
+  "Rev. 04/2025"). When that line prints a whole date, return it. When it
+  prints only a month and year, return the first of that month (`2024-01-01`
+  for "REV.01_01-2024"): that is the one day you may supply. Never cut a
+  printed day to the first, and never take a day from a code: a part, lot,
+  page or document number is not a date. Never the release date of a template
+  or form the document is printed on ("Template RP00S0.07 Released May 31,
+  2024").
 - `validity_to` — expiry date, ISO 8601, or `null`. Many documents legitimately
   have no expiry — that is correct, not a missing value.
   A place-and-date signature line is where the document was SIGNED. It is

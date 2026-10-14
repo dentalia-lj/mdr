@@ -59,13 +59,15 @@ _ESCALATE_ALWAYS = ["type", "regulation", "validity_from", "validity_to",
 # degrade; T0/pdfplumber is the full-list enumerator, the LLM the fallback.
 _ESCALATE_ITEM_ID = ["ref_list", "basic_udi_di"]
 
-# Certificate/validity fields — suppressed for an IFU, on the same "carries none
-# by nature" argument that suppresses the item-id fields for a manufacturer-scope
-# certificate. Instructions for use accompany a product; they are not issued by a
-# notified body, they cite no certificate number and they carry no validity
-# period. Asking a tier for them does not return nothing -- it returns something
-# wrong, because a model asked to find a date on a document that has none will
-# find the nearest date-shaped string on the page.
+# Certificate/validity fields — the expiry and the certificate number are
+# suppressed for an IFU (`_NOT_ON_AN_IFU`; its own date is not, see below), on
+# the same "carries none by nature" argument that suppresses the item-id fields
+# for a manufacturer-scope certificate. Instructions for use accompany a
+# product; they are not issued by a notified body, they cite no certificate
+# number and they carry no validity period. Asking a tier for them does not
+# return nothing -- it returns something wrong, because a model asked to find
+# a date on a document that has none will find the nearest date-shaped string
+# on the page.
 #
 # Both STRAUMANN IFUs demonstrated it on the same day (2026-08-17), and neither
 # failure was subtle:
@@ -81,13 +83,21 @@ _ESCALATE_ITEM_ID = ["ref_list", "basic_udi_di"]
 # invisible to every downstream guard, and validity_from drives supersession.
 # Two documents, two fabricated dates, zero real ones.
 #
-# Not pursued is not dropped (2026-10-14, Task 9 replay): a `validity_from` a
-# read gave before the type was known stays when its own quote prints it
-# (`_drop_ifu_certificate_reads`, `checks.issue_date_proven`). An IFU's
-# revision line ("REV.00_06-2023") is its issue date, and "701593/M/12 04/26"
-# turned out to print one too, April 2026 (decisions.md 2026-10-02): the
-# failure was the day, 26, which no quote prints.
+# An IFU's own date is pursued since 2026-10-14 (Denis's ruling, Task 9
+# replay): its revision line ("REV.00_06-2023") is its issue date and the only
+# date it carries, kept as `validity_from`, a month and year as the first of
+# the month. "701593/M/12 04/26" turned out to print one too, April 2026
+# (decisions.md 2026-10-02): the failure was the day, 26, which no quote
+# prints. So the guard moved from not asking to checking the answer: on an IFU
+# the ladder keeps a `validity_from` only when a read's own quote prints it
+# (`_drop_ifu_certificate_reads`, `checks.issue_date_proven`). Six of the eight
+# IFUs T0 types at the threshold on the SFTP mirror got no date while the
+# field was not asked.
 _ESCALATE_CERTIFICATE = ["validity_from", "validity_to", "cert_number"]
+
+#: Of those, the fields never asked of a document known to be an IFU: it has
+#: no validity period to end and cites no certificate (Denis, 2026-10-14).
+_NOT_ON_AN_IFU = ["validity_to", "cert_number"]
 
 #: Document types that carry no certificate and no validity period by nature.
 #: A tuple, not a single value, because the same is true of any accompanying
@@ -125,9 +135,11 @@ def needs_escalation(fields: dict, threshold: float = 0.95) -> list[str]:
     (ref_list, basic_udi_di) are pursued only when the doc is NOT confidently
     manufacturer-scope — a manufacturer/catalogue-wide cert (ISO 27001/13485) has no
     item id and uses the binding flow, so chasing one just wastes a vision call.
-    Certificate and validity fields are pursued for every type EXCEPT one whose
-    type is confidently one of `_NO_CERTIFICATE_TYPES` (an IFU), which carries
-    neither by nature -- asking yields a fabricated date, not a blank.
+    Certificate and validity fields are pursued for every type; one whose type
+    is confidently one of `_NO_CERTIFICATE_TYPES` (an IFU) is not asked the
+    expiry or the certificate number (`_NOT_ON_AN_IFU`), which it carries by
+    no nature -- asking yields a fabricated value, not a blank. Its own date,
+    the revision date, is asked (Denis, 2026-10-14).
 
     referenced_docs never escalates."""
     always = _ESCALATE_ALWAYS
@@ -137,7 +149,7 @@ def needs_escalation(fields: dict, threshold: float = 0.95) -> list[str]:
     # conservative direction is to spend a tier, never to skip a real expiry.
     if (doc_type.get("value") in _NO_CERTIFICATE_TYPES
             and doc_type.get("conf", 0.0) >= threshold):
-        always = [f for f in always if f not in _ESCALATE_CERTIFICATE]
+        always = [f for f in always if f not in _NOT_ON_AN_IFU]
     missing = [f for f in always if _below(fields, f, threshold)]
     cov = (fields.get("coverage_scope") or {}).get("value")
     if cov != "manufacturer":   # unknown scope still pursues an id (conservative)
@@ -715,8 +727,9 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
        pages where an annotation paints an image, when the read did not
        render them, and text beyond the budget, count as unread.
     5. Type to scope (`_scope_from_type`) after each read, as on a scan; and
-       once the type is known to be an IFU, the certificate fields a read
-       wrote before that are dropped (`_drop_ifu_certificate_reads`).
+       once the type is known to be an IFU, the expiry and certificate
+       number a read wrote before that are dropped, and a `validity_from` is
+       kept only where a read's quote prints it (`_drop_ifu_certificate_reads`).
     6. `T2` (`models.t2`, Sonnet) for what is still open, and only then; its
        answer closes every field it was asked, an empty answer included
        (`_sonnet_closes`, the scan ladder's guards).
@@ -1013,10 +1026,10 @@ def _asked(answer: dict, wanted) -> dict:
     at the time of the read. A read answers every field (the response schema
     requires them all), and a field nobody pursued stays out: the item
     identifiers of a manufacturer-wide certificate, `stated_class` (T0's alone,
-    PRD v3 section 5), and the certificate fields of a document already known
-    to be an IFU. A certificate field asked while the type was still open IS
-    merged; if the type then turns out an IFU, `_drop_ifu_certificate_reads`
-    removes it."""
+    PRD v3 section 5), and the expiry and certificate number of a document
+    already known to be an IFU. Such a field asked while the type was still
+    open IS merged; if the type then turns out an IFU,
+    `_drop_ifu_certificate_reads` removes it."""
     return {f: answer[f] for f in wanted if f in answer}
 
 
@@ -1024,23 +1037,25 @@ def _drop_ifu_certificate_reads(fields: dict, known: set[str], t0: dict,
                                 threshold: float = 0.95, ctx=None,
                                 reads: dict | None = None) -> None:
     """Once the type is known to be an IFU (`_NO_CERTIFICATE_TYPES`), the
-    certificate fields a read wrote before the type was known are dropped
-    (review 2026-10-13; both ladders): the suppression exists because a model asked for a
-    date an IFU cannot hold finds one anyway (STRAUMANN, "701593/M/12 04/26"
-    read as 2026-04-26), and that is as true of an answer given before the
-    type was known as after. T0's own read of the field comes back where there
-    was one; otherwise the field is removed. The read stays in `READS_KEY`.
+    `validity_to` and `cert_number` a read wrote before the type was known are
+    dropped (review 2026-10-13; both ladders): an IFU has no validity period
+    and cites no certificate, and a model asked for a value it cannot hold
+    finds one anyway (STRAUMANN, "701593/M/12 04/26" read as 2026-04-26), as
+    true of an answer given before the type was known as after. T0's own read
+    of the field comes back where there was one; otherwise the field is
+    removed. The read stays in `READS_KEY`.
 
-    One exception (Task 9 replay, 2026-10-14): a `validity_from` its own quote
-    prints stays (`checks.issue_date_proven`, against `ctx` on the text
-    ladder). An IFU has no validity period and cites no certificate, but its
-    revision date ("REV.00_06-2023") is its issue date and the only date it
-    carries, and dropping it lost the date on six IFUs. The STRAUMANN read
-    still goes: its quote prints April 2026, not the 26th. Where the field
-    holds a date no quote proves, the date another read's quote proves is
-    kept instead, the strongest such read (`reads`): on doc 712 the image
-    read, asked while the type was open, gave "2024-01", no date, and as the
-    stronger read it had replaced T1's proven 2024-01-01.
+    `validity_from` is the IFU's revision date ("REV.00_06-2023"), its issue
+    date and the only date it carries (Task 9 replay, 2026-10-14: dropping it
+    lost the date on six IFUs). It is asked of an IFU (Denis's ruling the same
+    day, `_NOT_ON_AN_IFU`) and kept only where its own quote prints it
+    (`checks.issue_date_proven`, against `ctx` on the text ladder; a month and
+    year as the first of the month), whichever read gave it and whenever. The
+    STRAUMANN read still goes: its quote prints April 2026, not the 26th.
+    Where the field holds a date no quote proves, the date another read's
+    quote proves is kept instead, the strongest such read (`reads`): on doc
+    712 the image read, asked while the type was open, gave "2024-01", no
+    date, and as the stronger read it had replaced T1's proven 2024-01-01.
 
     Only for a type someone read (review round 2): T0 at or above the
     threshold, or a read's value (the doc-class call or a field read). A T0
@@ -1087,8 +1102,9 @@ def _text_pursued(fields: dict, known: set[str]) -> list[str]:
     """`needs_escalation` for the text ladder, with "confident" meaning KNOWN
     (T0 at or above the threshold, or settled). The two suppressions as they
     stand (decisions 2026-10-12: "the text ladder keeps today's suppression"):
-    no certificate fields once the type is known to be an IFU; no item
-    identifiers while the scope's VALUE is `manufacturer`, known or not. T1
+    no expiry or certificate number once the type is known to be an IFU
+    (`_NOT_ON_AN_IFU`); no item identifiers while the scope's VALUE is
+    `manufacturer`, known or not. T1
     reads the scope from the whole text, so after T1 that value is a read's,
     not T0's guess; unlike `_scan_pursued`, the set can grow when a read
     changes the scope, which is what `_from_t1` is for."""
@@ -1290,8 +1306,9 @@ def _image_settles(field: str, evidence: dict | None, image_settle: float) -> bo
 def _scan_pursued(fields: dict, known: set[str]) -> list[str]:
     """`needs_escalation` for the scan ladder, with "confident" meaning KNOWN:
     held by T0 at or above the threshold, or settled by the reads. The same
-    two suppressions: no certificate fields once the type is known to be an
-    IFU, no item identifiers once the scope is known to be `manufacturer`.
+    two suppressions: no expiry or certificate number once the type is known
+    to be an IFU, no item identifiers once the scope is known to be
+    `manufacturer`.
 
     Known, where `needs_escalation` tests the scope's VALUE alone. On a scan
     that value is mostly T0's guess: a DoC typed off its file name with no REF
@@ -1310,14 +1327,15 @@ def _scan_pursued(fields: dict, known: set[str]) -> list[str]:
 
 def _pursued(fields: dict, known: set[str], *, skip_item_ids: bool) -> list[str]:
     """The fields a ladder still pursues: the always-escalated set (without
-    the certificate fields once the type is known to be an IFU), plus the item
+    `validity_to` and `cert_number` once the type is known to be an IFU,
+    `_NOT_ON_AN_IFU`), plus the item
     identifiers unless `skip_item_ids`, minus what is known. The two ladders
     differ only in when the item identifiers are skipped (`_scan_pursued`,
     `_text_pursued`)."""
     doc_type = (fields.get("type") or {}).get("value")
     always = _ESCALATE_ALWAYS
     if "type" in known and doc_type in _NO_CERTIFICATE_TYPES:
-        always = [f for f in always if f not in _ESCALATE_CERTIFICATE]
+        always = [f for f in always if f not in _NOT_ON_AN_IFU]
     pursued = list(always)
     if not skip_item_ids:
         pursued += _ESCALATE_ITEM_ID
@@ -1456,8 +1474,9 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
        pages), recorded under `PAGES_UNREAD_KEY` (flag `pages-unread`).
     5. Type to scope (`_scope_from_type`), as soon as the type is known:
        after each read, so a type the first read settles spares the second
-       read the scope. Once the type is known to be an IFU, the certificate
-       fields a read wrote before that are dropped
+       read the scope. Once the type is known to be an IFU, the expiry and
+       certificate number a read wrote before that are dropped, and a
+       `validity_from` stays only where a read's quote prints it
        (`_drop_ifu_certificate_reads`, as on text).
     6. `T2` (`models.t2`, Sonnet) for what is still open, and only then; its
        answer closes every field it was asked, an empty answer included
@@ -1469,8 +1488,8 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     The pursued set is recomputed after every read, as the text ladder
     recomputes `needs_escalation` after T1, but keyed to what is KNOWN rather
     than to a value (`_scan_pursued`), so it only shrinks: an IFU stops being
-    asked for certificate fields, a manufacturer-wide certificate for item
-    identifiers. Every read is recorded under `READS_KEY`;
+    asked for its expiry and certificate number, a manufacturer-wide
+    certificate for item identifiers. Every read is recorded under `READS_KEY`;
     `read_disagreements` counts where they differ and `failed_reads` names the
     reads that failed.
     """

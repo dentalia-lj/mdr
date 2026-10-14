@@ -507,15 +507,16 @@ def test_a_field_sonnet_gave_no_answer_for_keeps_what_it_holds(t0):
 def test_an_ifu_t1_proves_stops_the_certificate_reads(t0):
     """T1 was asked the certificate fields (the type was not known yet) and
     left them open; once the type is known to be an IFU, no image read is
-    asked them (a model asked for a date an IFU cannot hold finds a revision
-    code or a copyright year)."""
+    asked the expiry or the certificate number (a model asked for a value an
+    IFU cannot hold finds a revision code or a copyright year). Its revision
+    date is still asked (Denis, 2026-10-14)."""
     t0({"regulation": t0ev("MDR", 1.0)})
     page = ("Instructions for use\nManufacturer: GC EUROPE N.V.\n"
             "Regulation (EU) 2017/745\nDate of revision 04/26\nCertificate of training")
     llm = TextLlm({"T1": {"type": ("IFU", "Instructions for use")}, "T2-first": {}, "T2": {}})
     _, fields, _ = run(_doc(page), llm)
     assert {"validity_from", "cert_number", "manufacturer"} <= llm.asked("T1")
-    assert llm.asked("T2-first") == {"manufacturer"}
+    assert llm.asked("T2-first") == {"manufacturer", "validity_from"}
     assert fields["coverage_scope"]["value"] == "group"           # type to scope
 
 
@@ -1117,6 +1118,32 @@ def test_an_ifu_never_takes_back_a_date_a_rejection_dropped(t0):
     assert fields["type"]["value"] == "IFU"
     assert not (fields.get("validity_from") or {}).get("value")
     assert ("T1", "validity_from") in [(r["step"], r["field"]) for r in tiers.rejected_values(fields)]
+
+
+@pytest.mark.parametrize("answers, value", [
+    # the revision line read alike by T1 and the image read: kept
+    ({"T1": ("2023-06-01", "REV.00_06-2023", 1, 0.4),
+      "T2-first": ("2023-06-01", "REV.00_06-2023", 1, 0.8)}, "2023-06-01"),
+    # a day read off a revision code by every read: no date at all
+    ({"T1": ("2026-04-26", "701593/M/12 04/26", 1, 0.6),
+      "T2-first": ("2026-04-26", "701593/M/12 04/26", 1, 0.9),
+      "T2": ("2026-04-26", "701593/M/12 04/26", 1, 0.9)}, None),
+], ids=["revision-line", "made-up-day"])
+def test_an_ifu_t0_typed_is_asked_its_revision_date(t0, answers, value):
+    """Denis, 2026-10-14: an IFU keeps its revision date as `validity_from`,
+    a month and year as the first of the month. An IFU T0 types at the
+    threshold was never asked the field, and 6 of the 8 such IFUs on the
+    mirror got no date. It is asked now; `validity_to` and `cert_number`
+    still are not, and a date no quote prints still goes."""
+    quote = answers["T1"][1]
+    page = "Instructions for use\nManufacturer: GC EUROPE N.V.\n" + quote
+    t0({"type": t0ev("IFU", 1.0), "regulation": t0ev("MDR", 1.0),
+        "manufacturer": t0ev("GC EUROPE N.V.", 0.97), "coverage_scope": t0ev("group", 1.0),
+        "ref_list": t0ev(["003477"], 1.0), "basic_udi_di": t0ev(None, 1.0)})
+    llm = TextLlm({label: {"validity_from": spec} for label, spec in answers.items()})
+    _, fields, _ = run(_doc(page), llm)
+    assert llm.asked("T1") == {"validity_from"}
+    assert (fields.get("validity_from") or {}).get("value") == value
 
 
 def test_the_drop_follows_a_type_the_image_read_settles(t0):

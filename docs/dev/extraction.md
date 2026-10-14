@@ -71,19 +71,24 @@ threshold)` returns fields absent or below `threshold`. `_ESCALATE_ALWAYS`
 (type, regulation, validity_from, validity_to, coverage_scope, cert_number,
 manufacturer) always pursues; `_ESCALATE_ITEM_ID` (ref_list, basic_udi_di) is
 suppressed once `coverage_scope` is `manufacturer`
-(`tiers.py:122-124`); `_ESCALATE_CERTIFICATE` (validity_from, validity_to,
-cert_number) is suppressed once `type` is confidently one of
-`_NO_CERTIFICATE_TYPES = ("IFU",)` (`tiers.py:75, 118-120`) — an IFU asked
-for a validity date returns a fabricated one, not a blank (two STRAUMANN
-cases, `tiers.py:57-69`). `referenced_docs` and `stated_class` never force
+(`tiers.py:122-124`); `_NOT_ON_AN_IFU` (validity_to, cert_number) is
+suppressed once `type` is confidently one of `_NO_CERTIFICATE_TYPES =
+("IFU",)`: an IFU has no expiry and cites no certificate, and a model asked
+for one returns a fabricated value, not a blank (two STRAUMANN cases, the
+comment above `_ESCALATE_CERTIFICATE`). An IFU's `validity_from` is pursued
+(Denis, 2026-10-14): its revision date is its issue date, kept as the first
+of the month where only the month and year are printed, and the ladder keeps
+it only where a read's quote prints it (step 5 below); 6 of the 8 IFUs T0
+types at 0.95 on the SFTP mirror got no date while it was not asked.
+`referenced_docs` and `stated_class` never force
 escalation. The two ladders apply the same sets with "confidently" read as
 KNOWN (T0 at 0.95 or more, or settled by a read): `_text_pursued` keeps the
 scope suppression by the scope's VALUE, as before (decisions 2026-10-12, "the
 text ladder keeps today's suppression"); `_scan_pursued` only once the scope is
 known. A read answers every field (the response schema requires them all, and
 `llm.extract` returns them all since Task 4); a ladder merges only the fields
-it pursues, so an IFU's certificate fields and `stated_class` never come from a
-read.
+it pursues, so an IFU's expiry and certificate number and `stated_class`
+never come from a read.
 
 **The ladder** (`run_extraction`): T0 always runs first; business-doc/msds
 classes short-circuit with no LLM call at all. Then `pdf.has_text_page(doc)`
@@ -189,25 +194,32 @@ Task 4). Steps and labels from `llm.READ_STEPS`:
    (a multi-UDI list goes to Sonnet), never with an image page or an
    annotation's image no read rendered, or text past the budget.
 5. Type to scope after each read, as on a scan (step 5 below). And once the
-   type is known to be an IFU, the certificate fields a read wrote before the
-   type was known are dropped (`_drop_ifu_certificate_reads`, review
-   2026-10-13): T1 is asked `validity_from` while the type is still open, and on
-   an IFU it reads one off a revision code. T0's own value comes back where it
-   had one; the read stays in `_reads`. The scan ladder applies the same rule.
-   One exception since 2026-10-14 (Task 9 replay): a `validity_from` its own
-   quote prints stays (`checks.issue_date_proven`): a whole date the T0
-   parser reads out of the quote, or the first of a month whose month and
-   year the quote prints ("REV.00_06-2023" for 2023-06-01), that part of the
-   quote on its page where that page is text (a reader's note after it, "04/2025
-   (no day given; document revision date)", doc 1059, does not count against
-   it). Where the field holds a date no quote proves, the date the strongest
+   type is known to be an IFU, the `validity_to` and `cert_number` a read
+   wrote before the type was known are dropped (`_drop_ifu_certificate_reads`,
+   review 2026-10-13): T1 is asked them while the type is still open, and on
+   an IFU a model finds one anyway. T0's own value comes back where it had
+   one; the read stays in `_reads`. The scan ladder applies the same rule.
+   A `validity_from` stays only where its own quote prints it
+   (`checks.issue_date_proven`, Task 9 replay and Denis's ruling, 2026-10-14):
+   a whole date the T0 parser reads out of the quote, or the first of a month
+   whose month and year the quote prints ("REV.00_06-2023" for 2023-06-01),
+   that part of the quote on its page where that page is text (a reader's
+   note after it, "04/2025 (no day given; document revision date)", doc 1059,
+   does not count against it). A printed day is never cut to the first
+   ("15 June 2023", "Datum: 15. Juni 2023", "25. 08. 2025" prove no first of
+   the month), a lot, page or set number is never a date ("Lot 03/24", "Page
+   1/24", "Set 2019"), and lower-case "may 2023" is not one
+   (`checks._month_year_in`). Where the field holds a date no quote proves, the date the strongest
    read asked it proves is kept instead (doc 712: the image read, asked while
    the type was open, gave "2024-01" over T1's proven 2024-01-01). An IFU's revision date is its issue date and
    the only date it carries (six IFUs lost it in the replay). The STRAUMANN
    read still goes: "701593/M/12 04/26" prints April 2026 (decisions.md
    2026-10-02), and 2026-04-26 is a day nobody printed. `validity_to` and
-   `cert_number` go whatever the quote. The fields are still not PURSUED on a
-   known IFU: no read is asked for a date it does not already hold.
+   `cert_number` go whatever the quote, and are not PURSUED on a known IFU.
+   `validity_from` is (Denis, 2026-10-14), so a read is asked an IFU's
+   revision date, an IFU T0 types at 0.95 included; a month-and-year date
+   does not settle on T1 (the checks prove a whole date), so the image read
+   is asked it and settles it by agreeing.
    Only for a type someone read: T0 at 0.95 or more, or a read's value. A T0
    guess under 0.95 (a file named "IFU") that became known because both reads
    answered `type` empty drops nothing.
@@ -343,10 +355,11 @@ Steps and labels from `llm.READ_STEPS`:
    in it already, combined when a second read confirmed it, so a certificate
    typed at 0.85 and confirmed at 0.85 scores 0.9775, not the scope's 0.85.
    A read's own scope kept because it agrees is not marked.
-   Once the type is known to be an IFU, the certificate fields a read wrote
-   before that are dropped, as on text (`_drop_ifu_certificate_reads`, review
-   2026-10-13): the first image read is asked them while the type is open,
-   and a `validity_from` its quote prints stays, as on text. Runs after each read, so a type the first read
+   Once the type is known to be an IFU, the expiry and certificate number a
+   read wrote before that are dropped, as on text
+   (`_drop_ifu_certificate_reads`, review 2026-10-13): the first image read is
+   asked them while the type is open. A `validity_from` stays where its quote
+   prints it, as on text, and an IFU is asked it (Denis, 2026-10-14). Runs after each read, so a type the first read
    settles spares the second read the scope. Measured: two cheap reads agreed on
    `group` for an MDD certificate in the eval; this caught it.
 6. `T2` (`models.t2`, Sonnet) for what is still open, never when nothing is.
