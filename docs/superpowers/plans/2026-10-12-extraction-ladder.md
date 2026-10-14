@@ -130,7 +130,7 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | 7 re-extract command | done: built (Sonnet), reviewed and fixed (Opus), merged | c39bb77 |
 | 8 quality and parity | done: real reads $0.60, all deploy blockers pass; text 121/130 fields right (today 112), scans 25/26 (today 24); report docs/private/2026-10-13-extraction-ladder-quality.md | el-quality 3b2b6b0 |
 | 8a date only an image shows (VOCO stamps) | done: built (Opus), checked, merged 6eeef62; ruling recorded c24b7f7; full suite 5214 passed; eval Sonnet 9 to 8, quality unchanged; confirmation read $0.0009 | merged |
-| 9 production replay | run 1 blocked deploy (76 fields worse); fixes built in el-regress and el-fields, merged into el-candidate (bb941b2, full suite green), reviews running in parallel; re-run of Task 9 (145 docs) and Task 8 (23 labelled) running on el-candidate. Deploy criteria agreed 2026-10-14: no real document refused that production keeps; no gate field worse than production on the replayed set; documents leaving review at least production's; everything else a follow-up | el-candidate |
+| 9 production replay | re-run on el-candidate: 77 of 145 leave review (run 1: 42), 0 refused, 1 disposition worse (501, fixed 4464c0e); hand check vs PDFs: 0 gate fields worse (61 better, 8 worse non-gate, 10 arguable); Task 8 labelled 120/129, no blockers (533068 type label skipped, Denis). Final delta re-run with fresh catalogue overlap running | el-candidate 4464c0e |
 
 ## Who builds what, and in parallel (Denis, 2026-10-12)
 
