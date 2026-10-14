@@ -367,6 +367,17 @@ each measured on every cached read and the SFTP mirror before it was added:
   REF", and real lists as low as 0.35. Three of 415 cached list reads match,
   all three not article numbers (doc 305, a series of ranges "1-9999", a
   column of Basic UDI-DIs).
+- `cert_number`: a number the quote labels as the declaration's own
+  ("Declaration of conformity reference: 1000-TF_8_EUDOC_000219 [5]", doc
+  1406, from Sonnet, over the cheap image read's right "8445 rev.18"). Ruling
+  A makes a DoC's `cert_number` the certificate it cites, never its own
+  number, as a notified body's four-digit number never is; that rule is a
+  shape test on the value (`is_notified_body_number`, it keeps a read from
+  settling), this one needs the label in the quote. 1 of 377 cached
+  certificate-number reads matches, doc 1406's. Since the image prompt named
+  `cert_number` without defining it, it now carries ruling A's definition and
+  both exclusions; the T1 line is the measured ruling-A wording and is
+  unchanged.
 
 **The gate fields' evidence** (plan Task 5, "Split 2026-10-12"; GATE reads it in
 `gate._confidences`). On `type`, `regulation` and `coverage_scope` (`tiers.
@@ -548,8 +559,8 @@ returns a list of blocks now: the static T1 or T2 prompt first, carrying
 playbook hints block when there is one, never marked. Sync reads and batch
 requests share `_request`, so both carry it. What is cached is the marked block
 alone, the prompt file's text as rendered: `t1_text.md` is 8,479 characters and
-`t2_vision.md` 5,285 since the Task 9 replay's rules (2026-10-14; 7,473 and
-4,252 when Task 6 measured), roughly 3,150 and 1,950 tokens on the 5.5
+`t2_vision.md` 5,564 since the Task 9 replay's rules (2026-10-14; 7,473 and
+4,252 when Task 6 measured), roughly 3,150 and 2,050 tokens on the 5.5
 models. That is
 an estimate, not a count: the research doc's fixed part of a call (system prompt,
 schema and request line, counted with `count_tokens` on the 5.5 models) is 4,870

@@ -383,6 +383,30 @@ _DISOWNED_REF = re.compile(r"\bnot\b[^.;:()\n]{0,30}?\b(?:REF|article|catalog(?:
 #: Below this a read is more unsure than sure of its own list.
 DISOWNED_REF_CONF = 0.5
 
+#: The label of a declaration's OWN number, ending the quote just before the
+#: value: "Declaration of conformity reference:", "DoC No.", "Konformitäts-
+#: erklärung Nr.", "Référence de la déclaration de conformité :". It names the
+#: declaration, so an EC or ISO certificate's own number ("Certificate No.")
+#: never matches.
+_OWN_REFERENCE = re.compile(
+    r"(?:declaration|\bDoC\b|dichiarazione|erkl[äa]rung|izjava)[^:\n]{0,40}?"
+    r"(?:reference|\bref\b\.?|\bno\b\.?|\bnr\b\.?|n°|number|nummer|num[ée]ro|\bšt\b\.?)"
+    r"\s*[:.]?\s*$"
+    r"|(?:r[ée]f[ée]rence|\bref\b\.?|\bno\b\.?|\bnr\b\.?|n°|number|nummer|num[ée]ro)"
+    r"\s+(?:de\s+la\s+|of\s+the\s+|der\s+)?(?:d[ée]claration|declaration|erkl[äa]rung)"
+    r"[^:\n]{0,40}?\s*[:.]?\s*$",
+    re.IGNORECASE)
+
+
+def _before(quote: str, value) -> str | None:
+    """The quote up to where `value` starts in it, spacing ignored; None when
+    the quote does not hold the value."""
+    chars = "".join(str(value).split())
+    if not chars:
+        return None
+    m = re.search(r"\s*".join(re.escape(ch) for ch in chars), quote, re.IGNORECASE)
+    return quote[:m.start()] if m else None
+
 
 def not_the_field(field_name: str, evidence: dict | None, text: str = "") -> tuple[str | None, object]:
     """Why a read's value is provably not `field_name`, and what of it stays:
@@ -396,7 +420,16 @@ def not_the_field(field_name: str, evidence: dict | None, text: str = "") -> tup
     at 0.4; real Ultradent model numbers were read at 0.55 to 0.7 with "not
     labelled REF", and a real list as low as 0.35, so neither half alone);
     and any code the text prints as a nomenclature entry
-    (`nomenclature_codes`, doc 622)."""
+    (`nomenclature_codes`, doc 622).
+
+    `cert_number`: a number the quote labels as the declaration's own
+    ("Declaration of conformity reference: 1000-TF_8_EUDOC_000219 [5]", doc
+    1406, Sonnet). Ruling A (2026-10-12) makes a DoC's `cert_number` the
+    certificate it cites; its own number is never one, as a notified body's
+    four-digit number never is (`is_notified_body_number`, a shape rule on
+    the value, which keeps a read from settling the field). This one needs
+    the label in the quote. Measured 2026-10-14: 1 of 377 cached
+    certificate-number reads matches, doc 1406's."""
     if not isinstance(evidence, dict):
         return None, None
     value = evidence.get("value")
@@ -408,6 +441,10 @@ def not_the_field(field_name: str, evidence: dict | None, text: str = "") -> tup
         if bad:
             kept = [c for c in value if c not in bad]
             return f"nomenclature codes, not articles: {', '.join(map(str, bad))}", kept or None
+    if field_name == "cert_number" and value:
+        head = _before(str(evidence.get("verbatim") or ""), value)
+        if head is not None and _OWN_REFERENCE.search(head):
+            return "the declaration's own reference, not a certificate", None
     return None, None
 
 

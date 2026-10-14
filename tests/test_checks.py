@@ -735,3 +735,24 @@ def test_nomenclature_codes_leave_the_rest_of_the_list():
 def test_a_value_with_no_rule_is_never_rejected():
     assert checks.not_the_field("type", {"value": "DoC", "conf": 0.1, "verbatim": "x"}) == (None, None)
     assert checks.not_the_field("ref_list", None) == (None, None)
+
+
+@pytest.mark.parametrize("value, quote, rejected", [
+    # doc 1406, Sonnet: the declaration's own reference, printed above its body
+    ("1000-TF_8_EUDOC_000219 [5]", "Declaration of conformity reference: 1000-TF_8_EUDOC_000219 [5]", True),
+    ("DC-2021-05", "DoC No. DC-2021-05", True),
+    ("KE 2021/3", "Konformitätserklärung Nr. KE 2021/3", True),
+    ("1000-TF 8 EUDOC 000219 [5]", "Référence de la déclaration de conformité : 1000-TF 8 EUDOC 000219 [5]", True),
+    # ruling A: the certificate a declaration cites, and a certificate's own number
+    ("8445 rev.18", "EC certificate n° 8445 rev.18 of Approval of Full Quality Assurance System", False),
+    ("G1 021108 0031", "Certificate No.: G1 021108 0031", False),
+    ("MDR 778483", "This declaration is based on EU certificate MDR 778483", False),
+    ("HZ 1470094-1", "Declaration of Conformity ... No. of Certificate: HZ 1470094-1", False),
+])
+def test_a_certificate_number_the_quote_names_the_declarations_own_is_rejected(value, quote, rejected):
+    """Ruling A (2026-10-12): a DoC's `cert_number` is the certificate it cites.
+    The declaration's own document or reference number is never one, as a
+    notified body's four-digit number is never one (`is_notified_body_number`,
+    a shape rule on the value); this one needs the label the quote prints."""
+    reason, _ = checks.not_the_field("cert_number", {"value": value, "conf": 0.6, "verbatim": quote})
+    assert (reason is not None) is rejected

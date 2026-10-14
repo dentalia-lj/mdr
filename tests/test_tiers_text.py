@@ -864,6 +864,23 @@ def test_a_list_the_read_disowns_is_no_answer(t0):
     assert not fields["ref_list"]["value"]
 
 
+def test_sonnets_own_reference_for_a_certificate_keeps_the_cheap_reads_number(t0):
+    """Doc 1406 (RTD, Dentsply Sirona): pages 2-3 are scans. The cheap image
+    read gave the cited certificate, "8445 rev.18", at 0.8 (under
+    image_settle), and Sonnet then gave the declaration's own reference. That
+    is not a certificate number: Sonnet's read counts as no answer for the
+    field, which keeps the number it holds."""
+    t0(_only_open("cert_number"))
+    llm = TextLlm({"T2-first": {"cert_number": ("8445 rev.18", "EC certificate n° 8445 rev.18", 3, 0.8)},
+                   "T2": {"cert_number": ("1000-TF_8_EUDOC_000219 [5]",
+                                          "Declaration of conformity reference: 1000-TF_8_EUDOC_000219 [5]",
+                                          2, 0.6)}})
+    _, fields, used = run(_doc(DOC_PAGE.replace("Certificate G1 021108 0031\n", ""), IMAGE, IMAGE), llm)
+    assert used == ["T0", "T1", "T2-first", "T2"]
+    assert fields["cert_number"]["value"] == "8445 rev.18"
+    assert [(r["step"], r["field"]) for r in tiers.rejected_values(fields)] == [("T2", "cert_number")]
+
+
 # --- an IFU's certificate fields (review 2026-10-13) -----------------------------
 
 IFU_PAGE = ("Instructions for use\nManufacturer: GC EUROPE N.V.\nRegulation (EU) 2017/745\n"

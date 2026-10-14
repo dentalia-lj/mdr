@@ -35,7 +35,11 @@ certificate, worse than none. Every date you are unsure about belongs in
 products, `manufacturer` for company-wide QMS/ISO certs; there is no per-item
 value), `ref_list`
 (manufacturer article numbers / REF codes), `basic_udi_di`, `referenced_docs`,
-`cert_number`, `manufacturer` (the LEGAL ENTITY that manufactures the devices,
+`cert_number` (an EC / ISO certificate's own number; on a DoC, the number of
+the notified-body certificate the declaration cites, or `null` if it cites
+none; never the declaration's own document or reference number, and never a
+notified body's four-digit identification number such as `0482`),
+`manufacturer` (the LEGAL ENTITY that manufactures the devices,
 exactly as printed and with its legal form — `GC EUROPE N.V.`, `Gebr. Brasseler
 GmbH & Co. KG` — normally at the top of the declaration or beside "Manufacturer"
 / "Hersteller" / "Proizvajalec". NEVER the authorised representative ("EC REP",

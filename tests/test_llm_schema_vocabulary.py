@@ -132,6 +132,16 @@ def test_the_image_prompt_already_asks_for_the_cited_certificate():
     assert "`cert_number`" in llm.T2_SYSTEM
 
 
+def test_the_image_prompt_bars_the_declarations_own_number():
+    """Task 9 replay, doc 1406: with `cert_number` named and never defined,
+    Sonnet gave the declaration's own reference ("Declaration of conformity
+    reference: 1000-TF_8_EUDOC_000219 [5]") over the certificate it cites.
+    The image prompt now says what ruling A says, and what it never is."""
+    flat = " ".join(llm.T2_SYSTEM.split())
+    assert "the notified-body certificate the declaration cites" in flat
+    assert "never the declaration's own document or reference number" in flat
+
+
 #: The legacy-device rule (decisions.md, 2026-10-13, "Regulation of a
 #: legacy-device declaration"), as both prompts must state it.
 LEGACY_DEVICE_RULE = (
