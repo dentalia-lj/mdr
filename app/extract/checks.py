@@ -52,13 +52,16 @@ SEMANTIC_FIELDS = frozenset({"type", "coverage_scope"})
 #: Labels whose presence in the text means a field may be stated somewhere.
 #: From `tools/ladder_probe.py` LABELS, with one fix: the UDI label is a word.
 #: `udi` as a substring matches "including" and "guidelines", which would
-#: veto every null for the field.
+#: veto every null for the field. `model` joined the REF labels on 2026-10-14
+#: (Task 9 replay, doc 617): Ultradent prints its article numbers as "Model
+#: Numbers", T1 left them out, and with no other label the null rule settled
+#: the empty list.
 LABELS = {
     "validity_to": r"valid until|valid to|expir|gültig bis|gueltig bis|scadenza|valido fino|velja do|vrijedi do|valable jusqu",
     "validity_from": r"date|datum|issued|gültig ab|valid from|data|izdan",
     "cert_number": r"certific|zertifikat|certifikat|certificato|registration no",
     "basic_udi_di": r"\budi\b",
-    "ref_list": r"\bref\b|article|artikel|art\.|item|catalog|katalog|šifra|codice",
+    "ref_list": r"\bref\b|article|artikel|art\.|item|catalog|katalog|šifra|codice|\bmodel",
     "regulation": r"2017/745|93/42|regulation|richtlinie|directive|uredb|direktiv",
     "manufacturer": r"manufactur|hersteller|fabbricante|proizvajalec|proizvođač|fabricant",
 }
@@ -398,6 +401,11 @@ _OWN_REFERENCE = re.compile(
     re.IGNORECASE)
 
 
+#: A date quoted from the line of the form a document is printed on:
+#: "Template RP00S0.07 Released May 31, 2024" (doc 617).
+_TEMPLATE = re.compile(r"\btemplate\b", re.IGNORECASE)
+
+
 def _before(quote: str, value) -> str | None:
     """The quote up to where `value` starts in it, spacing ignored; None when
     the quote does not hold the value."""
@@ -429,7 +437,13 @@ def not_the_field(field_name: str, evidence: dict | None, text: str = "") -> tup
     four-digit number never is (`is_notified_body_number`, a shape rule on
     the value, which keeps a read from settling the field). This one needs
     the label in the quote. Measured 2026-10-14: 1 of 377 cached
-    certificate-number reads matches, doc 1406's."""
+    certificate-number reads matches, doc 1406's.
+
+    `validity_from` / `validity_to`: a date its quote gives as a template's
+    ("Template RP00S0.07 Released May 31, 2024", doc 617, T1 at 0.3). The
+    quote prints the date, so the checks settled it, and the declaration's
+    own date, in a notary's stamp no text layer holds, was never asked of an
+    image read. 1 of 1,143 cached date reads matches, doc 617's."""
     if not isinstance(evidence, dict):
         return None, None
     value = evidence.get("value")
@@ -445,6 +459,8 @@ def not_the_field(field_name: str, evidence: dict | None, text: str = "") -> tup
         head = _before(str(evidence.get("verbatim") or ""), value)
         if head is not None and _OWN_REFERENCE.search(head):
             return "the declaration's own reference, not a certificate", None
+    if field_name in DATE_FIELDS and value and _TEMPLATE.search(str(evidence.get("verbatim") or "")):
+        return "a template's release date, not the document's", None
     return None, None
 
 

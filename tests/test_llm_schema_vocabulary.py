@@ -176,6 +176,16 @@ def test_both_prompts_keep_nomenclature_codes_out_of_the_ref_list():
         assert "would have to say is not a REF code" in flat
 
 
+def test_both_prompts_name_model_numbers_and_bar_a_template_date():
+    """Doc 617 (Task 9 replay): T1 left Ultradent's "Model Numbers" out of the
+    REF list as "not in scope", and gave the date of the template the
+    declaration was made on."""
+    for text in (llm.T1_SYSTEM, llm.T2_SYSTEM):
+        flat = " ".join(text.split())
+        assert "model numbers" in flat.lower()
+        assert "template" in flat.lower()
+
+
 def test_manufacturer_is_in_the_structured_output_schema():
     # SCHEMA is generated from _FIELD_VALUE so both tiers stay in step; a field
     # in TARGET but not here would be requested and never returned.

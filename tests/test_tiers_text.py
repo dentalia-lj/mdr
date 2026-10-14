@@ -881,6 +881,41 @@ def test_sonnets_own_reference_for_a_certificate_keeps_the_cheap_reads_number(t0
     assert [(r["step"], r["field"]) for r in tiers.rejected_values(fields)] == [("T2", "cert_number")]
 
 
+#: Doc 617's text layer (Ultradent UltraTemp): the declaration's own date is
+#: in the notary's stamp, which is no text; the template's is in the footer.
+ULTRADENT_617 = ("DECLARATION OF CONFORMITY\nRegulation (EU) 2017/745\nModel Numbers:\n"
+                 "5916-, S5917-\nTemplate RP00S0.07 Released May 31, 2024")
+
+
+def test_a_template_release_date_is_not_the_declarations(t0):
+    """Doc 617: T1 gave the template's release date, which its quote prints,
+    so the checks settled it and no image read was asked the date the stamp
+    shows. A date the quote gives as a template's is no answer."""
+    t0(_only_open("validity_from"))
+    llm = TextLlm({"T1": {"validity_from": ("2024-05-31", "Template RP00S0.07 Released May 31, 2024",
+                                            1, 0.3)},
+                   "T2-first": {"validity_from": ("2024-08-08", "08 August 2024", 2, 0.9)},
+                   "T2": {"validity_from": ("2024-08-08", "08 August 2024", 2, 0.9)}})
+    _, fields, used = run(_doc(ULTRADENT_617, "Notary Public\nSubscribed and sworn to before me"),
+                          llm)
+    assert "T2-first" in used
+    assert fields["validity_from"]["value"] == "2024-08-08"
+
+
+def test_model_numbers_an_empty_t1_answer_missed_go_to_the_image_read(t0):
+    """Doc 617: T1 answered the REF list empty ("not extracted as field in
+    scope"), and with no REF label in the text the null rule settled it. The
+    "Model Numbers" label keeps it open; the image read's codes are printed,
+    so they settle it."""
+    t0(_only_open("ref_list"))
+    llm = TextLlm({"T1": {"ref_list": ([], "Model Numbers: not extracted", 1, 0.2)},
+                   "T2-first": {"ref_list": (["5916-", "S5917-"], "Model Numbers: 5916-, S5917-",
+                                             1, 0.6)}})
+    _, fields, used = run(_doc(ULTRADENT_617), llm)
+    assert used == ["T0", "T1", "T2-first"]
+    assert fields["ref_list"]["value"] == ["5916-", "S5917-"]
+
+
 # --- an IFU's certificate fields (review 2026-10-13) -----------------------------
 
 IFU_PAGE = ("Instructions for use\nManufacturer: GC EUROPE N.V.\nRegulation (EU) 2017/745\n"

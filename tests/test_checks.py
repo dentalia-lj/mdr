@@ -756,3 +756,24 @@ def test_a_certificate_number_the_quote_names_the_declarations_own_is_rejected(v
     a shape rule on the value); this one needs the label the quote prints."""
     reason, _ = checks.not_the_field("cert_number", {"value": value, "conf": 0.6, "verbatim": quote})
     assert (reason is not None) is rejected
+
+
+@pytest.mark.parametrize("field, value, quote, rejected", [
+    # doc 617 (Ultradent): the release date of the form the declaration is made on
+    ("validity_from", "2024-05-31", "Template RP00S0.07 Released May 31, 2024", True),
+    ("validity_to", "2024-05-31", "Template RP00S0.07 Released May 31, 2024", True),
+    ("validity_from", "2024-08-08", "Subscribed and sworn to before me on 08 August 2024", False),
+    # doc 622: the declaration's own release line stays (arguable, not a template)
+    ("validity_from", "2023-04-20", "RTD-002882.02 Released April 20, 2023", False),
+])
+def test_a_date_the_quote_gives_a_template_is_rejected(field, value, quote, rejected):
+    reason, _ = checks.not_the_field(field, {"value": value, "conf": 0.3, "verbatim": quote})
+    assert (reason is not None) is rejected
+
+
+def test_a_model_number_label_unsettles_an_empty_ref_list():
+    """Doc 617: Ultradent prints its article numbers as "Model Numbers: 5916-,
+    S5917-". With no REF label in the text, T1's empty answer settled under
+    the null rule and the image read was never asked."""
+    assert checks.null_settled("ref_list", ctx(LONG + "Model Numbers: 5916-, S5917-")) is False
+    assert checks.null_settled("ref_list", ctx(LONG)) is True

@@ -69,7 +69,8 @@ Field definitions:
   such: its date is its own revision or edition line ("REV.01_01-2024",
   "Rev. 04/2025"), as the first of that month when only the month and year
   are printed. Never a day you did not read: a part or document number is not
-  a date.
+  a date. Never the release date of a template or form the document is
+  printed on ("Template RP00S0.07 Released May 31, 2024").
 - `validity_to` — expiry date, ISO 8601, or `null`. Many documents legitimately
   have no expiry — that is correct, not a missing value.
   A place-and-date signature line is where the document was SIGNED. It is
@@ -89,7 +90,8 @@ Field definitions:
   covers the company or its whole catalogue (QMS / ISO certificates, which carry
   no product identifiers). There is no per-item value — a declaration naming one
   product is still `group`.
-- `ref_list` — the manufacturer article numbers / REF codes, VERBATIM. Do not
+- `ref_list` — the manufacturer article numbers / REF codes (also printed as
+  catalogue or model numbers, "Model Numbers: 5916-, S5917-"), VERBATIM. Do not
   strip dots, dashes, spaces, or leading zeros; copy each code exactly. Never a
   GMDN, EMDN, UMDNS or CND nomenclature code (those name a type of device, not
   an article), a Basic UDI-DI, an SRN or a certificate number. Leave out any

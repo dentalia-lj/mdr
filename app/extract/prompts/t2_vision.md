@@ -25,7 +25,8 @@ when it is issued. `null` only if the document carries no date at all. An IFU
 prints no issue date as such: its date is its own revision or edition line
 ("REV.01_01-2024", "Rev. 04/2025"), as the first of that month when only the
 month and year are printed. Never a day you did not read: a part or document
-number is not a date),
+number is not a date. Never the release date of a template or form the
+document is printed on ("Template RP00S0.07 Released May 31, 2024")),
 `validity_to` (ISO 8601 dates; `validity_to` null is
 normal for DoCs. A place-and-date line is `validity_from` and is NEVER an
 expiry. Return a date only with an explicit expiry phrase ("Expiry Date",
@@ -34,7 +35,8 @@ certificate, worse than none. Every date you are unsure about belongs in
 `validity_from`, never in `validity_to`), `coverage_scope` (group | manufacturer — `group` when it covers a set of
 products, `manufacturer` for company-wide QMS/ISO certs; there is no per-item
 value), `ref_list`
-(manufacturer article numbers / REF codes), `basic_udi_di`, `referenced_docs`,
+(manufacturer article numbers / REF codes, also printed as catalogue or model
+numbers, "Model Numbers: 5916-, S5917-"), `basic_udi_di`, `referenced_docs`,
 `cert_number` (an EC / ISO certificate's own number; on a DoC, the number of
 the notified-body certificate the declaration cites, or `null` if it cites
 none; never the declaration's own document or reference number, and never a

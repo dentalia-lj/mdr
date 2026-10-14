@@ -378,6 +378,16 @@ each measured on every cached read and the SFTP mirror before it was added:
   `cert_number` without defining it, it now carries ruling A's definition and
   both exclusions; the T1 line is the measured ruling-A wording and is
   unchanged.
+- `validity_from` / `validity_to`: a date its quote gives as a template's
+  ("Template RP00S0.07 Released May 31, 2024", doc 617, T1 at 0.3). The quote
+  prints the date, so the checks had settled it, and the declaration's own
+  date (a notary's stamp, in no text layer) was never asked of an image read.
+  1 of 1,143 cached date reads matches, doc 617's. Both prompts say so too.
+
+On the same document T1 answered the REF list empty: Ultradent prints its
+article numbers as "Model Numbers", which T1 took as out of scope, and with
+no REF label in the text the null rule settled the empty answer. `model` is
+a REF label now (`checks.LABELS`), and both prompts name model numbers.
 
 **The gate fields' evidence** (plan Task 5, "Split 2026-10-12"; GATE reads it in
 `gate._confidences`). On `type`, `regulation` and `coverage_scope` (`tiers.
@@ -558,9 +568,9 @@ returns a list of blocks now: the static T1 or T2 prompt first, carrying
 `cache_control: {"type": "ephemeral"}` (the default 5-minute cache), then the
 playbook hints block when there is one, never marked. Sync reads and batch
 requests share `_request`, so both carry it. What is cached is the marked block
-alone, the prompt file's text as rendered: `t1_text.md` is 8,479 characters and
-`t2_vision.md` 5,564 since the Task 9 replay's rules (2026-10-14; 7,473 and
-4,252 when Task 6 measured), roughly 3,150 and 2,050 tokens on the 5.5
+alone, the prompt file's text as rendered: `t1_text.md` is 8,678 characters and
+`t2_vision.md` 5,758 since the Task 9 replay's rules (2026-10-14; 7,473 and
+4,252 when Task 6 measured), roughly 3,200 and 2,150 tokens on the 5.5
 models. That is
 an estimate, not a count: the research doc's fixed part of a call (system prompt,
 schema and request line, counted with `count_tokens` on the 5.5 models) is 4,870
