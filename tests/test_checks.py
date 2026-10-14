@@ -88,6 +88,66 @@ def test_the_eval_dates_the_quote_does_not_prove_stay_unsettled(f, iso, quote, p
     assert checks.settled(f, ev(iso, quote), c) is False
 
 
+# --------------------------------------------------------------------------- #
+# an IFU's own date: its revision date, read off its quote (Task 9 replay)
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("value, quote, proven", [
+    # the measured IFU revision lines (docs 709, 712, 714, 1059)
+    ("2023-06-01", "REV.00_06-2023", True),
+    ("2024-01-01", "REV.01_01-2024", True),
+    ("2024-01-01", "REV.01_01/2024", True),
+    ("2025-04-01", "04/2025", True),
+    ("2023-06-01", "Rev. June 2023", True),
+    ("2023-06-01", "Edition 2023-06", True),
+    ("2024-03-15", "Date of issue: 2024-03-15", True),        # a whole printed date
+    # decisions.md 2026-10-02: "701593/M/12 04/26" is revision 12 of April 2026
+    ("2026-04-01", "701593/M/12 04/26", True),
+    # ... and the STRAUMANN read it was built against: a day the code never printed
+    ("2026-04-26", "701593/M/12 04/26", False),
+    ("2025", "(c) Institut Straumann AG, 2025", False),       # not a date at all
+    ("2023-06-01", "REV.00_07-2023", False),                  # another month
+    ("2023-06-01", "15-06-2023", False),                      # a day the value drops
+    ("2023-06-01", "2023-06-15", False),
+    ("2023-06-01", "Instructions for use", False),            # no date in the quote
+    ("2023-05-01", "Rev. May 2023", True),
+    ("2023-06-01", "Rev. 1 June 2023", True),                 # the first, printed
+    # Denis, 2026-10-14: a printed day is never cut to the first ...
+    ("2023-06-01", "15 June 2023", False),
+    ("2023-06-01", "Datum: 15. Juni 2023", False),
+    ("2025-08-01", "Date of issue 25. 08. 2025", False),
+    ("2023-06-01", "06/23/2023", False),
+    # ... a lot, page or set number is never a date ...
+    ("2024-03-01", "Lot 03/24", False),
+    ("2024-03-01", "LOT: 03/24", False),
+    ("2024-01-01", "Page 1/24", False),
+    ("2019-09-01", "Set 2019", False),
+    # ... and lower-case "may" is the verb
+    ("2023-05-01", "the device may 2023", False),
+])
+def test_an_ifu_date_is_one_its_own_quote_prints(value, quote, proven):
+    assert checks.issue_date_proven(ev(value, quote)) is proven
+
+
+def test_an_ifu_date_quote_may_carry_the_readers_note():
+    """Doc 1059: "Latest document update 04/2025 (no day given; document
+    revision date)". What must be on the page is the date the quote prints,
+    not the reader's note after it."""
+    quote = "Latest document update 04/2025 (no day given; document revision date)"
+    assert checks.issue_date_proven(ev("2025-04-01", quote), ctx(LONG + "Latest document update 04/2025"))
+    assert not checks.issue_date_proven(ev("2025-04-01", quote), ctx(LONG + "Latest document update"))
+
+
+def test_an_ifu_date_quote_must_be_on_its_text_page():
+    c = ctx(LONG + "REV.00_06-2023")
+    assert checks.issue_date_proven(ev("2023-06-01", "REV.00_06-2023"), c) is True
+    assert checks.issue_date_proven(ev("2023-06-01", "REV.00_06-2023", page=2),
+                                    ctx(LONG + "REV.00_06-2023", LONG)) is False
+    # a page the text does not read in full: the image read's quote stands alone
+    assert checks.issue_date_proven(
+        ev("2023-06-01", "REV.00_06-2023", page=2),
+        ctx(LONG, "", classes=["text", "image"], unread=(2,))) is True
+
+
 def test_a_quote_that_is_not_on_the_cited_page_does_not_settle():
     c = ctx(LONG, LONG + "Issue Date: 2022-07-08")
     quote = "Issue Date: 2022-07-08"
@@ -203,6 +263,31 @@ def test_ref_list_codes_match_across_whitespace_and_case():
 ])
 def test_regulation_is_proven_by_the_printed_citation_alone(text, value, ok):
     assert checks.settled("regulation", ev(value), ctx(LONG + text)) is ok
+
+
+@pytest.mark.parametrize("value, text, kw, ok", [
+    # Task 9 replay: USTOMED's scanned declaration on page 1, its article list
+    # as text on page 2. Neither citation is in the text, which proved `n.a.`
+    # while page 1 printed 93/42.
+    ("n.a.", "Nothing cited here", {"classes": ["image", "text"]}, False),
+    # "only 2017/745 printed" also says 93/42 is not: unknown over a scan
+    ("MDR", "Regulation (EU) 2017/745", {"classes": ["text", "image"]}, False),
+    ("MDR", "Regulation (EU) 2017/745", {"unread": (2,)}, False),
+    ("MDR", "Regulation (EU) 2017/745", {"truncated": True}, False),
+    ("MDR", "Regulation (EU) 2017/745", {"classes": ["text"]}, False),     # classes unknown
+    ("n.a.", "", {"classes": ["sparse", "sparse"]}, False),              # no text layer
+    ("MDR", "Regulation (EU) 2017/745", {"classes": ["text", "ocr"]}, True),
+    ("n.a.", "Nothing cited here", {"classes": ["text", "sparse"]}, True),
+    ("n.a.", "Nothing cited here", {}, True),
+], ids=["na-over-a-scanned-page-1", "mdr-over-a-scanned-page", "unread", "truncated",
+        "classes-unknown", "no-text-layer", "ocr-is-text", "sparse-is-text", "all-text"])
+def test_a_regulation_is_never_proven_by_absence_over_text_nobody_read(value, text, kw, ok):
+    """Every value the regulation check accepts rests on what is NOT printed
+    (`n.a.`: neither citation; MDR or MDD: not the other one), so it holds only
+    where the text covers the whole document, as `citation_proven` has it."""
+    c = Ctx(pages=[LONG + text, LONG], classes=kw.get("classes", ["text", "text"]),
+            truncated=kw.get("truncated", False), unread_pages=frozenset(kw.get("unread", ())))
+    assert checks.settled("regulation", ev(value), c) is ok
 
 
 #: Citation proof for GATE (plan Task 5b): `settled`, and text for the whole
@@ -323,6 +408,18 @@ def test_a_vector_drawn_page_does_not_let_a_null_settle():
 
 def test_semantic_fields_have_no_null_rule():
     assert checks.null_settled("type", ctx("anything")) is False
+
+
+def test_one_empty_read_never_settles_the_manufacturer():
+    """Doc 2173 (Task 9 replay): EURONDA's Euroseal declaration has a text
+    layer in a font with a private encoding ('(MVIGXMZI9)' for 'Directive'),
+    so T1 could not read the name and no "Manufacturer" label was there to
+    find. The null rule took that as proof the document names none, and the
+    image read, which reads EURONDA S.P.A. at 0.95, was never asked. Every
+    compliance document names its manufacturer, often as a letterhead with no
+    label, so a missing label never proves the name is absent."""
+    assert checks.null_settled("manufacturer", ctx("Plain body text.  " * 20)) is False
+    assert checks.null_settled("validity_to", ctx("Plain body text.  " * 20)) is True
 
 
 # --------------------------------------------------------------------------- #
@@ -608,3 +705,203 @@ def test_a_citation_proof_over_a_real_document(kinds, value, proven):
         doc[0].insert_text((72, 400), "Regulation (EU) 2017/745")
     c = Ctx(pages=pdf.page_texts(doc), classes=pdf.page_classes(doc))
     assert checks.citation_proven(ev(value), c) is proven
+
+
+# --------------------------------------------------------------------------- #
+# a read's value that is provably not the field (Task 9 replay, 2026-10-14)
+# --------------------------------------------------------------------------- #
+#: Doc 622 (Ultradent IsoBlock): a two-column form whose text layer prints the
+#: labels first and the values after, so T1 paired "Model Numbers:" with the
+#: GMDN and EMDN lines.
+ULTRADENT_FORM = """UMDNS Code:
+GMDN Code:
+EMDN Code:
+Basic UDI-D1:
+Model Numbers:
+14066, Tongue Depressor
+36311, Occlusal splint, dental preformed
+V9001, Tongue Depressors, Single-Use
+0883205-TF057B8
+331-"""
+
+
+def test_codes_printed_as_nomenclature_entries_are_found():
+    codes = ["14066", "36311", "V9001", "331-"]
+    assert checks.nomenclature_codes(codes, ULTRADENT_FORM) == ["14066", "36311", "V9001"]
+
+
+@pytest.mark.parametrize("text", [
+    "EMDN code / description\nV0599 - CLINICAL KITS - OTHERS\n"
+    "GMDN code / description\n45247 - Endodontic obturation system",
+    "EMDN Code:\nQ010199 Conservative dentistry\nUMDNS Code:\n16-411\nBohrinstrument",
+    "EMDN Code + term\nQ01010103\nDental Conservation Composites",
+])
+def test_a_code_after_a_nomenclature_label_is_found(text):
+    codes = ["V0599", "45247", "Q010199", "16-411", "Q01010103", "1510310B"]
+    found = checks.nomenclature_codes(codes, text)
+    assert found and "1510310B" not in found
+
+
+@pytest.mark.parametrize("codes, text", [
+    # a REF table on a declaration that names a GMDN code (doc 1406's layout)
+    (["1510310B", "1510311B"], "Product reference GMDN code\n1510310B 10 D.T. LIGHT-POST #0.5\n"
+                               "1510311B 10 D.T. LIGHT-POST #1\n38609"),
+    # five-digit article numbers in a list, nothing after them
+    (["10234", "10235"], "GMDN 12345\nREF\n10234\n10235"),
+    # the same codes on a document that names no nomenclature
+    (["14066", "V9001"], "Model Numbers:\n14066, Tongue Depressor\nV9001, Tongue Depressors"),
+])
+def test_real_ref_codes_are_not_nomenclature_codes(codes, text):
+    assert checks.nomenclature_codes(codes, text) == []
+
+
+#: Doc 622's text layer as PyMuPDF reads it: eight labels, then their values,
+#: so a code sits up to ten lines below its label.
+ULTRADENT_622 = """Intended Purpose:
+UMDNS Code:
+GMDN Code:
+EMDN Code:
+Basic UDI-D1:
+Eudamed SRN:
+Model Numbers:
+Images:
+Page 1 of 2
+lsoBlock bite blocks are used as a tongue restraint and to provide bilateral
+support during in-office whitening and dental procedures
+14066, Tongue Depressor
+36311, Occlusal splint, dental preformed
+V9001, Tongue Depressors, Single-Use
+0883205-TF057B8
+US-MF-000013697
+331-"""
+
+
+def test_doc_622s_nomenclature_codes_are_found_below_their_labels():
+    assert checks.nomenclature_codes(["14066", "36311", "V9001", "331-"], ULTRADENT_622) == [
+        "14066", "36311", "V9001"]
+
+
+def test_a_code_far_below_every_nomenclature_label_is_an_article():
+    """Review of the Task 9 fixes: a document that names GMDN once is not a
+    list of nomenclature codes. A five-digit article number printed with its
+    description far below the label is an article."""
+    text = ("GMDN code: 12345 Dental bur\n" + "Lorem ipsum dolor sit amet.\n" * 15
+            + "REF Description\n10234 Diamond bur\n10235 Carbide bur")
+    assert checks.nomenclature_codes(["10234", "10235"], text) == []
+
+
+def test_a_code_t0_listed_is_never_a_nomenclature_code():
+    """T0 enumerated the document's own article list: a code it holds is an
+    article, whatever its shape and wherever it sits."""
+    assert checks.nomenclature_codes(["14066", "V9001"], ULTRADENT_FORM,
+                                     listed=["14066"]) == ["V9001"]
+    reason, kept = checks.not_the_field(
+        "ref_list", {"value": ["14066", "331-"], "conf": 0.8, "verbatim": "x"},
+        ULTRADENT_FORM, listed=["14066", "331-"])
+    assert (reason, kept) == (None, None)
+
+
+def test_a_list_the_read_itself_disowns_is_rejected():
+    """Doc 305: Barco's type designations, which the read returned at 0.4 while
+    saying they are not REF codes. Under 0.5 and in its own words only: real
+    Ultradent model numbers were read at 0.55 to 0.7 with "not labelled REF"
+    (Task 9 replay), and a real list can be read at 0.35."""
+    quote = ("Type: MDAC-2422 SNIB TER, MDAC-2422 SNNB ESA "
+             "(these are type designations, not explicit REF codes)")
+    disowned = {"value": ["MDAC-2422 SNIB TER", "MDAC-2422 SNNB ESA"], "conf": 0.4,
+                "verbatim": quote}
+    assert checks.not_the_field("ref_list", disowned)[0] is not None
+    assert checks.not_the_field("ref_list", dict(disowned, conf=0.55))[0] is None
+    assert checks.not_the_field("ref_list", {"value": ["5941-"], "conf": 0.35,
+                                              "verbatim": "Model Numbers: '5941-' as printed"})[0] is None
+
+
+@pytest.mark.parametrize("quote, rejected", [
+    ("Type: MDAC-2422 (these are type designations, not explicit REF codes)", True),
+    ("5916-, S5917- (these are not REF codes)", True),
+    ("1-9999 (ranges, not article numbers)", True),
+    # a note about the list, not a disowning of it (review of the Task 9 fixes)
+    ("Model Numbers: 5916-, S5917- (not labelled as REF)", False),
+    ("List not complete, see catalogue", False),
+    ("not all article numbers are shown", False),
+    ("REF not printed; article numbers from the table", False),
+])
+def test_only_disowning_phrasing_rejects_a_list(quote, rejected):
+    """A read under 0.5 whose quote says the values ARE NOT REF codes or
+    article numbers. A quote that says the list is not labelled REF, not
+    complete, or not all shown describes a real list."""
+    reason, _ = checks.not_the_field("ref_list", {"value": ["5916-"], "conf": 0.4,
+                                                  "verbatim": quote})
+    assert (reason is not None) is rejected
+
+
+def test_nomenclature_codes_leave_the_rest_of_the_list():
+    ev_ = {"value": ["331-", "14066"], "conf": 0.8, "verbatim": "Model Numbers"}
+    reason, kept = checks.not_the_field("ref_list", ev_, ULTRADENT_FORM)
+    assert reason and kept == ["331-"]
+    reason, kept = checks.not_the_field(
+        "ref_list", {"value": ["14066", "36311", "V9001"], "conf": 0.8, "verbatim": "x"},
+        ULTRADENT_FORM)
+    assert reason and kept is None
+
+
+def test_a_value_with_no_rule_is_never_rejected():
+    assert checks.not_the_field("type", {"value": "DoC", "conf": 0.1, "verbatim": "x"}) == (None, None)
+    assert checks.not_the_field("ref_list", None) == (None, None)
+
+
+@pytest.mark.parametrize("value, quote, rejected", [
+    # doc 1406, Sonnet: the declaration's own reference, printed above its body
+    ("1000-TF_8_EUDOC_000219 [5]", "Declaration of conformity reference: 1000-TF_8_EUDOC_000219 [5]", True),
+    ("DC-2021-05", "DoC No. DC-2021-05", True),
+    ("KE 2021/3", "Konformitätserklärung Nr. KE 2021/3", True),
+    ("1000-TF 8 EUDOC 000219 [5]", "Référence de la déclaration de conformité : 1000-TF 8 EUDOC 000219 [5]", True),
+    # ruling A: the certificate a declaration cites, and a certificate's own number
+    ("8445 rev.18", "EC certificate n° 8445 rev.18 of Approval of Full Quality Assurance System", False),
+    ("G1 021108 0031", "Certificate No.: G1 021108 0031", False),
+    ("MDR 778483", "This declaration is based on EU certificate MDR 778483", False),
+    ("HZ 1470094-1", "Declaration of Conformity ... No. of Certificate: HZ 1470094-1", False),
+    # a certificate word between the declaration and the number label: the
+    # number is the certificate's (review of the Task 9 fixes)
+    ("G1 021108 0031", "This declaration is based on EC Certificate No.: G1 021108 0031", False),
+    ("G1 021108 0031", "Konformitätserklärung gemäß Zertifikat Nr. G1 021108 0031", False),
+    ("8445 rev.18", "Izjava o skladnosti, certifikat št. 8445 rev.18", False),
+    ("MDR 778483", "This declaration is based on the Certificate No. MDR 778483", False),
+    ("CE 01234", "Déclaration de conformité selon le certificat n° CE 01234", False),
+])
+def test_a_certificate_number_the_quote_names_the_declarations_own_is_rejected(value, quote, rejected):
+    """Ruling A (2026-10-12): a DoC's `cert_number` is the certificate it cites.
+    The declaration's own document or reference number is never one, as a
+    notified body's four-digit number is never one (`is_notified_body_number`,
+    a shape rule on the value); this one needs the label the quote prints."""
+    reason, _ = checks.not_the_field("cert_number", {"value": value, "conf": 0.6, "verbatim": quote})
+    assert (reason is not None) is rejected
+
+
+@pytest.mark.parametrize("field, value, quote, rejected", [
+    # doc 617 (Ultradent): the release date of the form the declaration is made on
+    ("validity_from", "2024-05-31", "Template RP00S0.07 Released May 31, 2024", True),
+    ("validity_to", "2024-05-31", "Template RP00S0.07 Released May 31, 2024", True),
+    ("validity_from", "2024-08-08", "Subscribed and sworn to before me on 08 August 2024", False),
+    # doc 622: the declaration's own release line stays (arguable, not a template)
+    ("validity_from", "2023-04-20", "RTD-002882.02 Released April 20, 2023", False),
+    # Dentsply's form footer: the template's own validity
+    ("validity_from", "2019-04-01", "Template: PLP_T_0071 ♦ Rev.1 ♦ valid from: 2019-04-01", True),
+    # only the line that prints the date, and a template named by its ID before
+    # the date (review of the Task 9 fixes): Ivoclar's form footer, a product
+    ("validity_from", "2026-05-04", "Date of issue: 2026-05-04\nTemplate ID:\nTEFO-EN-000422", False),
+    ("validity_to", "2030-10-21", "Valid until: 2030-10-21 Template ID: TEFO-EN-000422", False),
+    ("validity_from", "2023-06-15", "Surgical Template Kit\nIssued 2023-06-15", False),
+    ("validity_from", "2023-06-15", "Surgical Template Kit, issued 2023-06-15", False),
+])
+def test_a_date_the_quote_gives_a_template_is_rejected(field, value, quote, rejected):
+    reason, _ = checks.not_the_field(field, {"value": value, "conf": 0.3, "verbatim": quote})
+    assert (reason is not None) is rejected
+
+
+def test_a_model_number_label_unsettles_an_empty_ref_list():
+    """Doc 617: Ultradent prints its article numbers as "Model Numbers: 5916-,
+    S5917-". With no REF label in the text, T1's empty answer settled under
+    the null rule and the image read was never asked."""
+    assert checks.null_settled("ref_list", ctx(LONG + "Model Numbers: 5916-, S5917-")) is False
+    assert checks.null_settled("ref_list", ctx(LONG)) is True

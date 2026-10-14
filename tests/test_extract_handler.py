@@ -873,6 +873,25 @@ class _LabelLlm:
 
 
 DENTSPLY_SCAN = "DENSTPLY/IMP - DOC - ATIS TX SURGICAL INSTRUMENTS - DEC-00101190.pdf"  # 11 pages
+LUMIWHITE = "LUMIWHITE/Declaration_of_Conformity_LUMIWHITE_OU.pdf"
+
+
+def test_a_rejected_read_value_is_counted_on_the_job_result(conn, fixture_pdf):
+    """A read's value that is provably not its field is treated as no answer
+    (Task 9 replay), and the job result says so: dropped, never silent."""
+    disowned = {"value": ["LUMI SOOTHE", "LUMI LITE"], "conf": 0.4, "tier": "T2",
+                "verbatim": "product names, not REF codes", "page": 1, "model_id": "m"}
+    group = {"value": "group", "conf": 0.85, "tier": "T1", "page": 1, "model_id": "m",
+             "verbatim": "LUMI SOOTHE Desensitising Gel"}
+    llm = _LabelLlm({"T1": {"coverage_scope": group}, "T2-first": {"ref_list": disowned}})
+    job = {"payload": {"archive_url": fixture_pdf(LUMIWHITE),
+                       "content_hash": "sha-rejected", "group_id": 4}}
+
+    r = eh.handle_extract_doc(conn, job, llm=llm)
+
+    assert r["rejected_values"][0]["step"] == "T2-first"
+    assert r["rejected_values"][0]["field"] == "ref_list"
+    assert r["counts"]["rejected_values"] == len(r["rejected_values"])
 
 
 def test_sync_scan_keeps_every_read_and_flags_unread_pages(conn, fixture_pdf):

@@ -94,7 +94,8 @@ class ScanLlm:
         given = self.answers.get(label, {})
         if given == FAILED:
             return {}
-        return {f: ev(*given[f]) if f in given else null_ev() for f in missing}
+        return {f: (dict(given[f]) if isinstance(given[f], dict) else ev(*given[f]))
+                if f in given else null_ev() for f in missing}
 
     def asked(self, label):
         return next((set(m) for lb, m in self.calls if lb == label), None)
@@ -284,6 +285,23 @@ def test_the_configured_threshold_is_the_one_used(t0):
     llm = ScanLlm({"T2-first": first, "T2-second": {}, "T2": {}})
     run(_scan(1), llm, image_settle=0.90)
     assert llm.asked("T2-second") == {"cert_number"} | GATE
+
+
+def test_a_ref_list_at_the_prompt_cap_settles_and_is_flagged(t0):
+    """Doc 839 (Task 9 replay): a list of exactly the prompt cap may be cut.
+    Every read is capped at 150 as well, so asking another read cannot return
+    more (review of the Task 9 fixes, 2026-10-14): the list settles as any
+    other, here on the first read's own confidence, and carries the
+    truncation flag."""
+    cap = [str(100000 + i) for i in range(tiers.REF_LIST_PROMPT_CAP)]
+    llm = ScanLlm({"T2-first": dict(EVERYTHING, ref_list=(cap, 0.95)),
+                   "T2-second": {}, "T2": {}})
+    t0()
+    _, fields, used = run(_scan(1), llm)
+    assert "ref_list" not in (llm.asked("T2-second") or set())
+    assert "T2" not in used
+    assert fields["ref_list"]["value"] == cap
+    assert tiers.REF_TRUNCATION_FLAG in tiers.integrity_flags(fields)
 
 
 # --- the second read: agreement ----------------------------------------------
@@ -484,9 +502,10 @@ def test_a_known_ifu_stops_the_certificate_reads(t0):
              "basic_udi_di": ("++J022MD0098KV", 0.95)}
     llm = ScanLlm({"T2-first": first, "T2-second": {}, "T2": {}})
     _, _, used = run(_scan(1), llm)
-    assert used == ["T0", "T2-first", "T2-second"]
-    # no certificate field; the scope follows the type, so it is not confirmed
-    assert llm.asked("T2-second") == {"type", "regulation"}
+    # no expiry and no certificate number; the revision date still (Denis,
+    # 2026-10-14); the scope follows the type, so it is not confirmed
+    assert used == ["T0", "T2-first", "T2-second"]       # two empty answers settle it
+    assert llm.asked("T2-second") == {"type", "regulation", "validity_from"}
 
 
 # --- every read kept, disagreements counted ----------------------------------
@@ -670,30 +689,48 @@ def test_item_ids_brought_in_by_type_to_scope_are_read_once_then_sonnet(t0):
     _, fields, used = run(_scan(6), llm)
     assert "ref_list" not in llm.asked("T2-first")
     # and the gate fields the first read settled, to confirm; the scope follows the type
-    assert llm.asked("T2-second") == {"ref_list", "basic_udi_di", "type", "regulation"}
+    assert llm.asked("T2-second") == {"ref_list", "basic_udi_di", "type", "regulation",
+                                      "validity_from"}
     assert llm.asked("T2") == {"basic_udi_di"}         # ref_list settled at 0.9
     assert fields["coverage_scope"]["value"] == "group"
-    assert tiers.PAGES_UNREAD_KEY not in fields
+    # the item ids are not unread; the revision date both reads left empty on
+    # a scan longer than they see is (Denis, 2026-10-14: an IFU is asked it)
+    assert fields.get(tiers.PAGES_UNREAD_KEY) == ["validity_from"]
 
 
 def test_a_read_answering_more_than_it_was_asked_merges_only_the_asked_fields(t0):
     """`llm.extract` returns every parsed field since Task 4 (the text ladder
     keeps them for fields it pursues later). The scan ladder merges only what
-    it asked: an IFU's certificate fields stay out (a model asked for a date an
-    IFU cannot hold finds a revision code), and `stated_class` is T0's alone."""
+    it asked: an IFU's certificate fields stay out (it has no expiry and cites
+    no certificate; Denis, 2026-10-14), and `stated_class` is T0's alone."""
     t0("compliance-doc", {"type": t0ev("IFU", 1.0)})
 
     class Wide(ScanLlm):
         def extract(self, label, doc, filename, missing, **kw):
             out = super().extract(label, doc, filename, missing, **kw)
-            out["validity_from"] = ev("2026-04-26", 0.95)
+            out["validity_to"] = ev("2031-04-26", 0.95)
+            out["cert_number"] = ev("701593/M/12", 0.95)
             out["stated_class"] = ev("IIa", 0.95)
             return out
 
     llm = Wide({"T2-first": EVERYTHING})
     _, fields, _ = run(_scan(1), llm)
-    assert "validity_from" not in llm.asked("T2-first")
-    assert "validity_from" not in fields and "stated_class" not in fields
+    assert not {"validity_to", "cert_number"} & llm.asked("T2-first")
+    assert not {"validity_to", "cert_number", "stated_class"} & set(fields)
+
+
+def test_an_ifu_t0_typed_on_a_scan_is_asked_its_revision_date(t0):
+    """Denis, 2026-10-14: an IFU keeps its revision date as `validity_from`,
+    so an IFU T0 types at the threshold is asked it too (on the mirror 6 of
+    the 8 such IFUs got no date). Kept as the first of the month its quote
+    prints."""
+    t0("compliance-doc", {"type": t0ev("IFU", 1.0)})
+    revision = dict(ev("2023-06-01", 0.9), verbatim="REV.00_06-2023")
+    llm = ScanLlm({"T2-first": dict(EVERYTHING, validity_from=revision)})
+    _, fields, _ = run(_scan(1), llm)
+    assert "validity_from" in llm.asked("T2-first")
+    assert not {"validity_to", "cert_number"} & llm.asked("T2-first")
+    assert fields["validity_from"]["value"] == "2023-06-01"
 
 
 def test_a_scope_t0_derived_from_a_guessed_type_is_rederived_once_the_type_settles(t0):
@@ -739,7 +776,8 @@ def test_certificate_fields_a_read_wrote_before_the_type_was_an_ifu_are_dropped(
     be an IFU they are dropped; T0's own value comes back, the read stays in
     the record."""
     t0("compliance-doc", {"validity_to": t0ev("2030-01-01", 0.6)})
-    first = dict(EVERYTHING, type=("IFU", 0.95), validity_from=("2026-04-26", 0.9),
+    made_up_day = dict(ev("2026-04-26", 0.9), verbatim="701593/M/12 04/26")
+    first = dict(EVERYTHING, type=("IFU", 0.95), validity_from=made_up_day,
                  validity_to=("2031-01-01", 0.9), cert_number=("701593/M/12", 0.9))
     llm = ScanLlm({"T2-first": first})
     _, fields, _ = run(_scan(1), llm)
@@ -748,6 +786,19 @@ def test_certificate_fields_a_read_wrote_before_the_type_was_an_ifu_are_dropped(
     assert (fields["validity_to"]["value"], fields["validity_to"]["tier"]) == ("2030-01-01", "T0")
     record = next(r for r in fields[tiers.READS_KEY] if r["step"] == "T2-first")
     assert record["fields"]["validity_from"]["value"] == "2026-04-26"
+
+
+def test_an_ifu_scan_keeps_the_revision_date_its_quote_prints(t0):
+    """Task 9 replay, as on text: the month and year a revision line prints
+    stay as the first of the month; the other certificate fields still go."""
+    t0("compliance-doc")
+    revision = dict(ev("2023-06-01", 0.9), verbatim="REV.00_06-2023")
+    first = dict(EVERYTHING, type=("IFU", 0.95), validity_from=revision,
+                 validity_to=("2031-01-01", 0.9), cert_number=("701593/M/12", 0.9))
+    llm = ScanLlm({"T2-first": first})
+    _, fields, _ = run(_scan(1), llm)
+    assert fields["validity_from"]["value"] == "2023-06-01"
+    assert "validity_to" not in fields and "cert_number" not in fields
 
 
 def test_a_file_name_guess_of_ifu_drops_nothing_on_a_scan(t0):

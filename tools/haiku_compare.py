@@ -732,6 +732,7 @@ LABEL_OVERRIDES: dict[tuple[str, str], object] = {
     ("VOCO_DoC_(EU)2023-1542_Celalux 3.pdf", "ref_list"): ["9092", "9090"],
     # the label describes the declaration + annex pair; the eval reads the annex alone
     ("533068_RA_812_Liste_DoC.pdf", "regulation"): "SKIP",
+    ("533068_RA_812_Liste_DoC.pdf", "type"): "SKIP",   # same reason (Denis, 2026-10-14)
 }
 
 

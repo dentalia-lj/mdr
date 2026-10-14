@@ -57,6 +57,7 @@ from tools import haiku_compare as hc   # puts this checkout first on sys.path
 
 import anthropic  # noqa: E402
 
+from app import playbooks as playbooks_mod  # noqa: E402
 from app.config import Extract, GateThresholds, Models  # noqa: E402
 from app.extract import economics, tiers  # noqa: E402
 from app.extract import llm as llm_mod  # noqa: E402
@@ -393,26 +394,38 @@ def standin_for(cache: Cache):
 def run_doc(doc: dict, data: pathlib.Path, cache: Cache, cfg, exhausted: set[str],
             standin=None) -> tuple[dict, list[dict]]:
     """The ladder on one document. Raises `Miss` at the first uncached request
-    (unless a stand-in answers it)."""
+    (unless a stand-in answers it).
+
+    As the live handler (`app/handlers/extract.py`): the steering playbook is
+    the group's manufacturer's when the document came through a group
+    (`group_manufacturer`, authoritative), else T0's own text match (never
+    authoritative: the eval documents, and every backfilled one). `companion`
+    is the companion annex T0 reads the REF list from, a path under `data`."""
     path = str(data / doc["path"])
+    companion = str(data / doc["companion"]) if doc.get("companion") else None
+    group_mfr = doc.get("group_manufacturer")
+    override = (playbooks_mod.for_manufacturer(group_mfr)
+                if group_mfr and group_mfr != "unknown" else None)
     client = CachedClient(cache, doc, exhausted, standin)
     llm = _Llm(client, cfg.models)
     with pdfutil.open_doc(path) as pdf_doc:
-        hints = _hints(pdf_doc)
+        hints = _hints(pdf_doc, override)
         doc_class, fields, used = tiers.run_extraction(
-            pdf_doc, path, llm, hints=hints, image_settle=cfg.image_settle,
-            agreement_min=cfg.agreement_min)
+            pdf_doc, path, llm, hints=hints, companion_url=companion,
+            image_settle=cfg.image_settle, agreement_min=cfg.agreement_min)
     return ({"content_hash": doc["content_hash"], "set": doc["set"], "path": doc["path"],
              "doc_class": doc_class, "used": used, "fields": fields, "served": client.served,
              "disagreements": tiers.read_disagreements(fields),
              "failed_reads": tiers.failed_reads(fields)}, client.misses)
 
 
-def _hints(pdf_doc) -> str | None:
-    """As the live handler builds them for a backfilled document (no group, so
-    never authoritative): `app/handlers/extract.py`."""
-    steering = t0_templates.steering_playbook("\n".join(pdfutil.page_texts(pdf_doc)))
-    return _hints_for(steering, tiers.needs_escalation({}), authoritative=False)
+def _hints(pdf_doc, override=None) -> str | None:
+    """As the live handler builds them (`app/handlers/extract.py`): the group's
+    manufacturer playbook `override` is authoritative; with none (a backfilled
+    document), T0's own text match steers and is never authoritative."""
+    steering = t0_templates.steering_playbook("\n".join(pdfutil.page_texts(pdf_doc)),
+                                              override=override)
+    return _hints_for(steering, tiers.needs_escalation({}), authoritative=override is not None)
 
 
 def today_fill_requests(docs, data, cache: Cache, probe_open: dict, cfg) -> list[dict]:
@@ -582,14 +595,47 @@ def cmd_run(args) -> int:
     data = pathlib.Path(args.data) if args.data else main_checkout()
     root = data / OUT
     docs, probe_open = load_docs(data)
+    if getattr(args, "labelled_only", False):
+        docs = [d for d in docs if d["gt"]]
     cache = Cache(data / BASE_CACHE, root / "cache")
     state = State(root / "state.json")
+    run = (pathlib.Path(args.run) if args.run else
+           root / (datetime.datetime.now().strftime("%Y%m%dT%H%M%S") + ("-sim" if args.simulate else "")))
+    cfg = config()
+
+    def after_rounds(round_no, client_fn, outs, cap, log):
+        return fill_today(args, docs, data, cache, probe_open, cfg, state, outs, cap,
+                          round_no, log, client_fn)
+
+    def fill_pending():
+        if args.no_today_fill:
+            return []
+        return [r for r in today_fill_requests(docs, data, cache, probe_open, cfg)
+                if cache.get(r["key"]) is None]
+
+    return drive(docs, data, cache, state, root, run, args, env_root=data,
+                 finish=lambda run: cmd_report(SimpleNamespace(run=str(run), data=str(data))),
+                 after_rounds=after_rounds, fill_pending=fill_pending)
+
+
+def drive(docs: list[dict], data: pathlib.Path, cache: Cache, state: State, root: pathlib.Path,
+          run: pathlib.Path, args, env_root: pathlib.Path, finish,
+          after_rounds=None, fill_pending=None) -> int:
+    """The rounds, for any document list: `cmd_run` here, and
+    `tools.prod_replay` on production's documents with its own cache, state and
+    cap. `data` holds the PDFs (`doc["path"]` is relative to it), `root` the
+    lock, `env_root` the `.env` with the API key; `finish(run)` reports a
+    completed run. `args`: dry_run, simulate, cap_usd, adopt, forget_intent.
+
+    Optional hooks (`cmd_run` passes both, `tools.prod_replay` neither):
+    `after_rounds(round_no, client_fn, outs, cap, log) -> dict | None` runs once
+    the ladder has nothing left to ask (the baseline fill) and its result is
+    written to the run as `today_fill`; `fill_pending() -> list[dict]` gives
+    the requests it would still send, for the simulate and dry-run estimates."""
     cfg = config()
     outs = cache.output_estimate()
     cap = Decimal(str(args.cap_usd))
     offline = args.dry_run or args.simulate
-    run = (pathlib.Path(args.run) if args.run else
-           root / (datetime.datetime.now().strftime("%Y%m%dT%H%M%S") + ("-sim" if args.simulate else "")))
     if not args.dry_run:
         run.mkdir(parents=True, exist_ok=True)
 
@@ -643,9 +689,8 @@ def cmd_run(args) -> int:
         for i in sorted(rounds):
             total += _print_estimate(f"round {i}", rounds[i], outs, log)
         log(f"all rounds ~${total:.4f}; spent so far ${state.spent():.4f}; cap ${cap}")
-        if not args.no_today_fill:
-            fill = [r for r in today_fill_requests(docs, data, cache, probe_open, cfg)
-                    if cache.get(r["key"]) is None]
+        if fill_pending is not None:
+            fill = fill_pending()
             total += _print_estimate("baseline fill (today's Sonnet read)", fill, outs, log)
             log(f"with the baseline fill ~${total:.4f}")
         _write_run(run, results, simulated=True)
@@ -654,7 +699,7 @@ def cmd_run(args) -> int:
 
     client = None
     if state.uncollected() and not offline:
-        client = api_client(data)
+        client = api_client(env_root)
         log(f"collecting {len(state.uncollected())} batch(es) an earlier run submitted")
         collect(state, cache, client, log)
     for round_no in range(1, MAX_ROUNDS + 1):
@@ -662,24 +707,23 @@ def cmd_run(args) -> int:
         reqs = list(misses.values())
         if not reqs:
             log(f"round {round_no}: nothing misses; {len(results)} documents read")
-            fill = fill_today(args, docs, data, cache, probe_open, cfg, state, outs, cap,
-                              round_no, log, lambda: client or api_client(data))
+            fill = (after_rounds(round_no, lambda: client or api_client(env_root), outs, cap, log)
+                    if after_rounds is not None else None)
             _write_run(run, results, simulated=False, today_fill=fill)
             log(f"spent ${state.spent():.4f} in all; run dir: {run}")
-            return cmd_report(SimpleNamespace(run=str(run), data=str(data)))
+            return finish(run)
         if args.dry_run:
             pending = [k for b in state.uncollected() for k in
                        (m["key"] for m in state.data["batches"][b]["requests"].values())]
             if pending:
                 log(f"note: {len(pending)} requests sit in batches not yet collected")
             _print_estimate(f"DRY RUN, round {round_no} (no API call)", reqs, outs, log)
-            if not args.no_today_fill:
-                _print_estimate("DRY RUN, the baseline fill after the last round", [
-                    r for r in today_fill_requests(docs, data, cache, probe_open, cfg)
-                    if cache.get(r["key"]) is None], outs, log)
+            if fill_pending is not None:
+                _print_estimate("DRY RUN, the baseline fill after the last round",
+                                fill_pending(), outs, log)
             log(f"spent so far ${state.spent():.4f}; cap ${cap}")
             return 0
-        client = client or api_client(data)
+        client = client or api_client(env_root)
         if submit(state, client, reqs, outs, cap, round_no, log) is None:
             return 2
         collect(state, cache, client, log)
@@ -1174,6 +1218,8 @@ def main(argv=None) -> int:
                    help="an interrupted submission created no batch")
     p.add_argument("--no-today-fill", action="store_true",
                    help="no final round of today's Sonnet reads for the baseline")
+    p.add_argument("--labelled-only", action="store_true",
+                   help="only the documents with labels (text and scans)")
     p = sub.add_parser("report")
     p.add_argument("--run", required=True)
     p.add_argument("--data")
