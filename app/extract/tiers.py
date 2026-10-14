@@ -1053,9 +1053,13 @@ def _drop_ifu_certificate_reads(fields: dict, known: set[str], t0: dict,
 def _proven_issue_date(reads: dict | None, ctx) -> dict | None:
     """Of the `validity_from` answers the reads asked it gave (`reads`, raw),
     one its own quote proves (`checks.issue_date_proven`): the strongest
-    read's (`_rank`), the surer on a tie. None when no read's is."""
+    read's (`_rank`), the surer on a tie. None when no read's is. Never a
+    value `_without_rejected` set aside (`REJECTED_KEY`): the raw answer keeps
+    it for the record, but it is no read's answer for the field (a template's
+    release date prints its date, so its quote proves it)."""
     found = [ans["validity_from"] for asked, ans in (reads or {}).values()
              if "validity_from" in asked
+             and REJECTED_KEY not in (ans.get("validity_from") or {})
              and checks.issue_date_proven(ans.get("validity_from"), ctx)]
     if not found:
         return None

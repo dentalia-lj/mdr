@@ -1081,6 +1081,26 @@ def test_an_ifu_keeps_a_proven_date_a_later_read_gave_malformed(t0):
     assert (fields["validity_from"]["value"], fields["validity_from"]["step"]) == ("2024-01-01", "T1")
 
 
+def test_an_ifu_never_takes_back_a_date_a_rejection_dropped(t0):
+    """Review of the Task 9 fixes: T1's template release date was rejected
+    (`checks.not_the_field`), so the ladder never took it; but its quote
+    prints the date, and the IFU rule looked for a proven date among every
+    read's raw answer, found it there and stored it. A rejected value is no
+    read's answer for the field, here as anywhere."""
+    page = ("Istruzioni d'uso\nManufacturer: Dental World S.r.l.\n"
+            "Template RP00S0.07 Released May 31, 2024")
+    t0({"regulation": t0ev("MDR", 1.0), "manufacturer": t0ev("DENTAL WORLD", 0.97)})
+    llm = TextLlm({"T1": {"type": ("IFU", "Istruzioni d'uso / IFU", 1, 0.93),
+                          "validity_from": ("2024-05-31", "Template RP00S0.07 Released May 31, 2024",
+                                            1, 0.3)},
+                   "T2-first": {"type": ("IFU", "Istruzioni d'uso", 1, 0.9),
+                                "validity_from": ("2024-06", "Istruzioni d'uso", 1, 0.4)}})
+    _, fields, _ = run(_doc(page), llm)
+    assert fields["type"]["value"] == "IFU"
+    assert not (fields.get("validity_from") or {}).get("value")
+    assert ("T1", "validity_from") in [(r["step"], r["field"]) for r in tiers.rejected_values(fields)]
+
+
 def test_the_drop_follows_a_type_the_image_read_settles(t0):
     t0({"regulation": t0ev("MDR", 1.0), "manufacturer": t0ev("GC EUROPE N.V.", 0.97)})
     llm = TextLlm({"T1": {"type": ("IFU", "a manual", 1, 0.6),
