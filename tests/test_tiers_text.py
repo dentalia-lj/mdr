@@ -1650,14 +1650,19 @@ def test_without_page_lists_a_signature_image_past_page_four_is_unread():
 def test_a_citation_proves_a_regulation_only_where_the_text_holds_every_page(
         t0, painted, proven):
     """`checks.citation_proven` claims the other citation is NOT printed; an
-    image a text read cannot see leaves that unknown, as a scanned page does."""
+    image a text read cannot see leaves that unknown, as a scanned page does.
+    Since the Task 9 fixes the absence proof does not settle T1's `n.a.` there
+    either: the image read, which renders the painted page, is asked, and two
+    agreeing reads settle it, unproven."""
     t0(_only_open("regulation"))
     page = UNDATED_PAGE.replace("Regulation (EU) 2017/745", "Regulation (EC) No 1223/2009")
     doc = _doc(page, SIGNATURES)
-    llm = TextLlm({"T1": {"regulation": ("n.a.", "Regulation (EC) No 1223/2009", 1, 0.85)}})
-    _, fields, _ = run(annotate(doc) if painted else doc, llm)
+    llm = TextLlm({"T1": {"regulation": ("n.a.", "Regulation (EC) No 1223/2009", 1, 0.85)},
+                   "T2-first": {"regulation": ("n.a.", "Regulation (EC) No 1223/2009", 1, 0.85)}})
+    _, fields, used = run(annotate(doc) if painted else doc, llm)
     assert fields["regulation"]["value"] == "n.a."
     assert fields["regulation"].get(tiers.PROVEN_KEY) == proven
+    assert ("T2-first" in used) is painted
 
 
 # --- the two real documents ------------------------------------------------------
