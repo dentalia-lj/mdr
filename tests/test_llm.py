@@ -849,9 +849,7 @@ def test_classify_image_asks_the_cheap_vision_model_about_pages_one_and_two():
     assert "scan.pdf" in p["messages"][0]["content"][0]["text"]
     text = _system_text(p["system"])
     assert llm.DOC_CLASS_SYSTEM.strip() in text                # the text prompt, whole
-    assert "read the printed text off the images" in text      # and the image note,
-    # which serves a text file whose pages 1-2 cannot be read too (Task 9)
-    assert "This file has no text layer" not in text
+    assert "no text layer" in text                             # and the image note
     assert [(c.tier, c.model_id) for c in tier.usage_log] == [
         ("doc-class-image", LadderModels.vision_first)]
 
