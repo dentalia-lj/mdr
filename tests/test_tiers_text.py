@@ -1911,3 +1911,22 @@ def test_lumiwhites_sparse_signature_page_keeps_its_citation_proof_and_null_rule
     assert fields["regulation"][tiers.PROVEN_KEY] == tiers.CITATION
     assert used == ["T0", "T1", "T2-first", "T1-second"]
     assert llm.asked("T2-first") == {"manufacturer"}
+
+
+def test_no_second_text_read_for_a_field_read_off_a_scanned_page(t0):
+    """Task 9 replay, doc 501: pages 1-2 (the declaration) are scans, the text
+    layer is the article table from page 3. The image read typed it DoC at 0.9
+    off page 1; `T1-second` then read `type` off the page-3 table header at
+    0.6, its quote was the one the text could check, so it was stored and the
+    score fell to 0.6. A field whose stored read cites a page no text read sees
+    is not sent to the second text read."""
+    fields0 = _only_open("type")
+    fields0["type"] = t0ev("DoC", 0.6, "filename:Konformitaetserklaerung.pdf")
+    t0(fields0)
+    llm = TextLlm({"T1": {"type": ("other", "Anhang 1 Artikelliste_Wundhaken", 3, 0.9)},
+                   "T2-first": {"type": ("DoC", "Konformitaetserklaerung", 1, 0.9)},
+                   "T2": {}, "T1-second": {"type": ("DoC", "Artikelliste", 3, 0.6)}})
+    _, fields, used = run(_doc(IMAGE, IMAGE, ARTICLE_LIST), llm)
+    assert fields["type"]["value"] == "DoC"
+    assert (fields["type"]["page"], fields["type"]["conf"]) == (1, 0.9)
+    assert "type" not in (llm.asked("T1-second") or set())

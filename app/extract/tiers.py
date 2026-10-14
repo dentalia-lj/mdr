@@ -897,7 +897,12 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     if _is_read(reg) and checks.citation_proven(reg, text_ctx):
         fields["regulation"] = {**reg, PROVEN_KEY: CITATION}
     _stamp_agreement(fields, reads)
-    confirm = _to_confirm(fields, agreement_min)
+    # Not a field whose stored read cites a page no text read sees (a scanned
+    # or stamped page): the text read would confirm it off some other page,
+    # and a quote the text holds would then be stored over the image read's
+    # (Task 9 replay, doc 501: a page-3 table header over page 1's DoC).
+    confirm = [f for f in _to_confirm(fields, agreement_min)
+               if fields[f].get("page") not in image_pages]
     if confirm:
         second = _read_step(read, used, reads, SECOND_TEXT, confirm, text=text, listed=listed)
         _prefer_confirming(fields, known, second, confirm, text_ctx)
