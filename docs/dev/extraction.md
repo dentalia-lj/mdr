@@ -228,9 +228,13 @@ Task 4). Steps and labels from `llm.READ_STEPS`:
    2026-10-02), and 2026-04-26 is a day nobody printed. `validity_to` and
    `cert_number` go whatever the quote, and are not PURSUED on a known IFU.
    `validity_from` is (Denis, 2026-10-14), so a read is asked an IFU's
-   revision date, an IFU T0 types at 0.95 included; a month-and-year date
+   revision date, an IFU T0 types at 0.95 included. A month-and-year date
    does not settle on T1 (the checks prove a whole date), so the image read
-   is asked it and settles it by agreeing.
+   is asked it, and Sonnet where the two disagree; the drop rule then keeps
+   the date a read's quote proves. On the Task 9 production replay, re-run
+   offline from its cache, this adds the image read to 5 of 145 documents
+   and Sonnet to 3, all IFUs (one of the 3 only because the cache held no
+   image answer for it and the replay answered null).
    Only for a type someone read: T0 at 0.95 or more, or a read's value. A T0
    guess under 0.95 (a file named "IFU") that became known because both reads
    answered `type` empty drops nothing.
