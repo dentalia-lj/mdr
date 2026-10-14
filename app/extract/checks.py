@@ -152,28 +152,65 @@ def dates_in(text: str) -> set[str]:
     return out | set(re.findall(r"\d{4}-\d{2}-\d{2}", text))
 
 
+#: Month names the month-and-year rule never reads: "Set 2019" is a set
+#: number, and "out" and "ago" are English words before a year (Denis,
+#: 2026-10-14: lot, page and set numbers are never dates).
+_NOT_A_MONTH_ALONE = frozenset({"set", "out", "ago"})
+
+#: English month names that are English words too: a month only when
+#: capitalised ("May 2023"; "may 2023" is the verb, Denis 2026-10-14).
+_CAPITALISED_MONTHS = frozenset({"may", "march", "august"})
+
+#: A lot, page, set or serial number's label just before the match: "Lot
+#: 03/24", "Page 1/24" (Denis, 2026-10-14).
+_NUMBER_LABEL = re.compile(
+    r"\b(?:lot|lote|lotto|batch|charge|page|pages|pag|pagina|seite|stran|set|serie|series"
+    r"|serial|sn|s/n)\.?\s*(?:no\.?|nr\.?)?\s*[:#]?\s*$", re.IGNORECASE)
+
+#: A day printed just before the month: "15 June", "15. Juni", "25. 08.".
+#: The whole date is then the document's, and its day is never cut to the
+#: first (Denis, 2026-10-14).
+_DAY_BEFORE_NAME = re.compile(r"\d(?:st|nd|rd|th)?\.?\s*$", re.IGNORECASE)
+_DAY_BEFORE_NUMBER = re.compile(r"\d\s*[-/.]\s*$")
+
+#: A further part of a date after the match: "06/23" of "06/23/2023".
+_MORE_AFTER = re.compile(r"\s*[-/.]\s*\d")
+
+
 def _month_year_in(value: str, quote: str) -> str | None:
     """Where `quote` prints the month and year of `value`, the first of a
     month, as a revision line does: "06-2023", "01/2024", "04/26", "2023-06",
-    "June 2023". Never as part of a whole date ("15-06-2023", "2023-06-15"),
-    whose day the value would drop. None when it does not, or when `value` is
-    not an ISO date."""
+    "June 2023". An IFU stores such a revision date as the first of its month
+    (Denis, 2026-10-14). Never as part of a whole date ("15-06-2023",
+    "2023-06-15", "06/23/2023", "15 June 2023", "Datum: 15. Juni 2023",
+    "25. 08. 2025"): a printed day is never cut to the first. Never a lot,
+    page or set number ("Lot 03/24", "Page 1/24", "Set 2019"), and never a
+    lower-case English word ("may 2023"). None when it does not, or when
+    `value` is not an ISO date."""
     if not _ISO_DATE.fullmatch(value):
         return None
     y, m, d = value.split("-")
     if d != "01":
         return None
     mo = int(m)
-    names = "|".join(re.escape(n) for n, k in _MONTH_NUMBERS.items() if k == mo)
-    patterns = (
-        rf"(?<!\d)(?<!\d[-/.])0?{mo}\s*[-/._]\s*(?:{y}|{y[2:]})(?!\d)",
-        rf"(?<!\d){y}\s*[-/.]\s*0?{mo}(?![-/.]?\d)",
-        rf"\b(?:{names})\.?,?\s*{y}(?!\d)",
-    )
-    for p in patterns:
-        m_ = re.search(p, quote, re.IGNORECASE)
-        if m_:
-            return m_.group(0)
+    names = "|".join(re.escape(n) for n, k in _MONTH_NUMBERS.items()
+                     if k == mo and n not in _NOT_A_MONTH_ALONE)
+    numeric = (rf"(?<!\d)0?{mo}\s*[-/._]\s*(?:{y}|{y[2:]})(?!\d)",
+               rf"(?<!\d){y}\s*[-/.]\s*0?{mo}(?!\d)")
+    for p in numeric:
+        for found in re.finditer(p, quote):
+            before = quote[:found.start()]
+            if (_DAY_BEFORE_NUMBER.search(before) or _NUMBER_LABEL.search(before)
+                    or _MORE_AFTER.match(quote, found.end())):
+                continue
+            return found.group(0)
+    for found in re.finditer(rf"\b(?P<name>{names})\.?,?\s*{y}(?!\d)", quote, re.IGNORECASE):
+        name, before = found.group("name"), quote[:found.start()]
+        if name.casefold() in _CAPITALISED_MONTHS and not name[0].isupper():
+            continue
+        if _DAY_BEFORE_NAME.search(before) or _NUMBER_LABEL.search(before):
+            continue
+        return found.group(0)
     return None
 
 

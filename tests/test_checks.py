@@ -109,6 +109,20 @@ def test_the_eval_dates_the_quote_does_not_prove_stay_unsettled(f, iso, quote, p
     ("2023-06-01", "15-06-2023", False),                      # a day the value drops
     ("2023-06-01", "2023-06-15", False),
     ("2023-06-01", "Instructions for use", False),            # no date in the quote
+    ("2023-05-01", "Rev. May 2023", True),
+    ("2023-06-01", "Rev. 1 June 2023", True),                 # the first, printed
+    # Denis, 2026-10-14: a printed day is never cut to the first ...
+    ("2023-06-01", "15 June 2023", False),
+    ("2023-06-01", "Datum: 15. Juni 2023", False),
+    ("2025-08-01", "Date of issue 25. 08. 2025", False),
+    ("2023-06-01", "06/23/2023", False),
+    # ... a lot, page or set number is never a date ...
+    ("2024-03-01", "Lot 03/24", False),
+    ("2024-03-01", "LOT: 03/24", False),
+    ("2024-01-01", "Page 1/24", False),
+    ("2019-09-01", "Set 2019", False),
+    # ... and lower-case "may" is the verb
+    ("2023-05-01", "the device may 2023", False),
 ])
 def test_an_ifu_date_is_one_its_own_quote_prints(value, quote, proven):
     assert checks.issue_date_proven(ev(value, quote)) is proven
