@@ -130,7 +130,7 @@ One table, used by sync and batch alike. `evidence.tier` stays T1 (text) or T2
 | 7 re-extract command | done: built (Sonnet), reviewed and fixed (Opus), merged | c39bb77 |
 | 8 quality and parity | done: real reads $0.60, all deploy blockers pass; text 121/130 fields right (today 112), scans 25/26 (today 24); report docs/private/2026-10-13-extraction-ladder-quality.md | el-quality 3b2b6b0 |
 | 8a date only an image shows (VOCO stamps) | done: built (Opus), checked, merged 6eeef62; ruling recorded c24b7f7; full suite 5214 passed; eval Sonnet 9 to 8, quality unchanged; confirmation read $0.0009 | merged |
-| 9 production replay | re-run on el-candidate: 77 of 145 leave review (run 1: 42), 0 refused, 1 disposition worse (501, fixed 4464c0e); hand check vs PDFs: 0 gate fields worse (61 better, 8 worse non-gate, 10 arguable); Task 8 labelled 120/129, no blockers (533068 type label skipped, Denis). Final delta re-run with fresh catalogue overlap running | el-candidate 4464c0e |
+| 9 production replay | re-run on el-candidate: 77 of 145 leave review (run 1: 42), 0 refused, 1 disposition worse (501, fixed 4464c0e); hand check vs PDFs: 0 gate fields worse (61 better, 8 worse non-gate, 10 arguable); Task 8 labelled 120/129, no blockers (533068 type label skipped, Denis). Delta re-run at 4464c0e done ($0.0857; Task 8 delta $0, still no blockers); report with the refreshed catalogue overlap pending | el-candidate 4464c0e |
 
 ## Who builds what, and in parallel (Denis, 2026-10-12)
 
@@ -374,16 +374,23 @@ guard read `conf` alone.
 
 ### Task 9. Replay on production's review queue - 8 h / 0.8 h
 
-- [ ] Read-only selection on the server: the 105 documents held by gate confidence and
+- [x] Read-only selection on the server: the 105 documents held by gate confidence and
       the 129 text documents held by `no-item-identifier` (2026-10-12 reading; re-read
       the same day as the replay). Copy their PDFs read-only (`rsync` from
       `/srv/compliance/archive`) into a gitignored local folder; delete it afterwards.
-- [ ] Run the built ladder on them (Batch API, capped below $1: approved by Denis
+      Done: 234 selected, 145 run (105 + 40 of the 129, seed 20261013); PDFs (137 MB)
+      still in `eval/prod-replay/20261013T142432/pdfs`, deleted once the report is final.
+- [x] Run the built ladder on them (Batch API, capped below $1: approved by Denis
       2026-10-13 at under $1; trim the set to fit if the estimate exceeds it). Nothing is
       written to the server: no jobs, no registry, no `fetch_log`.
+      Done: run 1, re-run and delta re-run on el-candidate 4464c0e, $1.5266 cumulative
+      (Denis approved up to $1.00 more on 2026-10-13).
 - [ ] Per document: does the gate confidence now clear 0.92; is a REF list or UDI now
       found, and does it overlap the catalogue for that manufacturer (read-only query);
       which fields changed from the stored value, with quotes.
+      Gate confidence and changed fields done (hand check: 0 gate fields worse). The
+      catalogue overlap for the final values is queried (`overlap.raw.new`); saving it and
+      regenerating the report waits on a permission.
 - **Report:** how many would leave review, how many stay and on what, any field the
   new ladder reads worse than the stored one. Deploy gate together with Task 8.
 
