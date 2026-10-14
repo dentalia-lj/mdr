@@ -576,7 +576,7 @@ site's copy, which holds 5 files where SFTP held 34.
 Documents whose printed manufacturer name no alias knows wait on Review flagged `manufacturer-unresolved`. The first card on `/data-quality` (and a line in the weekly report) lists each such name, its documents, and a suggested manufacturer with evidence: **Alias exists**, **Article numbers**, **Name only** or **No match**. Nothing there writes. To clear one:
 
 1. Add the name to the suggested manufacturer's playbook `aliases` (or start a playbook for it), commit, and deploy (`git pull`, `./scripts/deploy.sh`).
-2. Load it: `manufacturers seed --apply`, then `playbooks sync` (the sync is what writes `manufacturer_alias`, which VALIDATE reads).
+2. Load it: `manufacturers seed --apply`, then `playbooks sync` (the sync is what writes `manufacturer_alias`, which VALIDATE reads). Both, in that order: on the server the sync reads aliases from the database, and only the seed copies a new alias from the file into it, so `sync` alone reports `0 inserted` and the name stays unresolved (2026-10-14, the USTOMED alias "Ulrich Storz GmbH & Co. KG").
 3. Send the waiting documents round again:
 
 ```bash
@@ -680,7 +680,7 @@ someone made in the UI, and an import must not silently revert it.
 
 **Importing the manufacturer master without shell access** (`/import`, BC vendor import upload slice B, 2026-08-26) is the same shape for `imports/Proizvajalci.xlsx`, the file `python -m app.cli vendor-master` reads — both go through `app/vendor_master.py`, so the browser and the CLI cannot drift. Upload it in the page's second section, read the preview, tick the box if it re-points any code, apply. What differs from the item import: the diff has **four** categories rather than two, one of them (**renamed**) is refused unless you opt in, a **disappeared** code is kept rather than deleted, and the handler **emits nothing at all** — no `resolve.group`, no alias sync.
 
-**Run `playbooks sync` yourself afterwards, and before the next item ingest.** A vendor import that adds or re-points codes leaves `manufacturer_alias` stale, and the confirm screen says so rather than fixing it: `sync` reports `orphaned_groups` — `item_group` rows still carrying a `canonical_manufacturer` it has just re-pointed away from, which it does **not** retro-fix — so a non-zero count is work a human has to act on, and running it as a side effect of an upload would produce that count where nobody reads it. `sync` also refuses outright on a playbook authoring conflict, which would dead-letter an otherwise clean vendor import for a reason having nothing to do with the vendor file.
+**Run `manufacturers seed --apply` and then `playbooks sync` yourself afterwards, and before the next item ingest.** The seed creates the entity for a code the import added; the sync refreshes the aliases. A vendor import that adds or re-points codes leaves `manufacturer_alias` stale, and the confirm screen says so rather than fixing it: `sync` reports `orphaned_groups` — `item_group` rows still carrying a `canonical_manufacturer` it has just re-pointed away from, which it does **not** retro-fix — so a non-zero count is work a human has to act on, and running it as a side effect of an upload would produce that count where nobody reads it. `sync` also refuses outright on a playbook authoring conflict, which would dead-letter an otherwise clean vendor import for a reason having nothing to do with the vendor file.
 
 **Starting a playbook from the UI** (2026-08-27). `/manufacturers?no_playbook=1` lists every entity with no playbook, gaps first and biggest first; each one's page now has a **Start a playbook** card that attaches a slug and an empty body at revision 0. That is the whole creation path — identity is inherited from the row the seed already derived from `vendor_master`, and authoring continues on `/playbooks/{slug}` with the controls below. Before this, `manufacturer.slug` was written only by `dentalia manufacturers seed`, so starting a playbook meant hand-writing `playbooks/{slug}.json` in the repo. That file route still works and is still how the 33 delivered playbooks got in; it is no longer the only one.
 
@@ -764,11 +764,17 @@ re-derived afterwards. So bring the manufacturer master and the aliases up to da
 before the items:
 
 ```bash
-# 0. Manufacturers: dry run, read it, apply, then refresh the aliases.
+# 0. Manufacturers: dry run, read it, apply, seed the entities, then refresh the aliases.
 docker compose exec -T worker python -m app.cli vendor-master --from-bc
 docker compose exec -T worker python -m app.cli vendor-master --from-bc --apply
+docker compose exec -T worker python -m app.cli manufacturers seed            # dry run
+docker compose exec -T worker python -m app.cli manufacturers seed --apply
 docker compose exec -T worker python -m app.cli playbooks sync
 ```
+
+A code BC adds gets its `manufacturer` row only from the seed; without it the new
+manufacturer has no entity page and no name row (EKOM, code 10204, waited from
+2026-10-05 to 2026-10-14).
 
 A renamed code is refused unless `--allow-renames`; read
 [deployment § 6.2](dev/deployment.md#62-step-2-the-manufacturer-master) before using

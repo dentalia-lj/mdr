@@ -476,6 +476,7 @@ reads BC: the page is not writable.
 ```bash
 docker compose exec -T worker python -m app.cli vendor-master --from-bc          # dry run
 docker compose exec -T worker python -m app.cli vendor-master --from-bc --apply
+docker compose exec -T worker python -m app.cli manufacturers seed --apply       # entities for new codes, file aliases into the database
 docker compose exec -T worker python -m app.cli playbooks sync                   # aliases, before the next item ingest
 ```
 

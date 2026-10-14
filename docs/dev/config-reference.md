@@ -216,7 +216,9 @@ Not to be confused with the extraction escalation threshold, which is a hardcode
 | `models.second_read` | str | `claude-haiku-5-5` | `MODELS_SECOND_READ` |
 
 `email_summary` is its own key so a tier swap cannot drag it along with `rank`.
-Invariant 12 caps it at the cheap tier.
+Invariant 12 caps it at the cheap tier. Both stay on `claude-haiku-4-5` after the
+extraction ladder; moving them is a follow-up with its own measurement
+(`tasks/followups.md` `[rank-email-summary-haiku-5-5]`).
 
 `t1` moved from `claude-haiku-4-5` to `claude-haiku-5-5` on 2026-10-12
 (extraction-ladder ruling 1, plan Task 4), the dataclass default and the
