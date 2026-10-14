@@ -71,16 +71,12 @@ def test_prompt_still_bars_a_signing_date_from_validity_to(name):
 @pytest.mark.parametrize("name", sorted(PROMPTS))
 def test_prompt_dates_an_ifu_by_its_revision_line(name):
     """Task 9 replay (2026-10-14): an IFU's revision date ("REV.00_06-2023")
-    is its only date, and Haiku 5.5 answered none on two of six IFUs where
-    production held one. Denis's ruling the same day: a month and year is
-    stored as the first of the month, a printed day is never cut to the first,
-    and a lot, page or set number is never a date. The code keeps a date only
-    when the quote prints it (`checks.issue_date_proven`), so the prompt asks
-    for exactly that: the first of the month the one day a reader supplies."""
+    is its only date. Denis's ruling the same day: a month and year is stored
+    as the first of the month, a printed day is never cut to the first, and a
+    lot, page or set number is never a date. The prompt keeps the wording the
+    paid re-runs measured; the code enforces the stricter rules on every read
+    (`checks.issue_date_proven`: a printed day, lot or page numbers)."""
     body = " ".join(PROMPTS[name].lower().split())
     assert "revision" in body
     assert "first of that month" in body
-    assert "the one day you may supply" in body
-    assert "never cut a printed day" in body
-    assert "lot, page or document number is not a date" in body
-    assert "never a day you did not read" not in body       # the old, self-contradicting line
+    assert "never a day you did not read" in body
