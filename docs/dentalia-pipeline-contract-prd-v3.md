@@ -209,6 +209,8 @@ This closes the discovery loop: a group whose document was first fetched on beha
 | **Writes** | Extraction attempts log (all tiers kept — this is what T3 humans see) |
 | **AI** | T1/T2, escalation on low per-field confidence only. **Amended 2026-10-12:** escalation on failed evidence checks or disagreement between reads, not on a model's self-reported confidence; that number decides only the scan settle threshold and, combined across agreeing reads, GATE's score. |
 
+**Classification, amended 2026-10-13 (Task 9 replay regressions; the Logic row above stands, this narrows it):** a text document T0 cannot type is classified from its page-1/2 images, as a document with no text page is, when one of those pages is a scanned page or their text layer is not text (under 30% letters).
+
 **Batch API tracking (v3/C9):** when T1/T2 runs via the Batch API, the handler records `batch_ref(content_hash, batch_id, tier, submitted_at)` in a side table **before** submission is acknowledged as complete, sets `run_after = now() + poll_interval`, and returns without finishing. (`tier` holds the read step's label, e.g. `T1`, `T2-first`, `T2`, since 2026-10-12, so two reads of one kind never share a key.) On re-claim it consults `batch_ref` by `content_hash`: batch exists and pending → bump `run_after`; done → process results, finish. A crash between submit and record is resolved by the `batch_ref` lookup on retry — an existing row for this `content_hash` + tier means never resubmit. Job payload is never mutated.
 
 ## 6. VALIDATE

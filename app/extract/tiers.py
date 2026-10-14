@@ -551,6 +551,26 @@ FOLLOWS_KEY, FOLLOWS_TYPE = "follows", "type"
 _SCOPE_FROM_TYPE = ("EC", "ISO", "IFU")
 
 
+#: Under this share of letters among its printed characters, a text layer is
+#: not text a reader can use (`_unreadable`). Measured 2026-10-13 on the 398
+#: files T0 leaves `unknown` that reach the text doc-class call (production's
+#: and the local fetch history's): 16 fall under it, every one a compliance
+#: document whose fonts map glyphs to arbitrary codes (10 certificates
+#: production holds; the next file up, a manual, is at 0.32); the first file
+#: that is not one is a Komet article list at 0.38, and no file labelled not
+#: a compliance document is under 0.4.
+UNREADABLE_LETTER_SHARE = 0.3
+
+
+def _unreadable(text: str) -> bool:
+    """Fewer than `UNREADABLE_LETTER_SHARE` of the non-space characters are
+    letters. Haiku 5.5 refuses such a file as "unreadable binary/encoded
+    content", which is terminal; its page images read as what they are (10 of
+    10 certificates, doc-class check 2026-10-13)."""
+    chars = [c for c in text if not c.isspace()]
+    return bool(chars) and sum(c.isalpha() for c in chars) < UNREADABLE_LETTER_SHARE * len(chars)
+
+
 class Deferred(Exception):
     """A batch read has not finished: the batch transport stops the ladder (text
     or scan) at this step and defers its job (`app/handlers/extract.py`). The
@@ -640,9 +660,10 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     rule here.
 
     1. `unknown` to T0: the doc-class call on the page 1-2 text (`doc-class`),
-       or, when pages 1-2 hold no text (a mixed PDF that opens with scanned
-       pages), on their images (`classify_image`, `doc-class-image`, review
-       2026-10-13). A refusal (`not-a-compliance-document`) is terminal.
+       or, when pages 1-2 hold no text, one of them is a scanned page (a mixed
+       PDF; Task 9 replay, doc 520) or their text layer is not text
+       (`_unreadable`), on their images (`classify_image`, `doc-class-image`).
+       A refusal (`not-a-compliance-document`) is terminal.
     2. `T1` (`models.t1`) on the whole text (`pdf.bounded_text`), asked every
        pursued field T0 does not hold at the threshold (`_text_pursued`: the
        IFU and manufacturer-scope suppressions of `needs_escalation`). A field
@@ -696,12 +717,18 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     # everything else comes here for a real answer, including
     # `not-a-compliance-document`, which is terminal. The call is logged under
     # its own label (`doc-class`, until 2026-10-12 `T1`).
-    # Pages 1-2 with no text: the text call would see nothing and refuse the
-    # file without a call, so their images are asked, as on a scan. A client
-    # with no image call keeps the text call (and its refusal), as before.
+    # Pages 1-2 with no text, with a scanned page among them, or with a text
+    # layer that is not text (`_unreadable`): the text call would see nothing,
+    # only what is not scanned, or noise, so their images are asked, as on a
+    # scan. Task 9 replay, doc 520 (USTOMED): page 1 is the scanned
+    # declaration and page 2 its article list as text; the text call read the
+    # list alone and refused the file for good. A client with no image call
+    # keeps the text call (and its refusal), as before.
     if doc_class == "unknown" and classify_image is not None:
-        from app.extract.llm import doc_class_text   # `llm` imports this module
-        if not doc_class_text(doc):
+        from app.extract.llm import DOC_CLASS_PAGES, doc_class_text   # `llm` imports this module
+        header = doc_class_text(doc)
+        if (not header or _unreadable(header)
+                or "image" in pdfutil.page_classes(doc)[:DOC_CLASS_PAGES]):
             classify, label, tier = classify_image, DOC_CLASS_IMAGE, "T2"
         else:
             label, tier = DOC_CLASS_TEXT, "T1"

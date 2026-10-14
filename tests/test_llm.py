@@ -914,3 +914,20 @@ def test_a_batch_classify_answer_cut_at_max_tokens_fails_too():
                                message=_StopResp('{"doc_cl', stop_reason="max_tokens")))]
     with pytest.raises(RuntimeError, match="max_tokens"):
         bc.results("batch_123")
+
+
+@pytest.mark.parametrize("system", [llm.DOC_CLASS_SYSTEM, llm.DOC_CLASS_IMAGE_SYSTEM],
+                         ids=["text", "image"])
+def test_the_doc_class_prompt_counts_a_devices_own_manual_as_an_ifu(system):
+    """Doc-class check, 2026-10-13: the prompt listed "an operation manual or user
+    guide" as not a compliance document, and Haiku 5.5 obeys it: 108 of 165
+    compliance documents refused (MIYO processing instructions, doc 503; the
+    RAYFace user manual, doc 1130), where naming them as IFUs gave 13. A refusal
+    is terminal. Service and installation manuals for technicians stay out."""
+    ifu = system.split("- `IFU`", 1)[1].split("\n- `", 1)[0]
+    for title in ("user manual", "operating", "processing instructions",
+                  "reprocessing instructions"):
+        assert title in ifu
+    refused = system.split("## What `NOT-A-COMPLIANCE-DOCUMENT` covers", 1)[1]
+    assert "operation manual or user guide" not in refused
+    assert "service, repair or installation manual" in refused

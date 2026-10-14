@@ -39,6 +39,13 @@ REF 003477 003478"""
 #: A scanned page in a page list.
 IMAGE = object()
 
+#: Page 2 of USTOMED's Wundhaken declaration (doc 520, Task 9 replay): the
+#: article list annexed to a scanned page 1. On its own it announces nothing.
+ARTICLE_LIST = """Anhang 1 Artikelliste_Wundhaken
+Item No. Item Description EU Risk-Class
+24-021-001 Fine retractor, 16 cm, 1 prong, sharp
+24-021-002 Fine retractor, 16 cm, 2 prongs, sharp"""
+
 
 def _png() -> bytes:
     pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 60, 80), False)
@@ -788,12 +795,76 @@ def test_the_image_doc_class_refusal_is_terminal_on_text_too(t0):
     assert llm.calls == []
 
 
+@pytest.mark.parametrize("pages", [
+    (IMAGE, ARTICLE_LIST, ARTICLE_LIST),       # doc 520: a scanned declaration, a text annex
+    (ARTICLE_LIST, IMAGE, ARTICLE_LIST),       # the scanned page second
+], ids=["image-page-1", "image-page-2"])
+def test_a_scanned_page_among_pages_one_and_two_asks_the_image_doc_class_call(t0, pages):
+    """Task 9 replay, doc 520: page 1 is the scanned declaration and pages 2-3
+    its article list as text. The text call saw only the list and refused the
+    file, which is terminal; production had read it as a DoC with 39 REF codes.
+    An image page among pages 1-2 means the text call cannot see what the file
+    announces itself to be, so the images are asked, as on a scan."""
+    t0({}, doc_class="unknown")
+    llm = TextLlm({"T1": FAILED, "T2-first": FAILED, "T2": FAILED},
+                  text_class=NOT_A_DOCUMENT, image_class="DoC")
+    doc_class, fields, used = run(_doc(*pages), llm)
+    assert llm.classified == ["image"]
+    assert doc_class == "compliance-doc"
+    assert used[:3] == ["T0", "doc-class-image", "T1"]
+    assert (fields["type"]["value"], fields["type"]["step"]) == ("DoC", "doc-class-image")
+
+
+#: A text layer whose fonts map glyphs to arbitrary codes: a TÜV SÜD ISO 13485
+#: certificate's pages 1-2 as PyMuPDF reads them (D1393800015_S_sig.pdf, 9% letters).
+GARBLED = '!   " #$%&\'(\')*+, "   - .     / .   012324563789:;<88 =52>56?5@8AB8 BCBBD8'
+
+
+def test_an_unreadable_text_layer_asks_the_image_doc_class_call(t0):
+    """Doc-class check, 2026-10-13: 10 certificates production holds (ISO 13485,
+    MDSAP, a CE certificate) have text layers under 30% letters. Haiku 5.5
+    refused 8 of them ("unreadable binary/encoded content") where Haiku 4.5
+    had accepted all 10; their page images were read as what they are, 10 of
+    10. FILLER pads the page to a text layer: a sixth of it letters."""
+    t0({}, doc_class="unknown")
+    llm = TextLlm({"T1": FAILED, "T2-first": FAILED, "T2": FAILED},
+                  text_class=NOT_A_DOCUMENT, image_class="ISO")
+    doc = pymupdf.open()
+    page = doc.new_page()
+    for i in range(12):
+        page.insert_text((40, 60 + 16 * i), GARBLED, fontsize=9)
+    page.insert_text((40, 300), FILLER, fontsize=9)
+    doc_class, fields, used = run(doc, llm)
+    assert llm.classified == ["image"]
+    assert used[:2] == ["T0", "doc-class-image"]
+    assert fields["type"]["value"] == "ISO"
+
+
+@pytest.mark.parametrize("letters, kind", [(0.29, "image"), (0.31, "text")])
+def test_the_unreadable_cut_is_thirty_percent_letters(letters, kind):
+    n = 1000
+    text = "a" * int(n * letters) + "#" * (n - int(n * letters))
+    assert tiers._unreadable(text) is (kind == "image")
+
+
 def test_text_on_pages_one_and_two_keeps_the_text_call(t0):
+    """A scanned page after page 2 does not change what the text call sees."""
     t0({}, doc_class="unknown")
     llm = TextLlm({"T1": FAILED, "T2-first": FAILED, "T2": FAILED},
                   text_class="DoC", image_class="EC")
-    run(_doc(DOC_PAGE, IMAGE), llm)
+    run(_doc(DOC_PAGE, DOC_PAGE, IMAGE), llm)
     assert llm.classified == ["text"]
+
+
+def test_a_type_t0_holds_skips_the_doc_class_call_whatever_the_pages(t0):
+    """Only a file T0 could not type is asked: an image page 1 changes nothing
+    for a `compliance-doc`."""
+    t0(_only_open("cert_number"), doc_class="compliance-doc")
+    llm = TextLlm({"T1": FAILED, "T2-first": FAILED, "T2": FAILED},
+                  text_class=NOT_A_DOCUMENT, image_class=NOT_A_DOCUMENT)
+    doc_class, _, used = run(_doc(IMAGE, DOC_PAGE), llm)
+    assert llm.classified == []
+    assert (doc_class, used[:2]) == ("compliance-doc", ["T0", "T1"])
 
 
 def test_a_client_without_an_image_classifier_keeps_the_text_call(t0):
