@@ -369,6 +369,93 @@ def test_a_semantic_t1_read_under_the_floor_settles_by_agreement_with_the_image_
     assert fields["coverage_scope"]["value"] == "manufacturer"
 
 
+@pytest.mark.parametrize("field, t1, first, settles", [
+    # the floor in step 4: the image read's own disagreeing value at 0.5
+    ("coverage_scope", ("manufacturer", "Product name: Euroklav 29 VS+", 1, 0.6),
+     ("group", "Product name: Euroklav 29 VS+", 1, 0.5), False),
+    ("type", ("other", "EU Declaration of Conformity", 1, 0.5),
+     ("DoC", "EU Declaration of Conformity", 1, 0.6), False),
+    # at the floor its quote settles it, as T1's does
+    ("coverage_scope", ("manufacturer", "Product name: Euroklav 29 VS+", 1, 0.6),
+     ("group", "Product name: Euroklav 29 VS+", 1, 0.7), True),
+], ids=["scope-0.5", "type-0.6", "scope-0.70"])
+def test_a_semantic_image_read_under_the_floor_does_not_settle_on_its_quote(
+        t0, field, t1, first, settles):
+    """Review of the Task 9 fixes: the floor applied to T1 only, so a
+    disagreeing image read at 0.5 settled the field on its quote and Sonnet
+    was never asked. The image read's own `type` or `coverage_scope` settles on
+    its quote only at `gate.agreement_min`; agreeing with T1 still settles it
+    at any number (the test above)."""
+    t0(_only_open(field))
+    llm = TextLlm({"T1": {field: t1}, "T2-first": {field: first},
+                   "T2": {field: (first[0], first[1], 1, 0.9)}})
+    _, fields, used = run(_doc(ONE_PRODUCT_PAGE), llm)
+    assert ("T2" not in used) is settles
+    if not settles:
+        assert llm.asked("T2") == {field}
+
+
+@pytest.mark.parametrize("configured, first_asked, sonnet_asked", [
+    (None, {"type", "coverage_scope"}, {"type"}),        # the default, 0.70
+    ("0.55", {"type"}, None),
+], ids=["default", "0.55"])
+def test_the_configured_agreement_min_is_the_floor_at_steps_2_and_4(
+        t0, monkeypatch, configured, first_asked, sonnet_asked):
+    """Review of the Task 9 fixes: `gate.agreement_min` as configured, read
+    by the extract handler (`_scan_thresholds`), is the floor T1's semantic
+    reads settle at (step 2) and the image read's (step 4). At 0.55, T1's
+    scope at 0.6 settles at step 2 and the image read's type at 0.6 at step
+    4; at the default neither does."""
+    from app.handlers import extract as extract_handler
+    if configured is None:
+        monkeypatch.delenv("GATE_AGREEMENT_MIN", raising=False)
+    else:
+        monkeypatch.setenv("GATE_AGREEMENT_MIN", configured)
+    t0(_only_open("type", "coverage_scope"))
+    llm = TextLlm({"T1": {"type": ("other", "EU Declaration of Conformity", 1, 0.5),
+                          "coverage_scope": ("group", "Product name: Euroklav 29 VS+", 1, 0.6)},
+                   "T2-first": {"type": ("DoC", "EU Declaration of Conformity", 1, 0.6),
+                                "coverage_scope": ("group", "Product name: Euroklav 29 VS+", 1, 0.6)},
+                   "T2": {"type": ("DoC", "EU Declaration of Conformity", 1, 0.9)}})
+    _, fields, _ = run(_doc(ONE_PRODUCT_PAGE), llm, **extract_handler._scan_thresholds())
+    assert llm.asked("T2-first") == first_asked
+    assert llm.asked("T2") == sonnet_asked
+    assert fields["type"]["value"] == "DoC"
+
+
+def test_the_configured_agreement_min_reaches_every_floor_call(t0, monkeypatch):
+    """The same number reaches each call that applies the floor: step 2 in
+    the ladder, the fields `_from_t1` takes after a scope change, and step 4."""
+    import inspect
+    import sys
+
+    from app.handlers import extract as extract_handler
+    monkeypatch.setenv("GATE_AGREEMENT_MIN", "0.55")
+    seen = set()
+    for name in ("_text_settles", "_image_settles_text"):
+        real = getattr(tiers, name)
+
+        def spy(*a, _real=real, _name=name, **kw):
+            frame = sys._getframe(1)
+            while frame.f_code.co_name.startswith("<"):      # a comprehension's frame
+                frame = frame.f_back
+            floor = inspect.signature(_real).bind(*a, **kw).arguments.get("floor")
+            seen.add((_name, frame.f_code.co_name, floor))
+            return _real(*a, **kw)
+        monkeypatch.setattr(tiers, name, spy)
+    fields0 = _only_open("coverage_scope", "ref_list", "manufacturer")
+    fields0["coverage_scope"] = t0ev("manufacturer", 0.6)
+    t0(fields0)
+    llm = TextLlm({"T1": {"coverage_scope": ("group", "Model Numbers:", 1, 0.9),
+                          "ref_list": (["331-"], "331-", 1, 0.8),
+                          "manufacturer": ("Ultradent Products", "Ultradent Products", 1, 0.8)},
+                   "T2-first": {"manufacturer": ("Ultradent Products", "Ultradent Products", 1, 0.9)}})
+    run(_doc(ULTRADENT_FORM), llm, **extract_handler._scan_thresholds())
+    assert seen == {("_text_settles", "run_text_ladder", 0.55),
+                    ("_text_settles", "_from_t1", 0.55),
+                    ("_image_settles_text", "run_text_ladder", 0.55)}
+
+
 def test_t1s_empty_manufacturer_goes_to_the_image_read_without_a_label(t0):
     """Doc 2173: T1 could not read the name off a text layer in a private
     encoding, and with no "Manufacturer" label in it the null rule settled the
@@ -507,15 +594,16 @@ def test_a_field_sonnet_gave_no_answer_for_keeps_what_it_holds(t0):
 def test_an_ifu_t1_proves_stops_the_certificate_reads(t0):
     """T1 was asked the certificate fields (the type was not known yet) and
     left them open; once the type is known to be an IFU, no image read is
-    asked them (a model asked for a date an IFU cannot hold finds a revision
-    code or a copyright year)."""
+    asked the expiry or the certificate number (a model asked for a value an
+    IFU cannot hold finds a revision code or a copyright year). Its revision
+    date is still asked (Denis, 2026-10-14)."""
     t0({"regulation": t0ev("MDR", 1.0)})
     page = ("Instructions for use\nManufacturer: GC EUROPE N.V.\n"
             "Regulation (EU) 2017/745\nDate of revision 04/26\nCertificate of training")
     llm = TextLlm({"T1": {"type": ("IFU", "Instructions for use")}, "T2-first": {}, "T2": {}})
     _, fields, _ = run(_doc(page), llm)
     assert {"validity_from", "cert_number", "manufacturer"} <= llm.asked("T1")
-    assert llm.asked("T2-first") == {"manufacturer"}
+    assert llm.asked("T2-first") == {"manufacturer", "validity_from"}
     assert fields["coverage_scope"]["value"] == "group"           # type to scope
 
 
@@ -852,31 +940,36 @@ def _ref_pages(codes: list[str]) -> tuple[str, ...]:
                  for i in range(0, len(lines), 10))
 
 
-def test_a_t1_list_at_the_cap_does_not_settle_and_the_longer_list_wins(t0):
-    """Doc 839: T1 returned 150 of 184 printed codes, every one printed, so the
-    95% check settled a list the prompt had cut. A list at exactly the cap is
-    truncated by construction: it goes on to the image read and Sonnet, and the
-    longer list is kept."""
+def test_a_t1_list_at_the_cap_settles_and_is_flagged(t0):
+    """Doc 839 (Task 9 replay): T1 returned 150 of 184 printed codes, every
+    one printed, and the 95% check settled the list. A rule that let no list
+    at the cap settle sent it on to the image read and Sonnet, but every read
+    is capped at 150 too, so none could return more and the rule only added
+    reads (review of the Task 9 fixes, 2026-10-14). The list settles as any
+    other, and the truncation flag says it may be cut."""
     printed = _codes(184)
     t0(_only_open("ref_list"))
-    llm = TextLlm({"T1": {"ref_list": (printed[:CAP], "first 150 returned", 1, 0.8)},
-                   "T2-first": {"ref_list": (printed[:CAP], "first 150 returned", 1, 0.8)},
-                   "T2": {"ref_list": (printed[:160], "160 codes", 1, 0.9)}})
+    llm = TextLlm({"T1": {"ref_list": (printed[:CAP], "first 150 returned", 1, 0.8)}})
     _, fields, used = run(_doc(*_ref_pages(printed)), llm)
-    assert used == ["T0", "T1", "T2-first", "T2"]      # agreement at the cap settles nothing
-    assert fields["ref_list"]["value"] == printed[:160]
-    assert fields["ref_list"]["step"] == "T2"
-
-
-def test_a_list_at_the_cap_stays_when_the_later_reads_are_no_longer(t0):
-    printed = _codes(184)
-    t0(_only_open("ref_list"))
-    llm = TextLlm({"T1": {"ref_list": (printed[:CAP], "first 150 returned", 1, 0.8)},
-                   "T2-first": {"ref_list": (printed[:40], "40 codes", 1, 0.9)},
-                   "T2": {"ref_list": ([], "", None, 0.0)}})
-    _, fields, used = run(_doc(*_ref_pages(printed)), llm)
-    assert used == ["T0", "T1", "T2-first", "T2"]
+    assert used == ["T0", "T1"]
     assert fields["ref_list"]["value"] == printed[:CAP]
+    assert tiers.REF_TRUNCATION_FLAG in tiers.integrity_flags(fields)
+
+
+def test_a_list_at_the_cap_keeps_its_flag_when_codes_are_rejected(t0):
+    """The flag reads the length the read returned, before any code was set
+    aside: 150 codes, two of them nomenclature codes, is still a list the
+    prompt cut, though 148 are stored."""
+    printed = _codes(184)
+    pages = list(_ref_pages(printed))
+    pages[0] = ("EMDN code: Q010199 Conservative dentistry\n"
+                "GMDN code: 16668 Carbide dental bur\n" + pages[0])
+    t0(_only_open("ref_list"))
+    llm = TextLlm({"T1": {"ref_list": (printed[:148] + ["Q010199", "16668"],
+                                       "first 150 returned", 1, 0.8)}})
+    _, fields, used = run(_doc(*pages), llm)
+    assert used == ["T0", "T1"]
+    assert fields["ref_list"]["value"] == printed[:148]
     assert tiers.REF_TRUNCATION_FLAG in tiers.integrity_flags(fields)
 
 
@@ -942,6 +1035,19 @@ def test_a_rejected_value_t1_gave_for_a_field_pursued_later_is_recorded(t0):
     assert "ref_list" not in llm.asked("T1")
     assert fields["ref_list"]["value"] == ["331-"]
     assert [(r["step"], r["field"]) for r in tiers.rejected_values(fields)] == [("T1", "ref_list")]
+
+
+def test_a_code_t0_listed_is_never_rejected_as_nomenclature(t0):
+    """Review of the Task 9 fixes: T0 enumerated the article list, so a code
+    it holds is an article, whatever its shape and wherever it sits."""
+    fields0 = _only_open("ref_list")
+    fields0["ref_list"] = t0ev(["14066", "331-"], 0.9, "2 REF codes", 1)
+    t0(fields0)
+    llm = TextLlm({"T1": {"ref_list": (["14066", "331-"], "Model Numbers: 14066", 1, 0.8)}})
+    _, fields, used = run(_doc(ULTRADENT_FORM), llm)
+    assert used == ["T0", "T1"]
+    assert tiers.rejected_values(fields) == []
+    assert fields["ref_list"]["value"] == ["14066", "331-"]
 
 
 def test_a_real_code_beside_nomenclature_codes_stays(t0):
@@ -1081,6 +1187,52 @@ def test_an_ifu_keeps_a_proven_date_a_later_read_gave_malformed(t0):
     assert (fields["validity_from"]["value"], fields["validity_from"]["step"]) == ("2024-01-01", "T1")
 
 
+def test_an_ifu_never_takes_back_a_date_a_rejection_dropped(t0):
+    """Review of the Task 9 fixes: T1's template release date was rejected
+    (`checks.not_the_field`), so the ladder never took it; but its quote
+    prints the date, and the IFU rule looked for a proven date among every
+    read's raw answer, found it there and stored it. A rejected value is no
+    read's answer for the field, here as anywhere."""
+    page = ("Istruzioni d'uso\nManufacturer: Dental World S.r.l.\n"
+            "Template RP00S0.07 Released May 31, 2024")
+    t0({"regulation": t0ev("MDR", 1.0), "manufacturer": t0ev("DENTAL WORLD", 0.97)})
+    llm = TextLlm({"T1": {"type": ("IFU", "Istruzioni d'uso / IFU", 1, 0.93),
+                          "validity_from": ("2024-05-31", "Template RP00S0.07 Released May 31, 2024",
+                                            1, 0.3)},
+                   "T2-first": {"type": ("IFU", "Istruzioni d'uso", 1, 0.9),
+                                "validity_from": ("2024-06", "Istruzioni d'uso", 1, 0.4)}})
+    _, fields, _ = run(_doc(page), llm)
+    assert fields["type"]["value"] == "IFU"
+    assert not (fields.get("validity_from") or {}).get("value")
+    assert ("T1", "validity_from") in [(r["step"], r["field"]) for r in tiers.rejected_values(fields)]
+
+
+@pytest.mark.parametrize("answers, value", [
+    # the revision line read alike by T1 and the image read: kept
+    ({"T1": ("2023-06-01", "REV.00_06-2023", 1, 0.4),
+      "T2-first": ("2023-06-01", "REV.00_06-2023", 1, 0.8)}, "2023-06-01"),
+    # a day read off a revision code by every read: no date at all
+    ({"T1": ("2026-04-26", "701593/M/12 04/26", 1, 0.6),
+      "T2-first": ("2026-04-26", "701593/M/12 04/26", 1, 0.9),
+      "T2": ("2026-04-26", "701593/M/12 04/26", 1, 0.9)}, None),
+], ids=["revision-line", "made-up-day"])
+def test_an_ifu_t0_typed_is_asked_its_revision_date(t0, answers, value):
+    """Denis, 2026-10-14: an IFU keeps its revision date as `validity_from`,
+    a month and year as the first of the month. An IFU T0 types at the
+    threshold was never asked the field, and 6 of the 8 such IFUs on the
+    mirror got no date. It is asked now; `validity_to` and `cert_number`
+    still are not, and a date no quote prints still goes."""
+    quote = answers["T1"][1]
+    page = "Instructions for use\nManufacturer: GC EUROPE N.V.\n" + quote
+    t0({"type": t0ev("IFU", 1.0), "regulation": t0ev("MDR", 1.0),
+        "manufacturer": t0ev("GC EUROPE N.V.", 0.97), "coverage_scope": t0ev("group", 1.0),
+        "ref_list": t0ev(["003477"], 1.0), "basic_udi_di": t0ev(None, 1.0)})
+    llm = TextLlm({label: {"validity_from": spec} for label, spec in answers.items()})
+    _, fields, _ = run(_doc(page), llm)
+    assert llm.asked("T1") == {"validity_from"}
+    assert (fields.get("validity_from") or {}).get("value") == value
+
+
 def test_the_drop_follows_a_type_the_image_read_settles(t0):
     t0({"regulation": t0ev("MDR", 1.0), "manufacturer": t0ev("GC EUROPE N.V.", 0.97)})
     llm = TextLlm({"T1": {"type": ("IFU", "a manual", 1, 0.6),
@@ -1179,6 +1331,57 @@ def test_the_unreadable_cut_is_thirty_percent_letters(letters, kind):
     n = 1000
     text = "a" * int(n * letters) + "#" * (n - int(n * letters))
     assert tiers._unreadable(text) is (kind == "image")
+
+
+#: A manual's table of contents: dot leaders make most of its characters.
+#: Real case: NSK's Perio Mate manual (OM-DT0912CS000, Czech), 0.28 letters
+#: with its leaders counted, 0.92 without.
+CONTENTS = "\n".join(f"{n} {title} " + "." * 60 + f" {n * 3}" for n, title in enumerate(
+    ("Safety", "Parts", "Use", "Cleaning", "Storage", "Service"), start=1))
+
+
+def test_a_table_of_contents_is_readable_text():
+    """Review of the Task 9 fixes: the letter share counted the dot leaders
+    of a table of contents, so manuals whose pages 1-2 are a contents page fell
+    under the cut with the garbled certificates. Leader runs (dots, an
+    ellipsis character, underscores) are not counted; garbled text still is."""
+    assert tiers._unreadable(CONTENTS) is False
+    assert tiers._unreadable(CONTENTS.replace(".", "…")) is False
+    assert tiers._unreadable(CONTENTS.replace(".", "_")) is False
+    assert tiers._unreadable(GARBLED * 4) is True
+
+
+def test_a_contents_page_keeps_the_text_doc_class_call(t0):
+    """The page holds the contents alone (no filler), as a manual's page 2."""
+    t0({}, doc_class="unknown")
+    llm = TextLlm({"T1": FAILED, "T2-first": FAILED, "T2": FAILED},
+                  text_class="IFU", image_class="IFU")
+    doc = pymupdf.open()
+    page = doc.new_page()
+    for i, line in enumerate(("Operation manual", *CONTENTS.splitlines())):
+        page.insert_text((40, 60 + 16 * i), line, fontsize=9)
+    assert pdf.page_classes(doc) == ["text"]
+    run(doc, llm)
+    assert llm.classified == ["text"]
+
+
+@pytest.mark.parametrize("pages", [(DOC_PAGE,), (DOC_PAGE, IMAGE)], ids=["text", "mixed"])
+def test_the_page_classes_are_computed_once(monkeypatch, pages):
+    """Review of the Task 9 fixes: the doc-class route and the ladder each
+    classified every page of the document, a cost that grows with its page
+    count. One classification serves both."""
+    calls = []
+    real = pdf.page_classes
+    monkeypatch.setattr(pdf, "page_classes", lambda doc: calls.append(1) or real(doc))
+    llm = TextLlm({"T1": {}, "T2-first": {}, "T2": {}}, text_class="DoC", image_class="DoC")
+    doc = _doc(*pages)
+
+    def read(label, missing, **kw):
+        return llm.extract(label, doc, "d.pdf", missing, **kw)
+
+    tiers.run_text_ladder(doc, "d.pdf", "unknown", {}, ["T0"], read,
+                          classify=llm.classify, classify_image=llm.classify_image)
+    assert len(calls) == 1
 
 
 def test_text_on_pages_one_and_two_keeps_the_text_call(t0):

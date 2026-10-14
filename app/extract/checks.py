@@ -152,25 +152,65 @@ def dates_in(text: str) -> set[str]:
     return out | set(re.findall(r"\d{4}-\d{2}-\d{2}", text))
 
 
+#: Month names the month-and-year rule never reads: "Set 2019" is a set
+#: number, and "out" and "ago" are English words before a year (Denis,
+#: 2026-10-14: lot, page and set numbers are never dates).
+_NOT_A_MONTH_ALONE = frozenset({"set", "out", "ago"})
+
+#: English month names that are English words too: a month only when
+#: capitalised ("May 2023"; "may 2023" is the verb, Denis 2026-10-14).
+_CAPITALISED_MONTHS = frozenset({"may", "march", "august"})
+
+#: A lot, page, set or serial number's label just before the match: "Lot
+#: 03/24", "Page 1/24" (Denis, 2026-10-14).
+_NUMBER_LABEL = re.compile(
+    r"\b(?:lot|lote|lotto|batch|charge|page|pages|pag|pagina|seite|stran|set|serie|series"
+    r"|serial|sn|s/n)\.?\s*(?:no\.?|nr\.?)?\s*[:#]?\s*$", re.IGNORECASE)
+
+#: A day printed just before the month: "15 June", "15. Juni", "25. 08.".
+#: The whole date is then the document's, and its day is never cut to the
+#: first (Denis, 2026-10-14).
+_DAY_BEFORE_NAME = re.compile(r"\d(?:st|nd|rd|th)?\.?\s*$", re.IGNORECASE)
+_DAY_BEFORE_NUMBER = re.compile(r"\d\s*[-/.]\s*$")
+
+#: A further part of a date after the match: "06/23" of "06/23/2023".
+_MORE_AFTER = re.compile(r"\s*[-/.]\s*\d")
+
+
 def _month_year_in(value: str, quote: str) -> str | None:
     """Where `quote` prints the month and year of `value`, the first of a
     month, as a revision line does: "06-2023", "01/2024", "04/26", "2023-06",
-    "June 2023". Never as part of a whole date ("15-06-2023", "2023-06-15"),
-    whose day the value would drop. None when it does not."""
+    "June 2023". An IFU stores such a revision date as the first of its month
+    (Denis, 2026-10-14). Never as part of a whole date ("15-06-2023",
+    "2023-06-15", "06/23/2023", "15 June 2023", "Datum: 15. Juni 2023",
+    "25. 08. 2025"): a printed day is never cut to the first. Never a lot,
+    page or set number ("Lot 03/24", "Page 1/24", "Set 2019"), and never a
+    lower-case English word ("may 2023"). None when it does not, or when
+    `value` is not an ISO date."""
+    if not _ISO_DATE.fullmatch(value):
+        return None
     y, m, d = value.split("-")
     if d != "01":
         return None
     mo = int(m)
-    names = "|".join(re.escape(n) for n, k in _MONTH_NUMBERS.items() if k == mo)
-    patterns = (
-        rf"(?<!\d)(?<!\d[-/.])0?{mo}\s*[-/._]\s*(?:{y}|{y[2:]})(?!\d)",
-        rf"(?<!\d){y}\s*[-/.]\s*0?{mo}(?![-/.]?\d)",
-        rf"\b(?:{names})\.?,?\s*{y}(?!\d)",
-    )
-    for p in patterns:
-        m_ = re.search(p, quote, re.IGNORECASE)
-        if m_:
-            return m_.group(0)
+    names = "|".join(re.escape(n) for n, k in _MONTH_NUMBERS.items()
+                     if k == mo and n not in _NOT_A_MONTH_ALONE)
+    numeric = (rf"(?<!\d)0?{mo}\s*[-/._]\s*(?:{y}|{y[2:]})(?!\d)",
+               rf"(?<!\d){y}\s*[-/.]\s*0?{mo}(?!\d)")
+    for p in numeric:
+        for found in re.finditer(p, quote):
+            before = quote[:found.start()]
+            if (_DAY_BEFORE_NUMBER.search(before) or _NUMBER_LABEL.search(before)
+                    or _MORE_AFTER.match(quote, found.end())):
+                continue
+            return found.group(0)
+    for found in re.finditer(rf"\b(?P<name>{names})\.?,?\s*{y}(?!\d)", quote, re.IGNORECASE):
+        name, before = found.group("name"), quote[:found.start()]
+        if name.casefold() in _CAPITALISED_MONTHS and not name[0].isupper():
+            continue
+        if _DAY_BEFORE_NAME.search(before) or _NUMBER_LABEL.search(before):
+            continue
+        return found.group(0)
     return None
 
 
@@ -390,59 +430,114 @@ _NOMENCLATURE_LABEL = re.compile(r"\b(?:GMDN|EMDN|UMDNS|CND)\b", re.IGNORECASE)
 _NOMENCLATURE_SHAPE = re.compile(r"^(?:[A-Z]\d{2}(?:\d{2}){0,4}|\d{5}|\d{2}-\d{3})$")
 
 
-def nomenclature_codes(codes, text: str) -> list[str]:
+#: How many lines below a nomenclature label its code may be printed. Doc
+#: 622's form prints eight labels, then their eight values, so its codes sit
+#: eight to ten lines below their labels.
+NOMENCLATURE_LINES = 12
+
+
+def _near_nomenclature_labels(text: str) -> list[str]:
+    """The stretches of `text` that start at a nomenclature label's line and
+    run `NOMENCLATURE_LINES` lines on."""
+    lines = text.splitlines()
+    return ["\n".join(lines[i:i + NOMENCLATURE_LINES + 1])
+            for i, line in enumerate(lines) if _NOMENCLATURE_LABEL.search(line)]
+
+
+def nomenclature_codes(codes, text: str, listed=()) -> list[str]:
     """The codes of `codes` the text prints as a nomenclature entry, in their
-    order: on a document that names GMDN, EMDN, UMDNS or CND, a code of their
-    shape printed right after such a label, or followed by its term ("14066,
-    Tongue Depressor", "Q01010102: Temporary and Permanent Dental Restoration
-    Cements"). A nomenclature code names a type of device, not an article.
+    order: a code of the shape GMDN, EMDN, UMDNS or CND codes take, printed
+    within `NOMENCLATURE_LINES` lines below such a label, right after the
+    label or followed by its term ("14066, Tongue Depressor", "Q01010102:
+    Temporary and Permanent Dental Restoration Cements"). A nomenclature code
+    names a type of device, not an article. Never a code of `listed` (T0's
+    own REF list): T0 enumerated the document's article list, so a code it
+    holds is an article.
 
     Doc 622 (Task 9 replay): Ultradent's form prints its labels first and its
     values after, so T1 read the GMDN and EMDN codes as the "Model Numbers",
     every one printed, and the 95% check settled them. Measured 2026-10-14: no
     code of the 17,133 in T0's REF lists on the 1,320 PDFs of the SFTP mirror,
-    and none in 415 cached REF-list reads but doc 622's, is found here."""
+    and none in 415 cached REF-list reads but doc 622's, is found here. Near a
+    label only (review of the Task 9 fixes, 2026-10-14): a document that names
+    GMDN once may list five-digit article numbers with their descriptions
+    pages later."""
     if not text or not _NOMENCLATURE_LABEL.search(text):
         return []
+    stretches = _near_nomenclature_labels(text)
+    held = {compact(c) for c in listed or []}
     out = []
     for code in codes or []:
         c = str(code).strip()
-        if not _NOMENCLATURE_SHAPE.match(c):
+        if not _NOMENCLATURE_SHAPE.match(c) or compact(c) in held:
             continue
         esc = re.escape(c)
         with_term = rf"(?<![\w.-]){esc}[ \t]*[,:/\u2013-]?[ \t]*[^\W\d_]{{3,}}"
         after_label = rf"{_NOMENCLATURE_LABEL.pattern}[^\n]{{0,40}}\n?[ \t]*{esc}(?![\w.-])"
-        if re.search(with_term, text) or re.search(after_label, text, re.IGNORECASE):
+        if any(re.search(with_term, s) or re.search(after_label, s, re.IGNORECASE)
+               for s in stretches):
             out.append(code)
     return out
 
 
 #: A read saying in its own quote that what it returned is not a REF code:
-#: "(these are type designations, not explicit REF codes)".
-_DISOWNED_REF = re.compile(r"\bnot\b[^.;:()\n]{0,30}?\b(?:REF|article|catalog(?:ue)?)\b",
-                           re.IGNORECASE)
+#: "(these are type designations, not explicit REF codes)", "not enumerated
+#: discrete REF codes", "not article numbers". Disowning phrasing only
+#: (review of the Task 9 fixes, 2026-10-14): "not", at most two words that do
+#: not describe how the list is printed, then the codes or numbers themselves.
+#: "(not labelled as REF)", "List not complete, see catalogue" and "not all
+#: article numbers are shown" describe a real list.
+_DISOWNED_REF = re.compile(
+    r"\bnot\s+(?:(?!(?:all|every|each|as|labell?ed|marked|printed|shown|listed|stated|given)\b)"
+    r"[a-z-]+\s+){0,2}(?:REF|article|catalog(?:ue)?)\s*(?:codes?|numbers?|nos?\b\.?)",
+    re.IGNORECASE)
 
 #: Below this a read is more unsure than sure of its own list.
 DISOWNED_REF_CONF = 0.5
+
+#: Up to 40 characters between the declaration word and its number label that
+#: hold no certificate word. "This declaration is based on EC Certificate No.:"
+#: labels the certificate the declaration cites, which is ruling A's
+#: `cert_number` (review of the Task 9 fixes, 2026-10-14).
+_NO_CERTIFICATE_GAP = r"(?:(?!certific|zertifikat|certificat|certifikat)[^:\n]){0,40}?"
 
 #: The label of a declaration's OWN number, ending the quote just before the
 #: value: "Declaration of conformity reference:", "DoC No.", "Konformitäts-
 #: erklärung Nr.", "Référence de la déclaration de conformité :". It names the
 #: declaration, so an EC or ISO certificate's own number ("Certificate No.")
-#: never matches.
+#: never matches, nor does a label a certificate word separates from the
+#: declaration ("Konformitätserklärung gemäß Zertifikat Nr.").
 _OWN_REFERENCE = re.compile(
-    r"(?:declaration|\bDoC\b|dichiarazione|erkl[äa]rung|izjava)[^:\n]{0,40}?"
+    rf"(?:declaration|\bDoC\b|dichiarazione|erkl[äa]rung|izjava){_NO_CERTIFICATE_GAP}"
     r"(?:reference|\bref\b\.?|\bno\b\.?|\bnr\b\.?|n°|number|nummer|num[ée]ro|\bšt\b\.?)"
     r"\s*[:.]?\s*$"
     r"|(?:r[ée]f[ée]rence|\bref\b\.?|\bno\b\.?|\bnr\b\.?|n°|number|nummer|num[ée]ro)"
     r"\s+(?:de\s+la\s+|of\s+the\s+|der\s+)?(?:d[ée]claration|declaration|erkl[äa]rung)"
-    r"[^:\n]{0,40}?\s*[:.]?\s*$",
+    rf"{_NO_CERTIFICATE_GAP}\s*[:.]?\s*$",
     re.IGNORECASE)
 
 
-#: A date quoted from the line of the form a document is printed on:
-#: "Template RP00S0.07 Released May 31, 2024" (doc 617).
-_TEMPLATE = re.compile(r"\btemplate\b", re.IGNORECASE)
+#: A form template named by its ID: "Template RP00S0.07" (doc 617),
+#: "Template: PLP_T_0071" (Dentsply), "Template ID: TEFO-EN-000422"
+#: (Ivoclar). A product such as a "Surgical Template Kit" names no form.
+_TEMPLATE = re.compile(r"\btemplate\b(?:\s*(?:id|no|nr|number)\.?)?\s*[:#]?\s*\S*\d",
+                       re.IGNORECASE)
+
+
+def _template_date(value, quote: str) -> bool:
+    """The quote gives `value` as the date of the form the document is printed
+    on: on a line of the quote that prints the date (`_printed_date`), a
+    template named by its ID before it ("Template RP00S0.07 Released May 31,
+    2024", doc 617). Only that line (review of the Task 9 fixes, 2026-10-14):
+    Ivoclar prints "Template ID: TEFO-EN-000422" in every page footer, and a
+    quote that runs into it, or names a "Surgical Template Kit", still gives
+    the document's own date. False when no line prints the date."""
+    for line in quote.splitlines():
+        printed = _printed_date(str(value), line)
+        at = line.find(printed) if printed else -1
+        if at >= 0 and _TEMPLATE.search(line[:at]):
+            return True
+    return False
 
 
 def _before(quote: str, value) -> str | None:
@@ -455,7 +550,8 @@ def _before(quote: str, value) -> str | None:
     return quote[:m.start()] if m else None
 
 
-def not_the_field(field_name: str, evidence: dict | None, text: str = "") -> tuple[str | None, object]:
+def not_the_field(field_name: str, evidence: dict | None, text: str = "",
+                  listed=()) -> tuple[str | None, object]:
     """Why a read's value is provably not `field_name`, and what of it stays:
     (None, None) when nothing is wrong with it, (reason, None) when none of it
     stays, (reason, kept) for a list that keeps some codes. The ladder treats
@@ -466,8 +562,9 @@ def not_the_field(field_name: str, evidence: dict | None, text: str = "") -> tup
     quote says the values are not REF codes (doc 305, Barco type designations
     at 0.4; real Ultradent model numbers were read at 0.55 to 0.7 with "not
     labelled REF", and a real list as low as 0.35, so neither half alone);
-    and any code the text prints as a nomenclature entry
-    (`nomenclature_codes`, doc 622).
+    and any code the text prints as a nomenclature entry near its label
+    (`nomenclature_codes`, doc 622), never one of `listed`, T0's own REF
+    list.
 
     `cert_number`: a number the quote labels as the declaration's own
     ("Declaration of conformity reference: 1000-TF_8_EUDOC_000219 [5]", doc
@@ -490,7 +587,7 @@ def not_the_field(field_name: str, evidence: dict | None, text: str = "") -> tup
         if (_conf(evidence) < DISOWNED_REF_CONF
                 and _DISOWNED_REF.search(str(evidence.get("verbatim") or ""))):
             return "the read says these are not REF codes", None
-        bad = nomenclature_codes(value, text)
+        bad = nomenclature_codes(value, text, listed)
         if bad:
             kept = [c for c in value if c not in bad]
             return f"nomenclature codes, not articles: {', '.join(map(str, bad))}", kept or None
@@ -498,7 +595,8 @@ def not_the_field(field_name: str, evidence: dict | None, text: str = "") -> tup
         head = _before(str(evidence.get("verbatim") or ""), value)
         if head is not None and _OWN_REFERENCE.search(head):
             return "the declaration's own reference, not a certificate", None
-    if field_name in DATE_FIELDS and value and _TEMPLATE.search(str(evidence.get("verbatim") or "")):
+    if (field_name in DATE_FIELDS and value
+            and _template_date(value, str(evidence.get("verbatim") or ""))):
         return "a template's release date, not the document's", None
     return None, None
 

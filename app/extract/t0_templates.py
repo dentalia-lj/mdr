@@ -410,7 +410,11 @@ def promote_doc_class(doc_class: str, header: str, full: str,
     still admitted a 320-page NSK operation manual, a 45-page third-party manual
     archive and a 44-page product info sheet -- because a manual cites MDR
     2017/745 legitimately, and a four-digit "notified body" match fires on years
-    and part numbers (it hit 13 of 24 sample files, including HTML).
+    and part numbers (it hit 13 of 24 sample files, including HTML). Since
+    2026-10-14 (Denis's ruling, decisions.md) the doc-class call reads a
+    device's own user or operation manual as its IFU, so the NSK manual is now
+    a document there; T0 still leaves such a file `unknown` for that call to
+    decide, and a manual archive or service manual stays out.
 
     Position is what separates them, and it is what a human uses: a declaration
     is *titled* "Declaration of Conformity"; a manual mentions the phrase on

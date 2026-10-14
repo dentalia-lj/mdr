@@ -37,14 +37,17 @@ def test_needs_escalation_flags_absent_and_low_confidence():
     assert "type" not in missing  # present and high
 
 
-def test_an_ifu_does_not_chase_a_certificate_it_cannot_have():
+def test_an_ifu_chases_its_revision_date_but_no_certificate():
     # Both STRAUMANN IFUs invented a date rather than returning none, 2026-08-17:
     # "2025" off "(c) Institut Straumann AG, 2025. All rights reserved." and
     # "2026-04-26" off the revision code "701593/M/12 04/26". The second landed
-    # in the registry at 0.97 as doc 326 and no downstream guard could see it,
-    # which is why the fix is to stop asking rather than to check the answer.
+    # in the registry at 0.97 as doc 326 and no downstream guard could see it.
+    # Denis, 2026-10-14: an IFU keeps its revision date as `validity_from`, so
+    # that one is asked; the ladder keeps only a date its quote prints
+    # (`checks.issue_date_proven`). An expiry and a certificate number an IFU
+    # never has, so those stay unasked.
     ifu = tiers.needs_escalation({"type": ev("IFU", 1.0, "T0")})
-    assert "validity_from" not in ifu
+    assert "validity_from" in ifu
     assert "validity_to" not in ifu
     assert "cert_number" not in ifu
     # ...but identity and the item ids are still pursued: an IFU names its

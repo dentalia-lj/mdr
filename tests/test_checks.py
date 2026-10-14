@@ -109,6 +109,20 @@ def test_the_eval_dates_the_quote_does_not_prove_stay_unsettled(f, iso, quote, p
     ("2023-06-01", "15-06-2023", False),                      # a day the value drops
     ("2023-06-01", "2023-06-15", False),
     ("2023-06-01", "Instructions for use", False),            # no date in the quote
+    ("2023-05-01", "Rev. May 2023", True),
+    ("2023-06-01", "Rev. 1 June 2023", True),                 # the first, printed
+    # Denis, 2026-10-14: a printed day is never cut to the first ...
+    ("2023-06-01", "15 June 2023", False),
+    ("2023-06-01", "Datum: 15. Juni 2023", False),
+    ("2025-08-01", "Date of issue 25. 08. 2025", False),
+    ("2023-06-01", "06/23/2023", False),
+    # ... a lot, page or set number is never a date ...
+    ("2024-03-01", "Lot 03/24", False),
+    ("2024-03-01", "LOT: 03/24", False),
+    ("2024-01-01", "Page 1/24", False),
+    ("2019-09-01", "Set 2019", False),
+    # ... and lower-case "may" is the verb
+    ("2023-05-01", "the device may 2023", False),
 ])
 def test_an_ifu_date_is_one_its_own_quote_prints(value, quote, proven):
     assert checks.issue_date_proven(ev(value, quote)) is proven
@@ -741,6 +755,52 @@ def test_real_ref_codes_are_not_nomenclature_codes(codes, text):
     assert checks.nomenclature_codes(codes, text) == []
 
 
+#: Doc 622's text layer as PyMuPDF reads it: eight labels, then their values,
+#: so a code sits up to ten lines below its label.
+ULTRADENT_622 = """Intended Purpose:
+UMDNS Code:
+GMDN Code:
+EMDN Code:
+Basic UDI-D1:
+Eudamed SRN:
+Model Numbers:
+Images:
+Page 1 of 2
+lsoBlock bite blocks are used as a tongue restraint and to provide bilateral
+support during in-office whitening and dental procedures
+14066, Tongue Depressor
+36311, Occlusal splint, dental preformed
+V9001, Tongue Depressors, Single-Use
+0883205-TF057B8
+US-MF-000013697
+331-"""
+
+
+def test_doc_622s_nomenclature_codes_are_found_below_their_labels():
+    assert checks.nomenclature_codes(["14066", "36311", "V9001", "331-"], ULTRADENT_622) == [
+        "14066", "36311", "V9001"]
+
+
+def test_a_code_far_below_every_nomenclature_label_is_an_article():
+    """Review of the Task 9 fixes: a document that names GMDN once is not a
+    list of nomenclature codes. A five-digit article number printed with its
+    description far below the label is an article."""
+    text = ("GMDN code: 12345 Dental bur\n" + "Lorem ipsum dolor sit amet.\n" * 15
+            + "REF Description\n10234 Diamond bur\n10235 Carbide bur")
+    assert checks.nomenclature_codes(["10234", "10235"], text) == []
+
+
+def test_a_code_t0_listed_is_never_a_nomenclature_code():
+    """T0 enumerated the document's own article list: a code it holds is an
+    article, whatever its shape and wherever it sits."""
+    assert checks.nomenclature_codes(["14066", "V9001"], ULTRADENT_FORM,
+                                     listed=["14066"]) == ["V9001"]
+    reason, kept = checks.not_the_field(
+        "ref_list", {"value": ["14066", "331-"], "conf": 0.8, "verbatim": "x"},
+        ULTRADENT_FORM, listed=["14066", "331-"])
+    assert (reason, kept) == (None, None)
+
+
 def test_a_list_the_read_itself_disowns_is_rejected():
     """Doc 305: Barco's type designations, which the read returned at 0.4 while
     saying they are not REF codes. Under 0.5 and in its own words only: real
@@ -754,6 +814,25 @@ def test_a_list_the_read_itself_disowns_is_rejected():
     assert checks.not_the_field("ref_list", dict(disowned, conf=0.55))[0] is None
     assert checks.not_the_field("ref_list", {"value": ["5941-"], "conf": 0.35,
                                               "verbatim": "Model Numbers: '5941-' as printed"})[0] is None
+
+
+@pytest.mark.parametrize("quote, rejected", [
+    ("Type: MDAC-2422 (these are type designations, not explicit REF codes)", True),
+    ("5916-, S5917- (these are not REF codes)", True),
+    ("1-9999 (ranges, not article numbers)", True),
+    # a note about the list, not a disowning of it (review of the Task 9 fixes)
+    ("Model Numbers: 5916-, S5917- (not labelled as REF)", False),
+    ("List not complete, see catalogue", False),
+    ("not all article numbers are shown", False),
+    ("REF not printed; article numbers from the table", False),
+])
+def test_only_disowning_phrasing_rejects_a_list(quote, rejected):
+    """A read under 0.5 whose quote says the values ARE NOT REF codes or
+    article numbers. A quote that says the list is not labelled REF, not
+    complete, or not all shown describes a real list."""
+    reason, _ = checks.not_the_field("ref_list", {"value": ["5916-"], "conf": 0.4,
+                                                  "verbatim": quote})
+    assert (reason is not None) is rejected
 
 
 def test_nomenclature_codes_leave_the_rest_of_the_list():
@@ -782,6 +861,13 @@ def test_a_value_with_no_rule_is_never_rejected():
     ("G1 021108 0031", "Certificate No.: G1 021108 0031", False),
     ("MDR 778483", "This declaration is based on EU certificate MDR 778483", False),
     ("HZ 1470094-1", "Declaration of Conformity ... No. of Certificate: HZ 1470094-1", False),
+    # a certificate word between the declaration and the number label: the
+    # number is the certificate's (review of the Task 9 fixes)
+    ("G1 021108 0031", "This declaration is based on EC Certificate No.: G1 021108 0031", False),
+    ("G1 021108 0031", "Konformitätserklärung gemäß Zertifikat Nr. G1 021108 0031", False),
+    ("8445 rev.18", "Izjava o skladnosti, certifikat št. 8445 rev.18", False),
+    ("MDR 778483", "This declaration is based on the Certificate No. MDR 778483", False),
+    ("CE 01234", "Déclaration de conformité selon le certificat n° CE 01234", False),
 ])
 def test_a_certificate_number_the_quote_names_the_declarations_own_is_rejected(value, quote, rejected):
     """Ruling A (2026-10-12): a DoC's `cert_number` is the certificate it cites.
@@ -799,6 +885,14 @@ def test_a_certificate_number_the_quote_names_the_declarations_own_is_rejected(v
     ("validity_from", "2024-08-08", "Subscribed and sworn to before me on 08 August 2024", False),
     # doc 622: the declaration's own release line stays (arguable, not a template)
     ("validity_from", "2023-04-20", "RTD-002882.02 Released April 20, 2023", False),
+    # Dentsply's form footer: the template's own validity
+    ("validity_from", "2019-04-01", "Template: PLP_T_0071 ♦ Rev.1 ♦ valid from: 2019-04-01", True),
+    # only the line that prints the date, and a template named by its ID before
+    # the date (review of the Task 9 fixes): Ivoclar's form footer, a product
+    ("validity_from", "2026-05-04", "Date of issue: 2026-05-04\nTemplate ID:\nTEFO-EN-000422", False),
+    ("validity_to", "2030-10-21", "Valid until: 2030-10-21 Template ID: TEFO-EN-000422", False),
+    ("validity_from", "2023-06-15", "Surgical Template Kit\nIssued 2023-06-15", False),
+    ("validity_from", "2023-06-15", "Surgical Template Kit, issued 2023-06-15", False),
 ])
 def test_a_date_the_quote_gives_a_template_is_rejected(field, value, quote, rejected):
     reason, _ = checks.not_the_field(field, {"value": value, "conf": 0.3, "verbatim": quote})
