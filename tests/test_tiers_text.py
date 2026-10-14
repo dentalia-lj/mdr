@@ -719,6 +719,72 @@ def test_a_t0_list_at_the_threshold_is_never_asked_or_replaced(t0):
     assert fields["ref_list"]["value"] == ["003477", "999999"]
 
 
+# --- a REF list at the prompt cap (Task 9 replay, doc 839) -----------------------
+
+CAP = tiers.REF_LIST_PROMPT_CAP
+
+
+def _codes(n: int) -> list[str]:
+    return [str(100000 + i) for i in range(n)]
+
+
+def _ref_pages(codes: list[str]) -> tuple[str, ...]:
+    """The codes printed ten to a line, 100 to a page, under a REF label."""
+    lines = [" ".join(codes[i:i + 10]) for i in range(0, len(codes), 10)]
+    return tuple("Article list REF\n" + "\n".join(lines[i:i + 10])
+                 for i in range(0, len(lines), 10))
+
+
+def test_a_t1_list_at_the_cap_does_not_settle_and_the_longer_list_wins(t0):
+    """Doc 839: T1 returned 150 of 184 printed codes, every one printed, so the
+    95% check settled a list the prompt had cut. A list at exactly the cap is
+    truncated by construction: it goes on to the image read and Sonnet, and the
+    longer list is kept."""
+    printed = _codes(184)
+    t0(_only_open("ref_list"))
+    llm = TextLlm({"T1": {"ref_list": (printed[:CAP], "first 150 returned", 1, 0.8)},
+                   "T2-first": {"ref_list": (printed[:CAP], "first 150 returned", 1, 0.8)},
+                   "T2": {"ref_list": (printed[:160], "160 codes", 1, 0.9)}})
+    _, fields, used = run(_doc(*_ref_pages(printed)), llm)
+    assert used == ["T0", "T1", "T2-first", "T2"]      # agreement at the cap settles nothing
+    assert fields["ref_list"]["value"] == printed[:160]
+    assert fields["ref_list"]["step"] == "T2"
+
+
+def test_a_list_at_the_cap_stays_when_the_later_reads_are_no_longer(t0):
+    printed = _codes(184)
+    t0(_only_open("ref_list"))
+    llm = TextLlm({"T1": {"ref_list": (printed[:CAP], "first 150 returned", 1, 0.8)},
+                   "T2-first": {"ref_list": (printed[:40], "40 codes", 1, 0.9)},
+                   "T2": {"ref_list": ([], "", None, 0.0)}})
+    _, fields, used = run(_doc(*_ref_pages(printed)), llm)
+    assert used == ["T0", "T1", "T2-first", "T2"]
+    assert fields["ref_list"]["value"] == printed[:CAP]
+    assert tiers.REF_TRUNCATION_FLAG in tiers.integrity_flags(fields)
+
+
+def test_a_list_one_under_the_cap_still_settles_on_t1(t0):
+    printed = _codes(CAP - 1)
+    t0(_only_open("ref_list"))
+    llm = TextLlm({"T1": {"ref_list": (printed, "all codes", 1, 0.8)}})
+    _, fields, used = run(_doc(*_ref_pages(printed)), llm)
+    assert used == ["T0", "T1"]
+    assert fields["ref_list"]["value"] == printed
+
+
+def test_a_t0_list_of_exactly_the_cap_is_a_real_count(t0):
+    """T0 enumerates the document; the cap is a prompt's, so a T0 list of 150
+    codes proven by the text still settles where T0 held it below 0.95."""
+    printed = _codes(CAP)
+    fields0 = _only_open("ref_list")
+    fields0["ref_list"] = t0ev(printed, 0.9, "150 REF codes", 1)
+    t0(fields0)
+    llm = TextLlm({"T1": {"ref_list": ([], "", None, 0.0)}})
+    _, fields, used = run(_doc(*_ref_pages(printed)), llm)
+    assert used == ["T0", "T1"]
+    assert fields["ref_list"]["tier"] == "T0"
+
+
 # --- an IFU's certificate fields (review 2026-10-13) -----------------------------
 
 IFU_PAGE = ("Instructions for use\nManufacturer: GC EUROPE N.V.\nRegulation (EU) 2017/745\n"

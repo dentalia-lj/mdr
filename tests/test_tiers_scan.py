@@ -286,6 +286,22 @@ def test_the_configured_threshold_is_the_one_used(t0):
     assert llm.asked("T2-second") == {"cert_number"} | GATE
 
 
+def test_a_ref_list_at_the_prompt_cap_never_settles_on_the_cheap_reads(t0):
+    """Doc 839 (Task 9 replay): a list of exactly the prompt cap is cut by
+    construction. Neither the first read's own confidence nor two reads
+    agreeing settles it; Sonnet is asked, and the longer list is kept."""
+    cap = [str(100000 + i) for i in range(tiers.REF_LIST_PROMPT_CAP)]
+    longer = cap + ["200000", "200001"]
+    llm = ScanLlm({"T2-first": dict(EVERYTHING, ref_list=(cap, 0.95)),
+                   "T2-second": {"ref_list": (cap, 0.95)},
+                   "T2": {"ref_list": (longer, 0.9)}})
+    t0()
+    _, fields, used = run(_scan(1), llm)
+    assert "ref_list" in llm.asked("T2-second") and llm.asked("T2") == {"ref_list"}
+    assert used == ["T0", "T2-first", "T2-second", "T2"]
+    assert fields["ref_list"]["value"] == longer
+
+
 # --- the second read: agreement ----------------------------------------------
 
 @pytest.mark.parametrize("conf, agreed", [(0.70, True), (0.69, False)])

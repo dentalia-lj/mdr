@@ -373,6 +373,19 @@ _PROMPT_CAPPED_TIERS = frozenset({"T1", "T2"})
 #: answer, not a defect in the document, so it must never gate.
 REF_TRUNCATION_FLAG = "ref-list-possibly-truncated"
 
+
+def _at_prompt_cap(evidence) -> bool:
+    """A REF list a prompt-capped read returned at exactly the cap: cut by
+    construction, so no rule settles it (Task 9 replay, doc 839: T1 returned
+    150 of 184 codes, every one printed, and the 95% check settled the list).
+    It goes on to the next read, Sonnet included, whose answer closes it, and
+    `merge` keeps the longer list. A T0 or T3 list of that length is a real
+    count (`_PROMPT_CAPPED_TIERS`) and settles as any other list."""
+    if not isinstance(evidence, dict) or evidence.get("tier") not in _PROMPT_CAPPED_TIERS:
+        return False
+    value = evidence.get("value")
+    return isinstance(value, list) and len(value) == REF_LIST_PROMPT_CAP
+
 #: `type='ISO'` on a document whose evidence names no ISO standard number.
 #:
 #: Extends the 2026-08-20 ruling -- `iso 13485` is the ONLY ISO signal
@@ -993,7 +1006,8 @@ def _proven(f: str, fields: dict, own: dict | None, ctx) -> bool:
     `checks.settled`, or the read's OWN value does (review 2026-10-13). The two
     differ only for an enumeration, where `merge` lets the longer list win:
     of two reads that agree, `merge` has already stored a verified one where
-    either is (ruling D1, 2026-10-13).
+    either is (ruling D1, 2026-10-13). A REF list a read returned at exactly
+    the prompt cap is proven by nothing (`_at_prompt_cap`, Task 9 replay).
 
     When the read's own list settles it, the field takes that list if the list
     it holds was written by a read: a longer read list that fails the check (a
@@ -1004,9 +1018,15 @@ def _proven(f: str, fields: dict, own: dict | None, ctx) -> bool:
     declaration, 63 of 63 on the mirror). When both pass, the longer list the
     field holds stays. T0 at or above the threshold is never asked at all."""
     held = fields.get(f)
+    # A list held at the prompt cap is proven by nothing: not by its own
+    # codes being printed, and not by a shorter read's list, which would
+    # replace it here although `merge` kept the longer one.
+    if _at_prompt_cap(held):
+        return False
     if checks.settled(f, held, ctx):
         return True
-    if own is not None and not _is_blank(own) and checks.settled(f, own, ctx):
+    if (own is not None and not _is_blank(own) and checks.settled(f, own, ctx)
+            and not _at_prompt_cap(own)):
         if not (isinstance(held, dict) and held.get("tier") == "T0"):
             fields[f] = own
         return True
@@ -1046,7 +1066,7 @@ def _image_settles_text(f: str, fields: dict, t1: dict, image: dict, ctx,
             return True
         if f == "basic_udi_di" and checks.udi_check_valid(b.get("value")):
             return True
-        if checks.agree(f, t1.get(f), b, 0.0):
+        if checks.agree(f, t1.get(f), b, 0.0) and not _at_prompt_cap(b):
             return True
         return _image_only(f, fields, b, ctx, image_pages, image_settle)
     a = t1.get(f)
@@ -1127,7 +1147,8 @@ def _image_settles(field: str, evidence: dict | None, image_settle: float) -> bo
     and the read states at least `extract.image_settle` (0.85, measured)."""
     return (isinstance(evidence, dict)
             and checks.well_formed(field, evidence.get("value"))
-            and float(evidence.get("conf") or 0.0) >= image_settle)
+            and float(evidence.get("conf") or 0.0) >= image_settle
+            and not _at_prompt_cap(evidence))
 
 
 def _scan_pursued(fields: dict, known: set[str]) -> list[str]:
@@ -1364,7 +1385,8 @@ def run_scan_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
                     known.add(f)
                 continue
             a = first.get(f)
-            if checks.agree(f, a, b, agreement_min):
+            if (checks.agree(f, a, b, agreement_min)
+                    and not (_at_prompt_cap(a) or _at_prompt_cap(b))):
                 known.add(f)
             elif f in first and f in second and _is_blank(a) and _is_blank(b):
                 # Both reads ANSWERED it empty. A field missing from an answer

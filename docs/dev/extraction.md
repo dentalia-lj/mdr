@@ -411,6 +411,14 @@ LLM list overwriting a full T0 one (`tiers.py:167-182`). `integrity_flags`
 when a T1/T2 list lands at exactly the cap — length is deterministic and
 doesn't trust the model's own truncation self-report, which was measured
 lying (doc 258: claimed "40 returned", actually 46 against a true 53).
+Since 2026-10-14 such a list also **settles by no rule** (`_at_prompt_cap`):
+not the 95% check, not two reads agreeing, not an image read at
+`extract.image_settle`, and while the field holds it a shorter read's list
+neither settles nor replaces it. It goes on to Sonnet, whose answer closes it,
+and the longer list is kept. Found in the Task 9 replay (doc 839: T1 returned
+150 of 184 printed codes, every one printed, and the check settled it). Every
+read is capped at 150 too, so on a document longer than the cap this buys a
+longer list only where a later read returns one; the flag stays when none does.
 
 **Calibration** (`calibrate`, `tiers.py:254-262`): `effective = raw *
 factor(model_id, field)`, clamped `[0,1]`; T0 (`model_id is None`) is never
