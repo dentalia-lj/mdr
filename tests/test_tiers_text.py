@@ -40,6 +40,13 @@ REF 003477 003478"""
 #: A scanned page in a page list.
 IMAGE = object()
 
+#: Page 2 of USTOMED's Wundhaken declaration (doc 520, Task 9 replay): the
+#: article list annexed to a scanned page 1. On its own it announces nothing.
+ARTICLE_LIST = """Anhang 1 Artikelliste_Wundhaken
+Item No. Item Description EU Risk-Class
+24-021-001 Fine retractor, 16 cm, 1 prong, sharp
+24-021-002 Fine retractor, 16 cm, 2 prongs, sharp"""
+
 
 def _png() -> bytes:
     pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 60, 80), False)
@@ -265,6 +272,101 @@ def test_t0_below_the_threshold_with_nothing_proving_it_stays_open(t0):
     _, fields, used = run(_doc(DOC_PAGE), llm)
     assert "T2-first" in used
     assert fields["manufacturer"]["value"] == "GC EUROPE N.V."     # never erased
+
+
+#: Page 1 of MELAG's Euroklav 29 VS+ declaration (doc 754, Task 9 replay): one
+#: product, named, and no article list.
+ONE_PRODUCT_PAGE = DOC_PAGE + "\nProduktname / Product name: Euroklav 29 VS+"
+
+
+@pytest.mark.parametrize("field, t1, settles", [
+    # doc 754: Haiku 5.5 read `manufacturer` at 0.6 and quoted the product name
+    ("coverage_scope", ("manufacturer", "Product name: Euroklav 29 VS+", 1, 0.6), False),
+    ("coverage_scope", ("group", "Product name: Euroklav 29 VS+", 1, 0.69), False),
+    ("coverage_scope", ("group", "Product name: Euroklav 29 VS+", 1, 0.7), True),
+    # the Komet RA_812 article lists of the eval: `other` at 0.5
+    ("type", ("other", "EU Declaration of Conformity", 1, 0.5), False),
+    ("type", ("DoC", "EU Declaration of Conformity", 1, 0.9), True),
+    # a literal field the text proves settles whatever the read's own number
+    ("regulation", ("MDR", "Regulation (EU) 2017/745", 1, 0.5), True),
+], ids=["754-manufacturer-0.6", "group-0.69", "group-0.70", "type-0.5", "type-0.9",
+        "literal-0.5"])
+def test_a_semantic_t1_read_under_the_agreement_floor_does_not_settle(t0, field, t1, settles):
+    """Task 9 replay, doc 754: a single-product declaration whose scope T1
+    read as `manufacturer` at 0.6, quoting the product name. The quote is on
+    the page, which was all a `type` or `coverage_scope` needed to settle, so
+    no other read was asked, and the scope sent the document to the
+    manufacturer binding route (production, after Sonnet: `group`). Under
+    `gate.agreement_min` a read can neither reach GATE's 0.75 nor be counted
+    in an agreement, and `T1-second` is not asked for it: settled there, the
+    field ends the ladder on the one read that said it was unsure. So such a
+    semantic read goes to the image read, which either agrees or not."""
+    t0(_only_open(field))
+    llm = TextLlm({"T1": {field: t1},
+                   "T2-first": {field: ("group", "Product name: Euroklav 29 VS+", 1, 0.8)
+                                if field == "coverage_scope" else DECLARATION},
+                   "T2": {}, "T1-second": {}})
+    _, fields, used = run(_doc(ONE_PRODUCT_PAGE), llm)
+    assert ("T2-first" not in used) is settles
+    if settles:
+        assert fields[field]["step"] == "T1"
+    else:
+        assert llm.asked("T2-first") == {field}
+        assert fields[field]["step"] == "T2-first"
+
+
+@pytest.mark.parametrize("pages, settles", [
+    ((IMAGE, ARTICLE_LIST), False),            # USTOMED 507: the scanned declaration first
+    ((ARTICLE_LIST, IMAGE), False),            # the scan second
+    ((ARTICLE_LIST, ARTICLE_LIST, IMAGE), True),   # pages 1-2 are text: T1 saw the header
+], ids=["image-page-1", "image-page-2", "image-page-3"])
+def test_a_type_t1_read_off_a_text_page_does_not_settle_when_page_1_or_2_is_scanned(
+        t0, pages, settles):
+    """Task 9 replay, USTOMED 507-530: page 1 is the scanned declaration, page 2
+    its article list as text. T0 could not type the file (0.6, the file name);
+    T1 read only the list and typed it `other`, quoting the list, which settled
+    the type. Where page 1 or 2 is a scanned page, a type read off the text is
+    not settled: the image read is asked, and it renders page 1."""
+    fields0 = _only_open("type")
+    fields0["type"] = t0ev("DoC", 0.6, "filename:Konformitätserklärung.pdf")
+    t0(fields0)
+    llm = TextLlm({"T1": {"type": ("other", "Anhang 1 Artikelliste_Wundhaken", None, 0.9)},
+                   "T2-first": {"type": ("DoC", "Konformitätserklärung", 1, 0.95)},
+                   "T2": {"type": ("DoC", "Konformitätserklärung", 1, 0.98)}})
+    page = next(n for n, p in enumerate(pages, start=1) if p is ARTICLE_LIST)
+    llm.answers["T1"]["type"] = ("other", "Anhang 1 Artikelliste_Wundhaken", page, 0.9)
+    _, fields, used = run(_doc(*pages), llm)
+    assert ("T2-first" not in used) is settles
+    if settles:
+        assert (fields["type"]["value"], fields["type"]["step"]) == ("other", "T1")
+    else:
+        assert "type" in llm.asked("T2-first")
+        assert 1 in (llm.options("T2-first") or {}).get("pages", (1,))
+        assert fields["type"]["value"] == "DoC"
+
+
+def test_a_mixed_pdf_regulation_proven_by_absence_asks_the_image_read(t0):
+    """Task 9 replay, USTOMED 507: the text layer (the article list) cites
+    nothing, which proved `n.a.`; the scanned page 1 prints 93/42."""
+    t0(_only_open("regulation"))
+    llm = TextLlm({"T1": {"regulation": ("n.a.", "no regulation cited", 2, 0.6)},
+                   "T2-first": {"regulation": ("MDD", "EG-Richtlinie 93/42/EWG", 1, 0.95)},
+                   "T2": {"regulation": ("MDD", "EG-Richtlinie 93/42/EWG", 1, 0.97)}})
+    _, fields, used = run(_doc(IMAGE, ARTICLE_LIST), llm)
+    assert "regulation" in llm.asked("T2-first")
+    assert fields["regulation"]["value"] == "MDD"
+
+
+def test_a_semantic_t1_read_under_the_floor_settles_by_agreement_with_the_image_read(t0):
+    """The floor asks the image read; it does not overrule it. Two reads that
+    agree settle the field, as ruling 4 has it, with no per-read minimum."""
+    t0(_only_open("coverage_scope"))
+    unsure = ("manufacturer", "Product name: Euroklav 29 VS+", 1, 0.6)
+    llm = TextLlm({"T1": {"coverage_scope": unsure}, "T2-first": {"coverage_scope": unsure},
+                   "T2": {}})
+    _, fields, used = run(_doc(ONE_PRODUCT_PAGE), llm)
+    assert used == ["T0", "T1", "T2-first"]
+    assert fields["coverage_scope"]["value"] == "manufacturer"
 
 
 # --- the cheap image read ----------------------------------------------------
@@ -789,12 +891,76 @@ def test_the_image_doc_class_refusal_is_terminal_on_text_too(t0):
     assert llm.calls == []
 
 
+@pytest.mark.parametrize("pages", [
+    (IMAGE, ARTICLE_LIST, ARTICLE_LIST),       # doc 520: a scanned declaration, a text annex
+    (ARTICLE_LIST, IMAGE, ARTICLE_LIST),       # the scanned page second
+], ids=["image-page-1", "image-page-2"])
+def test_a_scanned_page_among_pages_one_and_two_asks_the_image_doc_class_call(t0, pages):
+    """Task 9 replay, doc 520: page 1 is the scanned declaration and pages 2-3
+    its article list as text. The text call saw only the list and refused the
+    file, which is terminal; production had read it as a DoC with 39 REF codes.
+    An image page among pages 1-2 means the text call cannot see what the file
+    announces itself to be, so the images are asked, as on a scan."""
+    t0({}, doc_class="unknown")
+    llm = TextLlm({"T1": FAILED, "T2-first": FAILED, "T2": FAILED},
+                  text_class=NOT_A_DOCUMENT, image_class="DoC")
+    doc_class, fields, used = run(_doc(*pages), llm)
+    assert llm.classified == ["image"]
+    assert doc_class == "compliance-doc"
+    assert used[:3] == ["T0", "doc-class-image", "T1"]
+    assert (fields["type"]["value"], fields["type"]["step"]) == ("DoC", "doc-class-image")
+
+
+#: A text layer whose fonts map glyphs to arbitrary codes: a TÜV SÜD ISO 13485
+#: certificate's pages 1-2 as PyMuPDF reads them (D1393800015_S_sig.pdf, 9% letters).
+GARBLED = '!   " #$%&\'(\')*+, "   - .     / .   012324563789:;<88 =52>56?5@8AB8 BCBBD8'
+
+
+def test_an_unreadable_text_layer_asks_the_image_doc_class_call(t0):
+    """Doc-class check, 2026-10-13: 10 certificates production holds (ISO 13485,
+    MDSAP, a CE certificate) have text layers under 30% letters. Haiku 5.5
+    refused 8 of them ("unreadable binary/encoded content") where Haiku 4.5
+    had accepted all 10; their page images were read as what they are, 10 of
+    10. FILLER pads the page to a text layer: a sixth of it letters."""
+    t0({}, doc_class="unknown")
+    llm = TextLlm({"T1": FAILED, "T2-first": FAILED, "T2": FAILED},
+                  text_class=NOT_A_DOCUMENT, image_class="ISO")
+    doc = pymupdf.open()
+    page = doc.new_page()
+    for i in range(12):
+        page.insert_text((40, 60 + 16 * i), GARBLED, fontsize=9)
+    page.insert_text((40, 300), FILLER, fontsize=9)
+    doc_class, fields, used = run(doc, llm)
+    assert llm.classified == ["image"]
+    assert used[:2] == ["T0", "doc-class-image"]
+    assert fields["type"]["value"] == "ISO"
+
+
+@pytest.mark.parametrize("letters, kind", [(0.29, "image"), (0.31, "text")])
+def test_the_unreadable_cut_is_thirty_percent_letters(letters, kind):
+    n = 1000
+    text = "a" * int(n * letters) + "#" * (n - int(n * letters))
+    assert tiers._unreadable(text) is (kind == "image")
+
+
 def test_text_on_pages_one_and_two_keeps_the_text_call(t0):
+    """A scanned page after page 2 does not change what the text call sees."""
     t0({}, doc_class="unknown")
     llm = TextLlm({"T1": FAILED, "T2-first": FAILED, "T2": FAILED},
                   text_class="DoC", image_class="EC")
-    run(_doc(DOC_PAGE, IMAGE), llm)
+    run(_doc(DOC_PAGE, DOC_PAGE, IMAGE), llm)
     assert llm.classified == ["text"]
+
+
+def test_a_type_t0_holds_skips_the_doc_class_call_whatever_the_pages(t0):
+    """Only a file T0 could not type is asked: an image page 1 changes nothing
+    for a `compliance-doc`."""
+    t0(_only_open("cert_number"), doc_class="compliance-doc")
+    llm = TextLlm({"T1": FAILED, "T2-first": FAILED, "T2": FAILED},
+                  text_class=NOT_A_DOCUMENT, image_class=NOT_A_DOCUMENT)
+    doc_class, _, used = run(_doc(IMAGE, DOC_PAGE), llm)
+    assert llm.classified == []
+    assert (doc_class, used[:2]) == ("compliance-doc", ["T0", "T1"])
 
 
 def test_a_client_without_an_image_classifier_keeps_the_text_call(t0):
@@ -891,18 +1057,23 @@ def test_hints_go_to_the_second_read_too(t0):
 BOTH_CITED = DOC_PAGE + "\nreplaces Directive 93/42/EEC"
 
 
-@pytest.mark.parametrize("pages, proven, asked", [
-    ((DOC_PAGE,), True, None),              # only 2017/745 printed: proven, no second read
-    ((DOC_PAGE, IMAGE), False, {"regulation"}),   # a scanned page may print 93/42
+@pytest.mark.parametrize("pages, proven, image_asked", [
+    ((DOC_PAGE,), True, None),              # only 2017/745 printed: proven, no other read
+    # A scanned page may print 93/42: the text proves nothing (Task 9 replay), so
+    # the image read is asked, and its agreement confirms the value instead.
+    ((DOC_PAGE, IMAGE), False, {"regulation"}),
 ], ids=["citation", "mixed-pdf"])
 def test_a_regulation_its_one_printed_citation_proves_needs_no_second_read(
-        t0, pages, proven, asked):
+        t0, pages, proven, image_asked):
     t0(_only_open("regulation"))
     llm = TextLlm({"T1": {"regulation": ("MDR", "Regulation (EU) 2017/745")},
+                   "T2-first": {"regulation": ("MDR", "Regulation (EU) 2017/745", 1, 0.85)},
                    "T1-second": {"regulation": ("MDR", "Regulation (EU) 2017/745", 1, 0.95)}})
     _, fields, _ = run(_doc(*pages), llm)
     assert (fields["regulation"].get("proven") == "citation") is proven
-    assert llm.asked("T1-second") == asked
+    assert llm.asked("T2-first") == image_asked
+    assert llm.asked("T1-second") is None
+    assert fields["regulation"]["value"] == "MDR"
 
 
 def test_a_regulation_with_both_citations_printed_is_never_proven(t0):
@@ -978,12 +1149,14 @@ def test_sonnet_agreeing_with_an_unverified_t1_is_stored(t0):
 
 
 @pytest.mark.parametrize("answers, stored", [
-    # one read, verified, under the floor
-    ({"T1": {"type": ("DoC", "EU Declaration of Conformity", 1, 0.6)}}, ("T1", 0.6)),
+    # two verified reads agree, both under the floor (T1 alone under it no
+    # longer settles a semantic field: it asks the image read, Task 9 replay)
+    ({"T1": {"type": ("DoC", "EU Declaration of Conformity", 1, 0.6)},
+      "T2-first": {"type": ("DoC", "EU Declaration of Conformity", 1, 0.6)}}, ("T1", 0.6)),
     # the verified read stored is the less sure one, 0.5: no read can raise it
     ({"T1": {"type": ("DoC", "a declaration elsewhere", 1, 0.9)},
       "T2-first": {"type": ("DoC", "EU Declaration of Conformity", 1, 0.5)}}, ("T2-first", 0.5)),
-], ids=["one-read", "verified-but-unsure"])
+], ids=["agreeing-under-the-floor", "verified-but-unsure"])
 def test_no_second_read_for_a_stored_read_under_the_floor(t0, answers, stored):
     """Review 2026-10-13, F4: GATE combines only when each read is at least
     `gate.agreement_min`, and the stored read's own number is one of the two.

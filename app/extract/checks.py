@@ -12,7 +12,9 @@ proven", never "wrong". The semantic fields (`type`, `coverage_scope`) settle
 on a quote found on the cited page, as the measured route did (Denis,
 2026-10-12): the text cannot prove a classification, but a read that quotes the
 page for it needs no second read to stop the ladder. The gate still asks for
-T0 or two agreeing reads before production (task 5).
+T0 or two agreeing reads before production (task 5). The text ladder takes that
+quote only from a read at least `gate.agreement_min` sure (`tiers._text_settles`,
+Task 9 replay, 2026-10-13); `settled` itself does not look at confidence.
 
 Two helpers decide an EMPTY field, and they answer different questions:
 `null_settled` (one read is empty and the text could not hold the field) and
@@ -179,6 +181,13 @@ def settled(field_name: str, evidence: dict | None, ctx: Ctx) -> bool:
     full_c = ctx.text_c
 
     if field_name == "regulation":
+        # Every value this accepts rests on what is NOT printed (`n.a.`:
+        # neither citation; MDR or MDD: not the other one), so it holds only
+        # where the text covers the whole document. Task 9 replay: a scanned
+        # declaration on page 1 with its article list as text proved `n.a.`
+        # while the scan printed 93/42 (USTOMED, RTD, ZHERMACK).
+        if not _text_covers_document(ctx):
+            return False
         mdr, mdd = "2017/745" in full_c, "93/42" in full_c
         return {"mdr": mdr and not mdd, "mdd": mdd and not mdr,
                 "n.a.": not (mdr or mdd)}.get(str(v).strip().casefold(), False)
@@ -205,6 +214,16 @@ def settled(field_name: str, evidence: dict | None, ctx: Ctx) -> bool:
 
 def _classes_known(ctx: Ctx) -> bool:
     return bool(ctx.classes) and len(ctx.classes) == len(ctx.pages)
+
+
+def _text_covers_document(ctx: Ctx) -> bool:
+    """The text the check reads is the whole document: not cut, no page left
+    unread, no scanned (image) page, and some page with a text layer (an OCR
+    layer and a sparse page are read as text, as `citation_proven` reads
+    them). Fails closed when the page classes are missing or do not match."""
+    return (not ctx.truncated and not ctx.unread_pages and _classes_known(ctx)
+            and "image" not in ctx.classes
+            and any(c in TEXT_BEARING for c in ctx.classes))
 
 
 def null_settled(field_name: str, ctx: Ctx) -> bool:

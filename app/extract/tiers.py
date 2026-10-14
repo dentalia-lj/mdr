@@ -551,6 +551,26 @@ FOLLOWS_KEY, FOLLOWS_TYPE = "follows", "type"
 _SCOPE_FROM_TYPE = ("EC", "ISO", "IFU")
 
 
+#: Under this share of letters among its printed characters, a text layer is
+#: not text a reader can use (`_unreadable`). Measured 2026-10-13 on the 398
+#: files T0 leaves `unknown` that reach the text doc-class call (production's
+#: and the local fetch history's): 16 fall under it, every one a compliance
+#: document whose fonts map glyphs to arbitrary codes (10 certificates
+#: production holds; the next file up, a manual, is at 0.32); the first file
+#: that is not one is a Komet article list at 0.38, and no file labelled not
+#: a compliance document is under 0.4.
+UNREADABLE_LETTER_SHARE = 0.3
+
+
+def _unreadable(text: str) -> bool:
+    """Fewer than `UNREADABLE_LETTER_SHARE` of the non-space characters are
+    letters. Haiku 5.5 refuses such a file as "unreadable binary/encoded
+    content", which is terminal; its page images read as what they are (10 of
+    10 certificates, doc-class check 2026-10-13)."""
+    chars = [c for c in text if not c.isspace()]
+    return bool(chars) and sum(c.isalpha() for c in chars) < UNREADABLE_LETTER_SHARE * len(chars)
+
+
 class Deferred(Exception):
     """A batch read has not finished: the batch transport stops the ladder (text
     or scan) at this step and defers its job (`app/handlers/extract.py`). The
@@ -640,9 +660,10 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     rule here.
 
     1. `unknown` to T0: the doc-class call on the page 1-2 text (`doc-class`),
-       or, when pages 1-2 hold no text (a mixed PDF that opens with scanned
-       pages), on their images (`classify_image`, `doc-class-image`, review
-       2026-10-13). A refusal (`not-a-compliance-document`) is terminal.
+       or, when pages 1-2 hold no text, one of them is a scanned page (a mixed
+       PDF; Task 9 replay, doc 520) or their text layer is not text
+       (`_unreadable`), on their images (`classify_image`, `doc-class-image`).
+       A refusal (`not-a-compliance-document`) is terminal.
     2. `T1` (`models.t1`) on the whole text (`pdf.bounded_text`), asked every
        pursued field T0 does not hold at the threshold (`_text_pursued`: the
        IFU and manufacturer-scope suppressions of `needs_escalation`). A field
@@ -702,12 +723,18 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
     # everything else comes here for a real answer, including
     # `not-a-compliance-document`, which is terminal. The call is logged under
     # its own label (`doc-class`, until 2026-10-12 `T1`).
-    # Pages 1-2 with no text: the text call would see nothing and refuse the
-    # file without a call, so their images are asked, as on a scan. A client
-    # with no image call keeps the text call (and its refusal), as before.
+    # Pages 1-2 with no text, with a scanned page among them, or with a text
+    # layer that is not text (`_unreadable`): the text call would see nothing,
+    # only what is not scanned, or noise, so their images are asked, as on a
+    # scan. Task 9 replay, doc 520 (USTOMED): page 1 is the scanned
+    # declaration and page 2 its article list as text; the text call read the
+    # list alone and refused the file for good. A client with no image call
+    # keeps the text call (and its refusal), as before.
     if doc_class == "unknown" and classify_image is not None:
-        from app.extract.llm import doc_class_text   # `llm` imports this module
-        if not doc_class_text(doc):
+        from app.extract.llm import DOC_CLASS_PAGES, doc_class_text   # `llm` imports this module
+        header = doc_class_text(doc)
+        if (not header or _unreadable(header)
+                or "image" in pdfutil.page_classes(doc)[:DOC_CLASS_PAGES]):
             classify, label, tier = classify_image, DOC_CLASS_IMAGE, "T2"
         else:
             label, tier = DOC_CLASS_TEXT, "T1"
@@ -753,10 +780,11 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
 
     t1 = _read_step(read, used, reads, TEXT_READ, open_fields)
     fields = merge(fields, _asked(t1, open_fields), ctx=text_ctx)
-    known |= {f for f in open_fields if _text_settles(f, fields, t1, text_ctx)}
+    known |= {f for f in open_fields
+              if _text_settles(f, fields, t1, text_ctx, agreement_min)}
     _scope_from_type(fields, known)
     _drop_ifu_certificate_reads(fields, known, t0, threshold)
-    fields = _from_t1(fields, known, t1, reads, text_ctx)
+    fields = _from_t1(fields, known, t1, reads, text_ctx, agreement_min)
 
     def choose(wanted):
         return (_image_pages(doc.page_count, wanted, t1, pages, image_pages)
@@ -775,7 +803,7 @@ def run_text_ladder(doc, filename: str, doc_class: str, fields: dict, used: list
                                          image_pages, image_settle)}
         _scope_from_type(fields, known)
         _drop_ifu_certificate_reads(fields, known, t0, threshold)
-        fields = _from_t1(fields, known, t1, reads, text_ctx)
+        fields = _from_t1(fields, known, t1, reads, text_ctx, agreement_min)
 
     open_fields = _text_pursued(fields, known)
     if open_fields:
@@ -967,7 +995,8 @@ def _text_pursued(fields: dict, known: set[str]) -> list[str]:
         (fields.get("coverage_scope") or {}).get("value") == "manufacturer"))
 
 
-def _text_settles(f: str, fields: dict, answer: dict, ctx) -> bool:
+def _text_settles(f: str, fields: dict, answer: dict, ctx,
+                  floor: float = AGREEMENT_MIN) -> bool:
     """Step 2 of `run_text_ladder` for one field, after T1: the value the field
     holds is proven by the text; or T1 ANSWERED the field empty, the field
     holds nothing, and the null rule holds. A field missing from T1's answer
@@ -980,8 +1009,30 @@ def _text_settles(f: str, fields: dict, answer: dict, ctx) -> bool:
     different value T1 read: then the two disagree and the image read decides.
     Measured on the eval: Ceramill's T0 read the word after its UDI label
     ("Document", unscorable, 0.9) and T1 the OCR layer's invalid code; the
-    image read's check-valid code settles it."""
+    image read's check-valid code settles it.
+
+    A `type` or `coverage_scope` (`checks.SEMANTIC_FIELDS`) settles on its
+    quote only when the value it holds is at least `floor`
+    (`gate.agreement_min`; Task 9 replay, 2026-10-13). A quote on the page
+    proves the read looked at the page, not that the class follows from it:
+    doc 754, a single-product declaration, was read `manufacturer` at 0.6 on
+    the quote "Product name: Euroklav 29 VS+". Under the floor GATE can
+    neither pass the read (0.75) nor count it in an agreement, and
+    `_to_confirm` asks no second read for it, so settled there the field
+    would end the ladder on the one read that said it was unsure. The image
+    read is asked instead and settles it as step 4 does (agreeing included).
+
+    Nor does a `type` T1 read when page 1 or 2 is a scanned page (Task 9
+    replay, 2026-10-13). T0 did not type the file at the threshold, or the
+    type would not be asked, so what announces it is on a page T1 never saw:
+    USTOMED's declarations scan page 1 and print only the article list as
+    text, and T1 typed them `other` quoting the list. The image read renders
+    the scanned page (`_image_pages`)."""
     ev = fields.get(f)
+    if f in checks.SEMANTIC_FIELDS and not _is_blank(ev) and _conf(ev) < floor:
+        return False
+    if f == "type" and "image" in ctx.classes[:t0_keys._HEADER_PAGES]:
+        return False
     if _proven(f, fields, answer.get(f), ctx):
         return True
     return (f in answer and _is_blank(answer[f]) and _is_blank(ev)
@@ -1013,19 +1064,20 @@ def _proven(f: str, fields: dict, own: dict | None, ctx) -> bool:
     return False
 
 
-def _from_t1(fields: dict, known: set[str], t1: dict, reads: dict, ctx) -> dict:
+def _from_t1(fields: dict, known: set[str], t1: dict, reads: dict, ctx,
+             floor: float = AGREEMENT_MIN) -> dict:
     """Fields pursued only now, after a read changed the scope or the type:
     T1 answered them anyway (its response carries every field), so they take
-    T1's answer and settle as T1's asked fields do, before any image read is
-    asked them. Recorded as T1's, so the record and the disagreement count see
-    them. Returns the merged fields."""
+    T1's answer and settle as T1's asked fields do (`_text_settles`, `floor`
+    included), before any image read is asked them. Recorded as T1's, so the
+    record and the disagreement count see them. Returns the merged fields."""
     asked = reads.get(TEXT_READ, ([], {}))[0]
     pulled = [f for f in _text_pursued(fields, known) if f not in asked and f in t1]
     if not pulled:
         return fields
     asked.extend(pulled)
     fields = merge(fields, _asked(t1, pulled), ctx=ctx)
-    known |= {f for f in pulled if _text_settles(f, fields, t1, ctx)}
+    known |= {f for f in pulled if _text_settles(f, fields, t1, ctx, floor)}
     _scope_from_type(fields, known)
     return fields
 

@@ -101,9 +101,23 @@ Task 4). Steps and labels from `llm.READ_STEPS`:
 1. T0 left the file `unknown`: the doc-class call on the page 1-2 text
    (`classify`, `doc-class`, `models.t1`, thinking off, 256 tokens). When pages
    1-2 hold no text (a mixed PDF that opens with scanned pages; the review of
-   2026-10-13 found 2 real compliance documents like this in the mirror), their
-   images are asked instead (`classify_image`, `doc-class-image`), as on a scan;
-   a client with no image call keeps the old refusal without a call.
+   2026-10-13 found 2 real compliance documents like this in the mirror), or
+   one of them is a scanned page (`pdf.page_classes` `image`; Task 9 replay,
+   doc 520: a scanned USTOMED declaration on page 1, its article list as text
+   on pages 2-3, which the text call read alone and refused for good), or
+   their text layer is under 30% letters (`tiers._unreadable`: fonts that map
+   glyphs to arbitrary codes; 10 ISO 13485, MDSAP and CE certificates
+   production holds, 8 of which Haiku 5.5 refused as "unreadable", and their
+   images read as what they are), their images are asked instead (`classify_image`,
+   `doc-class-image`), as on a scan; a client with no image call keeps the
+   old refusal without a call. On the SFTP mirror (2026-10-13) this moves 4 of
+   the 22 PDFs T0 leaves `unknown` with a text page to the image call (Dentsply
+   files whose page 2 is scanned) and the 30% cut none; of the 104 text files
+   production sent through the call, 11 (the image call accepted all 11, one
+   of them a declaration production had refused) and the cut 10 (accepted, 10
+   of 10). The
+   doc-class prompt names user manuals, operating, processing and
+   reprocessing instructions as `IFU` (doc-class check 2026-10-13, below).
    `not-a-compliance-document` is terminal. The answer becomes `type` evidence
    (step `doc-class` or `doc-class-image`, ranked below every field read). Batch
    mode makes the same calls since Task 4 (it made none before, so an `unknown`
@@ -127,7 +141,31 @@ Task 4). Steps and labels from `llm.READ_STEPS`:
    replaced (review round 2): it fails the check only where its codes sit in a
    companion annex (Komet's RA_812 list beside the RA_810 declaration, 63 of 63
    on the mirror), and a read's passing list then settles the field with T0's
-   list kept. T0 at 0.95 is never asked.
+   list kept. T0 at 0.95 is never asked. A `type` or `coverage_scope` settles
+   on its quote only when the value it holds is at least `gate.agreement_min`
+   (`_text_settles`, Task 9 replay 2026-10-13): doc 754, a single-product
+   declaration, was read `manufacturer` at 0.6 on the quote "Product name:
+   Euroklav 29 VS+", settled, and sent to the manufacturer binding route. A
+   quote on the page shows the read looked at the page, not that the class
+   follows; under the floor GATE cannot pass the read or count it in an
+   agreement and no `T1-second` is asked, so the image read is asked instead.
+   On the Task 8 eval this asks 4 of 79 text documents one more image read
+   (two scopes at 0.55-0.6, two Komet article lists typed `other` at 0.5),
+   on the Task 9 replay 1 of the 48 text documents it finished (doc 754); no T1 semantic read fell between
+   0.70 and 0.85 on either set. A `type` T1 read does not settle at all when
+   page 1 or 2 is a scanned page (T0 not holding the type at 0.95, or it
+   would not be asked): what announces the document is on a page T1 never
+   saw. Task 9 replay, USTOMED 507-530: page 1 is the scanned declaration and
+   T1 typed the article list `other`. The image read is asked, and renders
+   the scanned page. A `regulation` is proven by its citation only where the
+   text covers the whole document (`checks.settled`, as `citation_proven`):
+   every value the check accepts rests on what is NOT printed, and on the
+   same documents the article list proved `n.a.` while the scan printed
+   93/42. Re-checked from the Task 9 cache on its 22 mixed PDFs: every one
+   now asks the image read for `regulation` (and for `type` on the 10
+   USTOMED declarations); the values those reads give are not in the cache.
+   On the Task 8 eval 1 of 79 text documents (Calibra, a scanned page 2)
+   asks the image read for `regulation`.
 3. Fields pursued only after T1 (a scope T1 changed from `manufacturer` brings
    the item identifiers in) are taken from T1's answer, which carries every
    field, and settle as in step 2; recorded as T1's.
@@ -660,15 +698,34 @@ schema enforces it.
   row parse in that container on 2026-08-27; see `docs/dev/web.md` Gotchas
   for the user-visible failure. `tiers.py:29` re-exports `TARGET` so
   `tiers.TARGET` still works for the extractor's own callers.
+- **A device's user manual is an `IFU` to the doc-class call, and it was not
+  until 2026-10-13.** `prompts/doc_class.md` listed "an operation manual or
+  user guide" as not a compliance document. Haiku 4.5 ignored that about half
+  the time; Haiku 5.5 obeys it, and a refusal is terminal (Task 9 replay:
+  MIYO processing instructions, doc 503, and the RAYFace user manual, doc
+  1130, both stored as IFUs). Measured on 301 files T0 leaves `unknown`
+  (production's doc-class traffic and web-fetched files from the local fetch
+  history, hand-labelled; `tools/doc_class_check.py`, `eval/doc-class-check/
+  20261013T203817`): false refusals of 165 compliance documents 108 as built,
+  76 with adaptive thinking, 26 for Haiku 4.5 as production recorded it, and
+  13 with the prompt naming user manuals, operating, processing and
+  reprocessing instructions as `IFU` (thinking off; 12 with adaptive
+  thinking, not worth its tokens); false acceptances of 92 other files 10,
+  8, 10 and 10. The same prompt on the image call (51 files whose route the
+  scanned-page rule changed): 13 false refusals of 29 before, 0 after, 0
+  false acceptances of 21. Of the 13 left, 9 are text layers under the 30%
+  cut, which `_unreadable` now sends to the image call (the 8 measured there
+  were accepted). Service, repair and
+  installation manuals for technicians stay out.
 
 ## Tests
 
 | File | Pins |
 |---|---|
 | `tests/test_tiers.py` | Escalation gating, `merge`/shrink-guard, two agreeing reads in `merge` (a verified one first, then the surer; with no text, the surer; T0 and the doc-class answer are not reads), `GATE_FIELDS` equal to GATE's, `next_extract_rev` past evidence revs, `run_extraction`, `test_a_scan_takes_the_image_ladder_and_never_a_text_read` |
-| `tests/test_tiers_text.py` | The text ladder: T0 settled fields never asked, what the text proves after T1, T1's empty answer and the null rule (labels, image pages, truncation), a failed read, T0 under 0.95, the image read's check / check-valid UDI / agreement / both empty, Sonnet prevailing and closing, the two suppressions, T1's pool, type to scope, the page choice, the reads record, hints, the text doc-class call, `T1-second` (agrees / disagrees / empty / failed, one call, what is not asked, a stored read under the floor, citation proof, an agreement under the floor, the verified read stored, Sonnet as the agreeing read or the stored one, the `asked` guard, a confirming read stored by ruling D1 and the scope following the type it took), the type-derived scope marked, a page where an annotation paints an image (unread to T1, rendered by the image read, two empty reads, batch past page 4, no citation proof; VOCO Ceramic Bond and LUMIWHITE themselves), a value only an image shows (settles well-formed at `image_settle`: 0.85 settles, 0.84, a non-ISO date or a text page's cite do not, the configured value is used, a scanned page of a mixed PDF too, never a UDI the text labels) |
+| `tests/test_tiers_text.py` | The text ladder: T0 settled fields never asked, what the text proves after T1, T1's empty answer and the null rule (labels, image pages, truncation), a failed read, T0 under 0.95, the image read's check / check-valid UDI / agreement / both empty, Sonnet prevailing and closing, the two suppressions, T1's pool, type to scope, the page choice, the reads record, hints, the text doc-class call, `T1-second` (agrees / disagrees / empty / failed, one call, what is not asked, a stored read under the floor, citation proof, an agreement under the floor, the verified read stored, Sonnet as the agreeing read or the stored one, the `asked` guard, a confirming read stored by ruling D1 and the scope following the type it took), the type-derived scope marked, a page where an annotation paints an image (unread to T1, rendered by the image read, two empty reads, batch past page 4, no citation proof; VOCO Ceramic Bond and LUMIWHITE themselves), a value only an image shows (settles well-formed at `image_settle`: 0.85 settles, 0.84, a non-ISO date or a text page's cite do not, the configured value is used, a scanned page of a mixed PDF too, never a UDI the text labels), the image doc-class route (a scanned page or an unreadable text layer among pages 1-2), a semantic T1 read under `gate.agreement_min`, a mixed PDF's `type` and `regulation` |
 | `tests/test_tiers_scan.py` | The scan ladder: routing (a mixed PDF stays text), the image doc-class call, 1/3/6-page scans and `pages-unread`, settle at 0.85, agreement at 0.70, both-null except the UDI, failed reads (never an empty answer, counted), type to scope, Sonnet only for what is open and its empty answer closing a field, the reads record, disagreements, `merge` by strength, `T2-second` confirming the gate fields (one call, its value never stored, never sent on, the surer of two agreeing reads stored, the derived scope following a type it took, no citation proof on a scan), the type-derived scope marked (an IFU's too) |
-| `tests/test_checks.py` | `checks.py`: the text checks, page classes (a scan with a short overlay is an image page), `citation_proven` (also over real documents), and the scan shape / agreement checks |
+| `tests/test_checks.py` | `checks.py`: the text checks (a regulation never proven by absence over a scanned, unread or cut page), page classes (a scan with a short overlay is an image page), `citation_proven` (also over real documents), and the scan shape / agreement checks |
 | `tests/test_tiers_corpus.py` | Ladder behaviour against the seed corpus |
 | `tests/test_t0.py`, `tests/test_t0_corpus.py` | `t0_templates.py` classification and field extraction |
 | `tests/test_t0_layout.py` | The layout-template engine (`t0_layout.py`) |

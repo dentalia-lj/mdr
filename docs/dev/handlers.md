@@ -260,7 +260,10 @@ the full text, which is how a site menu became an `IFU` at confidence 1.00.
 Anything still `unknown` goes to a cheap doc-class call (`AnthropicLlm.classify`,
 `models.t1`, thinking off since `models.t1` moved to Haiku 5.5 on 2026-10-12,
 batch mode included; on the page 1-2 images when those pages hold no text, since
-2026-10-13) which may answer `not-a-compliance-document`; that answer is
+2026-10-13, and also when one of them is a scanned page or their text layer is
+under 30% letters, since the Task 9 replay the same day) which may answer
+`not-a-compliance-document`; a device's user manual, operating, processing or
+reprocessing instructions count as `IFU` (`prompts/doc_class.md`). That answer is
 terminal and suppresses the `validate.doc` emit. A scan (no text page) is asked
 the same question on its page 1-2 images instead (`classify_image`,
 `doc-class-image`, `models.vision_first`, since 2026-10-12): the text call found
