@@ -1,5 +1,8 @@
 {
   "manufacturer": "DETAX",
+  "aliases": [
+    "detax GmbH"
+  ],
   "bc_codes": [
     {
       "code": "164"

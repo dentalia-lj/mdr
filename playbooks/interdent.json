@@ -1,6 +1,8 @@
 {
   "manufacturer": "INTERDENT",
-  "aliases": [],
+  "aliases": [
+    "INTERDENT d.o.o."
+  ],
   "bc_codes": [
     {
       "catalogue": "LJ",

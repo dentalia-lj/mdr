@@ -494,6 +494,19 @@ def test_shipped_playbooks_are_valid():
     playbooks.validate(loaded)
 
 
+def test_shipped_playbooks_repeat_no_key():
+    """JSON keeps the last of two equal keys without a word, so a second
+    `"aliases": []` under an edited one silently empties it (found
+    2026-10-14 adding aliases by script)."""
+    def refuse_repeats(pairs):
+        keys = [k for k, _ in pairs]
+        assert len(keys) == len(set(keys)), f"repeated key in {keys}"
+        return dict(pairs)
+
+    for f in sorted(playbooks.PLAYBOOKS_DIR.glob("*.json")):
+        json.loads(f.read_text(), object_pairs_hook=refuse_repeats)
+
+
 def test_ustomed_answers_to_the_legal_name_without_the_brand():
     """Task 9 replay: the image read of USTOMED's scanned declarations (512,
     514, 519, 526) gives the legal name alone; with no alias for it VALIDATE
