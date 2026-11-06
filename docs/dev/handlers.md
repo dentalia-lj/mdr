@@ -19,7 +19,7 @@ never clobber a real handler.
 
 | Tag | Entry point | Emits | Tests |
 |---|---|---|---|
-| `ingest.run` | `handlers/ingest.py:118` | `resolve.group` | `test_ingest_handler.py` |
+| `ingest.run` | `handlers/ingest.py:121` | `resolve.group` | `test_ingest_handler.py` |
 | `resolve.group` | `handlers/resolve.py:278` | `discover.group` | `test_resolve_handler.py` |
 | `discover.group` | `handlers/discover.py:908` | `fetch.url` ×k, `email.request`, `validate.doc` | `test_discover_handler.py` |
 | `fetch.url` | `handlers/fetch.py:145` | `extract.doc` or `validate.doc`, **or nothing** when the body is not a document | `test_fetch_handler.py` |
@@ -49,10 +49,10 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 **emits** (with dedupe key), **fails how**, **note**.
 
 ### `ingest.run`
-- consumes: `source`, `ref.upload_id` (upload source only), `catalogue`, `dry_run?`; priority from `job`, not payload (`ingest.py:122`)
-- writes: `item_mirror` (`ingest.py:73-89`)
-- emits: `resolve.group` per changed item, `resolve:{item_ref}:{rev}`, suppressed when `dry_run`
-- fails how: generic. Bad rows are counted, not raised (`_skip`, `ingest.py:143`)
+- consumes: `source`, `ref.upload_id` (upload source only), `catalogue`, `dry_run?`; priority from `job`, not payload (`ingest.py:125`)
+- writes: `item_mirror` (`ingest.py:76-92`)
+- emits: `resolve.group` per changed item, `resolve:{item_ref}:{rev}`, suppressed when `dry_run`; never for an `NI MP` item, which is mirrored with `md_flag=FALSE` and not grouped (2026-11-06)
+- fails how: generic. Bad rows are counted, not raised (`_skip`, `ingest.py:158`)
 - note: the two-phase preview/apply path reads `import_inbox` and leaves the row; only apply consumes it
 
 ### `resolve.group`

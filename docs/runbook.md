@@ -738,9 +738,9 @@ zero:
 | Count | What it means |
 |---|---|
 | `seen` | Rows read from the export that reached the MD gate |
-| `changed` | Rows whose mirrored values actually differ — the only ones that bump `mirror_rev` and emit `resolve.group` |
+| `changed` | Rows whose mirrored values actually differ — the only ones that bump `mirror_rev`. A medical-device or unclassified row also emits `resolve.group`; a non-MD row never does |
 | `unchanged` | Rows already mirrored identically; no job emitted (invariant 6 in the catalogue) |
-| `non_md` | Explicitly non-MD rows. A brand-new one is not mirrored at all |
+| `non_md` | Explicitly non-MD rows (`NI MP`). Mirrored with `md_flag=FALSE` since 2026-11-06 (they were dropped before), never grouped; a person links their documents through the item picker |
 | `reclassified_non_md` | Was MD, BC has declassified it: the mirror row is corrected to `md_flag=FALSE` so mfr-scope consumers stop treating it as a device |
 | `md_unknown` | Blank device class. Counted whether or not `process_md_unknown` lets it through — it is a fact about the export, not about our config |
 | `missing_mfr_ref` | Processed rows with no supplier article number. This rate bounds achievable AC1; it is descriptive, never a target |
@@ -812,7 +812,9 @@ the URL (job 23736, dead on all five attempts).
   against the 2026-09-25 export. A
   four-figure number means BC changed something in bulk (798 on the
   first apply, 2026-10-06, was the backlog since the export), or the API changed
-  meaning under us. Stop and look before applying.
+  meaning under us. Stop and look before applying. **Expected once:** the first
+  sync after non-MD items started being mirrored (2026-11-06) adds every `NI MP`
+  item, about 3.560, so `changed` is roughly `non_md` higher that one time.
 
 ```bash
 # 3. Apply: the same job without dry_run.

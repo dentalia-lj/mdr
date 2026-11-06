@@ -110,7 +110,7 @@ ingest.run → resolve.group → discover.group → fetch.url → extract.doc �
 | **Produced by** | SCHEDULER (monthly delta), operator (manual run, sweep) |
 | **Adapter** | `CsvExportAdapter` (v1, path) / `UploadExportAdapter` (v1, spooled bytes) / `BcApiAdapter` (v2, OData). Config-switched; identical output contract — the path and bytes readers share one `_read_frame`, so they cannot drift. |
 | **Logic** | Parse → normalize `{item_ref, name, manufacturer_raw, mfr_ref, md_flag, product_class, udi}` → diff against `item_mirror` → upsert. |
-| **Emits** | `resolve.group` per **new or changed** item only. dedupe_key: `resolve:{item_ref}:{mirror_rev}` |
+| **Emits** | `resolve.group` per **new or changed** item only, and never for an explicitly non-MD item (`NI MP`, `md_flag=FALSE`). dedupe_key: `resolve:{item_ref}:{mirror_rev}` *(Amended 2026-11-06, client: the registry also holds documents for items that are not medical devices. A non-MD item is now **mirrored** with `md_flag=FALSE`, where it used to be dropped, so the item picker can link its documents; it is still never grouped, so nothing searches for them. Every MD-only reader filters `md_flag IS TRUE`, and a whole-range binding still links MD items only.)* |
 | **Writes** | `item_mirror` (full row + source revision) |
 | **Failure path** | Unparseable file / auth failure → job `failed` → retry → `dead`. Row-level anomalies (missing item_ref, garbage encoding) → skipped-row report attached to job result, never silent. |
 | **AI** | None. |
