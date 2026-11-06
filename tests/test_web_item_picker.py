@@ -292,3 +292,48 @@ def test_the_panel_says_the_date_is_needed(client, conn):
     doc_id = _doc(conn, "web-fact", issued=None)
     conn.commit()
     assert "Not stated. Enter it before approving." in _text(client.get(f"/staging/{doc_id}/detail").text)
+
+
+def _bc_brands(conn, canonical, codes_names):
+    """The Chemichl shape: one legal entity owning BC codes whose BC names are
+    brand labels (10127 MIYO, 10128 JENSEN)."""
+    mid = conn.execute("INSERT INTO manufacturer (canonical_name) VALUES (%s) "
+                       "ON CONFLICT (canonical_name) DO UPDATE SET canonical_name=EXCLUDED.canonical_name "
+                       "RETURNING id", (canonical,)).fetchone()["id"]
+    for code, name in codes_names:
+        conn.execute("INSERT INTO vendor_master (code_source, code, name, import_batch) "
+                     "VALUES ('LJ',%s,%s,'t')", (code, name))
+        conn.execute("INSERT INTO manufacturer_bc_code (code_source, code, manufacturer_id, source) "
+                     "VALUES ('LJ',%s,%s,'playbook')", (code, mid))
+        conn.execute("INSERT INTO manufacturer_alias (raw_name, canonical_name, source) "
+                     "VALUES (%s,%s,'playbook') ON CONFLICT (raw_name) DO NOTHING", (code, canonical))
+        _item(conn, f"{code}-1", f"{name} ITEM", raw=code)
+
+
+def test_the_item_picker_names_the_bc_brands_of_a_legal_manufacturer(client, conn):
+    """Natasa, 2026-11-05: MIYO / JENSEN were "not selectable" because the list
+    shows only the legal name, Chemichl AG. The BC names ride along in the
+    label (which the select filter searches); the value stays the legal name."""
+    _bc_brands(conn, "Chemichl AG", [("10127", "MIYO"), ("10128", "JENSEN")])
+    _mfr(conn)                                    # STRAUMANN: no BC name differs
+    _item(conn, "010.6042", "NC VARIOBASE")
+    doc_id = _doc(conn, "brands", canonical=None)
+    conn.commit()
+    body = client.get(f"/picker/{doc_id}").text
+    assert re.search(r'<option value="Chemichl AG">\s*Chemichl AG · BC: JENSEN, MIYO\s*</option>', body)
+    assert re.search(rf'<option value="{M}">\s*{M}\s*</option>', body)
+
+
+def test_the_whole_range_picker_finds_a_manufacturer_by_its_bc_name(client, conn):
+    from tests.fixtures import seed_ui
+
+    _bc_brands(conn, "Chemichl AG", [("10127", "MIYO"), ("10128", "JENSEN")])
+    doc_id = seed_ui.seed_document(
+        conn, content_hash="h-brands-range", archive_url="/archive/h-brands-range.pdf",
+        doc_type="EC", regulation="MDR", coverage_scope="manufacturer")
+    seed_ui.seed_manual_task(conn, kind="gate-manual", doc_id=doc_id,
+                             payload={"route": "mfr-binding", "manufacturer": "Unknown Name"})
+    conn.commit()
+    body = client.get(f"/staging/{doc_id}/detail").text
+    assert 'data-search="Chemichl AG JENSEN MIYO"' in body
+    assert "Chemichl AG · BC: JENSEN, MIYO (0 medical-device items)" in _text(body)

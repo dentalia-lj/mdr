@@ -131,7 +131,8 @@ zato jih nič ne poveže z artiklom. Odprite vrstico in pritisnite **Find items
 this document covers…**.
 
 - Proizvajalec je zaklenjen na proizvajalca dokumenta. Če ta ni potrjen, ga
-  najprej izberite; najti je mogoče samo njegove artikle.
+  najprej izberite; najti je mogoče samo njegove artikle. Kjer se ime v
+  Business Centralu razlikuje od uradnega, ga seznam prikaže poleg njega.
 - Iskanje se začne z besedo iz imena datoteke. Vpišite številko artikla ali
   besedo iz imena. Številka prikaže artikle, katerih številka jo vsebuje, pod
   njimi pa 10 številk pred njo in 10 za njo, ki so pogosto iz iste družine:
@@ -208,7 +209,7 @@ trinajst. Razvrščena so v tri skupine.
 
 | Zaslon pravi | Kaj to pomeni | Kaj storiti |
 |---|---|---|
-| *We could not confirm which manufacturer issued this.* | Ime na dokumentu se ne ujema z ničimer v Business Centralu | Običajno pri novem dobavitelju. Izberite pravega s seznama — na njem so vsi dobavitelji, ki jih poznamo, zato ga zožite z vpisom v polje nad njim — nato odobrite. Če dobavitelja sploh ni na seznamu, ga najprej dodajte pod **Manufacturers** |
+| *We could not confirm which manufacturer issued this.* | Ime na dokumentu se ne ujema z ničimer v Business Centralu | Običajno pri novem dobavitelju. Izberite pravega s seznama — na njem so vsi dobavitelji, ki jih poznamo, zato ga zožite z vpisom v polje nad njim — nato odobrite. Seznam navaja dobavitelja z njegovim uradnim imenom; kjer ga Business Central imenuje drugače, sledi še to ime, npr. *Chemichl AG · BC: JENSEN, MIYO*, in vpis katerega koli od obeh imen ga najde. Če dobavitelja sploh ni na seznamu, ga najprej dodajte pod **Manufacturers** |
 | *Matched to your catalogue by article number alone.* | Številka artikla se je ujemala, dobavitelj pa ni bil potrjen | Sama številka artikla ne zadošča. Pred odobritvijo potrdite dobavitelja |
 | *The expiry date is not written as an expiry anywhere on the page…* | Datum je bil prebran kot datum poteka, a stran ga nikjer tako ne označuje | Preverite PDF. Morda gre za datum podpisa ali izdaje |
 | *We cannot tell whether this is newer or older than the document on file.* | Eden od obeh dokumentov nima uporabnega datuma | Primerjajte oba PDF-ja sami in odločite |

@@ -1382,7 +1382,27 @@ def _mfr_binding_options(conn) -> list[dict]:
         "ORDER BY 1"
     ).fetchall()]
     counts = _mfr_bind_counts(conn, names)
-    return [{"canonical_name": n, "md_items": counts[n] or 0} for n in names]
+    brands = _bc_names(conn)
+    return [{"canonical_name": n, "md_items": counts[n] or 0, "bc_names": brands.get(n, [])}
+            for n in names]
+
+
+def _bc_names(conn) -> dict[str, list[str]]:
+    """Business Central's own name for each entity's codes, where it differs
+    from the legal name the list shows: Chemichl AG is "MIYO" and "JENSEN" in
+    BC, IVOCLAR is "IVOCLAR VIVADENT". The office knows the BC name, so a list
+    showing only the legal one hid the entity from the person choosing it
+    (Natasa, 2026-11-05: doc 16 rejected as "wrong manufacturer: MIYO /
+    JENSEN"). Display and search only; the option's value stays the legal name."""
+    rows = conn.execute(
+        "SELECT m.canonical_name, array_agg(DISTINCT v.name ORDER BY v.name) AS names "
+        "FROM manufacturer m "
+        "JOIN manufacturer_bc_code c ON c.manufacturer_id = m.id "
+        "JOIN vendor_master v ON v.code_source = c.code_source AND v.code = c.code "
+        "WHERE btrim(v.name) <> '' AND lower(btrim(v.name)) <> lower(m.canonical_name) "
+        "GROUP BY m.canonical_name"
+    ).fetchall()
+    return {r["canonical_name"]: r["names"] for r in rows}
 
 
 # `_mfr_unbindable_entities` lived here until 2026-08-31. It counted the

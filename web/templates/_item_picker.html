@@ -23,7 +23,7 @@
           hx-get="/picker/{{ doc.doc_id }}" hx-target="closest .picker-body" hx-trigger="change">
     <option value="">(choose a manufacturer)</option>
     {% for opt in mfr_options %}
-    <option value="{{ opt.canonical_name }}">{{ opt.canonical_name }}</option>
+    <option value="{{ opt.canonical_name }}">{{ opt.canonical_name }}{% if opt.bc_names %} · BC: {{ opt.bc_names | join(", ") }}{% endif %}</option>
     {% endfor %}
   </select>
   {% if mfr_suggestion and mfr_suggestion.preselect %}

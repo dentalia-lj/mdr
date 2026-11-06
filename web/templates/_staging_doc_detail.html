@@ -143,9 +143,9 @@
           <option value="">(choose a manufacturer)</option>
           {% for opt in row.mfr_options %}
           <option value="{{ opt.canonical_name }}" data-items="{{ opt.md_items }}"
-                  data-search="{{ opt.canonical_name }}"
+                  data-search="{{ ([opt.canonical_name] + opt.bc_names) | join(' ') }}"
                   {{ "selected" if row.mfr_suggestion and row.mfr_suggestion.preselect == opt.canonical_name }}>
-            {{ opt.canonical_name }} ({{ opt.md_items | num }} medical-device
+            {{ opt.canonical_name }}{% if opt.bc_names %} · BC: {{ opt.bc_names | join(", ") }}{% endif %} ({{ opt.md_items | num }} medical-device
             item{{ "" if opt.md_items == 1 else "s" }})
           </option>
           {% endfor %}

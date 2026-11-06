@@ -131,7 +131,8 @@ links them to an item. Open the row and press **Find items this document
 covers…**.
 
 - The manufacturer is locked to the document's. If the document has none
-  confirmed, choose it first; only its items can be found.
+  confirmed, choose it first; only its items can be found. The list shows the
+  Business Central name next to the legal one where they differ.
 - The search starts with a word from the file name. Type an item number or a
   word from the name. A number lists the items whose number contains it, and
   below them the 10 numbers before and after it, which are often the same
@@ -207,7 +208,7 @@ thirteen of them. They fall into three groups.
 
 | The screen says | What that means | What to do |
 |---|---|---|
-| *We could not confirm which manufacturer issued this.* | The name on the document matches nothing in Business Central | Normal for a new supplier. Choose the right one from the list — it holds every supplier we know, so type into the box above it to narrow it — then approve. If the supplier is not in the list at all, add it under **Manufacturers** first |
+| *We could not confirm which manufacturer issued this.* | The name on the document matches nothing in Business Central | Normal for a new supplier. Choose the right one from the list — it holds every supplier we know, so type into the box above it to narrow it — then approve. The list names each supplier by its legal name; where Business Central calls it something else, that name follows, e.g. *Chemichl AG · BC: JENSEN, MIYO*, and typing either name finds it. If the supplier is not in the list at all, add it under **Manufacturers** first |
 | *Matched to your catalogue by article number alone.* | The product number matched, but the supplier was never confirmed | A product number on its own is not enough. Confirm the supplier before approving |
 | *The expiry date is not written as an expiry anywhere on the page…* | A date was read as an expiry date, but the page never labels it one | Check the PDF. It may be a signing or issue date |
 | *We cannot tell whether this is newer or older than the document on file.* | One of the two documents has no usable date | Compare the two PDFs yourself and decide |
