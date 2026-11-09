@@ -116,13 +116,15 @@ def _known_url_rows(conn, group_id, recency_days) -> list[dict]:
     tagged fresh/stale against the recency window (computed in-DB against now()
     to avoid worker-clock skew). Carries the ledger's content_hash so the
     recency rung can C3-link a fresh, already-extracted document without the
-    network (defect fix, 2026-08-24)."""
+    network (defect fix, 2026-08-24). A refused link is no lead: a person said
+    that file does not cover the item, and a "hit" on it would end the ladder and
+    close the Missing documents task with the item still missing."""
     return conn.execute(
         "SELECT DISTINCT fl.url_normalized AS url, fl.content_hash, "
         "  (fl.last_checked_at IS NOT NULL "
         "   AND fl.last_checked_at >= now() - make_interval(days => %s)) AS is_fresh "
         "FROM item_group_member gm "
-        "JOIN item_document idoc ON idoc.item_ref = gm.item_ref "
+        "JOIN item_document idoc ON idoc.item_ref = gm.item_ref AND idoc.status <> 'rejected' "
         "JOIN fetch_log fl ON fl.doc_id = idoc.doc_id "
         # Exclude web-upload rows: their url_normalized is a synthetic `upload:{hash}`
         # pseudo-key (source='upload'), not an http(s) URL FETCH can re-fetch. Letting
