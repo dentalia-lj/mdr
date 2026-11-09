@@ -14,6 +14,10 @@
 
   function dialogOf(el) { return el && el.closest ? el.closest("dialog.item-picker") : null; }
   function ticks(d) { if (!sets.has(d)) { sets.set(d, new Map()); } return sets.get(d); }
+  // Items ticked despite an earlier refusal (spec 2026-11-09 §5.3): sent again
+  // in `reopen`, because the server refuses a refused item in `items` alone.
+  var refusedSets = new WeakMap();
+  function refused(d) { if (!refusedSets.has(d)) { refusedSets.set(d, new Set()); } return refusedSets.get(d); }
 
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -29,7 +33,7 @@
       cb.closest("tr").classList.toggle("picked", cb.checked && !cb.disabled);
     });
     d.querySelectorAll("[data-picker-group]").forEach(function (g) {
-      var boxes = Array.prototype.slice.call(g.querySelectorAll("input[data-pick]:not(:disabled)"));
+      var boxes = Array.prototype.slice.call(g.querySelectorAll("input[data-pick]:not(:disabled):not([data-refused])"));
       var btn = g.querySelector("[data-picker-tick-all]");
       if (!btn) { return; }
       btn.hidden = boxes.length === 0;
@@ -55,6 +59,12 @@
       chip.append(x);
       box.append(chip);
     });
+    var when = d.querySelector("[data-picker-done]") ? "when you approve." : "when you add it.";
+    refused(d).forEach(function (ref) {
+      if (t.has(ref)) {
+        box.append(el("p", "hint", ref + " was refused for this document. Ticking it reverses that under your name, " + when));
+      }
+    });
     if (t.size) {
       var clear = el("button", "linkbtn", "Clear all");
       clear.type = "button";
@@ -75,8 +85,10 @@
     var kept = into ? into.querySelector("input[name=manufacturer]") : null;
     var url = btn.dataset.pickerUrl;
     t.clear();
+    refused(d).clear();
     if (into) {
       into.querySelectorAll("input[name=items]").forEach(function (i) { t.set(i.value, i.dataset.name || ""); });
+      into.querySelectorAll("input[name=reopen]").forEach(function (i) { refused(d).add(i.value); });
     }
     // Reopen on the manufacturer Done kept, so a document without a confirmed
     // one does not ask again (the server ignores it where one is locked).
@@ -105,11 +117,34 @@
   function done(d) {
     var t = ticks(d), into = document.getElementById(d.dataset.itemsInto);
     var mfr = d.querySelector("[data-picker-manufacturer]");
-    var params = new URLSearchParams();
+    var docId = d.id.replace("picker-", "");
     into.textContent = "";
-    t.forEach(function (name, ref) { into.append(hidden("items", ref, name)); params.append("items", ref); });
-    if (mfr && mfr.value) { into.append(hidden("manufacturer", mfr.value)); params.append("manufacturer", mfr.value); }
+    t.forEach(function (name, ref) {
+      into.append(hidden("items", ref, name));
+      if (refused(d).has(ref)) { into.append(hidden("reopen", ref)); }
+      dropInput("picker-removed-" + docId, "remove", ref);   // ticked last, so the tick wins
+    });
+    if (mfr && mfr.value) { into.append(hidden("manufacturer", mfr.value)); }
     d.close();
+    summarise(docId);
+  }
+
+  function dropInput(boxId, name, ref) {
+    var box = document.getElementById(boxId);
+    if (!box) { return; }
+    // Compared by value, never by selector: item numbers carry "/" and spaces.
+    box.querySelectorAll("input[name=" + name + "]").forEach(function (i) {
+      if (i.value === ref) { i.remove(); }
+    });
+  }
+
+  // What the panel says, from what the form will send. Done, Remove and Undo all
+  // come through here, so the list, the count and the Approve label stay one.
+  function summarise(docId) {
+    var d = document.getElementById("picker-" + docId), params = new URLSearchParams();
+    ["picker-items-" + docId, "picker-removed-" + docId].forEach(function (id) {
+      document.getElementById(id).querySelectorAll("input").forEach(function (i) { params.append(i.name, i.value); });
+    });
     htmx.ajax("GET", d.dataset.summaryUrl + "?" + params.toString(),
               { target: "#" + d.dataset.summaryInto, swap: "innerHTML" });
   }
@@ -117,13 +152,28 @@
   function fillAdd(d) {
     var box = d.querySelector(".picker-add-items"), mfr = d.querySelector("[data-picker-manufacturer]");
     box.textContent = "";
-    ticks(d).forEach(function (name, ref) { box.append(hidden("items", ref)); });
+    ticks(d).forEach(function (name, ref) {
+      box.append(hidden("items", ref));
+      if (refused(d).has(ref)) { box.append(hidden("reopen", ref)); }
+    });
     if (mfr && mfr.value) { box.append(hidden("manufacturer", mfr.value)); }
   }
 
   document.addEventListener("click", function (e) {
     var hit = e.target.closest("[data-picker-open]");
     if (hit) { open(hit); return; }
+    if ((hit = e.target.closest("[data-remove]"))) {
+      var doc = hit.dataset.doc, ref = hit.dataset.remove;
+      dropInput("picker-items-" + doc, "items", ref);        // removed last, so the removal wins
+      document.getElementById("picker-removed-" + doc).append(hidden("remove", ref));
+      summarise(doc);
+      return;
+    }
+    if ((hit = e.target.closest("[data-undo]"))) {
+      dropInput("picker-removed-" + hit.dataset.doc, "remove", hit.dataset.undo);
+      summarise(hit.dataset.doc);
+      return;
+    }
     var d = dialogOf(e.target);
     if (!d) { return; }
     var t = ticks(d);
@@ -132,7 +182,7 @@
     if (e.target.closest("[data-picker-add]")) { fillAdd(d); return; }   // the form then submits
     if ((hit = e.target.closest("[data-picker-tick-all]"))) {
       var boxes = Array.prototype.slice.call(
-        hit.closest("[data-picker-group]").querySelectorAll("input[data-pick]:not(:disabled)"));
+        hit.closest("[data-picker-group]").querySelectorAll("input[data-pick]:not(:disabled):not([data-refused])"));
       var all = boxes.every(function (b) { return t.has(b.dataset.pick); });
       boxes.forEach(function (b) { if (all) { t.delete(b.dataset.pick); } else { t.set(b.dataset.pick, b.dataset.name || ""); } });
       sync(d);
@@ -152,6 +202,7 @@
     var d = dialogOf(cb);
     if (!d) { return; }
     if (cb.checked) { ticks(d).set(cb.dataset.pick, cb.dataset.name || ""); } else { ticks(d).delete(cb.dataset.pick); }
+    if (cb.dataset.refused !== undefined) { refused(d).add(cb.dataset.pick); }
     sync(d);
   });
 

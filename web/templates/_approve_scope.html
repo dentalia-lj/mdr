@@ -4,19 +4,29 @@
    `picked` set to the ticked rows. #}
 {# The first `shown` items by number and name, then the rest folded under
    "+ K more" (spec § 6). Plain disclosure, no JS. #}
-{% macro item_list(links, shown) %}
+{# `tagged`: say how each row got here, and offer Remove on a system match
+   (spec 2026-11-09 §5.1). Only what Approve would publish is passed tagged. #}
+{% macro item_row(lnk, tagged, removable, doc_id) %}
+  <li><a href="/items/{{ lnk.item_ref }}">{{ lnk.item_ref }}</a> · {{ lnk.name or "no name in Business Central" }}
+    {%- if tagged and lnk.basis_words is defined %}
+    <span class="tag">{{ lnk.basis_words }}</span>
+    {%- if removable %}
+    <button type="button" class="linkbtn danger" data-remove="{{ lnk.item_ref }}" data-doc="{{ doc_id }}">Remove</button>
+    {%- endif %}
+    {%- elif tagged %}
+    <span class="tag">you chose</span>
+    {%- endif %}
+  </li>
+{% endmacro %}
+{% macro item_list(links, shown, tagged=false, removable=false, doc_id=none) %}
 <ul class="approve-items">
-  {% for lnk in links[:shown] %}
-  <li><a href="/items/{{ lnk.item_ref }}">{{ lnk.item_ref }}</a> · {{ lnk.name or "no name in Business Central" }}</li>
-  {% endfor %}
+  {% for lnk in links[:shown] %}{{ item_row(lnk, tagged, removable, doc_id) }}{% endfor %}
 </ul>
 {%- if links|length > shown %}
 <details class="more-items">
   <summary>+ {{ (links|length - shown) | num }} more</summary>
   <ul class="approve-items">
-    {% for lnk in links[shown:] %}
-    <li><a href="/items/{{ lnk.item_ref }}">{{ lnk.item_ref }}</a> · {{ lnk.name or "no name in Business Central" }}</li>
-    {% endfor %}
+    {% for lnk in links[shown:] %}{{ item_row(lnk, tagged, removable, doc_id) }}{% endfor %}
   </ul>
 </details>
 {%- endif %}
@@ -28,7 +38,7 @@
   {% set n = already|length + extra|length %}
   <p class="approve-line">Approving makes it count for
     {% if n == 1 %}this item{% else %}these {{ n | num }} items{% endif %}</p>
-  {{ item_list(row.approve_links + extra, items_shown) }}
+  {{ item_list(row.approve_links + extra, items_shown, tagged=true, removable=offer_picker, doc_id=row.doc.doc_id) }}
   <p class="hint">You chose {{ picked|length | num }} of them. Each becomes a confirmed link
     under your name when you approve.</p>
   {% if held_line %}<p>{{ held_line }}</p>{% endif %}
@@ -58,7 +68,7 @@
       {% set n = row.approve_links|length %}
       <p class="approve-line">Approving makes it count for
         {% if n == 1 %}this item{% else %}these {{ n | num }} items{% endif %}</p>
-      {{ item_list(row.approve_links, items_shown) }}
+      {{ item_list(row.approve_links, items_shown, tagged=true, removable=offer_picker, doc_id=row.doc.doc_id) }}
       <p class="hint">Matched through {{ row.approve_basis }}.</p>
       {% if row.held_links %}
       {% set c = row.held_links|length %}
@@ -78,6 +88,21 @@
     {% else %}
       <p class="approve-line">Nothing links it to an item yet, so approving it makes it count for no items.</p>
     {% endif %}
+{% endif %}
+{% set removed = removed_links | default([]) %}
+{% if removed %}
+<div class="approve-removed">
+  <p class="approve-line">Will not count ({{ removed|length | num }})</p>
+  <ul class="approve-items">
+    {% for lnk in removed %}
+    <li class="is-removed"><a href="/items/{{ lnk.item_ref }}">{{ lnk.item_ref }}</a>
+      <span class="name">· {{ lnk.name or "no name in Business Central" }}</span>
+      <button type="button" class="linkbtn" data-undo="{{ lnk.item_ref }}" data-doc="{{ row.doc.doc_id }}">Undo</button></li>
+    {% endfor %}
+  </ul>
+  <p class="hint">Recorded as not covered, under your name, when you approve. A later
+    re-read of this document will not link them again.</p>
+</div>
 {% endif %}
 {% if offer_picker %}
 <button type="button" class="btn-find" data-picker-open="picker-{{ row.doc.doc_id }}"

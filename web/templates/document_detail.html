@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_ui.html" as ui %}
+{% import "_link_decide.html" as link_decide %}
 {% block title %}Document #{{ doc.doc_id }} — Dentalia Compliance Registry{% endblock %}
 {% block content %}
 {# Rule 1: the document is named before it is numbered. `doc_display_name`
@@ -217,7 +218,7 @@
 </div>
 
 <div class="card">
-  <h2>Covered items{% if items %} ({{ items | length }}){% endif %}</h2>
+  <h2>Covered items{% if items %} ({{ items | rejectattr("status", "eq", "rejected") | list | length }}){% endif %}</h2>
   {# A manufacturer-scope certificate covers everything we stock from that
      manufacturer -- document 310 covers 356 items -- and printing all of them
      inline pushed the evidence table, the thing an auditor actually asks for,
@@ -226,14 +227,23 @@
   {% if items %}
   <div class="table-wrap tall">
   <table>
-    <thead><tr><th>Item no.</th><th>Name</th><th>Covers this item</th></tr></thead>
+    <thead><tr><th>Item no.</th><th>Name</th><th>Covers this item</th>{% if can_remove %}<th>Action</th>{% endif %}</tr></thead>
     <tbody>
       {% for it in items %}
       <tr>
         <td><a href="/items/{{ it.item_ref }}">{{ it.item_ref }}</a></td>
         <td>{{ it.name or "—" }}</td>
         <td><span class="badge badge-{{ it.status }}">{{ it.status | word }}</span></td>
+        {% if can_remove %}
+        <td><div id="link-cell-{{ doc.doc_id }}-{{ loop.index }}">
+          {%- if it.status == "production" %}{{ link_decide.remove_button(doc.doc_id, it.item_ref, loop.index) }}
+          {%- else %}{{ link_decide.buttons(doc.doc_id, it.item_ref, it.status, doc.status) }}{% endif -%}
+        </div></td>
+        {% endif %}
       </tr>
+      {% if can_remove and it.status == "production" %}
+      <tr class="link-slot-row"><td colspan="4" id="link-slot-{{ doc.doc_id }}-{{ loop.index }}"></td></tr>
+      {% endif %}
       {% endfor %}
     </tbody>
   </table>

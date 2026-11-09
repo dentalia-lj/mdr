@@ -101,16 +101,71 @@ def test_a_number_search_lists_nearby_numbers_without_tick_all(client, conn):
     assert "data-picker-tick-all" not in nearby
 
 
-def test_a_refused_row_cannot_be_ticked(client, conn):
-    _mfr(conn)
-    _item(conn, "R1", "VARIOBASE R")
-    doc_id = _doc(conn, "ref")
+def _refused(conn, doc_id, ref="R1"):
+    _item(conn, ref, f"VARIOBASE {ref}")
     conn.execute("INSERT INTO item_document (item_ref, doc_id, match_basis, status) "
-                 "VALUES ('R1', %s, 'name-family', 'rejected')", (doc_id,))
+                 "VALUES (%s, %s, 'name-family', 'rejected')", (ref, doc_id))
+
+
+def test_a_refused_row_can_be_ticked_on_purpose(client, conn):
+    _mfr(conn)
+    doc_id = _doc(conn, "ref")
+    _refused(conn, doc_id)
     conn.commit()
     body = client.get(f"/picker/{doc_id}/results", params={"manufacturer": M, "q": "variobase"}).text
-    assert re.search(r'<input type="checkbox" data-pick="R1"[^>]*disabled', body)
+    tag = re.search(r'<input type="checkbox" data-pick="R1"[^>]*>', body).group(0)
+    assert "data-refused" in tag and "disabled" not in tag
     assert "Refused earlier" in body
+
+
+def test_only_the_refused_row_is_marked_for_tick_all(client, conn):
+    _mfr(conn)
+    _item(conn, "A1", "VARIOBASE A")
+    _item(conn, "A2", "VARIOBASE B")
+    doc_id = _doc(conn, "ref-all")
+    _refused(conn, doc_id)
+    conn.commit()
+    body = client.get(f"/picker/{doc_id}/results", params={"manufacturer": M, "q": "variobase"}).text
+    assert re.findall(r'data-pick="([^"]+)"[^>]*data-refused', body) == ["R1"]
+
+
+def test_the_script_skips_refused_rows_in_tick_all():
+    with open("web/static/item_picker.js", encoding="utf-8") as f:
+        script = f.read()
+    assert script.count('input[data-pick]:not(:disabled):not([data-refused])') == 2
+
+
+def test_approve_with_reopen_enqueues_it(client, conn):
+    _mfr(conn)
+    doc_id = _doc(conn, "re-appr")
+    _refused(conn, doc_id)
+    conn.commit()
+    r = client.post(f"/staging/{doc_id}/apply",
+                    data={"decision": "approve", "items": ["R1"], "reopen": ["R1"]})
+    assert r.status_code == 200
+    (job,) = _jobs(conn)
+    assert job["payload"]["items"] == ["R1"] and job["payload"]["reopen"] == ["R1"]
+
+
+def test_add_items_with_reopen_enqueues_it(client, conn):
+    _mfr(conn)
+    doc_id = _doc(conn, "re-add", status="production")
+    _refused(conn, doc_id)
+    conn.commit()
+    r = client.post(f"/documents/{doc_id}/items", data={"items": ["R1"], "reopen": ["R1"]})
+    assert r.status_code == 200
+    (job,) = _jobs(conn)
+    assert job["payload"]["reopen"] == ["R1"]
+
+
+def test_a_refused_item_without_reopen_is_refused(client, conn):
+    _mfr(conn)
+    doc_id = _doc(conn, "re-no")
+    _refused(conn, doc_id)
+    conn.commit()
+    r = client.post(f"/staging/{doc_id}/apply", data={"decision": "approve", "items": ["R1"]})
+    assert r.status_code == 422 and _jobs(conn) == []
+    assert "refused earlier" in _text(r.text)
 
 
 def test_the_manufacturer_param_cannot_unlock_a_locked_picker(client, conn):
@@ -226,6 +281,231 @@ def test_add_items_refuses_a_document_on_review(client, conn):
     conn.commit()
     r = client.post(f"/documents/{doc_id}/items", data={"items": ["A1"]})
     assert r.status_code == 422 and _jobs(conn) == []
+
+
+# --- taking an item off on Review (spec 2026-11-09 §5.1) ------------------------
+
+def _linked(conn, doc_id, ref, status="staged", basis="ref-list", name=None):
+    _item(conn, ref, name or f"VARIOBASE {ref}")
+    conn.execute("INSERT INTO item_document (item_ref, doc_id, match_basis, status) "
+                 "VALUES (%s, %s, %s, %s::link_status)", (ref, doc_id, basis, status))
+
+
+def test_approve_with_remove_enqueues_it(client, conn):
+    _mfr(conn)
+    doc_id = _doc(conn, "rm")
+    _linked(conn, doc_id, "A1"); _linked(conn, doc_id, "A2")
+    conn.commit()
+    r = client.post(f"/staging/{doc_id}/apply", data={"decision": "approve", "remove": ["A1", "A1"]})
+    assert r.status_code == 200
+    (job,) = _jobs(conn)
+    assert job["payload"]["remove"] == ["A1"]
+    assert job["dedupe_key"] == f"apply:{doc_id}:approve"
+
+
+@pytest.mark.parametrize("case", ["no-link", "also-ticked", "not-on-review"])
+def test_a_bad_remove_is_refused_and_nothing_is_enqueued(client, conn, case):
+    _mfr(conn)
+    doc_id = _doc(conn, f"bad-{case}", status="production" if case == "not-on-review" else "staged")
+    _linked(conn, doc_id, "A1")
+    conn.commit()
+    data = {"decision": "approve", "remove": ["A9" if case == "no-link" else "A1"]}
+    if case == "also-ticked":
+        data["items"] = ["A1"]
+    r = client.post(f"/staging/{doc_id}/apply", data=data)
+    assert r.status_code == 422
+    assert "Nothing was changed." in _text(r.text)
+    assert _jobs(conn) == []
+
+
+def test_the_summary_moves_a_removed_item_and_recounts(client, conn):
+    _mfr(conn)
+    doc_id = _doc(conn, "moved")
+    _linked(conn, doc_id, "A1"); _linked(conn, doc_id, "A2")
+    conn.commit()
+    body = client.get(f"/picker/{doc_id}/summary", params={"remove": ["A1"]}).text
+    text = _text(body)
+    assert "Approving makes it count for this item" in text
+    assert "Will not count (1)" in text
+    assert "A later re-read of this document will not link them again." in text
+    assert 'data-undo="A1"' in body and 'data-remove="A1"' not in body
+    assert 'data-remove="A2"' in body
+    assert "Approve for this item" in text
+
+
+def test_remove_is_offered_only_on_what_approve_publishes(client, conn):
+    _mfr(conn)
+    doc_id = _doc(conn, "offer")
+    _linked(conn, doc_id, "A1")
+    _linked(conn, doc_id, "W1", basis="fetch-context")
+    whole = _doc(conn, "offer-whole", scope="manufacturer")
+    _linked(conn, whole, "A3")
+    conn.commit()
+    body = client.get(f"/staging/{doc_id}/detail").text
+    assert 'data-remove="A1"' in body and 'data-remove="W1"' not in body
+    assert f'id="picker-removed-{doc_id}"' in body
+    assert "data-remove=" not in client.get(f"/staging/{whole}/detail").text
+
+
+def test_removing_everything_reads_as_no_items(client, conn):
+    _mfr(conn)
+    doc_id = _doc(conn, "all-gone")
+    _linked(conn, doc_id, "A1")
+    conn.commit()
+    body = client.get(f"/picker/{doc_id}/summary", params={"remove": ["A1"]}).text
+    text = _text(body)
+    assert "Nothing links it to an item yet" in text
+    assert "Will not count (1)" in text
+    assert "Approve for" not in text
+
+
+def test_a_ticked_item_is_tagged_and_has_no_remove(client, conn):
+    _mfr(conn)
+    doc_id = _doc(conn, "tick-rm")
+    _linked(conn, doc_id, "A1")
+    _item(conn, "T1", "VARIOBASE T")
+    conn.commit()
+    body = client.get(f"/picker/{doc_id}/summary",
+                      params={"manufacturer": M, "items": ["T1"], "remove": ["A1"]}).text
+    text = _text(body)
+    assert "you chose" in text
+    assert 'data-remove="T1"' not in body
+    assert "Approving makes it count for this item" in text
+    assert "Will not count (1)" in text
+
+
+def test_a_slashed_item_number_survives_the_summary(client, conn):
+    _mfr(conn)
+    doc_id = _doc(conn, "slash")
+    _linked(conn, doc_id, "AB/1 2")
+    conn.commit()
+    body = client.get(f"/picker/{doc_id}/summary", params={"remove": ["AB/1 2"]}).text
+    assert 'data-undo="AB/1 2"' in body
+    assert "Will not count (1)" in _text(body)
+
+
+def test_the_summary_says_when_the_document_left_review(client, conn):
+    _mfr(conn)
+    doc_id = _doc(conn, "gone", status="production")
+    _linked(conn, doc_id, "A1", status="production")
+    conn.commit()
+    r = client.get(f"/picker/{doc_id}/summary", params={"remove": ["A1"]})
+    assert r.status_code == 404 and "no longer on Review" in r.text
+
+
+# --- taking an item off a published document (spec 2026-11-09 §5.2) ------------
+
+def _ask(client, doc_id, ref="A1", row="3", **extra):
+    return client.post(f"/links/{doc_id}/decide",
+                       data={"item_ref": ref, "decision": "remove-link", "row": row, **extra})
+
+
+def _published(conn, key, ref="A1", **kw):
+    _mfr(conn)
+    doc_id = _doc(conn, key, status="production", **kw)
+    _linked(conn, doc_id, ref, status="production")
+    return doc_id
+
+
+def test_remove_link_first_step_asks_and_writes_nothing(client, conn):
+    doc_id = _published(conn, "ask")
+    conn.commit()
+    r = _ask(client, doc_id)
+    text = _text(r.text)
+    assert r.status_code == 200
+    assert "Remove A1 from this document?" in text and "Yes, remove A1" in text
+    assert f'hx-target="#link-slot-{doc_id}-3"' in r.text
+    assert _jobs(conn) == []
+
+
+def test_remove_link_warns_only_when_it_is_the_last(client, conn):
+    doc_id = _published(conn, "last")
+    conn.commit()
+    assert "A1 will have no IFU left." in _text(_ask(client, doc_id).text)
+
+    other = _doc(conn, "last-other", status="production")
+    conn.execute("INSERT INTO item_document (item_ref, doc_id, match_basis, status) "
+                 "VALUES ('A1', %s, 'manual', 'production')", (other,))
+    conn.commit()
+    assert "will have no IFU left" not in _text(_ask(client, doc_id).text)
+
+
+def test_remove_link_with_confirm_enqueues_and_clears_the_button(client, conn):
+    doc_id = _published(conn, "yes")
+    conn.commit()
+    r = _ask(client, doc_id, confirm="1")
+    assert r.status_code == 200
+    (job,) = _jobs(conn)
+    assert job["dedupe_key"] == f"apply:{doc_id}:A1:remove-link"
+    assert job["payload"]["decision"] == "remove-link" and job["payload"]["item_ref"] == "A1"
+    assert re.search(rf'id="link-cell-{doc_id}-3"[^>]*hx-swap-oob="innerHTML"', r.text)
+
+
+def test_remove_link_target_is_the_row_not_the_item_number(client, conn):
+    doc_id = _published(conn, "slash-pub", ref="AB/1 2")
+    conn.commit()
+    r = _ask(client, doc_id, ref="AB/1 2")
+    assert r.status_code == 200
+    assert "Yes, remove AB/1 2" in _text(r.text)
+    assert all("AB/1" not in t for t in re.findall(r'hx-target="([^"]+)"', r.text))
+
+
+@pytest.mark.parametrize("confirm", ["", "1"])
+@pytest.mark.parametrize("case", ["already-refused", "doc-on-review", "whole-range", "no-link"])
+def test_remove_link_is_refused_on_a_stale_page(client, conn, case, confirm):
+    _mfr(conn)
+    doc_id = _doc(conn, f"stale-{case}-{confirm}",
+                  status="staged" if case == "doc-on-review" else "production",
+                  scope="manufacturer" if case == "whole-range" else "group")
+    if case != "no-link":
+        _linked(conn, doc_id, "A1", status="rejected" if case == "already-refused" else "production",
+                basis="mfr-scope" if case == "whole-range" else "ref-list")
+    conn.commit()
+    r = _ask(client, doc_id, confirm=confirm)
+    assert r.status_code == 422 and "Nothing was changed." in _text(r.text)
+    assert _jobs(conn) == []
+
+
+def test_remove_link_needs_a_row_number(client, conn):
+    doc_id = _published(conn, "norow")
+    conn.commit()
+    assert _ask(client, doc_id, row="x'y").status_code == 422
+    assert _jobs(conn) == []
+
+
+def test_covered_items_shows_actions(client, conn):
+    doc_id = _published(conn, "page")
+    _linked(conn, doc_id, "A2", status="rejected")
+    _linked(conn, doc_id, "A3", status="staged", basis="fetch-context")
+    conn.commit()
+    body = client.get(f"/documents/{doc_id}").text
+    assert 'value="remove-link"' in body
+    assert f'id="link-slot-{doc_id}-1"' in body
+    assert 'value="reopen-link"' in body and 'value="confirm-link"' in body
+
+
+def test_the_covered_items_heading_leaves_out_refused_rows(client, conn):
+    doc_id = _published(conn, "heading")
+    _linked(conn, doc_id, "A2")
+    _linked(conn, doc_id, "A3", status="rejected")
+    conn.commit()
+    assert "Covered items (2)" in _text(client.get(f"/documents/{doc_id}").text)
+
+
+def test_the_items_page_does_not_count_a_refused_link_as_replaced(client, conn):
+    _mfr(conn)
+    doc_id = _doc(conn, "replaced", status="superseded")
+    _linked(conn, doc_id, "SUP1", status="rejected")
+    conn.commit()
+    body = client.get("/items", params={"q": "SUP1"}).text
+    assert re.search(r"<td>0</td>\s*<td>0</td>\s*<td>0</td>", body)
+
+
+def test_a_whole_range_document_has_no_remove(client, conn):
+    doc_id = _published(conn, "page-whole", scope="manufacturer")
+    conn.commit()
+    body = client.get(f"/documents/{doc_id}").text
+    assert 'value="remove-link"' not in body and "link-slot-" not in body
 
 
 def test_the_review_panel_offers_the_picker_only_for_specific_items(client, conn):

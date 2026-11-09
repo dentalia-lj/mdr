@@ -25,8 +25,9 @@ _ID = re.compile(r'id="([^"]+)"')
 #: Interpolated targets are fine when the value cannot contain a dot. Object ids
 #: (`x.id`, and `doc.doc_id`, a bigserial like the rest) and loop counters are
 #: integers; `confirm_target` is only ever a literal id
-#: ("rename-result", "code-result", "bc-push-result") or "bind-confirm-" plus an
-#: integer doc id, never user text: `_result.html` also puts it in a JS string.
+#: ("rename-result", "code-result", "bc-push-result"), or "bind-confirm-" plus an
+#: integer doc id, or "link-slot-" plus two integers, never user text:
+#: `_result.html` also puts it in a JS string.
 _SAFE_INTERPOLATION = re.compile(
     r"""\{\{\s*(
         [a-z_]+\.(?:doc_)?id   # job.id, task.id, s.id, doc.doc_id

@@ -27,7 +27,7 @@ status board). `/manufacturers` and `/playbooks` are registered from
       INSERT-only grant it cannot read back)
     - `POST /staging/{doc_id}/apply`               -> `gate.apply`
     - `POST /links/{doc_id}/decide`                -> `gate.apply` (C17
-      link-level: confirm-link / reject-link / reopen-link)
+      link-level: confirm-link / reject-link / reopen-link / remove-link)
     - `POST /staging/suggestion/{id}/assign`       -> `resolve.group`
     - `POST /manual/{task_id}/resolve`             -> `discover.group` (a
       discovery dead end only; "Search again" on /missing posts here too)
@@ -516,6 +516,8 @@ LINK_RECEIPTS = {
     "reject-link": ("Link rejected. The document stays on file; this item stops "
                     "showing it within a minute."),
     "reopen-link": "Link reopened. It goes back to Review within a minute.",
+    "remove-link": ("Item removed. The document stays on file; this item stops "
+                    "showing it within a minute."),
 }
 
 # /staging rows per page. The board is a review queue over tables that grow
@@ -1709,6 +1711,8 @@ def _staged_doc_detail(conn, doc_id: int) -> dict | None:
     row["held_links"] = [
         lk for lk in links
         if lk["status"] == "staged" and lk["match_basis"] not in PUBLISHING_BASES]
+    for lk in row["approve_links"]:
+        lk["basis_words"] = _basis_words([lk])
     row["approve_basis"] = _basis_words(row["approve_links"])
     row["held_basis"] = _basis_words(row["held_links"])
     row["regulation_words"] = REGULATION_WORDS.get(doc["regulation"] or "",
@@ -3279,7 +3283,7 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                 "SELECT m.item_ref, m.name, m.manufacturer_raw, a.canonical_name AS manufacturer_name, m.md_flag, "
                 "  count(*) FILTER (WHERE d.status='production' AND id.status='production') AS production_docs, "
                 "  count(*) FILTER (WHERE id.status='staged' AND d.status IN ('staged','production')) AS staged_docs, "
-                "  count(*) FILTER (WHERE d.status='superseded' AND id.status <> 'retracted') AS superseded_docs, "
+                "  count(*) FILTER (WHERE d.status='superseded' AND id.status NOT IN ('retracted','rejected')) AS superseded_docs, "
                 "  min(e.expires) FILTER (WHERE d.status='production' AND id.status='production' "
                 "                          AND d.regulation IN ('MDR','MDD')) AS next_expiry "
                 "FROM item_mirror m "
@@ -3528,10 +3532,12 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
 
     @app.post("/documents/{doc_id:int}/items", response_class=HTMLResponse)
     def document_add_items(request: Request, doc_id: int,
-                           items: list[str] = Form([]), manufacturer: str = Form("")):
+                           items: list[str] = Form([]), manufacturer: str = Form(""),
+                           reopen: list[str] = Form([])):
         """Picker spec §3.1: add ticked items to a published document."""
         ctx = {"request": request}
         picked = sorted({i.strip() for i in items if i.strip()})
+        reopened = sorted({i.strip() for i in reopen} & set(picked))
         with _conn() as conn:
             doc = _picker_doc(conn, doc_id)
             refusal = mfr = None
@@ -3548,7 +3554,7 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                     refusal = f"This document is {confirmed}'s, not {asked}'s."
                 elif mfr is None:
                     refusal = "Choose the manufacturer before ticking items."
-                elif (problems := item_picks.check_items(conn, doc_id, mfr, picked)):
+                elif (problems := item_picks.check_items(conn, doc_id, mfr, picked, reopen=reopened)):
                     refusal = _picker_refusal(problems)
             if refusal:
                 ctx["error"] = f"{refusal} Nothing was changed."
@@ -3556,6 +3562,8 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             decided_by = _authenticated_user(request) or DEFAULT_DECIDED_BY
             payload = {"doc_id": doc_id, "decision": "add-items", "decided_by": decided_by,
                        "items": picked}
+            if reopened:
+                payload["reopen"] = reopened
             if not doc["canonical_manufacturer"]:
                 payload["manufacturer"] = mfr
             # The usual `apply:{doc}:{decision}` would drop a second batch sent
@@ -3664,6 +3672,8 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
              # Picker spec §3.1: items can be added to a published document
              # that covers specific items.
              "offer_picker": doc["status"] == "production" and doc["coverage_scope"] == "group",
+             # Spec 2026-11-09 §5.2: the same two conditions as adding items.
+             "can_remove": doc["status"] == "production" and doc["coverage_scope"] == "group",
              "evidence": evidence, "chain": chain, "chases": chases,
              "eudamed": eudamed, "eudamed_rows": eudamed_rows},
         )
@@ -5402,9 +5412,11 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
 
     @app.get("/picker/{doc_id:int}/summary", response_class=HTMLResponse)
     def picker_summary(request: Request, doc_id: int, manufacturer: str = "",
-                       items: list[str] = Query([])):
+                       items: list[str] = Query([]), remove: list[str] = Query([])):
         """The panel's scope section after Done (picker spec §3 step 3, §6), and
-        the Approve label to match, swapped out of band."""
+        the Approve label to match, swapped out of band. Also after Remove and
+        Undo (spec 2026-11-09 §5.1): `remove` moves those links out of what
+        approving promises, so the list, the count and the label stay one."""
         with _conn() as conn:
             row = _staged_doc_detail(conn, doc_id)
             doc = _picker_doc(conn, doc_id)
@@ -5428,10 +5440,15 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             verb = "holds" if len(held) == 1 else "hold"
             held_line = (f"{len(held)} of them already {verb} {article} {word} ({parts}); "
                          f"this one is added beside it.")
+        gone = {r.strip() for r in remove if r.strip()}
+        removed_links = [lk for lk in row["approve_links"] if lk["item_ref"] in gone]
+        row["approve_links"] = [lk for lk in row["approve_links"] if lk["item_ref"] not in gone]
+        row["approve_basis"] = _basis_words(row["approve_links"])
         n = len({lk["item_ref"] for lk in row["approve_links"]} | {r.item_ref for r in picked})
         return templates.TemplateResponse(
             request, "_picker_summary.html",
             {"request": request, "row": row, "picked": picked, "held_line": held_line,
+             "removed_links": removed_links,
              "items_shown": REVIEW_ITEMS_SHOWN, "doc_id": doc_id, "approve_count": n})
 
     @app.get("/staging/suggestion/{suggestion_id:int}/detail", response_class=HTMLResponse)
@@ -5527,6 +5544,10 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         confirm: str = Form(""),
         # Picker spec §5.1: the items a reviewer ticked, sent with Approve.
         items: list[str] = Form([]),
+        # Spec 2026-11-09 §4.2: the system-matched items the reviewer took off.
+        remove: list[str] = Form([]),
+        # Spec 2026-11-09 §4.4: the ticked items ticked despite an earlier refusal.
+        reopen: list[str] = Form([]),
     ):
         # Decisions per docs/dentalia-s0.3-ui-proposal.md (the real
         # handle_gate_apply contract) — "edit" is not a standalone decision;
@@ -5687,6 +5708,7 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         # queue; GATE checks again (`item_picks.check_items`) as the last word.
         if decision == "approve" and any(i.strip() for i in items):
             picked = sorted({i.strip() for i in items if i.strip()})
+            reopened = sorted({i.strip() for i in reopen} & set(picked))
             refusal = None
             with _conn() as conn:
                 doc = _picker_doc(conn, doc_id)
@@ -5703,7 +5725,8 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                         if mfr is None:
                             refusal = "Choose the manufacturer before ticking items."
                         else:
-                            problems = item_picks.check_items(conn, doc_id, mfr, picked)
+                            problems = item_picks.check_items(conn, doc_id, mfr, picked,
+                                                              reopen=reopened)
                             if problems:
                                 refusal = _picker_refusal(problems)
                             elif not confirmed:
@@ -5712,6 +5735,32 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                 ctx["error"] = f"{refusal} Nothing was changed."
                 return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
             payload["items"] = picked
+            if reopened:
+                payload["reopen"] = reopened
+
+        # Spec 2026-11-09 §4.6: refuses what GATE would refuse, as for the ticks.
+        if decision == "approve" and any(i.strip() for i in remove):
+            gone = sorted({i.strip() for i in remove if i.strip()})
+            both = sorted(set(gone) & {i.strip() for i in items})
+            refusal = None
+            with _conn() as conn:
+                doc = _picker_doc(conn, doc_id)
+                if doc is None or doc["status"] != "staged":
+                    refusal = ("Items can be removed here only from a document on Review "
+                               "that covers specific items.")
+                elif both:
+                    refusal = f"{', '.join(both)}: both ticked and removed."
+                else:
+                    held = {r["item_ref"] for r in conn.execute(
+                        "SELECT item_ref FROM item_document WHERE doc_id=%s AND item_ref = ANY(%s)",
+                        (doc_id, gone)).fetchall()}
+                    missing = [r for r in gone if r not in held]
+                    if missing:
+                        refusal = f"{', '.join(missing)}: not linked to this document."
+            if refusal:
+                ctx["error"] = f"{refusal} Nothing was changed."
+                return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
+            payload["remove"] = gone
 
         # Per the proposal's suggested key: one active gate.apply per (doc, decision)
         # regardless of who submits it — a second reviewer clicking the same
@@ -5744,7 +5793,33 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
     #: decisions) rather than imported from `app.handlers.gate`: web/ is a
     #: producer and must not depend on handler internals, and an unknown value
     #: has to 422 here regardless of what the handler would do with it.
-    LINK_DECISIONS = ("confirm-link", "reject-link", "reopen-link")
+    LINK_DECISIONS = ("confirm-link", "reject-link", "reopen-link", "remove-link")
+
+    def _remove_link_refusal(conn, doc_id: int, item_ref: str) -> tuple[str | None, str | None]:
+        """Why this link cannot be removed now, and the document's type. A stale
+        page gets a sentence here rather than a dead job from GATE."""
+        doc = conn.execute("SELECT status, coverage_scope, type FROM document WHERE doc_id=%s",
+                           (doc_id,)).fetchone()
+        link = conn.execute("SELECT status FROM item_document WHERE doc_id=%s AND item_ref=%s",
+                            (doc_id, item_ref)).fetchone()
+        if (doc is None or doc["status"] != "production" or doc["coverage_scope"] != "group"
+                or link is None or link["status"] != "production"):
+            return (f"{item_ref} can no longer be removed from this document. "
+                    "Reload the page to see where it stands. Nothing was changed."), None
+        return None, doc["type"]
+
+    def _remove_link_lines(conn, doc_id: int, item_ref: str, doc_type: str) -> list[str]:
+        """Step one of a removal (spec 2026-11-09 §5.2). The last line is only
+        said when true, read at the moment of asking."""
+        lines = [f"Remove {item_ref} from this document?",
+                 "The document stops counting for this item right away."]
+        other = conn.execute(
+            "SELECT 1 FROM item_document_production WHERE item_ref=%s AND type=%s AND doc_id<>%s LIMIT 1",
+            (item_ref, doc_type, doc_id)).fetchone()
+        if other is None:
+            word = PICKER_TYPE_SHORT.get(doc_type, doc_type)
+            lines.append(f"{item_ref} will have no {word} left. This is the only current one it has.")
+        return lines
 
     @app.post("/links/{doc_id}/decide", response_class=HTMLResponse)
     def link_decide(
@@ -5753,6 +5828,10 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         item_ref: str = Form(...),
         decision: str = Form(...),
         decided_by: str = Form(""),
+        # remove-link only (spec 2026-11-09 §5.2): the table row it was pressed
+        # on, and the second press of the two-step.
+        row: str = Form(""),
+        confirm: str = Form(""),
     ):
         """C17: one human ruling on ONE (doc_id, item_ref) link.
 
@@ -5767,7 +5846,8 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         precondition -- document must be production, link must be in the status
         the decision expects -- and raises where it is not, so a stale button on
         an already-decided row dead-letters visibly instead of silently doing
-        nothing.
+        nothing. `remove-link` alone is also checked here, because it asks first
+        and a stale page then gets a sentence.
         """
         ctx = {"request": request}
         if decision not in LINK_DECISIONS:
@@ -5777,6 +5857,27 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         if not item_ref:
             ctx["error"] = "item_ref is required for a link decision"
             return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
+
+        if decision == "remove-link":
+            # An id built into `hx-target` and into Cancel's script: digits only.
+            if not (row.isascii() and row.isdigit()):
+                ctx["error"] = "The row is missing. Reload the page. Nothing was changed."
+                return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
+            with _conn() as conn:
+                refusal, doc_type = _remove_link_refusal(conn, doc_id, item_ref)
+                lines = (_remove_link_lines(conn, doc_id, item_ref, doc_type)
+                         if refusal is None and not confirm else None)
+            if refusal:
+                ctx["error"] = refusal
+                return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
+            if not confirm:
+                ctx.update(confirm_needed=lines,
+                           confirm_url=f"/links/{doc_id}/decide",
+                           confirm_target=f"link-slot-{doc_id}-{row}",
+                           confirm_fields={"item_ref": item_ref, "decision": decision, "row": row},
+                           confirm_label=f"Yes, remove {item_ref}")
+                return templates.TemplateResponse(request, "_result.html", ctx)
+            ctx["clear_cell"] = f"link-cell-{doc_id}-{row}"
 
         auth_user = _authenticated_user(request)
         decided_by = auth_user or decided_by.strip() or DEFAULT_DECIDED_BY

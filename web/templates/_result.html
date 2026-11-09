@@ -39,6 +39,12 @@
 <div class="result ok">Queued.</div>
 {% endif %}
 
+{% if clear_cell is defined %}
+{# The second step of a row's two-step action answers into the row's slot; this
+   takes the row's button away, so no live button is left behind the receipt. #}
+<div id="{{ clear_cell }}" hx-swap-oob="innerHTML"></div>
+{% endif %}
+
 {% if not error and (job_id is defined or dedupe_key is defined) %}
 {# Rule 5 moves the job number off the receipt; it does not delete it. Anyone
    asked "which job was that?" opens this. Never under an error: a refusal

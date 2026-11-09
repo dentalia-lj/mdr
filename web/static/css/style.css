@@ -1271,6 +1271,12 @@ button[disabled]:hover, .btn[disabled]:hover {
 .approve-line { font-weight: 600; }
 .approve-items { margin: 0 0 6px; padding-left: 18px; }
 .approve-items li { margin: 2px 0; }
+.approve-items .tag { font-size: var(--fs-micro); color: var(--dentalia-muted); margin-left: 6px; }
+.approve-items .linkbtn { margin-left: 8px; font-size: var(--fs-meta); }
+.approve-removed { border-top: 1px solid var(--dentalia-border); padding-top: var(--sp-2); margin-top: var(--sp-2); }
+.approve-removed .is-removed a, .approve-removed .is-removed .name { text-decoration: line-through; color: var(--dentalia-muted); }
+.linkbtn.danger, button.linkbtn.danger:hover { color: var(--dentalia-danger-ink); }
+.link-slot-row:has(td:empty) { display: none; }
 .more-items { margin: 0 0 6px; }
 .more-items > summary { cursor: pointer; color: var(--dentalia-action); font-weight: 600; }
 .review-side .corrections { margin-top: 10px; }

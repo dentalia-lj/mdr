@@ -350,9 +350,12 @@ _HOLDINGS_COLUMNS = """
 # show. Retracted links are history (doc 235: 19 retracted, zero live), and
 # /items and /documents have excluded them since; the card agrees with them or
 # the same document reads as held here and absent two clicks away.
+# `rejected` too: a person ruled that this document does not cover this article.
+# Left in, it won the row when nothing better existed and read as `review`, a
+# decision still owed, pointing at the very document they refused.
 _HOLDINGS_JOINS = """
 LEFT JOIN item_document l              ON l.item_ref = i.item_ref
-                                      AND l.status <> 'retracted'
+                                      AND l.status NOT IN ('retracted', 'rejected')
 LEFT JOIN document d                   ON d.doc_id = l.doc_id
 LEFT JOIN document_effective_expiry ee ON ee.doc_id = d.doc_id
 """

@@ -110,6 +110,9 @@
       {# The items ticked in the picker, written here by static/item_picker.js
          on Done and sent with Approve (picker spec §3.2). #}
       <div id="picker-items-{{ doc_id }}" hidden></div>
+      {# The system-matched items taken off with Remove (spec 2026-11-09 §5.1).
+         Its own container: Done empties the one above. #}
+      <div id="picker-removed-{{ doc_id }}" hidden></div>
 
       {# The binding candidate the catalogue could not name. The document covers a
          manufacturer's whole range, so there are no item links to derive the name
