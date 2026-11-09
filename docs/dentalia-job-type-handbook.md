@@ -527,13 +527,25 @@ def handle_extract_doc(job):
     fields |= t0_extract(pdf, job)          # filename conventions ("(MDR)"), playbook
                                             # layout templates, pdfplumber REF tables
                                             # every T0 hit: confidence 1.0 + evidence
-    missing = low_confidence(fields, TARGET)
-    if missing:
-        fields |= run_llm_tier("T1", pdf, missing, job)     # batch-aware — see below
-        missing = low_confidence(fields, TARGET)
-    if missing or is_scan(pdf):
-        fields |= run_llm_tier("T2", pdf, missing, job)
-    # per-FIELD escalation: clean date + unreadable REF list -> only REF goes to T2
+    # Amended 2026-10-12 (PRD v3 §5; app/extract/tiers.py run_text_ladder and
+    # run_scan_ladder). A field leaves the ladder when it is SETTLED: the text
+    # proves it (checks.settled), two reads agree, or the null rule holds; a
+    # model's own confidence no longer moves it. Every read is batch-aware.
+    if has_text_page(pdf):                                   # text ladder, T-3
+        open_ = pursued(fields)                              # T0 under 0.95, IFU/scope suppressions
+        fields |= run_llm_tier("T1", pdf, open_, job)        # Haiku 5.5, whole text
+        open_ = [f for f in open_ if not settled(f, fields)]
+        fields |= run_llm_tier("T2-first", pdf, open_, job)  # Haiku 5.5, pages pointing at open_
+        open_ = [f for f in open_ if not (settled(f, fields) or agrees_with_t1(f))]
+        if open_:
+            fields |= run_llm_tier("T2", pdf, open_, job)    # Sonnet; its null closes a field
+        confirm = [f for f in GATE_FIELDS if unproven(f, fields)]   # Task 5b
+        if confirm:                                          # Haiku 5.5, thinking off, whole text:
+            stamp_agreement(fields, run_llm_tier("T1-second", pdf, confirm, job))  # value never stored
+    else:                                                    # scan ladder, S-2
+        ...  # doc-class on page images, T2-first, T2-second (+ the unproven gate
+             # fields, even when nothing else is open), Sonnet for what stays open
+    # per-FIELD escalation: clean date + unreadable REF list -> only REF goes on
 
     db.extraction_attempt.insert(job.payload["content_hash"],
                                  tiers_used, fields, extract_rev)
@@ -561,7 +573,7 @@ def run_llm_tier(tier, pdf, missing, job):
     return per_field_results(results)                 # conf + verbatim + page + model_id each
 ```
 
-Self-rescheduling via `run_after`; the job payload is never mutated. A crash between submit and record resolves on retry via the `batch_ref` lookup — existing row for this `content_hash` + tier means never resubmit.
+Self-rescheduling via `run_after`; the job payload is never mutated. A crash between submit and record resolves on retry via the `batch_ref` lookup: an existing row for this `content_hash` + tier means never resubmit. `tier` is the read step's label (`doc-class`, `T1`, `T2-first`, `T2`, ...) since 2026-10-12, and the batch path runs the sync path's own ladder function, re-run from the top on every poll (a resolved step is re-fetched); a batch image read is always pages 1-4 (`docs/dev/limits.md`).
 
 ### Example extraction result (stored in extraction_attempt.fields)
 
@@ -573,7 +585,7 @@ Self-rescheduling via `run_after`; the job payload is never mutated. A crash bet
   "coverage_scope":{"value":"group","conf":0.9,"tier":"T1"},
   "ref_list":      {"value":["613289","613290","613291"],"conf":1.0,"tier":"T0","page":3},
   "basic_udi_di":  {"value":"7612147BDTPFEW","conf":0.88,"tier":"T2","page":1},
-  "cert_number":   {"value":null,"conf":0.9,"tier":"T1"},
+  "cert_number":   {"value":"G1 021108 0031","conf":0.9,"tier":"T1","step":"T1","verbatim":"Certificate No. G1 021108 0031","page":1},
   "stated_class":  {"value":"IIa","conf":0.95,"tier":"T0","verbatim":"Class: IIa","page":null} }
 ```
 
@@ -745,7 +757,10 @@ def handle_gate_candidate(job):
     require_complete_evidence(ext)                # missing evidence -> hard error, never write
 
     # document level
-    score = min(f.conf for f in ext.required_fields)     # REQUIRED_FIELDS only — validity_from NOT included
+    score = min(gate_confidence(f) for f in ext.required_fields)   # REQUIRED_FIELDS only — validity_from NOT included;
+                                                  # 2026-10-12: two agreeing reads each >= agreement_min
+                                                  # count 1-(1-c1)(1-c2), citation-proven regulation 1.0,
+                                                  # T0 unchanged. calibrated_confidence() below stays OWN.
     auto_superseded = p.get("superseded_by_doc_id")
     # task 5, fix round 1: the fast path is NARROW — all three must hold, or
     # this falls through to the ordinary chain below, where "older-than-current"
@@ -763,6 +778,18 @@ def handle_gate_candidate(job):
         doc_status = "staged"
     else:
         doc_status = "manual"
+
+    # 2026-10-12/13: a published document is replaced only by a candidate that
+    # is itself production; a superseded or rejected one by none. Kept means
+    # nothing written but the candidate's links at staged (never production,
+    # never retracted), and on a rejected document not even those. A production
+    # candidate that would re-identify a published chain member is kept too
+    # (chain_identity_changed); reviewer-edited fields are held on every write
+    # (reviewer_edits_kept). Row read FOR UPDATE.
+    prev = db.document.get_by_hash_for_update(p["content_hash"])
+    if chain_identity_change(prev, ext) or keeps(prev.status, doc_status == "production"):
+        if prev.status != "rejected": stage_links(p["links"])
+        return kept(prev, ext)
 
     with db.tx():                                 # single transaction: claim+write+audit
         doc = db.document.upsert_by_hash(ext, status=
@@ -827,7 +854,7 @@ def handle_gate_candidate(job):
 
 Consumers see a document *for an item* only when **both** document and link are production **and** it is current for that item (view `item_document_production`, per-item currency, migration 071). A production document may carry a mix of production links (REF-matched) and staged links (name-matched stragglers) — the "name similarity never auto-writes" invariant lives per-link, structurally.
 
-`blocking(flags)` — the flags that force `manual` (can never auto-write, not even to staging): **`older-than-current`, `no-item-identifier`, `evidence-page-missing`, `date-insane`, `manufacturer-unresolved`** (the last two added 2026-08-13), **`same-date-revision`** (added 2026-09-04). *Capping* flags (`ref-unscoped`, `ref-catalogue`, `multi-manufacturer-ref`, `downgrade-uncomparable`, `expiry-on-certless-doc`) cap the disposition at `staged` — a staged doc still writes, it is just invisible to consumers until reviewed. *Informational* flags (`no-ref-overlap`, `multi-group-match`, `cert-unresolved`, `auto-superseded`, `ref-list-possibly-truncated`) are recorded but do not gate at all, so a document carrying only these can reach `production` (`app/handlers/gate.py` `_gates_disposition`). `auto_supersede_ok` is checked *before* `blocking(flags)` — a candidate carrying `superseded_by_doc_id` routes straight to disposition `superseded` (task 5) **only when its own three-condition guard passes** (no blocking flag other than `older-than-current`, `validity_from` confidence ≥ `HIGH`); this is the only case where a candidate lands neither on production/staged/manual but is still fully archived and evidenced. The pointer it then writes is C6-re-checked against a live read of both documents, exactly as `apply_supersession` does on the forward route — a mismatch raises and the job dead-letters, it is never written and never skipped. Any guard failure falls through to `blocking(flags)` as normal, where `older-than-current` forces `manual` — the fix (round 1, 2026-08-07) that closes two holes the unconditional first draft had: an older doc with no catalogue link (`no-item-identifier`) auto-filing with zero links and no review, and a garbled OCR `validity_from` (a field outside `score`/`REQUIRED_FIELDS`) driving a permanent write with no confidence check at all. This split is set by VALIDATE's rule set (§6) and enforced here.
+`blocking(flags)` — the flags that force `manual` (can never auto-write, not even to staging): **`older-than-current`, `no-item-identifier`, `evidence-page-missing`, `date-insane`, `manufacturer-unresolved`** (the last two added 2026-08-13), **`same-date-revision`** (added 2026-09-04). *Capping* flags (`ref-unscoped`, `ref-catalogue`, `multi-manufacturer-ref`, `downgrade-uncomparable`, `expiry-on-certless-doc`) cap the disposition at `staged` — a staged doc still writes, it is just invisible to consumers until reviewed. *Informational* flags (`no-ref-overlap`, `multi-group-match`, `cert-unresolved`, `auto-superseded`, `ref-list-possibly-truncated`) are recorded but do not gate at all, so a document carrying only these can reach `production` (`app/handlers/gate.py` `_gates_disposition`). `auto_supersede_ok` is checked *before* `blocking(flags)` — a candidate carrying `superseded_by_doc_id` routes straight to disposition `superseded` (task 5) **only when its own three-condition guard passes** (no blocking flag other than `older-than-current`, `validity_from` confidence ≥ `HIGH`); this is the only case where a candidate lands neither on production/staged/manual but is still fully archived and evidenced. The pointer it then writes is C6-re-checked against a live read of both documents (`_assert_chain_identity`) — a mismatch raises and the job dead-letters, it is never written and never skipped. Any guard failure falls through to `blocking(flags)` as normal, where `older-than-current` forces `manual` — the fix (round 1, 2026-08-07) that closes two holes the unconditional first draft had: an older doc with no catalogue link (`no-item-identifier`) auto-filing with zero links and no review, and a garbled OCR `validity_from` (a field outside `score`/`REQUIRED_FIELDS`) driving a permanent write with no confidence check at all. This split is set by VALIDATE's rule set (§6) and enforced here.
 
 ### Disposition examples
 
@@ -889,13 +916,31 @@ sends it on no other decision. The handler copies it into
 the decision's own audit row, `detail.note`, and nowhere else; a payload
 without it writes the audit row it always did. The dedupe key is unchanged.
 
+```json
+{ "doc_id": 8, "decision": "approve", "decided_by": "user:natasa",
+  "items": ["010.6042", "022.0026"] }
+```
+
+`items` (optional, 2026-10-05, Review item picker,
+`docs/superpowers/specs/2026-10-02-review-item-picker-design.md` §5) are the
+items a reviewer ticked for a document that names no article numbers. They are
+checked before any write: the document covers specific items, has a manufacturer
+(its `canonical_manufacturer`, or the payload's `manufacturer` when it has none,
+which is then written), and every item exists, belongs to that manufacturer's BC
+codes and has no `rejected` link to the document (`app/item_picks.py`). Any
+failure raises and nothing is written. Each item then becomes a `manual`
+production link exactly as `confirm-link` records one (`link-confirmed` with
+`via`, then `production-write`); a link already in production is left alone. The
+decision's audit row gains `{"items": N, "manufacturer": ...}`. The decision
+`add-items` does the same on a `production` document, without the promote.
+
 ```python
 def handle_gate_apply(job):
     with db.tx():
         # C17 link decisions rule on ONE (doc_id, item_ref) and never touch the
         # document, so they take neither the manual-task resolution nor the
         # document-level audit below. They return first.
-        if decision in ("confirm-link", "reject-link", "reopen-link"):
+        if decision in ("confirm-link", "reject-link", "reopen-link", "remove-link"):
             return apply_link_decision(job, decision)
         match job.payload["decision"]:
             case "approve":
@@ -943,6 +988,7 @@ LINK_DECISIONS = {                # decision -> (required status, new status, au
     "confirm-link": ("staged",   "production", "link-confirmed"),
     "reject-link":  ("staged",   "rejected",   "link-rejected"),
     "reopen-link":  ("rejected", "staged",     "link-reopened"),
+    "remove-link":  ("production", "rejected", "link-rejected"),
 }
 
 def apply_link_decision(job, decision):

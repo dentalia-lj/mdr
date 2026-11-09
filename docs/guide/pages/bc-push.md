@@ -3,7 +3,7 @@
 **In one sentence:** what we would tell Business Central about each article,
 shown to you before we tell it.
 
-**Status:** Live. Checked against the code on 2026-09-11.
+**Status:** Live. Checked against the code on 2026-10-07.
 
 ---
 
@@ -25,6 +25,10 @@ No.
 - Sending the same thing twice is harmless: the system compares what Business
   Central already holds and sends only what differs. Pressing Send when nothing
   has changed sends nothing.
+- **Send** here and the daily job reach each article at most once a day. An
+  article already sent today waits for tomorrow, and the page tells you how many
+  are waiting. The **Update Business Central** button on an article's own page
+  is the exception: it always sends.
 - If a value turns out to be wrong, correct the underlying document here and
   press Send again. The next send overwrites it.
 
@@ -86,7 +90,8 @@ Nothing.
    there are more than 1000 articles that could change — how many there
    really are, since the list below only ever shows the first 1000.
 3. Read the heading below that: how many articles would change, and how many
-   already match.
+   already match. A note under it says how many more were already sent today;
+   they are not in the list and go tomorrow.
 4. Look down the list. Each row shows one article, one field, and the value
    that would be sent. "First send" means we have never told Business Central
    anything about that article.
@@ -105,9 +110,10 @@ To send one article on its own, open that article's page instead and press
   minute or two.
 - Come back to this page: articles that were sent successfully move into the
   "already match" count and drop off the list.
-- An article that stays on the list after several minutes did not send. That is
-  worth telling a developer about — most often it means Business Central does
-  not have a card for that article at all.
+- An article that Business Central refused leaves the list for the rest of the
+  day (it counts as already sent today) and comes back tomorrow. If the same
+  article keeps coming back day after day, tell a developer — most often it
+  means Business Central does not have a card for that article at all.
 - At most 1000 articles are listed at a time. When there are more, the note
   at the top of the page says so and gives the real total. Nothing is left
   out; the rest arrive through the daily job.

@@ -17,7 +17,7 @@ Almost nothing — with one exception, and it is reversible.
   somebody has already rejected (or on one the old rule replaced, see the next point), and it puts that document back into
   [Review](review.md) as waiting. It does **not** approve it and it does not
   bring back the products it was linked to — those stay rejected until each is
-  reopened on its own. If you reopen one by mistake, reject it again on Review.
+  reopened on its own, or ticked again in the picker. If you reopen one by mistake, reject it again on Review.
   You are asked for your name because undoing somebody else's decision is
   recorded.
 - **Reopen for review on a replaced document.** An older rule retired a
@@ -26,7 +26,7 @@ Almost nothing — with one exception, and it is reversible.
   **Reopen this document** card. Reopening puts it back into
   [Review](review.md) and takes it off every product until it is approved
   again, so approve it in the same sitting. Approving makes it answer again for
-  the products where nothing newer of its type is on file. A document the
+  the products where it is the current one of its type (MDR first, then the newest date). A document the
   system filed as already replaced, because it was older than what every
   product it names already had, shows no card. A document that shows only a
   note about the old rule, and is not marked replaced, needs nothing: the mark
@@ -89,6 +89,15 @@ to browse everything.
    **review this document** to go straight to it on [Review](review.md).
 8. If the document names a Basic UDI-DI and you want a quick cross-check, press
    **Look up in EUDAMED**.
+9. On a published document that covers specific items, **Add items this
+   document covers…** opens the same picker as on [Review](review.md): find and
+   tick the items, then **Add these N items**. Each becomes a confirmed link
+   under your name within a minute. Use it when a new item arrives that an
+   existing document covers.
+10. On the same kind of document, **Remove** next to an item in **Covered items**
+    takes it off. It asks first, and says so if the item would have no document
+    of that type left. Business Central keeps its old value until its next
+    update. To undo it, press **Re-open**, then **Covers this item**.
 
 ---
 
@@ -125,7 +134,7 @@ to browse everything.
 | **Coverage scope**, shown as *manufacturer* | This document covers everything you stock from that supplier |
 | **Cited certificate** | The notified-body certificate this declaration refers to, if any |
 | A date marked *(review)* or *(inherited)* | Not a real expiry printed on the document — see [the 5-year rule](../glossary.md#the-5-year-rule) |
-| **Where every value came from** | The evidence behind each fact, folded under **Technical details** along with the file's fingerprint and how each product link was made. Open it when an auditor asks; ignore it day to day |
+| **Where every value came from** | The evidence behind each fact, folded under **Technical details** along with the file's fingerprint and how each product link was made. Open it when an auditor asks; ignore it day to day. Its **Confidence** column is the model's own number and is not calibrated. Where two reads agreed on a value, each at least 0.70 sure, it combines the two; for a regulation proven by the citation printed on the document, it is 1.0 |
 
 ---
 

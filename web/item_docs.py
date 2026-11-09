@@ -114,12 +114,16 @@ def item_documents(
     extra = (", doc_status AS status, superseded_by, current "
              if include_superseded else "")
     source = "item_document_history" if include_superseded else "item_document_production"
+    # The history reads newest first (spec §4): undated last, `doc_id` breaking
+    # a tie. The default keeps the `doc_id` order it always had.
+    order = ("validity_from DESC NULLS LAST, doc_id DESC"
+             if include_superseded else "doc_id")
     docs = conn.execute(
         "SELECT doc_id, match_basis, type, regulation, "
         "       validity_from AS valid_from, expires AS valid_to, "
         "       expiry_basis "
         + extra +
-        f"FROM {source} WHERE item_ref = %s ORDER BY doc_id",
+        f"FROM {source} WHERE item_ref = %s ORDER BY {order}",
         (item_ref,),
     ).fetchall()
     decorate_documents(conn, docs, view=view, base_url=base_url)

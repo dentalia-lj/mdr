@@ -133,7 +133,7 @@
     </thead>
     <tbody>
       {% for doc in docs %}
-      <tr class="{{ 'row-superseded' if doc.doc_status == 'superseded' else ('row-staged' if not (doc.doc_status == 'production' and doc.link_status == 'production') else '') }}">
+      <tr class="{{ 'row-superseded' if doc.item_status == 'superseded' else ('row-staged' if not (doc.item_status == 'production' and doc.link_status == 'production') else '') }}">
         <td>{{ doc.type | doc_type }}</td>
         <td>{{ doc.regulation }}</td>
         <td>{{ doc.validity_from or "—" }}</td>
@@ -162,7 +162,7 @@
           lends none either{% endif %})</span>
           {% endif %}
         </td>
-        <td><span class="badge badge-{{ doc.doc_status }}">{{ doc.doc_status | word }}</span></td>
+        <td><span class="badge badge-{{ doc.item_status }}">{{ doc.item_status | word }}</span></td>
         <td><span class="badge badge-{{ doc.link_status }}">{{ doc.link_status | word }}</span></td>
         {# C17. The macro renders nothing unless the DOCUMENT is production and
            the link is in a status a decision can act on, so a published row,

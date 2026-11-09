@@ -1,30 +1,29 @@
--- 072: the EUDAMED declaration state, per item (ruling 2026-10-02, the
+-- 073: the EUDAMED declaration state, per item (ruling 2026-10-02, the
 -- per-item currency work, spec docs/superpowers/specs/2026-09-15-per-item-
 -- currency-design.md).
 --
 -- `eudamed_article_status` (046, restated by 068) decides "do we hold a
 -- declaration for this article" inline, and until now it asked the document's
 -- own status: `idoc.status = 'production' AND d.status = 'production'`. Since
--- 071 that status is not currency. A DoC the old document-wide rule marked
+-- 072 that status is not currency. A DoC the old document-wide rule marked
 -- `superseded` still answers for every article nothing newer of its type
 -- covers (the server's doc 29), and read by status it was "missing a
 -- declaration" in `eudamed_gap_summary`, in `eudamed_declaration_gap`, and in
 -- the gap letter to the supplier (`email_request.gap_groups_for_manufacturer`).
 --
 -- The one change: the document condition becomes `d.status IN ('production',
--- 'superseded')`, the published set 071's views rank. The LINK condition is
+-- 'superseded')`, the published set 072's views rank. The LINK condition is
 -- untouched. That equals "the article has a current DoC" without reading the
 -- ranked view: any published DoC on a production link means the article has
 -- at least one current DoC, because the rank always puts some published DoC
 -- first (a tie keeps them all current). A history DoC therefore adds no
 -- coverage beyond the current one beside it.
 --
--- Correction to 071's header, which said "every dependent view (046)" when
+-- Correction to 072's header, which said "every dependent view (046)" when
 -- explaining why its views keep their columns: nothing in 046 reads
 -- `item_document_production` or `item_document_history`. 046's views join
 -- `item_document` and `document` directly, which is why they kept reading
--- `document.status` after 071 and why this migration exists. 071 is applied
--- and is not edited.
+-- `document.status` after 072 and why this migration exists. 
 --
 -- Everything else is 068's definition verbatim (same columns, same order), so
 -- CREATE OR REPLACE keeps `eudamed_declaration_gap`, `eudamed_gap_summary` and

@@ -630,7 +630,7 @@ def _seed_eudamed_article(conn, *, canonical, srn, item_ref, budi):
 
 
 def test_a_superseded_declaration_that_still_answers_is_coverage(conn):
-    """Per-item currency (migration 072, ruling 2026-10-02): the server's doc
+    """Per-item currency (migration 073, ruling 2026-10-02): the server's doc
     29 shape. The old document-wide rule marked the DoC `superseded`, but
     nothing newer of its type covers this article, so it is the article's
     current declaration. Read by `document.status` it was "missing a

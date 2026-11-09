@@ -244,15 +244,15 @@ def _cron_specs(sched) -> list[dict]:
             ),
         },
         {
-            # No ledger: the dedupe key is the day bucket, so an hourly poll
-            # enqueues one run per day and a second tick is a no-op against the
-            # active-scope index rather than a duplicate.
+            # Ledgered since 2026-10-06: the per-day dedupe key held only while
+            # the day's jobs were active, so the hourly poll re-queued the run
+            # once they finished. `scheduler_run` now records the day.
             "key": "bc.push-drift",
-            "ledger": None,
+            "ledger": "bc.push-drift",
             "label": "Business Central — re-push what drifted",
             "cadence": "daily, rolling window",
             "cadence_hours": 24,
-            "period": None,
+            "period": periods.period_key_day,
             "job_type": "bc.push",
             "enabled": sched.bc_push_drift_enabled,
             "note": (

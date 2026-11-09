@@ -136,6 +136,13 @@ developer, not an alarm.
 If the tab shows a note that some calls have no price recorded, that is a gap
 in the system's own bookkeeping — a developer's problem, not yours.
 
+Under the figures, a table splits the spend by model, by the kind of reading
+(**Tier**) and by whether it went through the cheaper, slower bulk route
+(**Batch**). It counts the readings of every file whose reading finished. If
+a reading is paid for and the task then fails, that cost is not recorded and
+the retry's readings are the ones counted, so the real bill can be a little
+higher than the table.
+
 ---
 
 ## What can go wrong
@@ -165,6 +172,7 @@ in the system's own bookkeeping — a developer's problem, not yours.
 | **dedupe key** | An internal code that stops the same task being started twice. Not something you need to read |
 | **priority** — `interactive` / `delta` / `sweep` | Why a task exists: `interactive` means a person's click caused it right now; `delta` and `sweep` mean the system's own schedule did |
 | **unpriced calls (pricing gap)** | Spend the system could not put a price on. A bookkeeping gap, not a cost you owe |
+| **Tier** on the Spend tab: `doc-class`, `T1`, `T2` and the scan steps | Which reading a cost row paid for: `doc-class` is the quick check of what a file is, `T1` reads the document's text, `T2` reads its page images. A scanned document (no text to read) has its own steps: `doc-class-image` is the quick check made on the page images, `T2-first` a cheaper reading of the page images, `T2-second` a second cheap reading of what the first left unsure, and `T2` the full image reading, only for what the two did not settle. Since 12 October 2026 the quick check has its own row; before that it was filed under `T1`, and on files the system had to ask about, one of the two readings was left out of the totals. Since 13 October 2026 a second cheap reading also confirms the three facts that decide whether a document is published (its type, regulation and coverage scope): `T1-second` reads a document's text a second time for that alone, and on a scanned document `T2-second` does it, even when the first reading settled everything else |
 
 ---
 

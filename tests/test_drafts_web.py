@@ -86,6 +86,23 @@ def test_detail_lists_every_document_in_the_chase(client, conn):
     assert f"/documents/{d2}" in body
 
 
+def test_detail_counts_only_items_the_chased_document_answers_for(client, conn):
+    """Ruling 10 (2026-10-02): the Items column is how many items lose
+    coverage when the document lapses. Linked to two items, history for one
+    (a newer document of its type answers there): 1, not 2."""
+    from tests.currency_helpers import seed_doc
+    chased = seed_doc(conn, ["DRC-1", "DRC-2"], validity_from="2020-01-01")
+    seed_doc(conn, ["DRC-1"], validity_from="2024-01-01")
+    draft = _seed_draft(conn, doc_ids=(chased,))
+    conn.commit()
+
+    body = client.get(f"/drafts/{draft}").text
+    row = next(r for r in re.findall(r"<tr>.*?</tr>", body, re.S)
+               if f"/documents/{chased}" in r)
+    cells = [c.strip() for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
+    assert cells[-1] == "1", cells
+
+
 def test_edit_saves_and_records_the_editor(client, conn):
     draft = _seed_draft(conn, doc_ids=(_seed_document(conn, "e" * 64),))
     conn.commit()

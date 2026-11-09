@@ -69,6 +69,16 @@ SELECT DISTINCT ON (item_ref, field) item_ref, field, new_value
 """
 
 
+#: Items already attempted today, accepted or refused. A bulk apply sends them
+#: nothing (`bc_push._PUSHED_TODAY_SQL`, the once-a-day rule), so the preview
+#: leaves them out and counts them rather than offering what the job would skip.
+_PUSHED_TODAY = """
+SELECT DISTINCT item_ref
+  FROM bc_push_log
+ WHERE item_ref = ANY(%s) AND pushed_at >= date_trunc('day', now())
+"""
+
+
 def _wire(value) -> str:
     return "true" if value is True else "false" if value is False else str(value)
 
@@ -83,7 +93,8 @@ def plan(conn, cfg, *, limit: int = PREVIEW_LIMIT) -> dict:
     """
     refs = [r["item_ref"] for r in conn.execute(_CANDIDATES).fetchall()]
     if not refs:
-        return {"rows": [], "counts": {"changing": 0, "unchanged": 0},
+        return {"rows": [], "counts": {"changing": 0, "unchanged": 0,
+                                       "too_soon": 0},
                 "total_differences": 0}
 
     holdings: dict[str, list] = {ref: [] for ref in refs}
@@ -94,8 +105,10 @@ def plan(conn, cfg, *, limit: int = PREVIEW_LIMIT) -> dict:
     for r in conn.execute(_LAST_SENT, (refs,)).fetchall():
         last.setdefault(r["item_ref"], {})[r["field"]] = r["new_value"]
 
+    pushed_today = {r["item_ref"] for r in conn.execute(_PUSHED_TODAY, (refs,)).fetchall()}
+
     today = dt.date.today()
-    rows, unchanged = [], 0
+    rows, unchanged, too_soon = [], 0, 0
     for ref in refs:
         fields = bc_fields.fields_for(
             ref, holdings[ref], processed=bool(holdings[ref]), today=today,
@@ -108,10 +121,14 @@ def plan(conn, cfg, *, limit: int = PREVIEW_LIMIT) -> dict:
         if not changed:
             unchanged += 1
             continue
+        if ref in pushed_today:
+            too_soon += 1
+            continue
         rows.append({"item_ref": ref, "changed": changed,
                      "first_send": not sent})
     return {"rows": rows[:limit],
-            "counts": {"changing": len(rows), "unchanged": unchanged},
+            "counts": {"changing": len(rows), "unchanged": unchanged,
+                       "too_soon": too_soon},
             "total_differences": len(rows)}
 
 
@@ -141,7 +158,10 @@ def register_routes(app, templates, conn_factory, cfg, batch: int = 200,
             today = conn.execute("SELECT current_date AS d").fetchone()["d"]
             jid = queue.enqueue(
                 conn, "bc.push",
-                {"run_id": f"item:{item_ref}", "item_refs": [item_ref]},
+                # `manual`: a click is the one push exempt from the
+                # once-a-day rule (Denis, 2026-10-07).
+                {"run_id": f"item:{item_ref}", "item_refs": [item_ref],
+                 "manual": True},
                 f"bc.push:item:{item_ref}:{today.isoformat()}",
                 priority="interactive",
             )

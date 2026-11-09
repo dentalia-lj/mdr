@@ -93,8 +93,8 @@ Three yeses: approve. Any no: reject, or ask the supplier.
    **Issued**, **Valid until** and the **Basic UDI-DI**. A date the document
    does not give reads *Not stated*.
 5. Above the buttons, the panel says what approving will do: *Approving
-   publishes it for these N items. It answers for an item only where nothing
-   newer of its type is on file.*, followed by each item's number and name (the
+   publishes it for these N items. It answers for an item only where it is
+   the current one of its type (MDR first, then the newest date).*, followed by each item's number and name (the
    first ten; press **+ K more** for the rest) and how they were matched. An
    item that already has a newer document of the same type keeps that one; this
    document is kept as its history. For a document that covers a supplier's
@@ -110,7 +110,7 @@ Three yeses: approve. Any no: reject, or ask the supplier.
 | **Approve for these N items** (**Approve for this item** when there is one) | The document counts from now on, for exactly the items listed above the button. It appears under Documents, and each of those items now shows it |
 | **Approve** | The same, where the approval reaches no item yet. The panel says why: nothing links the document to an item, or it is linked only by a weak match (see below) |
 | **Reject…** | Asks why first. Pick one of the six reasons below, add a note if it helps, then press **Reject**. The document does not count. It stays on file, marked rejected, and can be reopened. Your name and the reason are recorded, and the reason shows on [Decisions](decisions.md). The system will keep looking for a better one. **Cancel** closes the reasons and changes nothing |
-| **Correct a fact first** | Opens the fields for the document type, the rules, the dates and the certificate number. Change only what is wrong on the document; your corrections are saved when you approve. It is not offered on a whole-range document, where a correction could not be saved |
+| **Correct a fact first** | Opens the fields for the document type, the rules, the dates and the certificate number. Change only what is wrong on the document; your corrections are saved when you approve. A document that states no issue date reads "Not stated. Enter it before approving." and cannot be approved until you enter the date here. On a whole-range document it offers the issue date only |
 | **Approve for all N items** | Only appears when the document covers a supplier's whole range instead of named products. Choose the supplier from the list first, then press it. The list offers **every** supplier in the catalogue. Pressing it does not approve yet: the screen asks *Approve for all N ⟨supplier⟩ items?* and says what that means. Press **Yes, approve for N items** to go ahead, or **Cancel** to change nothing. If N is 0, it means every product we hold from that supplier has a blank device class in Business Central — approving still records the supplier, and the products attach themselves once someone fills that class in |
 
 8. The counter at the top of the screen (*N waiting in all*) goes down by one.
@@ -126,6 +126,46 @@ for any item yet* (or *It is also linked to N more items…* when some items do
 count). After you approve, each of those items waits under **Links waiting for review on
 published documents**, further down the Review screen: press **Covers this
 item** or **Does not** for each one.
+
+### Choosing the items a document covers
+
+Some documents, often instructions for use, name no article numbers, so nothing
+links them to an item. Open the row and press **Find items this document
+covers…**.
+
+- The manufacturer is locked to the document's. If the document has none
+  confirmed, choose it first; only its items can be found. The list shows the
+  Business Central name next to the legal one where they differ.
+- The search starts with a word from the file name. Type an item number or a
+  word from the name. A number lists the items whose number contains it, and
+  below them the 10 numbers before and after it, which are often the same
+  family: check each one. A word finds close spellings too ("varibase",
+  "emax" for E.MAX). At most 200 items are listed; if more match, use a
+  narrower word.
+- **Similar** on any row lists the manufacturer's items with names like it. A
+  published document of the same manufacturer, offered under the search box,
+  lists the items it covers.
+- Tick items one by one, or **Tick all** in a catalogue group. Nothing is ticked
+  for you. An item refused earlier for this document shows **Refused earlier**. You
+  can tick it on purpose, one at a time, which reverses the refusal when you
+  approve. **Tick all** skips it.
+- Each row shows whether Business Central marks the item as a medical device,
+  which documents it already has (DoC, CE, IFU, ISO), and its newest document of
+  this type with its date.
+- **Done** closes the picker and the panel lists what approving will make the
+  document count for. **Cancel** keeps what you had before.
+
+Nothing is linked until you approve. Each ticked item then becomes a confirmed
+link under your name. An item that already has a document of the same type
+keeps it; the new one is added beside it.
+
+### Taking a wrong item off
+
+In the list *Approving publishes it for…*, each item the system matched has
+**Remove**. The item moves to *Will not count*, and **Undo** brings it back.
+Nothing is saved until you approve. Each one is then recorded as not covered,
+and a later re-read of the document will not link it again. Use it when a
+document prints another product's number, for example in an ordering table.
 
 ### Showing one kind of reason at a time
 
@@ -180,7 +220,7 @@ thirteen of them. They fall into three groups.
 
 | The screen says | What that means | What to do |
 |---|---|---|
-| *We could not confirm which manufacturer issued this.* | The name on the document matches nothing in Business Central | Normal for a new supplier. Choose the right one from the list — it holds every supplier we know, so type into the box above it to narrow it — then approve. If the supplier is not in the list at all, add it under **Manufacturers** first |
+| *We could not confirm which manufacturer issued this.* | The name on the document matches nothing in Business Central | Normal for a new supplier. Choose the right one from the list — it holds every supplier we know, so type into the box above it to narrow it — then approve. The list names each supplier by its legal name; where Business Central calls it something else, that name follows, e.g. *Chemichl AG · BC: JENSEN, MIYO*, and typing either name finds it. If the supplier is not in the list at all, add it under **Manufacturers** first |
 | *Matched to your catalogue by article number alone.* | The product number matched, but the supplier was never confirmed | A product number on its own is not enough. Confirm the supplier before approving |
 | *The expiry date is not written as an expiry anywhere on the page…* | A date was read as an expiry date, but the page never labels it one | Check the PDF. It may be a signing or issue date |
 | *We cannot tell whether this is newer or older than the document on file.* | One of the two documents has no usable date | Compare the two PDFs yourself and decide |
@@ -216,6 +256,7 @@ other screen says the word in the third column, and the
 | **A link** | The connection between one document and one item. A document can have many | |
 | **A group** | Items we treat as one family, because one document usually covers all of them | |
 | **C5**, **C17** and similar codes | Internal rule numbers. Ignore them | |
+| **Confidence**, under **Technical details** | Confidence is the model's own number and is not calibrated. Where two reads agreed on a value, each at least 0.70 sure, it combines the two. It is 1.0 for a regulation that the citation printed on the document proves | |
 
 ---
 

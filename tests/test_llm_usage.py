@@ -57,6 +57,20 @@ def test_sync_extract_captures_usage_and_cost(fixture_pdf):
     assert float(call.cost) == pytest.approx(0.004096)
 
 
+def test_a_cached_call_logs_its_cache_tokens(fixture_pdf, caplog):
+    """`in` is the uncached remainder once the system prompt caches (Task 6):
+    without `cr` / `cw` the log line would show a prompt that looks far too
+    short, and nothing in it would say why."""
+    tier = llm.AnthropicLlm(_SyncClient(_resp(_ONE_FIELD, _usage(1200, 400, cr=4870))),
+                            Models())
+    doc = pdf.open_doc(fixture_pdf(TEXT_FIXTURE))
+    with caplog.at_level(logging.INFO, logger="app.extract.llm"):
+        tier.extract("T1", doc, "f.pdf", missing=["regulation"])
+
+    assert tier.usage_log[0].usage.cache_read_tokens == 4870
+    assert "in=1200 cr=4870 cw=0 out=400" in caplog.text
+
+
 def test_usage_log_accumulates_across_calls(fixture_pdf):
     tier = llm.AnthropicLlm(_SyncClient(_resp(_ONE_FIELD, _usage(1000, 100))), Models())
     doc = pdf.open_doc(fixture_pdf(TEXT_FIXTURE))

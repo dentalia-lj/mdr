@@ -43,9 +43,11 @@ def _write(path, rows):
 
 
 def _run(conn, ref, *, priority="delta", cfg=None, records=None, source="csv",
-         catalogue="LJ"):
-    job = {"id": 1, "payload": {"source": source, "ref": ref, "catalogue": catalogue},
-           "priority": priority}
+         catalogue="LJ", dry_run=False):
+    payload = {"source": source, "ref": ref, "catalogue": catalogue}
+    if dry_run:
+        payload["dry_run"] = True
+    job = {"id": 1, "payload": payload, "priority": priority}
     return ih.handle_ingest_run(conn, job, cfg=cfg, records=records)
 
 
@@ -140,16 +142,40 @@ def test_changed_field_bumps_rev_and_reemits(conn, tmp_path):
     assert keys == {f"resolve:X1:{rev1}", f"resolve:X1:{rev2}"}
 
 
-def test_non_md_item_excluded_and_counted(conn, tmp_path):
+def test_non_md_item_is_mirrored_counted_and_never_grouped(conn, tmp_path):
+    """Natasa, 2026-11-06: the registry also holds documents for items that are
+    not medical devices (CATTANI compressors, BC 087, all `NI MP`). Until then
+    a new NI MP row never entered the mirror, so the item picker could not find
+    it. It is mirrored now as md_flag=FALSE -- every MD-only reader filters on
+    `md_flag IS TRUE` -- and still emits no resolve.group: nobody searches for
+    its documents, a person links them."""
     ref = _write(tmp_path / "lj.csv", [
         _lj("MD1", "A DEVICE", "R1", razred="RAZRED IIA"),
         _lj("ND1", "A CONSUMABLE", "R2", razred="NI MP"),
     ])
     rep = _run(conn, ref)
 
-    assert rep["changed"] == 1 and rep["non_md"] == 1
-    assert _mirror(conn, "ND1") is None            # non-MD never enters the mirror
+    assert rep["changed"] == 2 and rep["non_md"] == 1
+    assert rep["reclassified_non_md"] == 0
+    assert _mirror(conn, "ND1")["md_flag"] is False
     assert [j["payload"]["item_ref"] for j in _resolve_jobs(conn)] == ["MD1"]
+
+
+def test_a_changed_non_md_item_is_updated_not_reported_as_declassified(conn, tmp_path):
+    _run(conn, _write(tmp_path / "a.csv", [_lj("ND1", "OLD NAME", "R2", razred="NI MP")]))
+    r2 = _run(conn, _write(tmp_path / "b.csv", [_lj("ND1", "NEW NAME", "R2", razred="NI MP")]))
+
+    assert _mirror(conn, "ND1")["name"] == "NEW NAME"
+    assert r2["changed"] == 1 and r2["reclassified_non_md"] == 0
+    assert r2["anomalies"] == [] and _resolve_jobs(conn) == []
+    r3 = _run(conn, _write(tmp_path / "c.csv", [_lj("ND1", "NEW NAME", "R2", razred="NI MP")]))
+    assert r3["unchanged"] == 1 and r3["changed"] == 0
+
+
+def test_dry_run_does_not_mirror_a_new_non_md_item(conn, tmp_path):
+    rep = _run(conn, _write(tmp_path / "a.csv", [_lj("ND1", "A CONSUMABLE", "R2", razred="NI MP")]),
+               dry_run=True)
+    assert rep["changed"] == 1 and _mirror(conn, "ND1") is None
 
 
 def test_md_to_non_md_reclassification_corrects_the_mirror(conn, tmp_path):

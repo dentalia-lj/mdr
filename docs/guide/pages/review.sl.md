@@ -94,8 +94,8 @@ Trikrat da: odobrite. Kakršenkoli ne: zavrnite ali vprašajte dobavitelja.
    **Rules** (MDR ali MDD), **Issued**, **Valid until** in **Basic UDI-DI**.
    Datum, ki ga dokument ne navaja, se glasi *Not stated*.
 5. Nad gumbi plošča pove, kaj bo odobritev naredila: *Approving publishes it
-   for these N items. It answers for an item only where nothing newer of its
-   type is on file.*, sledijo pa številka in ime vsakega artikla (prvih deset;
+   for these N items. It answers for an item only where it is the current
+   one of its type (MDR first, then the newest date).*, sledijo pa številka in ime vsakega artikla (prvih deset;
    za ostale pritisnite **+ K more**) in kako so bili ujeti. Artikel, ki že ima
    novejši dokument iste vrste, obdrži tega; ta dokument ostane kot njegova
    zgodovina. Pri dokumentu, ki pokriva celoten program dobavitelja, piše
@@ -109,7 +109,7 @@ Trikrat da: odobrite. Kakršenkoli ne: zavrnite ali vprašajte dobavitelja.
 | **Approve for these N items** (**Approve for this item**, kadar je artikel en sam) | Dokument od zdaj šteje, in sicer natanko za artikle, navedene nad gumbom. Pojavi se pod Documents, vsak od teh artiklov pa ga zdaj prikazuje |
 | **Approve** | Enako, le da odobritev še ne seže do nobenega artikla. Plošča pove, zakaj: dokumenta ne povezuje z artiklom nič, ali pa je povezan le po šibkem ujemanju (glejte spodaj) |
 | **Reject…** | Najprej vpraša, zakaj. Izberite enega od šestih razlogov spodaj, po potrebi dodajte opombo, nato pritisnite **Reject**. Dokument ne šteje. Ostane na voljo, označen kot zavrnjen, in ga je mogoče znova odpreti. Vaše ime in razlog se zabeležita, razlog pa je viden na strani [Decisions](decisions.sl.md). Sistem bo naprej iskal boljšega. **Cancel** zapre razloge in ne spremeni ničesar |
-| **Correct a fact first** | Odpre polja za vrsto dokumenta, pravila, datume in številko certifikata. Spremenite le tisto, kar je na dokumentu napačno; popravki se shranijo, ko odobrite. Pri dokumentu za celoten program ga ni, ker se popravek tam ne bi shranil |
+| **Correct a fact first** | Odpre polja za vrsto dokumenta, pravila, datume in številko certifikata. Spremenite le tisto, kar je na dokumentu napačno; popravki se shranijo, ko odobrite. Dokument brez datuma izdaje kaže "Not stated. Enter it before approving." in ga ni mogoče odobriti, dokler datuma ne vnesete tukaj. Pri dokumentu za celoten program ponuja samo datum izdaje |
 | **Approve for all N items** | Pojavi se le, kadar dokument pokriva celoten program dobavitelja namesto poimensko navedenih izdelkov. Najprej izberite dobavitelja s seznama, nato pritisnite gumb. Seznam ponuja **vse** dobavitelje iz kataloga. Gumb še ne odobri: zaslon vpraša *Approve for all N ⟨dobavitelj⟩ items?* in razloži, kaj to pomeni. Za nadaljevanje pritisnite **Yes, approve for N items**, s **Cancel** pa ne spremenite ničesar. Če je N enak 0, imajo vsi izdelki tega dobavitelja v Business Centralu prazen razred pripomočka — z odobritvijo se dobavitelj vseeno zabeleži, izdelki pa se pripnejo, ko nekdo ta razred izpolni |
 
 8. Števec na vrhu zaslona (*N waiting in all*) se zmanjša za eno. Nadaljujte z
@@ -125,6 +125,47 @@ yet* (ali *It is also linked to N more items…*, kadar nekateri artikli štejej
 Po odobritvi vsak od teh artiklov čaka pod **Links waiting for review on published
 documents**, niže na zaslonu Review: za vsakega pritisnite **Covers this item**
 ali **Does not**.
+
+### Izbira artiklov, ki jih dokument pokriva
+
+Nekateri dokumenti, pogosto navodila za uporabo, ne navajajo kataloških številk,
+zato jih nič ne poveže z artiklom. Odprite vrstico in pritisnite **Find items
+this document covers…**.
+
+- Proizvajalec je zaklenjen na proizvajalca dokumenta. Če ta ni potrjen, ga
+  najprej izberite; najti je mogoče samo njegove artikle. Kjer se ime v
+  Business Centralu razlikuje od uradnega, ga seznam prikaže poleg njega.
+- Iskanje se začne z besedo iz imena datoteke. Vpišite številko artikla ali
+  besedo iz imena. Številka prikaže artikle, katerih številka jo vsebuje, pod
+  njimi pa 10 številk pred njo in 10 za njo, ki so pogosto iz iste družine:
+  preverite vsako. Beseda najde tudi podobno zapisane ("varibase", "emax" za
+  E.MAX). Prikaže največ 200 artiklov; če jih ustreza več, uporabite ožjo
+  besedo.
+- **Similar** v katerikoli vrstici prikaže artikle istega proizvajalca s
+  podobnim imenom. Objavljen dokument istega proizvajalca, ponujen pod iskalnim
+  poljem, prikaže artikle, ki jih pokriva.
+- Artikle označite enega za drugim ali z **Tick all** v katalogni skupini.
+  Ničesar ne označimo namesto vas. Artikel, ki je bil za ta dokument že
+  zavrnjen, ima oznako **Refused earlier**. Namenoma ga lahko označite
+  posamično, s čimer ob odobritvi razveljavite zavrnitev. **Tick all** ga
+  preskoči.
+- Vsaka vrstica pokaže, ali ga Business Central vodi kot medicinski pripomoček,
+  katere dokumente že ima (DoC, CE, IFU, ISO) in njegov najnovejši dokument te
+  vrste z datumom.
+- **Done** zapre izbirnik, plošča pa pokaže, za katere artikle bo dokument
+  veljal po odobritvi. **Cancel** ohrani prejšnjo izbiro.
+
+Dokler ne odobrite, ni povezano nič. Nato vsak označeni artikel postane potrjena
+povezava pod vašim imenom. Artikel, ki že ima dokument iste vrste, ga obdrži;
+novi se doda zraven.
+
+### Odstranitev napačnega artikla
+
+Na seznamu *Approving publishes it for…* ima vsak artikel, ki ga je našel
+sistem, gumb **Remove**. Artikel se premakne pod *Will not count*, z **Undo** ga
+vrnete. Dokler ne odobrite, se nič ne shrani. Ob odobritvi se vsak zabeleži kot
+nepokrit in ponovno branje dokumenta ga ne bo več povezalo. Uporabite ga, kadar
+dokument navaja številko drugega izdelka, na primer v tabeli za naročanje.
 
 ### Prikaz ene vrste razloga naenkrat
 
@@ -179,7 +220,7 @@ trinajst. Razvrščena so v tri skupine.
 
 | Zaslon pravi | Kaj to pomeni | Kaj storiti |
 |---|---|---|
-| *We could not confirm which manufacturer issued this.* | Ime na dokumentu se ne ujema z ničimer v Business Centralu | Običajno pri novem dobavitelju. Izberite pravega s seznama — na njem so vsi dobavitelji, ki jih poznamo, zato ga zožite z vpisom v polje nad njim — nato odobrite. Če dobavitelja sploh ni na seznamu, ga najprej dodajte pod **Manufacturers** |
+| *We could not confirm which manufacturer issued this.* | Ime na dokumentu se ne ujema z ničimer v Business Centralu | Običajno pri novem dobavitelju. Izberite pravega s seznama — na njem so vsi dobavitelji, ki jih poznamo, zato ga zožite z vpisom v polje nad njim — nato odobrite. Seznam navaja dobavitelja z njegovim uradnim imenom; kjer ga Business Central imenuje drugače, sledi še to ime, npr. *Chemichl AG · BC: JENSEN, MIYO*, in vpis katerega koli od obeh imen ga najde. Če dobavitelja sploh ni na seznamu, ga najprej dodajte pod **Manufacturers** |
 | *Matched to your catalogue by article number alone.* | Številka artikla se je ujemala, dobavitelj pa ni bil potrjen | Sama številka artikla ne zadošča. Pred odobritvijo potrdite dobavitelja |
 | *The expiry date is not written as an expiry anywhere on the page…* | Datum je bil prebran kot datum poteka, a stran ga nikjer tako ne označuje | Preverite PDF. Morda gre za datum podpisa ali izdaje |
 | *We cannot tell whether this is newer or older than the document on file.* | Eden od obeh dokumentov nima uporabnega datuma | Primerjajte oba PDF-ja sami in odločite |
@@ -215,6 +256,7 @@ interno. Vsi drugi zasloni povedo besedo iz tretjega stolpca,
 | **A link** | Povezava med enim dokumentom in enim artiklom. En dokument jih ima lahko več | |
 | **A group** | Artikli, ki jih obravnavamo kot eno družino, ker jih en dokument običajno pokriva vse | |
 | **C5**, **C17** in podobne kode | Interne številke pravil. Prezrite jih | |
+| **Confidence**, pod **Technical details** | Koliko je bil program, ki je prebral stran, po lastni oceni prepričan; ta ocena ni umerjena na dokumentih, ki jih je preveril človek. Kjer sta se dve ločeni branji ujemali glede vrednosti in je bilo vsako prepričano vsaj 0,70, združuje oceni obeh branj. Za predpis je 1,0, kadar natisnjeni sklic na predpis dokazuje vrednost | |
 
 ---
 

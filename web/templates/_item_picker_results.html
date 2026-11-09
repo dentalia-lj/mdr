@@ -1,0 +1,35 @@
+{# One answer of the item picker (picker spec §4): a count line, then the rows
+   grouped by catalogue group, then, after a number search, the nearby numbers. #}
+<p class="count-line">
+{%- if result.mode == "number" and result.total == 0 %}No {{ manufacturer }} item number contains "{{ result.query }}".
+{%- elif result.mode == "number" %}{{ result.total | num }} item {{ "number contains" if result.total == 1 else "numbers contain" }} "{{ result.query }}".
+{%- elif result.mode == "similar" %}{{ result.total | num }} items with names like {{ result.example }}, closest first.
+{%- elif result.mode == "source" %}{{ result.total | num }} items that document covers.
+{%- elif result.mode == "proposed" %}{{ result.total | num }} items linked to this document only by a name match. Tick the ones it covers.
+{%- elif not manufacturer %}Choose the manufacturer first.
+{%- elif not result.query %}Type an item number or a word from the name.
+{%- elif result.total == 0 %}No {{ manufacturer }} item matches "{{ result.query }}". Try another word or an item number.
+{%- elif result.capped %}{{ result.total | num }} items match. Showing the closest {{ result.shown | num }}; use a narrower word.
+{%- else %}{{ result.total | num }} items match, closest first.{% endif %}
+</p>
+{% for g in result.groups %}
+<div class="grp" data-picker-group>
+  <div class="grp-head">
+    <span class="g-label">{{ g.label }}</span>
+    <span class="hint">{{ g.rows|length | num }} {{ "item" if g.rows|length == 1 else "items" }}</span>
+    <button type="button" class="linkbtn" data-picker-tick-all>Tick all {{ g.rows|length | num }}</button>
+  </div>
+  {% include "_item_picker_rows.html" %}
+</div>
+{% endfor %}
+{% if result.nearby %}
+{# Nearby numbers (picker spec §4.3): often the same family, never certain, so
+   no "tick all": each one is the reviewer's call. #}
+<div class="grp" data-picker-group>
+  <div class="grp-head">
+    <span class="g-label">{{ result.nearby.label }}</span>
+    <span class="hint">the {{ result.nearby.rows|length | num }} around it, often the same family. Check each one.</span>
+  </div>
+  {% with g = result.nearby %}{% include "_item_picker_rows.html" %}{% endwith %}
+</div>
+{% endif %}

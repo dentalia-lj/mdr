@@ -10,7 +10,9 @@ Each table is annotated with the **queue tags** (job types) that write it / read
 
 **Sync 2026-07-24 (drift-check; migrations 010–013):** `report.weekly` tag (013) · `extraction_cost` + `extraction_spend` view (010, §4) · `item_mirror.mirror_rev` sequence default (011) · `scheduler_run` restart-safety ledger (013, §5c) · dedupe-key extensions beyond the PRD table (§1 note) · C5 CHECK is live in 005, no longer just intent.
 
-**Sync 2026-10-02 (migration 072):** `eudamed_article_status.has_production` counts a DoC whose status is `production` OR `superseded` on a production link, the published set 071's views rank. Same columns, same order; the link condition is unchanged. It equals "the article has a current DoC", so a DoC the old document-wide rule marked `superseded` that still answers for an article no longer reads as a missing declaration in `eudamed_gap_summary`, `eudamed_declaration_gap` or the gap letter.
+**Sync 2026-10-02 (migration 073):** `eudamed_article_status.has_production` counts a DoC whose status is `production` OR `superseded` on a production link, the published set 072's views rank. Same columns, same order; the link condition is unchanged. It equals "the article has a current DoC", so a DoC the old document-wide rule marked `superseded` that still answers for an article no longer reads as a missing declaration in `eudamed_gap_summary`, `eudamed_declaration_gap` or the gap letter.
+
+**Sync 2026-10-12 (migration 071):** `evidence.agreed_model_id` / `evidence.agreed_confidence`, nullable: the second read that agreed on a field's value and its own confidence; `evidence.confidence` then stores the two combined, or 1.0 for a citation-proven regulation (§5 evidence table). No grant: 007's table-level SELECT covers new columns, and `dentalia_api` keeps zero write grant on `evidence`.
 
 **Sync 2026-09-15 (migration 069):** `email_draft.kind` gains `review-confirm` — a fifth letter, asking whether a declaration past Dentalia's own five-year review horizon (`document_effective_expiry.basis='staleness'`) is still current. Never a renewal demand: these documents have not expired, and a class I declaration has no certificate, so this horizon is the only trigger it will ever produce. Vocabulary only; nothing sends.
 
@@ -145,7 +147,7 @@ CREATE TABLE robots_cache (
 -- record resolves via lookup here (existing row for hash+tier => never resubmit)
 CREATE TABLE batch_ref (
   content_hash text NOT NULL,
-  tier         text NOT NULL,             -- T1 | T2
+  tier         text NOT NULL,             -- read label: T1, T2, T2-first, ... (2026-10-12)
   batch_id     text NOT NULL,
   submitted_at timestamptz NOT NULL DEFAULT now(),
   resolved_at  timestamptz,
@@ -394,7 +396,7 @@ CREATE INDEX extraction_hash_idx ON extraction_attempt (content_hash);
 CREATE TABLE extraction_cost (
   id                    bigserial PRIMARY KEY,
   content_hash          text NOT NULL,
-  tier                  text NOT NULL,        -- T1|T2 (T0 is free, never priced)
+  tier                  text NOT NULL,        -- read label: doc-class, T1, T2, T2-first, ... (llm.READ_STEPS, 2026-10-12); T0 is free, never priced
   extract_rev           int  NOT NULL DEFAULT 1,
   model_id              text NOT NULL,
   batch                 boolean NOT NULL DEFAULT false,
@@ -519,13 +521,13 @@ CREATE TABLE document (
                                                   -- back-resolved by GATE (order-independent).
   superseded_by     bigint REFERENCES document,  -- append-only chain
   supersedes        bigint REFERENCES document,  -- 015: forward pointer. VALIDATE emits none
-                                                  -- since 071 (per-item currency) and GATE
+                                                  -- since 072 (per-item currency) and GATE
                                                   -- applies none; kept for rows written before
   status            doc_status NOT NULL DEFAULT 'staged',
   created_at        timestamptz NOT NULL DEFAULT now()
 );
 -- C6: superseded_by may only reference a document with identical (type, regulation).
--- Currency is per item and per type (migration 071, 2026-10-02): the views
+-- Currency is per item and per type (migration 072, 2026-10-02): the views
 -- below decide which published document answers for an item, and no document
 -- is retired as a whole. MDR is current over MDD for an item whatever the
 -- dates; the MDD document stays attached as history.
@@ -554,7 +556,7 @@ CREATE TABLE item_document (
 -- intact so the trail records how the refused link was proposed; reopen-link puts a
 -- rejected link back to staged. 'rejected' is sticky on upsert alongside 'production'
 -- -- a later candidate must never resurrect a coverage claim a human refused, and
--- reopen-link is the ONLY way back out. 'retracted' is not sticky: it is a machine
+-- reopen-link (or the reopen list on approve / add-items) is the ONLY way back out. 'retracted' is not sticky: it is a machine
 -- state (the current extraction stopped claiming this link), so new evidence
 -- reviving it is correct, and no human decision may target it.
 -- LIVE since 005 as CONSTRAINT item_document_trusted_basis_ck, widened by 021:
@@ -578,7 +580,7 @@ CREATE TABLE item_document (
 -- `item_mirror`'s PK, so one value is one item is one manufacturer) against
 -- `mfr_ref`'s 34, and 7.082 of 15.958 rows carry no `mfr_ref` at all.
 
--- Visibility rule for ALL consumers (read API, expiry scan, reports). 071
+-- Visibility rule for ALL consumers (read API, expiry scan, reports). 072
 -- (per-item currency) redefined both views below: `item_document_history` is
 -- every published document (production or superseded) on a production link
 -- with a `current` boolean, and `item_document_production` is its current
@@ -587,7 +589,7 @@ CREATE TABLE item_document (
 -- 034 appended expires/expiry_basis (document_effective_expiry, below) so the
 -- view's own callers stop disagreeing with it over a document's real expiry;
 -- validity_to keeps its raw (stated) meaning, additive-only.
-CREATE OR REPLACE VIEW item_document_production AS   -- 071: the current rows
+CREATE OR REPLACE VIEW item_document_production AS   -- 072: the current rows
   SELECT item_ref, doc_id, udi, match_basis, status, type, regulation,
          validity_from, validity_to, archive_url, expires, expiry_basis
     FROM item_document_history
@@ -595,7 +597,7 @@ CREATE OR REPLACE VIEW item_document_production AS   -- 071: the current rows
 
 -- Every published document linked to the item, for the one consumer that asks
 -- for it by name (`/api/items/{ref}/documents?include_superseded=true`,
--- 070 on 2026-09-16, `current` added by 071). The DOCUMENT filter is
+-- 070 on 2026-09-16, `current` added by 072). The DOCUMENT filter is
 -- production+superseded and the LINK filter does not move, so a retracted or
 -- staged link is unreachable through either view. `document.status` is not
 -- consulted for currency: a document the old document-wide rule marked
@@ -616,7 +618,7 @@ CREATE OR REPLACE VIEW item_document_history AS
    WHERE d.status IN ('production', 'superseded') AND id.status = 'production';
 GRANT SELECT ON item_document_history TO dentalia_api;   -- migration 070
 
--- 071: documents current for at least one item, plus production documents with
+-- 072: documents current for at least one item, plus production documents with
 -- no production link. The expiry board, the weekly report and the renewal
 -- letters read this instead of `document.status = 'production'`.
 CREATE VIEW document_current AS
@@ -680,6 +682,17 @@ CREATE TABLE evidence (
                                               -- always gets matching evidence instead
                                               -- of being blocked by an older rev's row.
                                               -- "Current" = MAX(extract_rev) per field.
+  agreed_model_id   text,                     -- 071: the read that agreed with this
+  agreed_confidence numeric                   -- one on the same value, and its own raw
+                                              -- confidence. `model_id`/`verbatim`/`page`
+                                              -- stay the stored read's. `confidence` is
+                                              -- what GATE scored, uncalibrated: the raw
+                                              -- 1-(1-c1)(1-c2) when the agreement counted
+                                              -- (both >= gate.agreement_min calibrated),
+                                              -- 1.0 for a citation-proven regulation,
+                                              -- else the read's own. NULL on T0, T3 and
+                                              -- single-read rows (PRD v3 §5, §7,
+                                              -- amended 2026-10-12)
 );
 
 -- append-only; no UPDATE/DELETE grants
@@ -1012,7 +1025,7 @@ CREATE TABLE eudamed_sweep_state (
 | `certificate_status_alert` | 043 | `trusted_manufacturer_srn`, `eudamed_certificate` | The adverse four statuses (`withdrawn`/`cancelled`/`suspended`/`restricted`) — a change in a certificate's standing, **not** a document request |
 | `certificate_gap` | 043 | `trusted_manufacturer_srn`, `eudamed_certificate`, `held_certificate` | A certificate EUDAMED lists that no revision of ours matches by base number — the cheapest of the four asks (a name + notified body, one line in an e-mail) |
 | `eudamed_sweep_due` | 044 | `eudamed_sweep_state`, `trusted_manufacturer_srn` | Due and not yet released — what the release-button page reads |
-| `eudamed_article_status` | 046, 068, 072 | `item_mirror`, `item_group(_member)`, `trusted_manufacturer_srn`, `eudamed_mirror`, `item_document`, `document` | Shared base: one row per (our MD article, EUDAMED match, article-level DoC state). `eudamed_declaration_gap` and `eudamed_gap_summary` both read this so they cannot disagree about "covered" |
+| `eudamed_article_status` | 046, 068, 073 | `item_mirror`, `item_group(_member)`, `trusted_manufacturer_srn`, `eudamed_mirror`, `item_document`, `document` | Shared base: one row per (our MD article, EUDAMED match, article-level DoC state). `eudamed_declaration_gap` and `eudamed_gap_summary` both read this so they cannot disagree about "covered" |
 | `eudamed_declaration_gap` | 046 | `eudamed_article_status` | The request list, grouped by Basic UDI-DI (a declaration covers the group, not the article — Carl Martin's largest gap is 2.569 articles behind 70 documents to request, not 2.569) |
 | `eudamed_gap_summary` | 046 | `eudamed_article_status` | The denominator: covered / staged / missing / `not_in_eudamed` per manufacturer, the last never folded into either bucket |
 | `eudamed_sweep_delta` | 046 | `eudamed_mirror`, `trusted_manufacturer_srn`, `eudamed_sweep_state` | What changed since the manufacturer's last reviewed sweep — new devices (`first_seen`) and status changes. A never-swept manufacturer (`last_swept_at IS NULL`) reports an EMPTY delta, never "everything is new" (ruling, Denis 2026-08-26: a delta needs a baseline) |

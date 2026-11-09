@@ -41,7 +41,7 @@ Rule set (PRD v3 §6 / handbook §6, verbatim flag names win over this docstring
   3. Date sanity: from <= to AND each date in a plausible year band -> flag
    `date-insane` otherwise (handbook vocab).
   4. Never-downgrade (C7), per article the candidate names (per-item currency,
-     migration 071): the candidate is compared with the current document of
+     migration 072): the candidate is compared with the current document of
      the same type and regulation of EACH of its own articles, not of its
      catalogue group. Its own articles are the ones linked on a basis that is
      not capped (`_UNCOMPARED_BASES`, ruling 7, 2026-10-02): the C3 fallback's
@@ -60,7 +60,7 @@ Rule set (PRD v3 §6 / handbook §6, verbatim flag names win over this docstring
      (blocking, Denis ruling 2026-09-04): no ordering exists between two
      documents issued on one day, so a person picks the current one.
   5. Supersession (C6) is gone: a newer candidate emits no `supersedes`
-     (always None; the views of migration 071 decide which document answers).
+     (always None; the views of migration 072 decide which document answers).
      MDR-over-MDD is the view's rank, and a same-type, different-regulation
      current doc is still recorded via the additive group-based
      `related_doc_id` key.
@@ -704,9 +704,10 @@ def _current_docs_for_items(conn, item_refs, doc_type: str, regulation: str,
 
     Per article, not per catalogue group (spec 2026-09-15 §1: the group is the
     wrong subject 68% of the time). Same regulation only: MDR-over-MDD is the
-    view's rank (migration 071) and decides which document answers, not whether
+    view's rank (migration 072) and decides which document answers, not whether
     this candidate is a downgrade of its own chain. `superseded` counts as
-    published, as in the view: the old flag no longer decides anything.
+    published, as in the view: the old flag no longer decides anything. A date
+    still in the future orders as undated, as in the view (2026-11-09).
 
     `exclude_content_hash` is the candidate's own bytes, so a re-validated
     document never finds itself (NEODENT doc 521, 2026-09-11)."""
@@ -721,7 +722,10 @@ def _current_docs_for_items(conn, item_refs, doc_type: str, regulation: str,
            AND d.status IN ('production', 'superseded')
            AND d.type = %s AND d.regulation = %s
            AND d.content_hash IS DISTINCT FROM %s
-         ORDER BY idoc.item_ref, d.validity_from DESC NULLS LAST, d.doc_id DESC
+         ORDER BY idoc.item_ref,
+                  (CASE WHEN d.validity_from <= current_date THEN d.validity_from END)
+                      DESC NULLS LAST,
+                  d.doc_id DESC
         """,
         (list(item_refs), doc_type, regulation, exclude_content_hash),
     ).fetchall()
@@ -1047,11 +1051,15 @@ def handle_validate_doc(conn, job: dict) -> dict:
     elif any(d is not None and not (_YEAR_MIN <= d.year <= _YEAR_MAX)
              for d in (validity_from, validity_to)):
         flags.append("date-insane")
+    elif validity_from is not None and validity_from > datetime.date.today():
+        # An issue date cannot lie ahead: T0 read "date of issue until March
+        # 27, 2030" as the issue date on docs 481, 483 and 484 (2026-11-09).
+        flags.append("date-insane")
 
     # C7 (never-downgrade), per article (spec 2026-09-15 §3.3 item 3). The
     # candidate is compared with the current document of each article it names.
     # C6 forward supersession is gone: nothing retires a document any more, the
-    # view decides which one answers (migration 071), so `supersedes` stays None.
+    # view decides which one answers (migration 072), so `supersedes` stays None.
     supersedes = None
     related_doc_id = None
     superseded_by_doc_id = None
@@ -1067,6 +1075,8 @@ def handle_validate_doc(conn, job: dict) -> dict:
         relations = []
         for cur in currents.values():
             cur_from = _to_date(cur["validity_from"])
+            if cur_from is not None and cur_from > datetime.date.today():
+                cur_from = None     # a future date is no date to compare with
             if validity_from is None or cur_from is None:
                 relations.append("uncomparable")
             elif validity_from < cur_from:

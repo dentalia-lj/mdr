@@ -5,9 +5,10 @@ product list — it writes immediately, with no preview.
 
 ## Status
 
-Partly live. Checked against the code on 2026-08-31. Loading a file already
-on the server works. The Business Central live connection option does not —
-it is not built yet, and always fails safely.
+Partly live. Checked against the code on 2026-10-07. Loading a file already
+on the server works. The Business Central option on this form does not, and
+always fails safely: the live connection to Business Central works, but it is
+the weekly sync a developer runs on the server, not this form.
 
 ## Can I break anything here?
 
@@ -23,7 +24,7 @@ Yes, a little — read this before you use it.
 - If something fails partway through, the system changes nothing at all. It
   either finishes cleanly or writes nothing.
 - Choosing the Business Central connection option currently always fails —
-  safely, writing nothing. It simply does not work yet.
+  safely, writing nothing. This form cannot run it.
 - Most readers should use **Import** instead. It does the same thing and
   shows you what will change before it changes.
 
@@ -43,14 +44,13 @@ first.
 ## Before you start
 
 - This screen does not let you choose a file from your own computer. It only
-  reads a file already sitting on the Dentalia server, or — once built — a
-  live connection to Business Central.
+  reads a file already sitting on the Dentalia server.
 - You need the exact file location from IT or a developer. Typing the wrong
   one makes the import fail, but writes nothing.
-- Do not choose **bc_odata** as the source. It is not built yet and will
-  always fail.
+- Do not choose **bc_odata** as the source. This form cannot run it, and it
+  will always fail.
 - Under the title, the screen prints a paragraph of technical text written
-  for developers, not you. Part of it is out of date. Ignore it.
+  for developers, not you. Ignore it.
 
 ## What you do
 
@@ -59,7 +59,7 @@ first.
    because it takes a file from your own machine and shows you the diff before
    anything is written. Use this page only when a developer has told you to.
 2. Under **Source**, choose **csv**. Leave **bc_odata** alone; it does not
-   work yet.
+   work from this form.
 3. Either pick a file from the list under "Pick a file under…", or type the
    exact path a developer gave you under "Or type a path manually".
 4. Leave **Priority** on **interactive**, unless told otherwise.
@@ -86,17 +86,17 @@ and the new items start looking for their documents.*
 | You see | It means | What to do | Good or bad |
 |---|---|---|---|
 | *a CSV/Excel path is required (pick one or type a path)* | You did not choose or type a file location | Pick one from the list, or type the exact path IT gave you | Bad — nothing written |
-| *company is required for a bc_odata ingest* | You chose the Business Central connection but left **Company** blank | Use **csv** with a file instead — the connection option does not work yet | Bad — nothing written |
+| *company is required for a bc_odata ingest* | You chose the Business Central connection but left **Company** blank | Use **csv** with a file instead — the connection option does not work from this form | Bad — nothing written |
 | *delta_since '' is not a valid datetime* | **Delta since** was left blank, or not filled in through the date picker | Use **csv** with a file instead | Bad — nothing written |
 | *Import queued…* and then nothing else | Normal — the work happens in the background | Check **Recent runs** below in a moment | OK |
-| A **Recent runs** row for your attempt shows *failed*, mentioning the connection is not built | You chose the Business Central connection option | Use **csv** with a file instead, or ask a developer | Bad, but safe — nothing was written |
+| A **Recent runs** row for your attempt shows *failed* | You chose the Business Central connection option, which this form cannot run | Use **csv** with a file instead, or ask a developer | Bad, but safe — nothing was written |
 | A block of raw text under a run's result | The system's own technical report for that piece of work, not specific to yours | Usually ignore it. A developer can read it if something looks wrong | Neutral |
 
 ## Words the screen uses
 
 | The screen says | It means |
 |---|---|
-| csv / bc_odata (Source) | Where the product list comes from: a file (**csv**), or a live Business Central connection (**bc_odata** — not built yet) |
+| csv / bc_odata (Source) | Where the product list comes from: a file (**csv**), or a live Business Central connection (**bc_odata** — does not work from this form; a developer runs the weekly sync) |
 | **interactive** / **delta** / **sweep** (Priority) | How soon the system gets to this, compared with other waiting work. **interactive** goes first |
 | Enqueue ingest.run | The button's internal name. It means "start this import" |
 | dedupe key | A receipt number for this exact request |

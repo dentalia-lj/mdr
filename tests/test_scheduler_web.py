@@ -174,8 +174,8 @@ def test_an_empty_ledger_says_never_run_rather_than_healthy(client, conn):
     # suppression lives in `alert_state` keyed by the condition. "Is this
     # period recorded" says nothing about whether alerting is healthy.
     assert verdicts.pop("health-watch") == "unledgered"
-    # `bc.push-drift` likewise: its day-bucket dedupe key IS the ledger.
-    assert verdicts.pop("bc.push-drift") == "unledgered"
+    # `bc.push-drift` is ledgered since 2026-10-06: its day-bucket dedupe key
+    # held only while the day's jobs were active, so it was not a ledger.
     assert set(verdicts.values()) == {"never"}
     assert "No cron has ever run against this database" in resp.text
 

@@ -3,7 +3,7 @@
 **V eni povedi:** kaj bi Business Centralu povedali o posameznem artiklu —
 prikazano vam, preden mu to povemo.
 
-**Stanje:** V uporabi. Preverjeno v kodi 11. 9. 2026.
+**Stanje:** V uporabi. Preverjeno v kodi 7. 10. 2026.
 
 ---
 
@@ -23,6 +23,10 @@ Ne.
 - Dvakratno pošiljanje iste stvari je neškodljivo: sistem primerja, kaj Business
   Central že ima, in pošlje samo tisto, kar se razlikuje. Če se ni nič
   spremenilo, pritisk na Pošlji ne pošlje ničesar.
+- **Pošlji** tukaj in dnevno opravilo vsak artikel pošljeta največ enkrat na
+  dan. Artikel, ki je bil danes že poslan, počaka do jutri, stran pa pove,
+  koliko jih čaka. Izjema je gumb **Update Business Central** na strani
+  posameznega artikla: ta pošlje vedno.
 - Če se izkaže, da je vrednost napačna, popravite dokument tukaj in znova
   pritisnite Pošlji. Naslednje pošiljanje jo prepiše.
 
@@ -81,7 +85,8 @@ Nič.
    artiklov, ki bi se lahko spremenili, več kot 1000 — koliko jih je v resnici,
    saj spodnji seznam vedno prikaže le prvih 1000.
 3. Preberite naslov pod tem: koliko artiklov bi se spremenilo in koliko se jih
-   že ujema.
+   že ujema. Opomba pod njim pove, koliko jih je bilo danes že poslanih; teh ni
+   na seznamu in gredo jutri.
 4. Preglejte seznam. Vsaka vrstica prikaže en artikel, eno polje in vrednost, ki
    bi bila poslana. "First send" pomeni, da Business Centralu o tem artiklu še
    nikoli nismo ničesar povedali.
@@ -100,9 +105,10 @@ pritisnite **Update Business Central**.
   ali dveh.
 - Vrnite se na to stran: artikli, ki so bili uspešno poslani, se preselijo med
   "already match" in izginejo s seznama.
-- Artikel, ki po nekaj minutah ostane na seznamu, ni bil poslan. To je vredno
-  povedati razvijalcu — najpogosteje pomeni, da Business Central za ta artikel
-  sploh nima kartice.
+- Artikel, ki ga je Business Central zavrnil, do konca dneva izgine s seznama
+  (šteje kot danes že poslan) in se vrne jutri. Če se isti artikel vrača dan za
+  dnem, povejte razvijalcu — najpogosteje to pomeni, da Business Central za ta
+  artikel sploh nima kartice.
 - Naenkrat je na seznamu največ 1000 artiklov. Kadar jih je več, to pove
   opomba na vrhu strani, ki navede tudi resnično skupno število. Nič ni
   izpuščeno; ostali pridejo na vrsto z dnevnim opravilom.

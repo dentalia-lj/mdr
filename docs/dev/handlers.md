@@ -19,29 +19,29 @@ never clobber a real handler.
 
 | Tag | Entry point | Emits | Tests |
 |---|---|---|---|
-| `ingest.run` | `handlers/ingest.py:118` | `resolve.group` | `test_ingest_handler.py` |
+| `ingest.run` | `handlers/ingest.py:121` | `resolve.group` | `test_ingest_handler.py` |
 | `resolve.group` | `handlers/resolve.py:278` | `discover.group` | `test_resolve_handler.py` |
-| `discover.group` | `handlers/discover.py:908` | `fetch.url` ×k, `email.request`, `validate.doc` | `test_discover_handler.py` |
+| `discover.group` | `handlers/discover.py:910` | `fetch.url` ×k, `email.request`, `validate.doc` | `test_discover_handler.py` |
 | `fetch.url` | `handlers/fetch.py:145` | `extract.doc` or `validate.doc`, **or nothing** when the body is not a document | `test_fetch_handler.py` |
-| `extract.doc` | `handlers/extract.py:278` | `validate.doc`, **or nothing** when the doc-class call answers `not-a-compliance-document` | `test_extract_handler.py`, `test_extract_cost.py`, `test_doc_class_gate.py` |
-| `validate.doc` | `handlers/validate.py:798` | `gate.candidate` | `test_validate_handler.py` |
-| `gate.candidate` | `handlers/gate.py:985` | nothing (terminal) | `test_gate_candidate_handler.py` |
-| `gate.apply` | `handlers/gate.py:1415` | `discover.group` on reject | `test_gate_apply_handler.py` |
+| `extract.doc` | `handlers/extract.py:369` | `validate.doc`, **or nothing** when the doc-class call answers `not-a-compliance-document` | `test_extract_handler.py`, `test_extract_cost.py`, `test_doc_class_gate.py` |
+| `validate.doc` | `handlers/validate.py:802` | `gate.candidate` | `test_validate_handler.py` |
+| `gate.candidate` | `handlers/gate.py:1397` | nothing (terminal) | `test_gate_candidate_handler.py` |
+| `gate.apply` | `handlers/gate.py:2060` | `discover.group` on reject | `test_gate_apply_handler.py` |
 | `backfill.scan` | `handlers/backfill.py:270` | `extract.doc` | `test_backfill_handler.py` |
 | `upload.ingest` | `handlers/upload.py:33` | `extract.doc` or `validate.doc` | `test_upload_handler.py` |
 | `vendor.import` | `handlers/vendor_import.py:40` | nothing, deliberately | `test_vendor_import_handler.py` |
 | `email.poll` | `handlers/email_poll.py:361` | `extract.doc` | `test_email_poll_handler.py` |
-| `email.request` | `handlers/email_request.py:860` | `email.reminder` | `test_email_request_handler.py` |
-| `email.reminder` | `handlers/email_request.py:1027` | nothing; defers its own job to the next rung | `test_email_request_handler.py` |
+| `email.request` | `handlers/email_request.py:862` | `email.reminder` | `test_email_request_handler.py` |
+| `email.reminder` | `handlers/email_request.py:1029` | nothing; defers its own job to the next rung | `test_email_request_handler.py` |
 | `eudamed.sync` | `handlers/eudamed.py:226` | nothing | `test_eudamed_handler.py` |
 | `eudamed.certregister` | `handlers/eudamed.py:424` | nothing | `test_eudamed_handler.py` |
 
 **Running the register by hand.** `POST /scheduler/run/eudamed.certregister` (the **Run now** button on `/scheduler`) enqueues one pull with the cron's own empty payload and dedupe key, so a hand-run and the cron collapse into one job. This is currently the ONLY way the register refreshes: `eudamed_certregister_enabled` is off by default, so the `eudamed.certregister` cron tick fires and does nothing. (The reason used to be that the `scheduler` service sat behind compose profile `full`; that service was deleted 2026-09-02 and the crons run on the queue, so the flag is now the whole story.) Everything on `/expiry` that reads `certificate_drift`, `certificate_drift_candidate`, `certificate_status_alert` and `certificate_gap` is therefore as old as the last hand-run.
 | `eudamed.sweep` | `handlers/eudamed.py:730` | nothing, never self-emits | `test_eudamed_handler.py` |
-| `report.weekly` | `handlers/report.py:166` | nothing | `test_report_handler.py` |
-| `scheduler.tick` | `handlers/scheduler_tick.py:92` | itself, forever (`queue.defer`) | `test_scheduler_tick.py` |
+| `report.weekly` | `handlers/report.py:168` | nothing | `test_report_handler.py` |
+| `scheduler.tick` | `handlers/scheduler_tick.py:93` | itself, forever (`queue.defer`) | `test_scheduler_tick.py` |
 | `playbook.reonboard` | `handlers/playbook_probe.py:86` | **nothing** — the only `app.crawl` consumer that emits no `fetch.url` | `test_playbook_probe.py`, `test_playbook_probe_web.py` |
-| `bc.push` | `handlers/bc_push.py:107` | nothing — a leaf, like `report.weekly` | `test_bc_push.py`, `test_bc_fields.py` |
+| `bc.push` | `handlers/bc_push.py:119` | nothing — a leaf, like `report.weekly` | `test_bc_push.py`, `test_bc_fields.py` |
 
 ## Per tag
 
@@ -49,10 +49,10 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 **emits** (with dedupe key), **fails how**, **note**.
 
 ### `ingest.run`
-- consumes: `source`, `ref.upload_id` (upload source only), `catalogue`, `dry_run?`; priority from `job`, not payload (`ingest.py:122`)
-- writes: `item_mirror` (`ingest.py:73-89`)
-- emits: `resolve.group` per changed item, `resolve:{item_ref}:{rev}`, suppressed when `dry_run`
-- fails how: generic. Bad rows are counted, not raised (`_skip`, `ingest.py:143`)
+- consumes: `source`, `ref.upload_id` (upload source only), `catalogue`, `dry_run?`; priority from `job`, not payload (`ingest.py:125`)
+- writes: `item_mirror` (`ingest.py:76-92`)
+- emits: `resolve.group` per changed item, `resolve:{item_ref}:{rev}`, suppressed when `dry_run`; never for an `NI MP` item, which is mirrored with `md_flag=FALSE` and not grouped (2026-11-06)
+- fails how: generic. Bad rows are counted, not raised (`_skip`, `ingest.py:158`)
 - note: the two-phase preview/apply path reads `import_inbox` and leaves the row; only apply consumes it
 
 ### `resolve.group`
@@ -93,8 +93,16 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 - consumes: `content_hash`, `archive_url`, `group_id?`, `companion_archive_url?`
 - writes: `extraction_attempt`, `extraction_cost`, `document_text`, `batch_ref`
 - emits: `validate.doc`, `validate:{hash}:{rev}:{group_id}`
-- fails how: an unopenable PDF is a counted, non-raising result and emits nothing. Batch mode self-defers per tier until the Anthropic batch is done
+- fails how: an unopenable PDF is a counted, non-raising result and emits nothing. Batch mode self-defers per tier until the Anthropic batch is done. A read label sent twice in one extraction raises `ValueError` before anything is written (the cost ledger keeps one row per label). A doc-class answer cut at `max_tokens` (text or image, since 2026-10-12 on both), or a batch doc-class result with no answer, raises `RuntimeError` rather than reading as `not-a-compliance-document` (which would drop the file for good)
 - note: batch state lives in `batch_ref`, never in the payload (invariant 9)
+- note: one `extraction_cost` row per paid call, its `tier` the read's label (`doc-class`, `T1`, `T2-first`, `T2`, ...; `llm.READ_STEPS`). Since 2026-10-12: before, the doc-class call and the T1 read both wrote `T1` and the ledger's unique key dropped one of them. `batch_ref.tier` holds the same label
+- note: `counts.cited_page_outside_images` on the result (sync path, absent when zero): cites an image read with an explicit page list made to an image it was not sent; the page is stored as null (`llm._cited_pages`)
+- note: a document with a text page takes the text ladder (`tiers.run_text_ladder`, 2026-10-12, plan Task 4): `doc-class` when T0 left it `unknown` (batch mode too since then; before, batch skipped the call), or `doc-class-image` when its pages 1-2 hold no text (2026-10-13; before, the file was refused without a call), `T1` (`models.t1`, Haiku 5.5), `T2-first` (`models.vision_first`) for what the text does not prove, `T2` (Sonnet) only for what is still open, then `T1-second` (`models.second_read`, thinking off) for the gate fields nothing proves or confirms (2026-10-13, plan Task 5b). One with no text page (`pdf.has_text_page`) takes the scan ladder (`tiers.run_scan_ladder`): `doc-class-image` when T0 left it `unknown`, `T2-first`, `T2-second` for what that leaves open and for the gate fields the first read settled (made even when nothing else is open, since Task 5b), `T2` only for what is still open. Both run on both transports through the same function: in batch mode each step is its own batch-of-1 under its label; the ladder re-runs from the top every poll and `tiers.Deferred` stops it at the first step still running. A text document's image reads render the pages that point at the open fields on the sync path, pages 1-4 in batch mode (`docs/dev/limits.md`). Rules: [extraction.md](extraction.md) "The text ladder" and "The scan ladder"
+- note: `disagreements` on the result (absent when none): every field two reads answered differently, `{field, steps, values}`, and `counts.read_disagreements`. Every read is kept on the attempt under `fields._reads`; a scan longer than four pages records the fields both cheap reads answered empty under `fields._pages_unread` (VALIDATE's `pages-unread`)
+- note: `failed_reads` on the result (absent when none): the steps of either ladder whose read answered nothing (unparseable or truncated response, errored batch request), and `counts.read_failures`. A failed read is never taken as an empty answer: its fields go on to the next read (`tiers.failed_reads`, 2026-10-12)
+- note: `rejected_values` on the result (absent when none): every value a read gave that is provably not its field and was not taken (a GMDN or EMDN code as a REF code, a list the read itself disowns, a declaration's own reference as its certificate number, a template's release date as its date), `{step, field, reason}`, and `counts.rejected_values`. The field went on as if that read had given no answer for it (`tiers.rejected_values`, 2026-10-14)
+- note: the gate fields' evidence (2026-10-13, plan Task 5b; GATE reads it, see `gate.candidate` below): on `type`, `regulation`, `coverage_scope`, `agreed_model_id` / `agreed_conf` name another read that gave the same well-formed value (stamped whatever the numbers; the floor is GATE's), and `proven: "citation"` marks a text document's `regulation` its one printed citation proves (`checks.citation_proven`). A confirming read (`T1-second`, or `T2-second` on a gate field the first read settled) never replaces the stored value and sends nothing on: a disagreement is counted on the result like any other; when it agrees, the stored evidence is chosen by the same rule as below, so it can become the stored read and the former the agreeing one. Of two reads that agree, the stored evidence is a read the checks verify, the surer of those, else the surer read (`tiers.merge`, ruling D1, 2026-10-13). A derived `coverage_scope` (type to scope) carries `follows: "type"`
+- note: `extract_rev` is `tiers.next_extract_rev`: past every attempt AND every evidence row of the document (since Task 5b), so a reading made after a reviewer's edit (`MAX(evidence.extract_rev) + 1`) never takes the edit's rev
 
 ### `validate.doc`
 - consumes: `content_hash`, `extract_rev`, `group_id?`, `archive_url?`
@@ -102,26 +110,32 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 - emits: `gate.candidate` always, either `gate:{hash}:{rev}:mfr-binding` or `gate:{hash}:{rev}:{group_id}`
 - fails how: missing extraction row or incomplete required fields are suppressed and counted, job finishes `done` with no emit
 - note: every decision is an additive key on the emitted payload
-- note: the never-downgrade check (C7) is per article (migration 071, 2026-10-02): the candidate is compared with the current document, of the same type and regulation, of each article it names, not of its catalogue group. Only articles linked on a basis that is not capped count: a `name-family`, `fetch-context` or `ref-catalogue` link names no article the document is known to cover (the C3 fallback links every group member at `fetch-context`), so it is never compared (ruling 7, 2026-10-02); a candidate with only such links is compared with nothing. `older-than-current` (blocking) when older for any article; `superseded_by_doc_id` plus `auto-superseded` only when older for every article it names; `same-date-revision` when equal on any; `downgrade-uncomparable` when a date is missing. VALIDATE emits no `supersedes` (always null)
-- note: the extraction-shape flags (`ref-list-possibly-truncated`, `iso-without-standard-number`, both from `tiers.integrity_flags`) are computed BEFORE the C4 manufacturer-binding branch, so they ride BOTH routes. They sat after the binding return until 2026-09-09, which made `iso-without-standard-number` unreachable on exactly the population it exists for — a QMS certificate is manufacturer-scope by definition
+- note: the never-downgrade check (C7) is per article (migration 072, 2026-10-02): the candidate is compared with the current document, of the same type and regulation, of each article it names, not of its catalogue group. Only articles linked on a basis that is not capped count: a `name-family`, `fetch-context` or `ref-catalogue` link names no article the document is known to cover (the C3 fallback links every group member at `fetch-context`), so it is never compared (ruling 7, 2026-10-02); a candidate with only such links is compared with nothing. `older-than-current` (blocking) when older for any article; `superseded_by_doc_id` plus `auto-superseded` only when older for every article it names; `same-date-revision` when equal on any; `downgrade-uncomparable` when a date is missing. VALIDATE emits no `supersedes` (always null)
+- note: the extraction-shape flags (`ref-list-possibly-truncated`, `iso-without-standard-number`, `date-label-not-adjacent`, `pages-unread`, all from `tiers.integrity_flags`) are computed BEFORE the C4 manufacturer-binding branch, so they ride BOTH routes. They sat after the binding return until 2026-09-09, which made `iso-without-standard-number` unreachable on exactly the population it exists for — a QMS certificate is manufacturer-scope by definition
 
 ### `gate.candidate`
 - consumes: `content_hash`, `extract_rev` required; `group_id`, `ref_gate`, `flags`, `links`, `supersedes`, `related_doc_id`, `cert_doc_id`, `superseded_by_doc_id`, `archive_url`, `manufacturer`, `route` optional
 - writes: `document`, `item_document`, `evidence`, `manual_task`, `audit_log`
 - emits: nothing — terminal
-- fails how: a stale `extract_rev` is a counted no-op. Missing extraction raises. Unusable evidence raises. An UNATTRIBUTABLE manufacturer bind raises rather than promoting nothing ([gate-bind-zero-links], `gate.py:1223`) — that is a name resolving to no BC *codes*. A name that resolves fine but whose items carry no MD flag is **not** a fault and never was: since migration 053 it is a legitimate bind that records the manufacturer and links nothing
-- note: GATE no longer retires documents (2026-10-02, migration 071; `_apply_supersession` is deleted). Neither a production write nor `gate.apply approve` changes another document; the one chain pointer left is the task-5 fast path's `superseded_by` on the older candidate itself. Which document answers for an item is read from `item_document_production` / `document_current`
-- note: `TRUSTED_BASES` (`gate.py:47`) is what caps `name-family` / `fetch-context` / `ref-catalogue` at staged, backed structurally by the DB CHECK in migrations 005/021
+- fails how: a stale `extract_rev` is a counted no-op on both routes (the manufacturer-binding route since 2026-10-12). Missing extraction raises. Unusable evidence raises, a `conf` that is not a number (a numeric string included) among it. An UNATTRIBUTABLE manufacturer bind raises rather than promoting nothing ([gate-bind-zero-links], `gate.py:1762`) — that is a name resolving to no BC *codes*. A name that resolves fine but whose items carry no MD flag is **not** a fault and never was: since migration 053 it is a legitimate bind that records the manufacturer and links nothing
+- note: GATE no longer retires documents (2026-10-02, migration 072; `_apply_supersession` is deleted). Neither a production write nor `gate.apply approve` changes another document; the one chain pointer left is the task-5 fast path's `superseded_by` on the older candidate itself. Which document answers for an item is read from `item_document_production` / `document_current`
+- note: `TRUSTED_BASES` (`gate.py:54`) is what caps `name-family` / `fetch-context` / `ref-catalogue` at staged, backed structurally by the DB CHECK in migrations 005/021
+- note: **combined confidence** (PRD v3 section 7, 2026-10-12). `_score` takes the minimum of `_gate_confidence` over `type`, `regulation`, `coverage_scope`: a field whose evidence carries `agreed_model_id` + `agreed_conf` counts `1 - (1 - own)(1 - agreed)` when both calibrated numbers are at least `gate.agreement_min`; a `regulation` with `proven: "citation"` counts 1.0; T0 and T3 (no `model_id`) keep their own number; a `coverage_scope` marked `follows: "type"` is left out of the minimum (`_follows_type`, Denis's ruling D3, 2026-10-13: the type is in it, combined when confirmed; the scope's own number, the type's, is still what `scope_stated` reads and what its evidence row stores). One function (`_confidences`) decides the scored and the stored number together. The disposition and per-link production read that score. The one-field guards read the stored read's own number through `_field_confidence`, never the combined one: `scope_stated` and the manufacturer-name check on the auto-bind route, and the supersede fast path's `validity_from`. The extraction stamps the agreement keys since 2026-10-13 (`extract.doc` above, plan Task 5b); on the eval's cached replay the score clears `gate.high` on 65 of 79 text documents and 25 of 34 scans (the score alone, before VALIDATE's flags)
+- note: evidence (migration 071) gets `agreed_model_id` and the agreeing read's own raw `agreed_confidence` only when both keys are present on a row a model read (`_agreed_columns`); T0, T3 and single-read rows store NULL. `confidence` stores what GATE scored, uncalibrated (`_stored_confidence`): the raw combination when the agreement counted, 1.0 for a citation-proven `regulation`, else the read's own number
+- note: **kept-document guard** (Denis, 2026-10-12 and -13: R1, R2, R5, R6; `_keeps`). GATE keeps the stored document, on both routes (`_kept`): a `production` one from a candidate that does not itself reach production, a `superseded` one from every candidate, and a `rejected` one from every candidate. Kept means no field, no evidence, no review task, no chain pointer. A kept `production` or `superseded` document still gets the candidate's links, at `staged` only, never production and never retracted, so two groups' candidates for one reading (C3) land the same in either order. A `rejected` document gets nothing at all, not even a staged link: it is final for the machine until a person's Reopen. The result carries `kept` (the status that held), the would-be `disposition`, and `kept_differences` (fields read differently: column-backed ones against the `document` row, the rest against current evidence, lists order-insensitive) with `counts.kept_differences`, both absent when nothing differs. A production candidate on a `staged`, `filed` or `production` document replaces fields and evidence, with the holds below. Independently, a production link needs the document's actual status after the upsert to be `production`
+- note: **chain identity** (R4.1). A production reading that would change `type`, `regulation` or `coverage_scope` of a `production` document in a supersession chain (any of `supersedes` / `superseded_by`, from either side) goes to `manual` and is kept: `chain_identity_changed` names the fields (`_chain_identity_change`). A staged document's pending `supersedes` is left to `_assert_chain_identity`, which re-checks it live when it takes effect
+- note: **reviewer edits** (R4.2). A field with T3 evidence keeps its column (`_upsert_document(held=...)`) and gets no machine evidence row (`_insert_evidence(held=...)`) on any later machine write; a differing reading is listed in `reviewer_edits_kept` and counted. Root cause: a T3 edit's rev is `MAX(evidence.extract_rev) + 1`, the same number the next reading gets from `extraction_attempt`, so before the hold the per-rev evidence guard skipped the machine row while the column took its value
+- note: `gate.candidate` reads the document row `FOR UPDATE` on both routes (R4.4), so a decision that commits before GATE's status read is seen, and one that comes after waits for GATE's commit. Only GATE locks: `gate.apply` still reads the status unlocked, so a candidate committing between `gate.apply`'s read and its write is not yet excluded (logged as a follow-up)
 - note: both GATE handlers set `document.canonical_manufacturer` (migration 053). It is the CONFIRMED manufacturer, not the printed name in evidence; null means undecided, never "none". Sticky under re-upsert via `COALESCE(EXCLUDED..., document....)`
 
 ### `gate.apply`
-- consumes: `doc_id`, `decision`, `decided_by` required; `edits?`, `manufacturer?`, `group_id?`, `note?`, `item_ref` (required for the three link decisions). Document decisions: `approve`, `reject`, `bind-manufacturer`, `reopen`. Link decisions: `confirm-link`, `reject-link`, `reopen-link`
+- consumes: `doc_id`, `decision`, `decided_by` required; `edits?`, `manufacturer?`, `group_id?`, `note?`, `items?` (approve / add-items: the item refs a reviewer ticked, written as `manual` production links), `reopen?` (approve / add-items: the subset of `items` ticked despite an earlier refusal), `remove?` (approve: system-matched items taken off, set to `rejected` before links are promoted), `item_ref` (required for the four link decisions, `remove-link` being the published-link refusal). Document decisions: `approve`, `reject`, `bind-manufacturer`, `reopen`, `add-items` (published documents only). `approve` and `bind-manufacturer` raise on a document with no `validity_from` after edits (every approval needs an issue date, 2026-10-02); `bind-manufacturer` accepts `edits` with `validity_from` only. Link decisions: `confirm-link`, `reject-link`, `reopen-link`, `remove-link`
 - note: `note` (2026-09-11, office UI redesign P1a) is the reviewer's reason, `"<reason>"` or `"<reason>: <free text>"`. It goes into the decision's own `audit_log.detail` (`_note_detail`, merged into a link decision's detail) and never onto the cascaded `link-rejected` rows. Optional: without it the audit row is what it always was. The review UI sends it on `reject` only, where one of `REJECT_REASONS` is required and the free text is capped at `REJECT_NOTE_MAX` (500)
 - writes: `document`, `item_document`, `manual_task`, `audit_log`
 - emits: `discover.group` on reject with a `group_id`, interactive priority
 - fails how: every link-decision precondition raises rather than no-opping — a person put their name to it, so it dead-letters where somebody sees it. Idempotent re-delivery returns quietly
 - note: `reopen` (2026-09-04) is the only way back out of `rejected` and the only document decision whose precondition is a STATUS — it raises unless the document is currently `rejected` or `superseded` (`superseded` added 2026-10-02: the repair route for documents the old document-wide rule retired wrongly; their links were never touched, so they stay production). It exists because making `rejected` sticky in `_upsert_document` closed the hole where any re-delivery silently un-rejected a document, and that hole was also the only escape. It deliberately does NOT cascade the links back: `reject` cascades them to `rejected` so none is left staged under a rejected document, and re-staging them would recreate exactly that state. Each returns through `reopen-link`
-- note: human edits are written as T3 evidence, `tier='T3'`, `model_id=NULL`, `confidence=1.0`, pageless (`gate.py:1133`)
+- note: human edits are written as T3 evidence, `tier='T3'`, `model_id=NULL`, `confidence=1.0`, pageless, `agreed_*` NULL (`gate.py:1700`). Their rev is `MAX(evidence.extract_rev) + 1`, which the next reading shares; `gate.candidate` holds T3 fields so that never matters
 - note: on `bind-manufacturer` the column is written BEFORE the links are derived, so a bind that links nothing still records the decision
 
 ### `backfill.scan`
@@ -150,6 +164,7 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 - emits: `extract.doc` per new attachment
 - fails how: `EmailNotConfigured` is reported as `not-configured`, not a failure. The zip/archive refusal taxonomy is all counted
 - note: **read-only on the server** (2026-09-24). The adapter opens the folder with `EXAMINE`, fetches with `BODY.PEEK[]`, ends with `LOGOUT` and never `CLOSE`, and sends no `STORE`, `EXPUNGE`, `MOVE` or `COPY`; `tests/test_email_adapter.py` records the commands and asserts it. It reads mail that arrived on or after `email.poll_since` (required once configured, else `ValueError`), filters UIDs already in `email_poll_log` before downloading, and takes at most `email.poll_max_messages` per poll, oldest first, counting the rest as `deferred_to_next_poll`. Nothing is marked on the server: Exchange's IMAP stores no custom keywords, and the standard flags belong to the people reading the mailbox. TLS **verifies** the server certificate (imaplib's own default context does not: `ssl._create_stdlib_context` is `_create_unverified_context`), and every socket operation has a 60 s timeout (`IMAP_TIMEOUT_S`) so a hung server cannot stall the worker
+- note: **sign-in** (2026-10-05): `AUTHENTICATE PLAIN` as `IMAP_LOGIN` (or `IMAP_USER` when empty) where the server advertises `AUTH=PLAIN`, `LOGIN` otherwise. PLAIN because imaplib's `LOGIN` leaves the username unquoted and a `DOMAIN\user` backslash is not legal in an atom. `IMAP_USER` stays in `mailbox_id` either way
 - note: idempotency comes from the durable `email_poll_log` UID guard, not IMAP `\Seen`. The one LLM call is body summarisation — UI context only, never evidence (invariant 12)
 - note: **reply matching** (2026-09-11): `_match_request` links a message to a `renewal_request` and stores it on `email_poll_log.renewal_request_id` — by the `[DENT-{id}]` token every draft of a chase carries in its subject (`email_request.subject_for`), else by sender domain when it is a contact domain of exactly one manufacturer with an open request. The polled mailbox's own domain never matches. Counted as `reply_linked_by_reference` / `reply_linked_by_sender` / `reply_unlinked`. The link is shown on `/emails`; it closes nothing and changes no request state
 
@@ -246,8 +261,16 @@ header window only (`_HEADER_PAGES`, `t0_templates.promote_doc_class`) — the
 previous rule promoted `unknown` to `compliance-doc` off any marker anywhere in
 the full text, which is how a site menu became an `IFU` at confidence 1.00.
 Anything still `unknown` goes to a cheap doc-class call (`AnthropicLlm.classify`,
-`models.t1`) which may answer `not-a-compliance-document`; that answer is
-terminal and suppresses the `validate.doc` emit.
+`models.t1`, thinking off since `models.t1` moved to Haiku 5.5 on 2026-10-12,
+batch mode included; on the page 1-2 images when those pages hold no text, since
+2026-10-13, and also when one of them is a scanned page or their text layer is
+under 30% letters, since the Task 9 replay the same day) which may answer
+`not-a-compliance-document`; a device's user manual, operating, processing or
+reprocessing instructions count as `IFU` (`prompts/doc_class.md`). That answer is
+terminal and suppresses the `validate.doc` emit. A scan (no text page) is asked
+the same question on its page 1-2 images instead (`classify_image`,
+`doc-class-image`, `models.vision_first`, since 2026-10-12): the text call found
+no text on a scan and refused it without a call.
 
 Measured over 1.261 real archived PDFs against 13 PDFs the ranker chose off the
 open web: **97% of real documents are still typed free by T0**, 3% take the call.
@@ -315,7 +338,8 @@ document at all, so there is usually nothing in the ledger to skip.
 
 ### `bc.push`
 - consumes: `run_id`, `item_refs` (a batch, ~200)
-- produced by: the item button and the bulk apply (web), and the `bc.push-drift` cron — a rolling window, oldest-pushed first, capped by `bc.drift_cap`, emitted only when `bc.write_enabled` AND `scheduler.bc_push_drift_enabled` are both on
+- once a day (Denis, 2026-10-07): the bulk apply and the drift cron send an item at most once per calendar day, refused attempts included (`too_soon` in the result); the item button sets `payload.manual` and is exempt
+- produced by: the item button and the bulk apply (web), and the `bc.push-drift` cron — once a day (`scheduler_run`), a rolling window, oldest-pushed first, capped by `bc.drift_cap`, emitted only when `bc.write_enabled` AND `scheduler.bc_push_drift_enabled` are both on
 - writes: `bc_push_log` only. No registry table, so invariant 1 is untouched — this stage reads the registry and writes someone else's system
 - emits: nothing
 - client: built by the handler from `cfg.bc` (`BcClient`) only when `bc.write_enabled` is on and none is injected, and closed at the end of the job; writes on with `BC_BASE_URL` empty raise by name. Each item is `PATCH {base}/dataitems('<no>')`, the number with `'` doubled and fully percent-encoded, `/` as `%2F` included (verified live 2026-09-24), `If-Match: *` -- the ledger is the diff source and BC is never read back

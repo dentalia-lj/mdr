@@ -28,6 +28,12 @@
 
 <div class="card">
   <h2>{{ counts.changing }} to send · {{ counts.unchanged }} already match</h2>
+  {% if counts.too_soon %}
+    {# The once-a-day rule (Denis, 2026-10-07): bulk and the daily task send an
+       article at most once a day; only the button on an article's page skips it. #}
+    <p class="hint">{{ counts.too_soon }} more already sent today. They go tomorrow,
+    or now from the button on the article's page.</p>
+  {% endif %}
   {% if rows %}
     <form hx-post="/bc-push/apply" hx-target="#bc-push-result" hx-swap="innerHTML">
       {# `rows | length`, not `counts.changing`: `rows` is already capped to

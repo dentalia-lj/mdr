@@ -1,3 +1,33 @@
+# Monday 2026-11-09: Nataša's review feedback, continued
+
+Done 2026-11-06 and deployed (server on `1cc1274`): doc 16 back in production
+under Chemichl AG (jobs 28438 reopen, 28439 bind); BC brand names in both
+manufacturer lists (`099dc1b`); INGEST mirrors `NI MP` items as `md_flag=FALSE`,
+never grouped (`5a108af`); BC sync run by hand, manufacturers then items (job
+28461: 20.355 seen, 4.121 changed, 3.560 non-MD; CATTANI 087 now 99 items).
+
+- [ ] Check in the UI that doc 894's "Add items this document covers..." finds the
+      CATTANI compressors (search "AC" or "kompresor"). Not checked 2026-11-06.
+- [ ] Reply to Nataša, task 5: BC to us is a manual weekly sync for now; us to BC
+      is the item button and the bulk push, the daily drift push is off. Turning
+      the weekly read on means building the cron first: designed in
+      `docs/superpowers/specs/2026-10-05-bc-weekly-sync-design.md` § 4, not built.
+- [ ] Reply to Nataša, task 9: one Word document for her issues? IFUs in search
+      (auto-search stays off).
+- [ ] Remove linked items in the picker, Nataša's must-fix
+      (`[review-remove-linked-items]`): spec first. Needs a new `remove-link`
+      decision (PRD change), an explicit removal list, a warning when an item
+      would be left with no current document, a BC push flag, and re-ticking a
+      refused item = reopen + confirm.
+- [ ] Waiting on Nataša, then doc 188 fixes: which items (55002-MULTI, 55065,
+      55066); why MIYO and JENSEN are two BC codes; doc 506 (older 2023 MIYO DoC);
+      CATTANI cannulas MD or not. Then the T0 fixes (brand alias inside a product
+      list; "Decla ration" and "Izjava EU o skladnosti" DoC markers, measured on
+      the corpus first) and a manufacturer correction on Review (spec).
+- [ ] Denis to decide: should a whole-range bind link non-MD items; when to turn on
+      `SCHEDULER_BC_PUSH_DRIFT_ENABLED` (after her review); MIYO/JENSEN device
+      class in BC (doc 16 links 0 items until it is set).
+
 # Backup: registry, archive, imports, config (offer 2026092301, 2026-09-28)
 
 Ordered by Dentalia under offer 2026092301 (fixed price, 15 h; our budget 10 h).

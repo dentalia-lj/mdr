@@ -2091,3 +2091,82 @@ def test_a_superseded_document_still_counts_as_current_for_the_comparison(conn):
                       status="superseded")
     p = _validate(conn, "pi-cand-sup", group_id, ["REF-1"], "2020-01-01")
     assert "older-than-current" in p["flags"]
+
+
+# --- a future issue date (2026-11-09: docs 481, 483, 484 misread 2030-03-27) ---
+
+def _future():
+    from datetime import date, timedelta
+    return (date.today() + timedelta(days=400)).isoformat()
+
+
+def test_a_future_issue_date_is_insane(conn):
+    group_id = _seed_group(conn)
+    _seed_member(conn, group_id, "IT-1", mfr_ref="196.644.050")
+    _seed(conn, "vh-future", _fields(validity_from=_ev(_future()), validity_to=_ev(None)))
+
+    vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": "vh-future", "extract_rev": 1, "group_id": group_id}})
+
+    assert "date-insane" in _payload(conn, "vh-future")["flags"]
+
+
+def test_an_issue_date_of_today_is_not_insane(conn):
+    from datetime import date
+    group_id = _seed_group(conn)
+    _seed_member(conn, group_id, "IT-1", mfr_ref="196.644.050")
+    _seed(conn, "vh-today", _fields(validity_from=_ev(date.today().isoformat()),
+                                    validity_to=_ev(None)))
+
+    vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": "vh-today", "extract_rev": 1, "group_id": group_id}})
+
+    assert "date-insane" not in _payload(conn, "vh-today")["flags"]
+
+
+def test_a_future_dated_current_document_cannot_make_a_candidate_older(conn):
+    group_id = _seed_group(conn)
+    _seed_member(conn, group_id, "IT-1", mfr_ref="196.644.050")
+    _seed_current_doc(conn, "vh-misread", ["IT-1"], doc_type="DoC",
+                      regulation="MDR", validity_from=_future())
+    _seed(conn, "vh-real", _fields(validity_from=_ev("2025-11-06"), validity_to=_ev(None)))
+
+    vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": "vh-real", "extract_rev": 1, "group_id": group_id}})
+
+    p = _payload(conn, "vh-real")
+    assert "older-than-current" not in p["flags"]
+    assert "downgrade-uncomparable" in p["flags"]
+
+
+def test_the_comparison_uses_the_real_date_beside_a_future_one(conn):
+    group_id = _seed_group(conn)
+    _seed_member(conn, group_id, "IT-1", mfr_ref="196.644.050")
+    _seed_current_doc(conn, "vh-misread2", ["IT-1"], doc_type="DoC",
+                      regulation="MDR", validity_from=_future())
+    _seed_current_doc(conn, "vh-realdate", ["IT-1"], doc_type="DoC",
+                      regulation="MDR", validity_from="2025-01-01")
+    _seed(conn, "vh-newer", _fields(validity_from=_ev("2026-01-01"), validity_to=_ev(None)))
+
+    vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": "vh-newer", "extract_rev": 1, "group_id": group_id}})
+
+    p = _payload(conn, "vh-newer")
+    assert "older-than-current" not in p["flags"]
+    assert "downgrade-uncomparable" not in p["flags"]
+
+
+def test_a_future_issue_date_is_not_checked_on_the_whole_range_route(conn):
+    """A known limit (docs/dev/limits.md): the manufacturer-binding route never
+    compares dates, so it does not raise the flag. Pinned so a change is seen."""
+    group_id = _seed_group(conn)
+    _seed(conn, "vh-futwhole", _fields(
+        validity_from=_ev(_future()), validity_to=_ev(None),
+        coverage_scope=_ev("manufacturer"), ref_list=_ev([]), basic_udi_di=_ev(None)))
+
+    vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": "vh-futwhole", "extract_rev": 1, "group_id": group_id}})
+
+    p = _payload(conn, "vh-futwhole")
+    assert p["route"] == "mfr-binding"
+    assert "date-insane" not in p.get("flags", [])

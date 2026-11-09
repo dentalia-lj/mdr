@@ -289,3 +289,71 @@ def test_the_report_prints_both_quotes_in_full(conn):
     assert "'Expiry Date 2030-04-16'" in text
     assert "'Expiry Date: 2030-04-16'" in text
     assert "repaired 1" in text
+
+
+def test_the_report_and_the_job_carry_the_rev_written(conn):
+    """Review 2026-10-13, F6: after a reviewer's edit at rev 2 (`tiers.
+    next_extract_rev` counts evidence revs since Task 5b) the repair writes
+    rev 3; the report shows "rev1 -> 3" and `validate.doc` points at rev 3."""
+    _seed(conn, _fields())
+    conn.execute(
+        "INSERT INTO evidence (doc_id, field, value, archive_url, verbatim, tier, "
+        "confidence, extracted_at, extract_rev) "
+        "SELECT doc_id, 'type', 'EC', archive_url, 'EC', 'T3', 1.0, now(), 2 "
+        "FROM document WHERE content_hash=%s", (HASH,))
+    repairs, counts, skipped = rld.plan(
+        conn, playbooks=(),
+        reread=_reader({"validity_to": _ev("2030-04-16", "Expiry Date: 2030-04-16")}))
+    assert "rev1 -> 3" in "\n".join(rld.render(repairs, counts, skipped))
+    stats = rld.apply(conn, repairs)
+    assert stats["revs_moved"] == 0
+    assert conn.execute("SELECT max(extract_rev) m FROM extraction_attempt "
+                        "WHERE content_hash=%s", (HASH,)).fetchone()["m"] == 3
+    job = conn.execute("SELECT payload FROM job WHERE type='validate.doc'").fetchone()
+    assert job["payload"]["extract_rev"] == 3
+
+
+def test_a_reading_committed_since_the_plan_is_skipped_with_its_jobs(conn):
+    """F6: the copied attempt is no longer the newest; nothing is appended and
+    no job is touched for it, and it is counted."""
+    _seed(conn, _fields())
+    repairs, counts, skipped = rld.plan(
+        conn, playbooks=(),
+        reread=_reader({"validity_to": _ev("2030-04-16", "Expiry Date: 2030-04-16")}))
+    conn.execute("INSERT INTO extraction_attempt (content_hash, tier, fields, extract_rev) "
+                 "VALUES (%s,'T0','{}',2)", (HASH,))
+    stats = rld.apply(conn, repairs)
+    assert (stats["appended"], stats["skipped_newer_reading"], stats["jobs_emitted"]) == (0, 1, 0)
+    assert conn.execute("SELECT count(*) c FROM job WHERE type='validate.doc'").fetchone()["c"] == 0
+
+
+def test_cmd_prints_the_notes_for_what_moved_since_the_plan(conn, test_db_url, monkeypatch,
+                                                           capsys):
+    from app import cli
+
+    monkeypatch.setenv("DATABASE_URL", test_db_url)
+    newer, edited = "e" * 64, "f" * 64
+    _seed(conn, _fields(), content_hash=newer, archive_url="file:///e.pdf")
+    _seed(conn, _fields(), content_hash=edited, archive_url="file:///f.pdf")
+    monkeypatch.setattr(rld, "_reread", lambda url, playbooks: {
+        "validity_to": _ev("2030-04-16", "Expiry Date: 2030-04-16")})
+    real_plan = rld.plan
+
+    def plan_then_race(c, *a, **kw):
+        out = real_plan(c, *a, **kw)
+        c.execute("INSERT INTO extraction_attempt (content_hash, tier, fields, extract_rev) "
+                  "VALUES (%s,'T0','{}',2)", (newer,))
+        c.execute("INSERT INTO evidence (doc_id, field, value, archive_url, verbatim, tier, "
+                  "confidence, extracted_at, extract_rev) SELECT doc_id, 'type', 'EC', "
+                  "archive_url, 'EC', 'T3', 1.0, now(), 2 FROM document WHERE content_hash=%s",
+                  (edited,))
+        return out
+
+    monkeypatch.setattr(rld, "plan", plan_then_race)
+    rc = cli.main(["repair-label-dates", "--apply"])
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "repaired: 1 extraction_attempt row(s) appended" in out
+    assert "note: 1 skipped, a newer reading was committed since the plan" in out
+    assert "note: 1 written at a later rev than shown above" in out

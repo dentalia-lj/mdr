@@ -152,3 +152,47 @@ def test_the_live_cron_needs_writes_and_its_own_switch(conn, processed_item,
     result = scheduler_tick.CRONS["bc.push-drift"](conn, load_config(), NOW)
 
     assert (result["enqueued"] > 0) == bool(expect)
+
+
+def _finish_all(conn):
+    conn.execute("UPDATE job SET status='done', finished_at=now() WHERE type='bc.push'")
+
+
+def test_a_day_runs_once_even_after_its_jobs_finish(conn, processed_item):
+    """The cron asks every hour. The queue's dedupe only holds while a job is
+    active, so without the day recorded in `scheduler_run` the second poll
+    after the day's run finished queued the whole run again -- hourly, not
+    daily, and every item BC refused was re-sent each time (Denis, 2026-10-06:
+    once a day, especially when something is failing)."""
+    processed_item()
+
+    _tick_bc_push_drift(conn, enabled=True, batch=200, cap=10, now=NOW)
+    _finish_all(conn)
+    later = _tick_bc_push_drift(conn, enabled=True, batch=200, cap=10,
+                                now=NOW + dt.timedelta(hours=5))
+
+    assert len(_enqueued(conn)) == 1
+    assert later["enqueued"] == 0
+
+
+def test_the_next_day_runs_again(conn, processed_item):
+    processed_item()
+
+    _tick_bc_push_drift(conn, enabled=True, batch=200, cap=10, now=NOW)
+    _finish_all(conn)
+    _tick_bc_push_drift(conn, enabled=True, batch=200, cap=10,
+                        now=NOW + dt.timedelta(days=1))
+
+    assert len(_enqueued(conn)) == 2
+
+
+def test_a_switched_off_day_is_not_spent(conn, processed_item):
+    """Off must not record the day: switching the cron on in the afternoon
+    still gets that day's run."""
+    processed_item()
+
+    _tick_bc_push_drift(conn, enabled=False, batch=200, cap=10, now=NOW)
+    _tick_bc_push_drift(conn, enabled=True, batch=200, cap=10,
+                        now=NOW + dt.timedelta(hours=8))
+
+    assert len(_enqueued(conn)) == 1

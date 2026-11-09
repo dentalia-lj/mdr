@@ -21,6 +21,7 @@ from app import (
     repair_archive_urls, repair_document_manufacturer, repair_label_dates,
     repair_mfr_overbind,
     repair_mfr_task_reason, repair_ref_list, repair_stated_class,
+    reextract,
     revalidate_name,
     vendor_master, version,
 )
@@ -569,6 +570,33 @@ def cmd_manufacturers(args: argparse.Namespace) -> int:
     return 0
 
 
+def _vendor_rows_from_bc():
+    """The manufacturer master read from BC's `allmanufacturers` page, or None
+    after printing why not. Read-only against BC: the page is not writable."""
+    from app.adapters import bc_client
+    from app.adapters.source import UnknownOdataProperty
+    from app.config import load_config
+
+    import httpx
+
+    cfg = load_config().bc
+    if not cfg.base_url:
+        print("vendor-master: --from-bc needs BC_BASE_URL (the company-scoped "
+              "BC API root)", file=sys.stderr)
+        return None
+    client = bc_client.BcClient(cfg.base_url, username=cfg.username,
+                                password=cfg.password)
+    try:
+        return vendor_master.read_odata(
+            vendor_master.fetch_odata(client, cfg.base_url))
+    except (UnknownOdataProperty, RuntimeError, bc_client.BcAuthRejected,
+            httpx.HTTPError) as exc:
+        print(f"vendor-master: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return None
+    finally:
+        client.close()
+
+
 def cmd_vendor_master(args: argparse.Namespace) -> int:
     """Mirror BC's manufacturer master into `vendor_master`.
 
@@ -578,16 +606,23 @@ def cmd_vendor_master(args: argparse.Namespace) -> int:
     short-circuits on `_existing_link`), so a code re-pointed here after items
     are grouped produces a split-brain no later import can repair.
     """
-    try:
-        rows = vendor_master.read_file(args.file)
-    except (FileNotFoundError, ValueError) as exc:
-        print(f"vendor-master: {exc}", file=sys.stderr)
-        return 2
+    if args.from_bc:
+        rows = _vendor_rows_from_bc()
+        if rows is None:
+            return 2
+        source, batch = "BC allmanufacturers", "bc:allmanufacturers"
+    else:
+        try:
+            rows = vendor_master.read_file(args.file)
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"vendor-master: {exc}", file=sys.stderr)
+            return 2
+        source, batch = args.file, pathlib.Path(args.file).name
 
     with db.connect() as conn:
         d = vendor_master.diff(conn, rows)
 
-        print(f"{len(rows)} row(s) in {args.file}")
+        print(f"{len(rows)} row(s) {'from' if args.from_bc else 'in'} {source}")
         print(
             f"  added {len(d.added)} · renamed {len(d.renamed)} · "
             f"disappeared {len(d.disappeared)} · unchanged {d.unchanged}"
@@ -605,7 +640,7 @@ def cmd_vendor_master(args: argparse.Namespace) -> int:
             stats = vendor_master.apply(
                 conn,
                 rows,
-                batch=args.batch or pathlib.Path(args.file).name,
+                batch=args.batch or batch,
                 allow_renames=args.allow_renames,
             )
         except vendor_master.RenameRefused as exc:
@@ -855,6 +890,12 @@ def cmd_repair_stated_class(args: argparse.Namespace) -> int:
 
     print(f"\nrepaired: {stats['appended']} extraction_attempt row(s) appended, "
           f"0 jobs emitted (by design — nothing is re-adjudicated)")
+    if stats.get("skipped_newer_reading"):
+        print(f"note: {stats['skipped_newer_reading']} skipped, a newer reading was "
+              f"committed since the plan (re-run to plan off it)")
+    if stats.get("revs_moved"):
+        print(f"note: {stats['revs_moved']} written at a later rev than shown above "
+              f"(a reviewer's edit since the plan)")
     return 0
 
 
@@ -947,6 +988,12 @@ def cmd_repair_label_dates(args: argparse.Namespace) -> int:
     print(f"\nrepaired: {stats['appended']} extraction_attempt row(s) appended, "
           f"{stats['jobs_deleted']} stale validate.doc deleted, "
           f"{stats['jobs_emitted']} emitted")
+    if stats.get("skipped_newer_reading"):
+        print(f"note: {stats['skipped_newer_reading']} skipped, a newer reading was "
+              f"committed since the plan (re-run to plan off it)")
+    if stats.get("revs_moved"):
+        print(f"note: {stats['revs_moved']} written at a later rev than shown above "
+              f"(a reviewer's edit since the plan)")
     return 0
 
 
@@ -970,6 +1017,46 @@ def cmd_revalidate(args: argparse.Namespace) -> int:
         stats = revalidate_name.apply(conn, plan)
         conn.commit()
     print(f"queued: {stats['queued']} validate.doc job(s); "
+          f"already queued: {stats['already_queued']}")
+    return 0
+
+
+def cmd_reextract(args: argparse.Namespace) -> int:
+    """Re-enqueue extract.doc for chosen documents after a model or prompt
+    change. Dry run by default; sync mode only."""
+    hashes = None
+    if args.hashes is not None or args.hashes_file is not None:
+        hashes = [h.strip() for h in (args.hashes or "").split(",") if h.strip()]
+        if args.hashes_file:
+            with open(args.hashes_file) as fh:
+                hashes += [ln for ln in (raw.strip() for raw in fh)
+                           if ln and not ln.startswith("#")]
+    if not (args.doc_cert_null or args.dropped_scans or hashes is not None):
+        print("choose at least one of --doc-cert-null, --dropped-scans, --hashes, "
+              "--hashes-file", file=sys.stderr)
+        return 2
+    if args.limit is not None and args.limit < 1:
+        print("--limit must be at least 1", file=sys.stderr)
+        return 2
+    reason = reextract.refusal()
+    if reason:
+        print(f"Refused: {reason}.", file=sys.stderr)
+        return 1
+    with db.connect() as conn:
+        plan = reextract.plan(conn, doc_cert_null=args.doc_cert_null,
+                              dropped_scans=args.dropped_scans, hashes=hashes,
+                              include_published=args.include_published, limit=args.limit)
+        for line in reextract.render(plan):
+            print(line)
+        if not plan.send:
+            return 0
+        if not args.apply:
+            print(f"Dry run. Nothing queued. Add --apply to queue "
+                  f"{len(plan.send)} extract.doc job(s).")
+            return 0
+        stats = reextract.apply(conn, plan)
+        conn.commit()
+    print(f"queued: {stats['queued']} extract.doc job(s); "
           f"already queued: {stats['already_queued']}")
     return 0
 
@@ -1200,6 +1287,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="BC manufacturer export (.xlsx/.csv), columns Šifra + Ime",
     )
     vm.add_argument("--batch", default=None, help="import batch label (default: filename)")
+    vm.add_argument(
+        "--from-bc",
+        action="store_true",
+        help="read BC's allmanufacturers page instead of --file (needs BC_BASE_URL)",
+    )
     vm.add_argument("--apply", action="store_true", help="write; without it, dry run")
     vm.add_argument(
         "--allow-renames",
@@ -1284,6 +1376,25 @@ def build_parser() -> argparse.ArgumentParser:
     rv.add_argument("--name", required=True, help="the printed manufacturer name")
     rv.add_argument("--apply", action="store_true", help="queue; without it, dry run")
     rv.set_defaults(func=cmd_revalidate)
+
+    rx = sub.add_parser(
+        "reextract",
+        help="read chosen documents again after a model or prompt change; sync "
+             "mode only (dry run by default)",
+    )
+    rx.add_argument("--doc-cert-null", action="store_true",
+                    help="DoCs whose certificate number T1 left null")
+    rx.add_argument("--dropped-scans", action="store_true",
+                    help="scans refused as not-a-compliance-document before the gate")
+    rx.add_argument("--hashes", help="comma-separated content hashes")
+    rx.add_argument("--hashes-file", help="file with one content hash per line")
+    rx.add_argument("--include-published", action="store_true",
+                    help="also re-read published documents nobody approved (GATE replaces "
+                         "their fields only when the new read itself reaches production)")
+    rx.add_argument("--limit", type=int,
+                    help="send only the first N eligible hashes (hash order: a fair sample)")
+    rx.add_argument("--apply", action="store_true", help="queue; without it, dry run")
+    rx.set_defaults(func=cmd_reextract)
 
     rmo = sub.add_parser(
         "repair-mfr-overbind",

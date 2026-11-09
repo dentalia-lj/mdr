@@ -104,3 +104,30 @@ def test_document_current(conn):
     assert gone not in current
     assert unlinked in current
     assert unlinked_superseded not in current
+
+
+# --- a misread issue date in the future must not win (2026-11-09: docs 481, 483) ---
+
+def _future():
+    from datetime import date, timedelta
+    return (date.today() + timedelta(days=400)).isoformat()
+
+
+def test_a_future_issue_date_does_not_outrank_a_real_one(conn):
+    item = _ref("future")
+    real = seed_doc(conn, [item], validity_from="2025-09-18")
+    seed_doc(conn, [item], validity_from=_future())
+    assert _current(conn, item) == {real}
+
+
+def test_a_future_dated_document_still_answers_when_it_is_the_only_one(conn):
+    item = _ref("futonly")
+    only = seed_doc(conn, [item], validity_from=_future())
+    assert _current(conn, item) == {only}
+
+
+def test_a_future_dated_document_ranks_as_undated(conn):
+    item = _ref("futnull")
+    a = seed_doc(conn, [item], validity_from=_future())
+    b = seed_doc(conn, [item], validity_from=None)
+    assert _current(conn, item) == {a, b}

@@ -5,7 +5,7 @@ WITH hist AS (
   SELECT id.item_ref, id.doc_id, d.type, d.regulation, d.validity_from, d.status AS doc_status,
          rank() OVER (PARTITION BY id.item_ref, d.type
                       ORDER BY (d.regulation = 'MDR') DESC,
-                               d.validity_from DESC NULLS LAST) = 1 AS current
+                               (CASE WHEN d.validity_from <= current_date THEN d.validity_from END) DESC NULLS LAST) = 1 AS current
     FROM item_document id JOIN document d USING (doc_id)
    WHERE d.status IN ('production','superseded') AND id.status = 'production'
 ), now_prod AS (SELECT item_ref, doc_id, type FROM item_document_production),

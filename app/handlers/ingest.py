@@ -5,9 +5,12 @@ The topology is the enqueue graph: INGEST's whole job is to keep item_mirror
 current and to fan out one resolve.group per changed item. No AI, no fetching.
 
 Design notes (Phase 0 §G4 forced these):
-  * item_mirror holds only MD-relevant items. An explicit non-MD row (device
-    class `NI MP`) is counted and dropped before the upsert — it never needs a
-    group. An UNCLASSIFIED row (blank class, 61% of the LJ export) is tri-state
+  * item_mirror holds every item. An explicit non-MD row (device class
+    `NI MP`) is counted and mirrored with md_flag=FALSE, but never emits
+    resolve.group: it needs no group, and a person links its documents through
+    the item picker (Natasa, 2026-11-06; until then it was dropped, and a
+    non-MD manufacturer such as CATTANI looked empty). Every MD-only reader
+    filters on `md_flag IS TRUE`. An UNCLASSIFIED row (blank class, 61% of the LJ export) is tri-state
     unknown; `Ingest.process_md_unknown` decides whether it flows on (default
     yes, counted either way — dropping a real-but-unclassified MD is the costlier
     compliance error, and the choice is reversible before the sweep).
@@ -182,11 +185,20 @@ def handle_ingest_run(conn, job: dict, cfg: Config | None = None,
         if row.md_flag is False:
             r.count("non_md")
             current = _current(row.item_ref)
-            if current is None:
-                continue  # brand-new non-MD item -> not mirrored
             new = _mirror_tuple(row)
-            if tuple(current[c] for c in _DIFF_COLS) == new:
+            if current is not None and tuple(current[c] for c in _DIFF_COLS) == new:
                 r.count("unchanged")
+                continue
+            if current is None or current["md_flag"] is False:
+                # Mirrored since 2026-11-06 (Natasa: the registry also holds
+                # documents for items that are not medical devices, e.g. the
+                # CATTANI compressors, BC 087, all NI MP). A person links them
+                # through the item picker; nothing searches for their
+                # documents, so still no resolve.group. A change to an item
+                # that was never MD is an ordinary change, not a declassification.
+                if not dry_run:
+                    conn.execute(_UPSERT, (row.item_ref, *new))
+                r.count("changed")
                 continue
             if not dry_run:
                 conn.execute(_UPSERT, (row.item_ref, *new))

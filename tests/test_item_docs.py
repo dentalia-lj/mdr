@@ -67,12 +67,13 @@ def test_staged_document_is_invisible(conn):
 
 
 def _seed_superseded_pair(conn, item_ref):
-    """An item linked to two documents: the current one, and the older one it
-    replaced. Mirrors what GATE actually writes -- supersession flips
-    `document.status` and sets `superseded_by`, and never touches the
-    `item_document` row (app/handlers/gate.py::_supersede), so the old
-    document's link stays `production` and it drops out of
-    `item_document_production` purely on the document's status."""
+    """An item linked to two documents: the current one, and the older one the
+    old document-wide rule marked replaced (status `superseded`,
+    `superseded_by` set, the `item_document` row untouched, so its link stays
+    `production`). Since migration 072 the status decides nothing: the old
+    document drops out of `item_document_production` because the newer one
+    (validity_from 2024-01-01, the helper's default) outranks it for this
+    item, and it would drop out the same way left at `production`."""
     old = _seed_item_with_doc(conn, item_ref, validity_to="2025-01-01",
                               validity_from="2020-01-01")
     new = _seed_item_with_doc(conn, item_ref, validity_to="2027-01-01")
@@ -110,6 +111,28 @@ def test_include_superseded_carries_status_and_chain_pointer(conn):
     assert by_id[old]["superseded_by"] == new
     assert by_id[new]["status"] == "production"
     assert by_id[new]["superseded_by"] is None
+
+
+def test_include_superseded_lists_newest_first(conn):
+    """Spec §4: the history reads newest first -- `validity_from` descending,
+    undated last, `doc_id` descending on a tie. Seeded in an order that the
+    old `ORDER BY doc_id` gets wrong at every position."""
+    ref = "ID-SUPER-ORDER"
+    tie_low = _seed_item_with_doc(conn, ref, validity_from="2024-01-01")
+    older = _seed_item_with_doc(conn, ref, validity_from="2020-01-01")
+    undated = _seed_item_with_doc(conn, ref, validity_from=None)
+    tie_high = _seed_item_with_doc(conn, ref, validity_from="2024-01-01")
+    docs = item_documents(conn, ref, include_superseded=True)["documents"]
+    assert [d["doc_id"] for d in docs] == [tie_high, tie_low, older, undated]
+
+
+def test_the_default_response_keeps_its_order(conn):
+    """Only the history changed order; the default stays by `doc_id`."""
+    ref = "ID-DEFAULT-ORDER"
+    first = _seed_item_with_doc(conn, ref, validity_from="2024-01-01")
+    second = _seed_item_with_doc(conn, ref, validity_from="2024-01-01")
+    docs = item_documents(conn, ref)["documents"]
+    assert [d["doc_id"] for d in docs] == [first, second]
 
 
 def test_unflagged_response_gains_no_new_fields(conn):

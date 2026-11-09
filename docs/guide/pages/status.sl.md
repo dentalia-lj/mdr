@@ -137,6 +137,13 @@ omeniti razvijalcu, ne alarm.
 Če zavihek prikaže opombo, da nekaterim klicem ni zabeležena cena, gre za
 vrzel v lastnem knjigovodstvu sistema — razvijalčev problem, ne vaš.
 
+Pod številkama razpredelnica razdeli porabo po modelu, po vrsti branja
+(**Tier**) in po tem, ali je šlo po cenejši, počasnejši skupinski poti
+(**Batch**). Šteje branja vsake datoteke, katere branje se je končalo. Če je
+branje plačano, opravilo pa nato spodleti, ta strošek ni zabeležen in štejejo
+se branja ponovnega poskusa, zato je dejanski račun lahko nekoliko višji od
+razpredelnice.
+
 ---
 
 ## Kaj lahko gre narobe
@@ -165,6 +172,7 @@ vrzel v lastnem knjigovodstvu sistema — razvijalčev problem, ne vaš.
 | **dedupe key** | Interna koda, ki prepreči, da bi se isto opravilo zagnalo dvakrat. Ni nekaj, kar bi morali brati |
 | **priority** — `interactive` / `delta` / `sweep` | Zakaj opravilo obstaja: `interactive` pomeni, da ga je pravkar sprožil klik osebe; `delta` in `sweep` pomenita, da ga je sprožil lastni urnik sistema |
 | **unpriced calls (pricing gap)** | Poraba, ki ji sistem ni znal določiti cene. Vrzel v knjigovodstvu, ne strošek, ki bi ga dolgovali |
+| **Tier** v zavihku Spend: `doc-class`, `T1`, `T2` in koraki za skene | Katero branje je plačala vrstica stroškov: `doc-class` je hitro preverjanje, kaj datoteka je, `T1` prebere besedilo dokumenta, `T2` njegove slike strani. Skeniran dokument (brez besedila za branje) ima svoje korake: `doc-class-image` je hitro preverjanje na slikah strani, `T2-first` cenejše branje slik strani, `T2-second` drugo cenejše branje tistega, kar je prvo pustilo negotovo, in `T2` polno branje slik, samo za tisto, česar prvi dve nista razrešili. Od 12. oktobra 2026 ima hitro preverjanje svojo vrstico; prej je bilo vpisano pod `T1` in pri datotekah, za katere je sistem moral vprašati, je eno od obeh branj izpadlo iz seštevkov. Od 13. oktobra 2026 drugo cenejše branje potrdi tudi tri podatke, ki odločajo o objavi dokumenta (vrsto dokumenta, predpis in obseg pokritosti): `T1-second` samo za to še enkrat prebere besedilo dokumenta, pri skeniranem dokumentu pa to opravi `T2-second`, tudi ko je prvo branje razrešilo vse ostalo |
 
 ---
 

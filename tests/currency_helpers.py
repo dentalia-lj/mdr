@@ -1,4 +1,4 @@
-"""Seeds for per-item currency (migration 071). Plain SQL, no GATE: these build
+"""Seeds for per-item currency (migration 072). Plain SQL, no GATE: these build
 registry states directly so the view and its readers can be tested alone."""
 
 from __future__ import annotations

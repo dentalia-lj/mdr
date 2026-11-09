@@ -389,6 +389,30 @@ def test_reminder_closes_when_nothing_is_outstanding(conn):
         "SELECT state FROM renewal_request WHERE id=%s", (rid,)).fetchone()["state"] == "received"
 
 
+def test_the_letter_counts_only_items_the_lapsing_document_answers_for(conn):
+    """Ruling 10 (2026-10-02): the letter's "N catalogue items" are the items
+    that lose coverage. A second item a newer document of the same type
+    already answers for is not one of them."""
+    gid = _seed_manufacturer(conn)
+    doc_id = _seed_expiring_doc(conn, gid, content_hash="h-cnt-old",
+                                expires=TODAY + dt.timedelta(days=10),
+                                item_ref="CNT-1", cert_number="CERT-CNT")
+    _seed_expiring_doc(conn, gid, content_hash="h-cnt-other",
+                       expires=TODAY + dt.timedelta(days=4000), item_ref="CNT-2")
+    conn.execute(
+        "INSERT INTO item_document (item_ref, doc_id, status, match_basis) "
+        "VALUES ('CNT-2',%s,'production','mfr-scope')", (doc_id,))
+    conn.execute("UPDATE document SET validity_from='2020-01-01' WHERE doc_id=%s",
+                 (doc_id,))
+    conn.execute("UPDATE document SET validity_from='2024-01-01' "
+                 "WHERE content_hash='h-cnt-other'")
+
+    groups = lapsing_for_manufacturer(conn, "IVOCLAR", horizon_days=90, today=TODAY)
+    row = next(g for g in groups if g["cert_number"] == "CERT-CNT")
+    assert row["documents"] == 1
+    assert row["items"] == 1
+
+
 def test_reminder_on_a_closed_request_does_nothing(conn):
     rid = _make_request(conn)
     conn.execute("UPDATE renewal_request SET state='parsed' WHERE id=%s", (rid,))

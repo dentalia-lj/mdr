@@ -79,6 +79,8 @@ The tier ladder, escalation on low field-confidence:
 | T2 | Vision LLM (Sonnet-class / Qwen-VL-class) on page images | ~cents×10 | scan detected, or T1 low confidence |
 | T3 | Human | expensive | manual queue with the doc + all tier attempts attached |
 
+**Amended 2026-10-12 (PRD v3 §5):** the ladder is T0 → T1 text (Haiku-class, whole text) → a first image read by the same cheap model (pages 1-4) → T2 image (Sonnet-class) → T3, and a field moves on only while it is not settled: settled by deterministic evidence checks or by two reads agreeing, not by the model's own confidence. A document with no text page skips T1. Measured on 79 text documents and 34 scans: Sonnet reads 7 and 19 of them, against 55 and 34 under the confidence rule (`docs/private/2026-10-08-extraction-ladder-research.md`, main checkout).
+
 Target schema per doc: `type, regulation (MDR/MDD), validity_from, validity_to (nullable), coverage_scope, ref_list[], basic_udi_di, referenced_docs[], cert_number`. **Every field carries its own confidence and evidence** (page, verbatim string, tier). Escalation is per-field, not per-doc — a doc with a clean date but unreadable REF list escalates only the REF extraction. Email-inbound attachments enter here directly (the mailbox poller is just another producer that archived a file and enqueued `extract.doc`).
 
 ### 2.6 VALIDATE — `validate.doc`

@@ -153,6 +153,24 @@ def test_stale_known_url_emits_fetch(conn):
     assert ("known_url", "hit") in [(r["source"], r["outcome"]) for r in _disc_log(conn, g)]
 
 
+@pytest.mark.parametrize("fresh", [True, False])
+def test_a_refused_link_does_not_make_its_document_a_known_source(conn, fresh):
+    """A person said this file does not cover the item. Going back to it would
+    end the ladder on a "hit" and close the Missing documents task, leaving the
+    item missing with nothing chasing it (spec 2026-11-09, review finding 1)."""
+    g = _seed_group(conn)
+    _seed_known_url(conn, g, "IT-1", "https://acme.com/doc.pdf", fresh=fresh, content_hash="h1")
+    conn.execute("INSERT INTO extraction_attempt (content_hash, tier, fields, extract_rev) "
+                 "VALUES ('h1','T1','{}'::jsonb, 2)")
+    conn.execute("UPDATE item_document SET status='rejected' WHERE item_ref='IT-1'")
+
+    res = _call(conn, g)
+
+    assert _fetch_jobs(conn) == [] and _validate_jobs(conn) == []
+    assert res["terminal_source"] == "manual"
+    assert len(_manual(conn, g)) == 1
+
+
 def test_recency_fresh_falls_through_to_manual(conn):
     g = _seed_group(conn)
     _seed_known_url(conn, g, "IT-1", "https://acme.com/doc.pdf", fresh=True, content_hash="h1")

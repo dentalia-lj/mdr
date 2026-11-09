@@ -1,6 +1,8 @@
 {
   "manufacturer": "INSTITUT STRAUMANN AG",
-  "aliases": [],
+  "aliases": [
+    "Straumann"
+  ],
   "bc_codes": [{"catalogue": "LJ", "code": "002"}],
   "domains": ["straumann.com", "ifu.straumann.com"],
   "doc_sources": [

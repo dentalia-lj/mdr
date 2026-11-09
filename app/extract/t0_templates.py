@@ -223,6 +223,12 @@ _MONTH_NUMBERS = {
     "januar": 1, "februar": 2, "märz": 3, "maerz": 3, "mai": 5, "juni": 6,
     "juli": 7, "oktober": 10, "dezember": 12,
     "marec": 3, "maj": 5, "junij": 6, "julij": 7, "avgust": 8,
+    # Abbreviations (2026-10-12, extraction-ladder task 2): "Jul 14, 2025",
+    # "30-Apr-2025", Portuguese "fev. 18, 2026". Eval-set misses; a day AND a
+    # year are still required around the name, so ordinary words stay safe.
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "jun": 6, "jul": 7, "aug": 8,
+    "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
+    "fev": 2, "abr": 4, "ago": 8, "set": 9, "out": 10, "dez": 12,
 }
 
 #: Longest-first so `junij` is tried before `juni`. `\b` alone would also do it
@@ -237,9 +243,11 @@ _MONTH_ALT = "|".join(
 #: A DAY and a YEAR are both required around the month name, which is what
 #: keeps `may` and `march` as ordinary English words -- "they may attend in
 #: 2021" has no day, so it is not a date.
+#: Also read (2026-10-12): an abbreviation's dot (`fev. 18, 2026`), an ordinal
+#: day (`June 24th, 2021`) and the hyphenated form (`30-Apr-2025`).
 _LONG_DATE = (
-    rf"\b(?:{_MONTH_ALT})\s+\d{{1,2}},?\s+\d{{4}}"
-    rf"|\b\d{{1,2}}\.?\s*(?:{_MONTH_ALT})\s+\d{{4}}"
+    rf"\b(?:{_MONTH_ALT})\.?\s+\d{{1,2}}(?:st|nd|rd|th)?,?\s+\d{{4}}"
+    rf"|\b\d{{1,2}}(?:\.?\s*|-)(?:{_MONTH_ALT})\.?(?:\s+|-)\d{{4}}"
 )
 
 #: Numeric alternatives first, so a date this already read is matched by the
@@ -260,7 +268,9 @@ _LONG_DATE = (
 _LABEL_WINDOW = 60
 
 _DATE_RE = re.compile(
-    rf"(\d{{4}}-\d{{1,2}}-\d{{1,2}}|\d{{1,2}}[./]\d{{1,2}}[./]\d{{4}}|{_LONG_DATE})",
+    # `25. 08. 2025`: blanks after the dots are read (2026-10-12).
+    rf"(\d{{4}}-\d{{1,2}}-\d{{1,2}}|\d{{1,2}}[./][ \t]*\d{{1,2}}[./][ \t]*\d{{4}}"
+    rf"|{_LONG_DATE})",
     re.IGNORECASE,
 )
 
@@ -279,8 +289,11 @@ _DATE_RE = re.compile(
 #   - a comma must separate it from the date (the signature-block convention),
 #   - the date must END the line, so a table cell that happens to carry a
 #     city and a date does not qualify.
-# Month-name dates ("Leuven, 12 February 2026") are NOT matched here and stay
-# with the LLM tiers -- see the open [extract-t0] entry on month-name parsing.
+# Spelled-out dates are matched here too, through `_LONG_DATE` ("Leuven,
+# 12 February 2026" since 2026-08-31; "Leuven, 23 Apr 2025" and "Spenge, June
+# 24th, 2021" since 2026-10-12, which added 9 signature-date reads across the
+# SFTP mirror, all the declaration's own date). The numeric branch below does
+# not take blanks after the dots ("Konstanz, 25. 08. 2025"); `_DATE_RE` does.
 #
 # The date does not sit flush against the comma, because the line is a FORM
 # FIELD and the blank is drawn: GC prints "Leuven, ……………" and types the date
@@ -397,7 +410,11 @@ def promote_doc_class(doc_class: str, header: str, full: str,
     still admitted a 320-page NSK operation manual, a 45-page third-party manual
     archive and a 44-page product info sheet -- because a manual cites MDR
     2017/745 legitimately, and a four-digit "notified body" match fires on years
-    and part numbers (it hit 13 of 24 sample files, including HTML).
+    and part numbers (it hit 13 of 24 sample files, including HTML). Since
+    2026-10-14 (Denis's ruling, decisions.md) the doc-class call reads a
+    device's own user or operation manual as its IFU, so the NSK manual is now
+    a document there; T0 still leaves such a file `unknown` for that call to
+    decide, and a manual archive or service manual stays out.
 
     Position is what separates them, and it is what a human uses: a declaration
     is *titled* "Declaration of Conformity"; a manual mentions the phrase on
@@ -669,8 +686,16 @@ def extract_basic_udi(text: str, result=None) -> dict | None:
     tools and tests with no job envelope, and an anomaly is a count, never an
     exception. The value is never rewritten or dropped -- a human reviewing the
     document still needs to see what was printed on it.
+
+    A word after the label is not a value (`udi.is_word`, review 2026-10-13):
+    on 12 mirror documents the label heads a table column or sits beside the
+    next label, and the token that followed was "PRODUCT", "Thermaprep",
+    "Document". Such a match is skipped and the next label tried; a document
+    whose every label is followed by a word has no T0 Basic UDI-DI, and the
+    reads look for one.
     """
-    m = _UDI_LABEL.search(text)
+    m = next((m for m in _UDI_LABEL.finditer(text)
+              if not udi.is_word(m.group(1).strip())), None)
     if not m:
         return None
     value = m.group(1).strip()
@@ -684,8 +709,10 @@ def extract_basic_udi(text: str, result=None) -> dict | None:
 #: The two spelled-out orders, split out so `_parse_date` reads the same shapes
 #: `_DATE_RE` matches. Anchored like the numeric branches: the caller hands over
 #: exactly what `_DATE_RE` captured.
-_LONG_MDY = re.compile(rf"({_MONTH_ALT})\s+(\d{{1,2}}),?\s+(\d{{4}})", re.IGNORECASE)
-_LONG_DMY = re.compile(rf"(\d{{1,2}})\.?\s*({_MONTH_ALT})\s+(\d{{4}})", re.IGNORECASE)
+_LONG_MDY = re.compile(
+    rf"({_MONTH_ALT})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?,?\s+(\d{{4}})", re.IGNORECASE)
+_LONG_DMY = re.compile(
+    rf"(\d{{1,2}})(?:\.?\s*|-)({_MONTH_ALT})\.?(?:\s+|-)(\d{{4}})", re.IGNORECASE)
 
 
 def _parse_date(s: str) -> str | None:
@@ -693,7 +720,7 @@ def _parse_date(s: str) -> str | None:
     if m:
         y, mo, d = m.groups()
     else:
-        m = re.match(r"(\d{1,2})[./](\d{1,2})[./](\d{4})", s)
+        m = re.match(r"(\d{1,2})[./][ \t]*(\d{1,2})[./][ \t]*(\d{4})", s)
         if m:
             d, mo, y = m.groups()
         else:
@@ -784,6 +811,30 @@ def _pairing_is_safe(field: str, between: str) -> bool:
 DATE_LABEL_REFUSED_KEY = "_date_label_refused"
 
 
+def _label_index(low: str, lab: str) -> int:
+    """Where `lab` first occurs in the lowered text, -1 if nowhere.
+
+    One exception: a "valid as of" on a line that also says "version" is a
+    document-template stamp, not the document's date. Ivoclar prints
+    "TEFO-04812-EN Version:2.0, Valid as of: 13 Sep 2023 08:54:32" in its page
+    header; once `_DATE_RE` learned abbreviated months (2026-10-12) that stamp
+    became readable and, as a LABELLED date at 1.0, beat the real place-and-date
+    line "Schaan, 12.02.2024" on two declarations (Ceramill map DRS, VivaScan).
+    Measured over the 126 mirror documents carrying the label: those two read
+    the signature date again, nothing else changes. A stamped occurrence is
+    skipped and the search moves on to the next one."""
+    i = low.find(lab)
+    if lab != "valid as of":
+        return i
+    while i != -1:
+        start = low.rfind("\n", 0, i) + 1
+        end = low.find("\n", i)
+        if "version" not in low[start : end if end != -1 else len(low)]:
+            return i
+        i = low.find(lab, i + len(lab))
+    return -1
+
+
 def extract_dates(text: str, playbook=None) -> dict:
     """Labelled validity dates, plus the place-and-date fallback for
     `validity_from`.
@@ -806,7 +857,7 @@ def extract_dates(text: str, playbook=None) -> dict:
     ):
         for lab in labels:
             lab = _fold_accents(lab)
-            i = low.find(lab)
+            i = _label_index(low, lab)
             if i == -1:
                 continue
             window = text[i + len(lab) : i + len(lab) + _LABEL_WINDOW]
@@ -884,6 +935,12 @@ COVERAGE_DEDUCED_CONF = 0.97
 _TYPE_SETTLED_CONF = 0.95
 
 
+def _follows_type(conf: float, type_conf: float) -> float:
+    """A scope deduced from the type alone: `conf` when the type is settled,
+    otherwise the type's own confidence where that is lower."""
+    return conf if type_conf >= _TYPE_SETTLED_CONF else min(conf, type_conf)
+
+
 def derive_coverage_scope(type_value: str, has_ref_list: bool,
                           type_conf: float = 0.0) -> dict | None:
     """Coverage scope from the document type and whether T0 enumerated articles.
@@ -903,9 +960,16 @@ def derive_coverage_scope(type_value: str, has_ref_list: bool,
     document could sit at high confidence on `group` from a premise the ladder
     had already discarded, and an EC/ISO at manufacturer scope is precisely what
     routes to the C4 binding flow.
+
+    The EC, ISO and IFU branches carry the type's confidence the same way
+    (extraction-ladder plan Task 4, 2026-10-12): below `_TYPE_SETTLED_CONF` the
+    scope is no surer than the type it follows from. Until then a certificate
+    typed off its file name (0.6) got `manufacturer` at 1.0, which the scan
+    ladder reads as a settled scope, so the item identifiers were never asked
+    even when the reads found a declaration.
     """
     if type_value in ("ISO", "EC"):
-        return field_ev("manufacturer", 1.0, f"type={type_value}")
+        return field_ev("manufacturer", _follows_type(1.0, type_conf), f"type={type_value}")
     if type_value == "IFU":
         # Instructions for use are written for a product or a family and never
         # for a company: there is no such thing as an IFU for a manufacturer.
@@ -918,7 +982,8 @@ def derive_coverage_scope(type_value: str, has_ref_list: bool,
         # that was already determined. On STRAUMANN's two 109- and 143-page IFUs
         # that escalation is what met the context ceiling and dead-lettered
         # them, having spent a vision call to learn nothing.
-        return field_ev("group", COVERAGE_DEDUCED_CONF, f"type={type_value}")
+        return field_ev("group", _follows_type(COVERAGE_DEDUCED_CONF, type_conf),
+                        f"type={type_value}")
     if type_value == "DoC":
         if has_ref_list:
             settled = type_conf >= _TYPE_SETTLED_CONF

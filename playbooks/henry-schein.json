@@ -1,6 +1,9 @@
 {
   "manufacturer": "HENRY SCHEIN",
-  "aliases": [],
+  "aliases": [
+    "ANGELUS INDÚSTRIA DE PRODUTOS ODONTOLÓGICOS S/A",
+    "HENRY SCHEIN INC."
+  ],
   "bc_codes": [{"catalogue": "LJ", "code": "004"}],
   "domains": ["henryschein.de"],
   "contacts": ["cbdeurope@henryschein.com"],

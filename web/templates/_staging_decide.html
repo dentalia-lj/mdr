@@ -67,7 +67,8 @@
     </button>
     {% endif %}
   {% else %}
-  <button type="submit" name="decision" value="approve" class="btn-approve">
+  <button type="submit" name="decision" value="approve" class="btn-approve"
+          id="approve-{{ doc_id }}">
     {%- if approve_count == 1 %}Approve for this item
     {%- elif approve_count %}Approve for these {{ approve_count | num }} items
     {%- else %}Approve{% endif -%}

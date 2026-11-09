@@ -1,7 +1,7 @@
 {
   "content_hash": "sha256:a3f6e443c8f447c35f8a39fd3c5c71d423ed8929ae10242b997421a0f5ca55e1",
-  "tier": "T2",
-  "model_id": "sonnet-4.6",
+  "tier": "T2-first",
+  "model_id": "haiku-5.5",
   "fields": {
     "regulation": {
       "value": "MDR",

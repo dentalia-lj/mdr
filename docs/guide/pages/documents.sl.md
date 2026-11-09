@@ -16,7 +16,7 @@ Skoraj nič — z eno izjemo, in ta je povrnljiva.
 - **Izjema: Reopen this document.** Pojavi se le pri dokumentu, ki ga je
   nekdo že zavrnil (ali pri dokumentu, ki ga je nadomestilo staro pravilo, glejte naslednjo točko), in ga vrne na [Review](review.sl.md) med čakajoče. Ga
   **ne** odobri in ne vrne izdelkov, na katere je bil vezan — ti ostanejo
-  zavrnjeni, dokler ni vsak posebej ponovno odprt. Če ga po pomoti ponovno
+  zavrnjeni, dokler ni vsak posebej ponovno odprt ali znova označen v izbirniku. Če ga po pomoti ponovno
   odprete, ga na Review preprosto znova zavrnite. Za ime vas vpraša zato, ker
   se razveljavitev tuje odločitve zabeleži.
 - **Reopen for review pri nadomeščenem dokumentu.** Starejše pravilo je
@@ -25,7 +25,7 @@ Skoraj nič — z eno izjemo, in ta je povrnljiva.
   kartico **Reopen this document**. Ponovno odprtje ga vrne na
   [Review](review.sl.md) in ga umakne z vseh izdelkov, dokler ni znova
   odobren, zato ga odobrite takoj, v istem delovnem koraku. Z odobritvijo spet
-  velja za izdelke, za katere v evidenci ni nič novejšega iste vrste. Dokument,
+  velja za izdelke, za katere je trenutni dokument svoje vrste (najprej MDR, nato najnovejši datum). Dokument,
   ki ga je sistem vložil kot že nadomeščen, ker je bil starejši od tistega, kar
   so vsi izdelki, ki jih navaja, že imeli, kartice nima. Dokument, ki kaže le
   opombo o starem pravilu in ni označen kot nadomeščen, ne potrebuje ničesar:
@@ -88,6 +88,15 @@ prazno, če želite brskati po vsem.
    greste neposredno nanjo na [Review](review.sl.md).
 8. Če dokument navaja Basic UDI-DI in želite hiter navzkrižni pregled,
    pritisnite **Look up in EUDAMED**.
+9. Na objavljenem dokumentu, ki pokriva določene artikle, **Add items this
+   document covers…** odpre isti izbirnik kot na [Review](review.sl.md):
+   poiščite in označite artikle, nato pritisnite **Add these N items**. Vsak
+   postane potrjena povezava pod vašim imenom v minuti. Uporabite ga, ko pride
+   nov artikel, ki ga obstoječi dokument pokriva.
+10. Na takem dokumentu **Remove** ob artiklu v **Covered items** artikel odstrani.
+    Najprej vpraša in pove, če artikel ne bo imel več nobenega dokumenta te
+    vrste. Business Central obdrži staro vrednost do naslednje posodobitve. Za
+    razveljavitev pritisnite **Re-open**, nato **Covers this item**.
 
 ---
 
@@ -122,7 +131,7 @@ prazno, če želite brskati po vsem.
 | **Coverage scope**, shown as *manufacturer* | Ta dokument pokriva celoten program tega dobavitelja |
 | **Cited certificate** | Certifikat priglašenega organa, na katerega se ta izjava sklicuje, če obstaja |
 | A date marked *(review)* or *(inherited)* | Ni resničen datum poteka, natisnjen na dokumentu — glejte [petletno pravilo](../glossary.sl.md) |
-| **Where every value came from** | Dokazi za vsako dejstvo, zloženi pod **Technical details** skupaj s prstnim odtisom datoteke in podlago, na kateri je bila narejena vsaka povezava do izdelka. Odprite, kadar vpraša presojevalec; pri vsakdanjem delu spreglejte |
+| **Where every value came from** | Dokazi za vsako dejstvo, zloženi pod **Technical details** skupaj s prstnim odtisom datoteke in podlago, na kateri je bila narejena vsaka povezava do izdelka. Odprite, kadar vpraša presojevalec; pri vsakdanjem delu spreglejte. Stolpec **Confidence**: koliko je bil program, ki je prebral stran, po lastni oceni prepričan; ta ocena ni umerjena na dokumentih, ki jih je preveril človek. Kjer sta se dve ločeni branji ujemali glede vrednosti in je bilo vsako prepričano vsaj 0,70, združuje oceni obeh branj. Za predpis je 1,0, kadar natisnjeni sklic na predpis dokazuje vrednost |
 | **Reopen this document** | Vrne na Review zavrnjen dokument ali dokument, ki ga je nadomestilo staro pravilo. Edini način, da se zavrnitev razveljavi |
 
 ---

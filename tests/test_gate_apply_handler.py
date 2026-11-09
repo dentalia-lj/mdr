@@ -16,8 +16,10 @@ from app.handlers import gate as gh
 
 def _seed_staged_doc(conn, content_hash, archive="file:///a.pdf"):
     return conn.execute(
-        "INSERT INTO document (type, regulation, coverage_scope, content_hash, archive_url, status) "
-        "VALUES ('DoC','MDR','group',%s,%s,'staged') RETURNING doc_id",
+        # Dated: every approval needs an issue date (picker spec §7).
+        "INSERT INTO document (type, regulation, coverage_scope, content_hash, archive_url, "
+        "status, validity_from) VALUES ('DoC','MDR','group',%s,%s,'staged','2024-01-01') "
+        "RETURNING doc_id",
         (content_hash, archive),
     ).fetchone()["doc_id"]
 
@@ -671,3 +673,18 @@ def test_a_link_decision_keeps_its_detail_and_adds_the_note(conn):
         (doc_id,)).fetchone()["detail"]
     assert detail["note"] == "Not one of our items"
     assert detail["match_basis_before"] == "name-family"
+
+
+def test_reopening_a_superseded_document_clears_its_old_pointer(conn):
+    """Once reopened and approved it answers again; `superseded_by` still naming
+    the document that retired it would contradict that in the API. The audit
+    trail keeps the old `supersede` event."""
+    target = _seed_staged_doc(conn, "reopen-ptr-t".ljust(64, "0"))
+    doc_id = _seed_staged_doc(conn, "reopen-ptr".ljust(64, "0"))
+    conn.execute("UPDATE document SET status='superseded', superseded_by=%s WHERE doc_id=%s",
+                 (target, doc_id))
+
+    gh.handle_gate_apply(conn, _apply(doc_id, "reopen", decided_by="denis"))
+
+    assert conn.execute("SELECT superseded_by FROM document WHERE doc_id=%s",
+                        (doc_id,)).fetchone()["superseded_by"] is None

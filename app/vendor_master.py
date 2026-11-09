@@ -84,11 +84,30 @@ def _rows_from_frame(df, label: str) -> tuple[VendorRow, ...]:
 
 
 #: `allmanufacturers` (b-s.si, 2026-09-07) mapped to the two fields
-#: `VendorRow` carries. **Unconfirmed:** nobody has seen a payload -- access is
-#: blocked and no payload has been supplied -- so these are the names BC uses
-#: for code and name on every other page, and `_assert_profile_matches` is what
-#: turns a wrong guess into a raise instead of 390 nameless codes.
-BC_MANUFACTURER_PROFILE = {"code": "no", "name": "name"}
+#: `VendorRow` carries. **Measured on live BC 2026-10-05**: 390 records, `code`
+#: (the page's key), `name`, `systemId`. Until then this guessed `no` for the
+#: code, from BC's item pages; `_assert_profile_matches` turned the guess into a
+#: raise on the first live record instead of 390 nameless codes, which is how it
+#: was found and why the guard stays.
+BC_MANUFACTURER_PROFILE = {"code": "code", "name": "name"}
+
+#: The page, under the company-scoped `BC_BASE_URL`.
+BC_MANUFACTURER_PAGE = "allmanufacturers"
+
+
+def fetch_odata(client, base_url: str) -> list[dict]:
+    """Every record on BC's manufacturer page, for `read_odata`.
+
+    Follows `@odata.nextLink` rather than computing a `$skip`, for the reason
+    `BcApiAdapter._pages` gives: BC decides the page size. 390 records fit one
+    page today; nothing here assumes that.
+    """
+    records, url = [], f"{base_url.rstrip('/')}/{BC_MANUFACTURER_PAGE}"
+    while url:
+        body = client.get(url)
+        records.extend(body.get("value", ()))
+        url = body.get("@odata.nextLink")
+    return records
 
 
 def read_odata(records) -> tuple[VendorRow, ...]:

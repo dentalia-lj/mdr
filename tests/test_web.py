@@ -2397,7 +2397,7 @@ def test_api_document_404_for_unknown_doc(client):
 def _seed_superseded_pair_web(conn, item_ref):
     """A pair as the old document-wide rule wrote it (and the auto-file fast path
     still does): `document.status` flipped and `superseded_by` set, the link
-    untouched. Under per-item currency (migration 071) the view, not the flag,
+    untouched. Under per-item currency (migration 072) the view, not the flag,
     decides which of the two answers for the item."""
     old = _seed_item_with_doc(conn, item_ref, validity_to="2025-01-01",
                               validity_from="2020-01-01")
@@ -4656,6 +4656,45 @@ def test_expiry_board_keeps_a_superseded_document_that_still_answers(client, con
     assert cert_number in resp.text
 
 
+def test_expiry_board_counts_only_items_the_lapsing_document_answers_for(client, conn):
+    """Ruling 10 (2026-10-02): "items affected" is the items that lose
+    coverage, so an item a newer document of the same type already answers
+    for loses nothing when this one lapses. Two items, history for one."""
+    manufacturer = f"ExpCnt-{uuid.uuid4().hex[:8]}"
+    doc_id, cert_number = _seed_grouped_expiring_doc(conn, manufacturer=manufacturer,
+                                                     day_offset=10)
+    first = conn.execute("SELECT item_ref FROM item_document WHERE doc_id=%s",
+                         (doc_id,)).fetchone()["item_ref"]
+    second = f"EXP-{uuid.uuid4().hex[:10]}"
+    conn.execute(
+        "INSERT INTO item_mirror (item_ref, name, manufacturer_raw, md_flag, "
+        "catalogue, updated_at) VALUES (%s,'Widget','077',TRUE,'LJ',now())", (second,))
+    # same group, so the board keeps one row per manufacturer for the document
+    conn.execute(
+        "INSERT INTO item_group_member (group_id, item_ref, match_basis) "
+        "SELECT group_id, %s, 'manual' FROM item_group_member WHERE item_ref=%s",
+        (second, first))
+    conn.execute(
+        "INSERT INTO item_document (item_ref, doc_id, match_basis, status) "
+        "VALUES (%s,%s,'ref-list','production')", (second, doc_id))
+    newer = conn.execute(
+        "INSERT INTO document (type, regulation, validity_from, status, content_hash, "
+        "archive_url, coverage_scope) VALUES ('EC','MDR','2024-01-01','production',%s,"
+        "'/archive/newer.pdf','group') RETURNING doc_id",
+        (f"h-newer-{uuid.uuid4().hex[:12]}",)).fetchone()["doc_id"]
+    conn.execute(
+        "INSERT INTO item_document (item_ref, doc_id, match_basis, status) "
+        "VALUES (%s,%s,'ref-list','production')", (first, newer))
+    conn.commit()
+
+    text = client.get("/expiry?days=90").text
+    rows = [r for r in re.findall(r"<tr[^>]*>.*?</tr>", text, re.S) if cert_number in r]
+    assert len(rows) == 1
+    cells = [c.strip() for c in re.findall(r"<td[^>]*>(.*?)</td>", rows[0], re.S)]
+    assert cells[6] == "1", cells   # documents
+    assert cells[7] == "1", cells   # items affected: the second item only
+
+
 def _seed_doc_citing_cert(conn, *, cert_day_offset, cert_status="production"):
     """A production DoC with a null validity_to that cites a certificate
     (cert_doc_id) whose own validity_to is set — the Task 4 inheritance case.
@@ -6785,6 +6824,7 @@ def test_api_reference_documents_every_endpoint(client, conn):
     for path in (
         "/item/{item_ref}",
         "/item/{item_ref}/documents.zip",
+        "/item/{item_ref}/documents/{doc_id}",
         "/api/items/{item_ref}/documents",
         "/api/documents/{doc_id}",
         "/api/kpi",
@@ -7558,8 +7598,8 @@ def test_a_document_the_old_rule_retired_offers_reopen(client, conn):
             "group") in text
     assert "takes it off every item until it is approved again" in text
     assert "approve it in the same sitting" in text
-    assert ("Approving makes it answer again for the items where nothing newer "
-            "of its type is on file") in text
+    assert ("Approving makes it answer again for the items where it is the current "
+            "one of its type (MDR first, then the newest date)") in text
 
 
 def test_a_document_the_fast_path_filed_offers_no_reopen(client, conn):
@@ -7584,7 +7624,7 @@ def test_a_restored_document_shows_the_old_pointer_as_history(client, conn):
 
 
 def test_the_newer_side_shows_the_old_rules_pointer_as_history(client, conn):
-    """`document.supersedes` is written by nothing since migration 071; every
+    """`document.supersedes` is written by nothing since migration 072; every
     value in it is the old document-wide rule's record. On a production
     document it is history, said as such; on any other status it is not
     shown at all (ruling 10, 2026-10-02)."""
@@ -7602,3 +7642,124 @@ def test_the_newer_side_shows_the_old_rules_pointer_as_history(client, conn):
     text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", client.get(f"/documents/{new}").text))
     assert f"replacing #{old}" not in text
     assert f"Supersedes #{old}" not in text
+
+
+# --------------------------------------------------------------------------- #
+# The confidence note (rulings 2026-09-16 and 2026-10-12)
+# --------------------------------------------------------------------------- #
+# The calibration factors ship at 1,0, and "a factor of 1,0 with no note reads
+# as 'calibrated, and it came out at 1'" (decisions.md, 2026-09-16, "The wording
+# is not optional"). Since 2026-10-12 the stored number can also combine two
+# agreeing reads. Both evidence tables say so, under the table, inside
+# Technical details where the column is.
+CONFIDENCE_NOTE = ("Confidence is the model's own number and is not calibrated. "
+                   "Where two reads agreed on a value, each at least 0.70 sure, it "
+                   "combines the two. It is 1.0 for a regulation that the citation printed "
+                   "on the document proves.")
+
+
+def _seed_evidenced_doc(conn, status):
+    suffix = uuid.uuid4().hex[:12]
+    doc_id = conn.execute(
+        "INSERT INTO document (type, regulation, validity_from, coverage_scope, "
+        "content_hash, archive_url, status) VALUES ('DoC','MDR','2024-01-01','group',"
+        "%s,'/archive/conf.pdf',%s) RETURNING doc_id",
+        (f"h-conf-{suffix}", status),
+    ).fetchone()["doc_id"]
+    conn.execute(
+        "INSERT INTO evidence (doc_id, field, value, archive_url, page, verbatim, tier, "
+        "model_id, confidence, extracted_at, agreed_model_id, agreed_confidence) "
+        "VALUES (%s,'type','DoC','/archive/conf.pdf',1,'Declaration','T1','m-first',"
+        "0.9775, now(), 'm-second', 0.85)", (doc_id,))
+    conn.commit()
+    return doc_id
+
+
+@pytest.mark.parametrize("status,path", [
+    ("staged", "/staging/{}/detail"),
+    ("production", "/documents/{}"),
+])
+def test_the_confidence_column_says_what_the_number_is(client, conn, status, path):
+    doc_id = _seed_evidenced_doc(conn, status)
+    text = client.get(path.format(doc_id)).text
+    assert CONFIDENCE_NOTE in text
+    details = text.index("Technical details")
+    column = text.index("<th>Confidence</th>")
+    assert details < column < text.index(CONFIDENCE_NOTE), (
+        "the note belongs under the evidence table, inside Technical details")
+
+
+@pytest.mark.parametrize("status,path", [
+    ("staged", "/staging/{}/detail"),
+    ("production", "/documents/{}"),
+])
+def test_no_confidence_note_without_a_confidence_column(client, conn, status, path):
+    suffix = uuid.uuid4().hex[:12]
+    doc_id = conn.execute(
+        "INSERT INTO document (type, regulation, validity_from, coverage_scope, "
+        "content_hash, archive_url, status) VALUES ('DoC','MDR','2024-01-01','group',"
+        "%s,'/archive/none.pdf',%s) RETURNING doc_id",
+        (f"h-noconf-{suffix}", status),
+    ).fetchone()["doc_id"]
+    conn.commit()
+    text = client.get(path.format(doc_id)).text
+    assert "No evidence recorded." in text
+    assert CONFIDENCE_NOTE not in text
+
+
+def test_the_confidence_note_names_the_configured_agreement_floor(monkeypatch, conn,
+                                                                   test_db_url, tmp_path):
+    """The 0.70 in the note is `gate.agreement_min`, read from config, so the
+    page cannot go on saying 0.70 after the floor moves."""
+    monkeypatch.setenv("GATE_AGREEMENT_MIN", "0.8")
+    moved = TestClient(create_app(Web(api_database_url=API_TEST_URL,
+                                      imports_dir=str(tmp_path))))
+    doc_id = _seed_evidenced_doc(conn, "production")
+    text = moved.get(f"/documents/{doc_id}").text
+    assert "each at least 0.80 sure" in text
+    assert "each at least 0.70 sure" not in text
+
+
+def test_the_api_names_the_agreeing_read_on_each_evidence_row(client, conn):
+    """F7: `/api/documents/{id}` serves the two migration-071 columns, so a
+    consumer can see that a confidence combines two reads, and which."""
+    doc_id = _seed_evidenced_doc(conn, "production")
+    body = client.get(f"/api/documents/{doc_id}").json()
+    (row,) = body["evidence"]
+    assert row["agreed_model_id"] == "m-second"
+    assert float(row["agreed_confidence"]) == pytest.approx(0.85)
+    assert float(row["confidence"]) == pytest.approx(0.9775)
+
+
+def test_the_api_reference_says_what_confidence_is(client):
+    text = client.get("/api-reference").text
+    assert "<code>agreed_model_id</code>" in text
+    assert "printed citation" in text
+
+
+# --- the item page says what the document is FOR THIS ITEM ---------------------
+
+def _row_badge(html_text, doc_id):
+    import re
+    row = re.search(rf'<tr class="([^"]*)">(?:(?!</tr>).)*?/documents/{doc_id}">detail(?:(?!</tr>).)*?</tr>',
+                    html_text, re.S)
+    assert row, f"no row for document {doc_id}"
+    badges = re.findall(r'class="badge badge-(\w+)"', row.group(0))
+    return row.group(1), badges
+
+
+def test_the_item_page_shows_each_document_as_it_stands_for_this_item(client, conn):
+    from tests.currency_helpers import seed_doc
+    item = f"PG-{uuid.uuid4().hex[:6]}"
+    answering = seed_doc(conn, [item], validity_from="2024-01-01", status="superseded")
+    other_item = f"PG2-{uuid.uuid4().hex[:6]}"
+    older = seed_doc(conn, [other_item], validity_from="2020-01-01")
+    newer = seed_doc(conn, [other_item], validity_from="2024-01-01")
+    conn.commit()
+
+    cls, badges = _row_badge(client.get(f"/items/{item}").text, answering)
+    assert "row-superseded" not in cls and badges[0] == "production"
+
+    text = client.get(f"/items/{other_item}").text
+    assert _row_badge(text, older)[1][0] == "superseded"
+    assert _row_badge(text, newer)[1][0] == "production"

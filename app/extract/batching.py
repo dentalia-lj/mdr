@@ -14,6 +14,16 @@ Job payloads are never mutated — external state lives here (invariant 9).
 
 from __future__ import annotations
 
+import os
+
+
+def extract_mode() -> str:
+    """The extraction transport, `sync` (default) or `batch`, from
+    `DENTALIA_EXTRACT_MODE`. Read at call time, in the calling process: the
+    `extract.doc` dispatcher and `reextract`'s batch-mode refusal both ask here,
+    so the two cannot drift. Compose sets the variable on `worker` only."""
+    return os.environ.get("DENTALIA_EXTRACT_MODE", "sync").lower()
+
 
 def get_batch_ref(conn, content_hash: str, tier: str):
     return conn.execute(

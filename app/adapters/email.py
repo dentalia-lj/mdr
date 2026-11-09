@@ -316,6 +316,7 @@ class ImapEmailAdapter:
         port: int = 993,
         user: str = "",
         password: str = "",
+        login: str = "",
         folder: str = "INBOX",
         ssl: bool = True,
         since: str = "",
@@ -325,6 +326,11 @@ class ImapEmailAdapter:
         self.port = port
         self.user = user
         self.password = password
+        # The name the server authenticates, when it is not the address:
+        # Dentalia's Exchange takes `DOMAIN\user` and refuses the address.
+        # `user` stays the mailbox's name -- the ledger key and the own-domain
+        # guard read it -- so the login never replaces it.
+        self.login = login
         self.folder = folder
         self.ssl = ssl
         self.since = since
@@ -378,7 +384,17 @@ class ImapEmailAdapter:
                 def factory(host, port):
                     return imaplib.IMAP4(host, port, timeout=IMAP_TIMEOUT_S)
         conn = factory(self.host, self.port)
-        conn.login(self.user, self.password)
+        # SASL PLAIN where offered: imaplib's LOGIN quotes only the password,
+        # and the backslash in a domain login is not legal in an unquoted atom.
+        # Exchange offers PLAIN; GreenMail, the dev mailbox, does not, and gets
+        # LOGIN with an address, which needs no quoting.
+        name = self.login or self.user
+        if "AUTH=PLAIN" in conn.capabilities:
+            conn.authenticate(
+                "PLAIN", lambda _challenge: f"\0{name}\0{self.password}".encode()
+            )
+        else:
+            conn.login(name, self.password)
         # readonly=True sends EXAMINE: the server itself refuses flag changes.
         typ, _ = conn.select(self.folder, readonly=True)
         if typ != "OK":
@@ -494,6 +510,7 @@ def make_email_adapter(cfg) -> EmailAdapter:
             port=cfg.email.imap_port,
             user=cfg.connection.imap_user,
             password=cfg.connection.imap_password,
+            login=cfg.connection.imap_login,
             folder=cfg.email.imap_folder,
             ssl=cfg.email.imap_ssl,
             since=cfg.email.poll_since,

@@ -503,10 +503,16 @@ def test_enter_in_a_correction_field_cannot_post_a_decision(client, conn, which)
     edits = [(f, c) for f in parsed.forms for c in f["controls"]
              if c.get("name", "").startswith("edit_") and c.get("type") != "hidden"]
     if which != "plain":
-        # A whole-range approval offers no corrections at all (Task 6,
-        # controller ruling 2026-09-11): `gate.apply`'s bind path drops edits,
-        # so a field here would take a correction and lose it in silence.
-        assert edits == []
+        # A whole-range approval offers one correction, the issue date (ruled
+        # 2026-10-02, picker spec §7; it offered none under the controller
+        # ruling of 2026-09-11). A single date field DOES submit its form on
+        # Enter, so the corrections form's `onsubmit="return false;"` is what
+        # stops it here, not the field count.
+        assert {c["name"] for _, c in edits} == {"edit_validity_from"}
+        corrections = edits[0][0]
+        assert corrections is not decision
+        assert not any(_is_submit_button(c) for c in corrections["controls"])
+        assert corrections["attrs"].get("onsubmit") == "return false;"
         return
     assert {c["name"] for _, c in edits} == {
         "edit_type", "edit_regulation", "edit_validity_from",

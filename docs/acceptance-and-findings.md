@@ -156,17 +156,21 @@ Targets and their rationale: [decisions.md](decisions.md), rows of 2026-09-11 an
 - [ ] **F15 — automated discovery produces review debt, not coverage:** 13
       documents since 2026-09-04, every one staged. **Resolution:** hold the rate
       where it is until someone reviews, which is F7.
-- [ ] **F8 — Business Central is unreachable in both directions.** The rule, the
-      `bc.push` stage, the ledger, the buttons and the cron all shipped 2026-09-07.
-      What is left is not code: external access, and a decision to set
-      `bc.write_enabled`.
-- [ ] **F26 — the pipeline has no host of its own.** Waiting on Dentalia IT.
+- [x] **F8 — Business Central is unreachable in both directions.** **Closed
+      2026-10-06:** the first real sync from BC was applied (job 23784, 20.039
+      items) and writes were switched on after the first write on 605275; a
+      six-item push followed on 2026-10-07. The rule, the `bc.push` stage, the
+      ledger, the buttons and the cron had shipped 2026-09-07.
+- [x] **F26 — the pipeline has no host of its own.** **Closed 2026-09-25:**
+      installed on Dentalia's server (compose project `compliance`).
 - [ ] **F18 — 357 of 384 manufacturers have no trusted SRN**, and the probe that
       could find one has never run. 15 SRNs await a click.
 - [ ] **F16 — alerting cannot report a dead database or a dead worker.** Needs an
       external account for a dead-man's switch.
 - [ ] **F4 — eight of ten crons have never put a job on the queue.** Six are off on
-      purpose until the environment is real; this closes with F26 and F8.
+      purpose until the environment is real; this closes with F26 and F8. F26 and F8
+      closed by 2026-10-06; on the server (read 2026-10-07) `report.weekly` and,
+      since 2026-10-06, `email.poll` queue jobs, and the rest are off by choice.
 - [x] **F1 — nothing backs up the registry or the archive.** Ruled **not scheduled
       work** (2026-09-03): a disclosed standing operational risk, recorded so it is
       never mistaken for work in progress. **Do not re-file it as engineering work.**

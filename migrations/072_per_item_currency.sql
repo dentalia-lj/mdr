@@ -1,4 +1,4 @@
--- 071: per-item currency (spec docs/superpowers/specs/2026-09-15-per-item-
+-- 072: per-item currency (spec docs/superpowers/specs/2026-09-15-per-item-
 -- currency-design.md; rulings 2026-09-14, 2026-09-15, 2026-10-02).
 --
 -- Which published document answers for an item is decided HERE, per item and
@@ -9,7 +9,10 @@
 -- The pick: among documents with status production OR superseded (the old
 -- flag is not consulted, so a document it retired wrongly answers again) on a
 -- production link, MDR ranks above everything else, then the newest
--- validity_from; ties are all current; undated ranks below dated.
+-- validity_from; ties are all current; undated ranks below dated. An issue
+-- date still in the future counts as undated (2026-11-09: docs 481, 483 and
+-- 484 hold a misread 2030-03-27): it cannot outrank a real date, and it starts
+-- counting by itself on the day it is reached.
 --
 -- `item_document_history` keeps 070's name, columns and filter and gains
 -- `current`; `item_document_production` keeps 034's columns and becomes the
@@ -24,7 +27,8 @@ CREATE OR REPLACE VIEW item_document_history AS
          ee.basis         AS expiry_basis,
          rank() OVER (PARTITION BY id.item_ref, d.type
                       ORDER BY (d.regulation = 'MDR') DESC,
-                               d.validity_from DESC NULLS LAST) = 1 AS current
+                               (CASE WHEN d.validity_from <= current_date
+                                     THEN d.validity_from END) DESC NULLS LAST) = 1 AS current
     FROM item_document id
     JOIN document d USING (doc_id)
     LEFT JOIN document_effective_expiry ee ON ee.doc_id = d.doc_id

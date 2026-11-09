@@ -244,6 +244,9 @@ Queues & health `/pipeline` · Playbooks `/playbooks` · Data quality `/data-qua
 Decisions log `/audit` · Scheduler `/scheduler` · Business Central push (its existing
 route) · API `/api-reference`.
 
+**Help group,** last and for everyone, below the operator block: Guide `/guide/en` ·
+Priročnik `/guide/sl`, each in a new tab (added 2026-09-30, kept by Denis 2026-10-05).
+
 **Pages that leave the menu stay reachable:**
 - Coverage gaps and Discovery through a link row on Items: "Show: All items · Without
   a declaration · Never searched".

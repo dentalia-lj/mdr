@@ -109,6 +109,8 @@ reachable with `?include_superseded=true`.
 linked to the item**, with `current` per row, so the history stays retrievable:
 the older and replaced paperwork a consumer reconciling older orders needs.
 Off by default, so a caller that never sets it gets the current documents only.
+Rows come newest first: `validity_from` descending, undated last, `doc_id`
+descending on a tie. The default response keeps its `doc_id` order.
 
 A separate boolean rather than a `view` value, for the reason `include_unlinked`
 is one on `/api/manufacturers/{name}/documents` (§4b): `view` is the

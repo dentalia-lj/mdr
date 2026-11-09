@@ -21,7 +21,12 @@ Never `null`), `validity_from` (the date the document takes effect: an explicit
 validity-period start if there is one ("Valid from", "Gültig ab", "velja od"),
 otherwise the ISSUE or SIGNING date — "Date of issue", "Izdano", or the date
 half of a place-and-date line ("Leuven, 12/02/2026"). A declaration takes effect
-when it is issued. `null` only if the document carries no date at all),
+when it is issued. `null` only if the document carries no date at all. An IFU
+prints no issue date as such: its date is its own revision or edition line
+("REV.01_01-2024", "Rev. 04/2025"), as the first of that month when only the
+month and year are printed. Never a day you did not read: a part or document
+number is not a date. Never the release date of a template or form the
+document is printed on ("Template RP00S0.07 Released May 31, 2024")),
 `validity_to` (ISO 8601 dates; `validity_to` null is
 normal for DoCs. A place-and-date line is `validity_from` and is NEVER an
 expiry. Return a date only with an explicit expiry phrase ("Expiry Date",
@@ -30,8 +35,13 @@ certificate, worse than none. Every date you are unsure about belongs in
 `validity_from`, never in `validity_to`), `coverage_scope` (group | manufacturer — `group` when it covers a set of
 products, `manufacturer` for company-wide QMS/ISO certs; there is no per-item
 value), `ref_list`
-(manufacturer article numbers / REF codes), `basic_udi_di`, `referenced_docs`,
-`cert_number`, `manufacturer` (the LEGAL ENTITY that manufactures the devices,
+(manufacturer article numbers / REF codes, also printed as catalogue or model
+numbers, "Model Numbers: 5916-, S5917-"), `basic_udi_di`, `referenced_docs`,
+`cert_number` (an EC / ISO certificate's own number; on a DoC, the number of
+the notified-body certificate the declaration cites, or `null` if it cites
+none; never the declaration's own document or reference number, and never a
+notified body's four-digit identification number such as `0482`),
+`manufacturer` (the LEGAL ENTITY that manufactures the devices,
 exactly as printed and with its legal form — `GC EUROPE N.V.`, `Gebr. Brasseler
 GmbH & Co. KG` — normally at the top of the declaration or beside "Manufacturer"
 / "Hersteller" / "Proizvajalec". NEVER the authorised representative ("EC REP",
@@ -42,10 +52,20 @@ Read carefully:
 
 - Transcribe REF codes and certificate numbers CHARACTER FOR CHARACTER — do not
   normalise or "correct" them.
+- `ref_list` is never a GMDN, EMDN, UMDNS or CND nomenclature code (those name
+  a type of device, not an article), a Basic UDI-DI, an SRN or a certificate
+  number. Leave out any value you would have to say is not a REF code.
 - QMS / ISO 13485 certificates are manufacturer-scope: `ref_list` MUST be empty
   and `coverage_scope` MUST be `manufacturer`. Never invent REF codes.
 - If a REF list is delegated to an external attachment, return an empty
   `ref_list` at low confidence and note it in `verbatim`.
+- If the document cites BOTH MDR and MDD (transition period), choose the
+  regulation the device is declared to CONFORM with, which is not necessarily
+  the newer one. A declaration of conformity with Directive 93/42/EEC that cites
+  Regulation (EU) 2017/745 only for its transition obligations (Article 120,
+  Regulation (EU) 2023/607, "relevant articles of Regulation (EU) 2017/745") is
+  a legacy device and is `MDD`. Only conformity with Regulation (EU) 2017/745
+  itself is `MDR`. Lower your confidence when the document does not say which.
 - For `ref_list`, return **at most {{REF_LIST_CAP}}** codes, in the order the document lists
   them; if there are more, return the first {{REF_LIST_CAP}} and say so in `verbatim`. Do not
   stop early and do not return a representative sample — a code you omit is

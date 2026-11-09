@@ -11,8 +11,15 @@ economics ledger must never under-report (the never-silent rule).
 
 Token accounting matches the Anthropic API: `input_tokens` is already the
 NON-cached input count, so cache_read / cache_creation are billed additively on
-top at their own multipliers (this pipeline doesn't cache today, so both are 0 and
-cost reduces to input*rate + output*rate).
+top at their own multipliers. The T1 and T2 reads mark their static system prompt
+for caching since 2026-10-12 (`llm._system`); a call whose prefix is under the
+model's minimum, or that nothing cached, reports both as 0 and costs
+input*rate + output*rate.
+
+One model is priced by prompt length: Haiku 5.5 bills a request whose prompt is
+over 100,000 tokens at a second, higher pair of rates, output included. "Prompt"
+counts every input token, cache reads and writes too, and each request is priced
+on its own (pricing page, read 2026-10-12).
 """
 
 from __future__ import annotations
@@ -28,22 +35,48 @@ class UnknownModelPricing(KeyError):
 @dataclass(frozen=True)
 class Price:
     """Per-MTok USD rates. cache_read / cache_write are multipliers on the input
-    rate (Anthropic: 5-min cache write = 1.25x input, cache read = 0.1x input)."""
+    rate (Anthropic: 5-min cache write = 1.25x input, cache read = 0.1x input,
+    except where a row says otherwise).
+
+    `long_prompt_tokens` set means the model is priced by prompt length: a
+    request whose prompt (input + cache read + cache write tokens) is OVER it
+    pays `long_input_per_mtok` / `long_output_per_mtok` for the whole call, and
+    the cache multipliers apply to the long input rate."""
 
     input_per_mtok: Decimal
     output_per_mtok: Decimal
     cache_read_mult: Decimal = Decimal("0.1")
     cache_write_mult: Decimal = Decimal("1.25")
+    long_prompt_tokens: int | None = None
+    long_input_per_mtok: Decimal | None = None
+    long_output_per_mtok: Decimal | None = None
+
+    def rates(self, prompt_tokens: int) -> tuple[Decimal, Decimal]:
+        """(input, output) per MTok for a request with this many prompt tokens."""
+        if self.long_prompt_tokens is not None and prompt_tokens > self.long_prompt_tokens:
+            return self.long_input_per_mtok, self.long_output_per_mtok
+        return self.input_per_mtok, self.output_per_mtok
 
 
 # Model prices, checked against platform.claude.com/docs/en/about-claude/pricing
-# on 2026-09-28. Keys are config.models ids (config.models.t1 / .t2). Add a row
-# here when a tier's model is swapped. Sonnet 5 was $3/$15 here until that day;
-# its $2/$10 launch price became the standard one, so every Sonnet 5 row logged
-# before it overstates the spend by half (the ledger stores the computed cost).
+# on 2026-09-28, and again on 2026-10-12 for the Haiku 5.5 row and the Sonnet 5.5
+# cache read. Keys are config.models ids (config.models.t1 / .t2 / .vision_first
+# / .second_read). Add a row here when a tier's model is swapped. Sonnet 5 was
+# $3/$15 here until 2026-09-28; its $2/$10 launch price became the standard one,
+# so every Sonnet 5 row logged before it overstates the spend by half (the ledger
+# stores the computed cost).
 PRICES: dict[str, Price] = {
     "claude-haiku-4-5": Price(Decimal("1"), Decimal("5")),
-    "claude-sonnet-5-5": Price(Decimal("2"), Decimal("10")),  # T2 from 2026-09-29
+    # Cheap reads of the 2026-10-12 ladder. $0.10 / $0.50 up to 100,000 prompt
+    # tokens, $0.50 / $2.50 over; cache hit $0.01 (0.1x), 5-min write $0.125.
+    "claude-haiku-5-5": Price(Decimal("0.10"), Decimal("0.50"),
+                              long_prompt_tokens=100_000,
+                              long_input_per_mtok=Decimal("0.50"),
+                              long_output_per_mtok=Decimal("2.50")),
+    # T2 from 2026-09-29. Its cache hit is $0.10, 0.05x the input rate, not the
+    # 0.1x default (2026-10-12). Nothing was cached before that day, so no row
+    # logged earlier is off.
+    "claude-sonnet-5-5": Price(Decimal("2"), Decimal("10"), cache_read_mult=Decimal("0.05")),
     "claude-sonnet-5": Price(Decimal("2"), Decimal("10")),  # retained: prices already-logged spend
     "claude-sonnet-4-6": Price(Decimal("3"), Decimal("15")),  # retained: prices already-logged spend
 }
@@ -87,13 +120,15 @@ def cost_usd(model_id: str, usage: Usage, batch: bool = False) -> Decimal:
         p = PRICES[model_id]
     except KeyError as e:
         raise UnknownModelPricing(model_id) from e
+    input_rate, output_rate = p.rates(
+        usage.input_tokens + usage.cache_read_tokens + usage.cache_creation_tokens)
     input_units = (
         Decimal(usage.input_tokens)
         + Decimal(usage.cache_read_tokens) * p.cache_read_mult
         + Decimal(usage.cache_creation_tokens) * p.cache_write_mult
     )
     raw = (
-        input_units * p.input_per_mtok + Decimal(usage.output_tokens) * p.output_per_mtok
+        input_units * input_rate + Decimal(usage.output_tokens) * output_rate
     ) / _MILLION
     return raw * BATCH_DISCOUNT if batch else raw
 
@@ -102,7 +137,11 @@ def cost_usd(model_id: str, usage: Usage, batch: bool = False) -> Decimal:
 class CallCost:
     """One priced LLM call -- what the log line and the ledger both need. `cost`
     is derived (a property) so capture never fails on an unpriced model: tokens
-    are recorded regardless; only accessing `.cost` surfaces UnknownModelPricing."""
+    are recorded regardless; only accessing `.cost` surfaces UnknownModelPricing.
+
+    `tier` is the read step's LABEL (`llm.READ_STEPS`: `doc-class`, `T1`,
+    `T2-first`, ...), not the evidence tier: it is the ledger's key, and two
+    calls on one document at one revision must never share it."""
 
     tier: str
     model_id: str

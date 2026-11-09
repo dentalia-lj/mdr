@@ -52,6 +52,16 @@ def test_every_bc_key_reaches_the_worker():
     )
 
 
+# `email.poll` signs in from the worker. IMAP_LOGIN was added to config.py on
+# 2026-10-05 and would have been ignored on the server without this.
+def test_every_imap_key_reaches_the_worker():
+    missing = _keys_config_reads("IMAP_") - _keys_service_declares("worker", "IMAP_")
+    assert missing == set(), (
+        f"worker cannot be configured for: {sorted(missing)}. "
+        "Compose does not inject .env; add them to worker's environment: block."
+    )
+
+
 def test_web_sees_the_same_bc_write_switch_as_the_worker():
     """The item button and the bulk preview say whether a push will write.
     Reading a different value than the worker that actually writes would show

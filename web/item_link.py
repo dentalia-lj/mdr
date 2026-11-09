@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import io
 import zipfile
+from urllib.parse import quote
 
 from fastapi import HTTPException, Request
 from fastapi.responses import Response
@@ -84,14 +85,46 @@ def register_routes(app, templates, conn_factory, cfg) -> None:
             raise HTTPException(
                 status_code=404, detail="no archived files are reachable for this item"
             )
-        name = (data["item_name"] or item_ref).replace("/", "-")
+        name = (data["item_name"] or item_ref).replace("/", "-") + "-documents.zip"
+        # Encoded the way Starlette's FileResponse does it. A header is
+        # latin-1, so a Slovene name (Č, Š, Ž) raised and 500'd the download,
+        # and a `"` in a name cut the plain form short.
+        encoded = quote(name)
+        disposition = (
+            f'attachment; filename="{name}"' if encoded == name
+            else f"attachment; filename*=utf-8''{encoded}"
+        )
         return Response(
             content=buf.getvalue(),
             media_type="application/zip",
-            headers={
-                "Content-Disposition": f'attachment; filename="{name}-documents.zip"'
-            },
+            headers={"Content-Disposition": disposition},
         )
+
+    # Registered BEFORE `/item/{item_ref:path}`, for the same reason as the zip.
+    @app.get("/item/{item_ref:path}/documents/{doc_id:int}")
+    def item_document_file(item_ref: str, doc_id: int):
+        """One of the item's documents, on the link key alone.
+
+        The card's Open links used to point at `/documents/{id}/file`, which
+        is service + staff only, so a BC user got the office login (followup
+        [bc-link-single-documents-401]). That route was not opened to the key
+        instead because it serves ANY document by a sequential id, staged and
+        rejected included: on a key every BC user holds, the whole archive
+        would be walkable. This one serves what the page and the zip already
+        show, a production document with a production link to THIS item, and
+        answers everything else with the 404 the rest of `/item/*` gives."""
+        from web.app import _document_file_response  # cycle, see the zip route
+
+        with conn_factory() as conn:
+            row = conn.execute(
+                "SELECT d.archive_url, d.content_hash FROM document d "
+                "JOIN item_document_production p ON p.doc_id = d.doc_id "
+                "WHERE p.item_ref = %s AND d.doc_id = %s",
+                (item_ref, doc_id),
+            ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="not found")
+        return _document_file_response(row, cfg)
 
     @app.get("/item/{item_ref:path}")
     def item_link(

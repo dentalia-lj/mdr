@@ -192,3 +192,160 @@ def test_bc_card_never_serves_the_supersession_chain(guarded, conn):
         f"/item/LNK-SUP?k={BC_KEY}&format=json&include_superseded=true"
     ).json()
     assert {d["doc_id"] for d in body["documents"]} == {new}
+
+
+# --------------------------------------------------------------------------- #
+# Following the page's own links (followup [bc-link-single-documents-401]).
+#
+# A BC user arrives with `?k=` and nothing else: no office login, no API key.
+# Every link on the card has to work on that alone, and has to resolve the way
+# a BROWSER resolves it -- against the page URL -- for every shape of item
+# number: of the 4.849 items with production documents (local DB, 2026-10-08)
+# 1.742 contain a slash, and 1.159 have a name that is not latin-1.
+
+import html
+import re
+from urllib.parse import quote, urljoin
+
+from app.bc_fields import warehouse_url
+
+
+def _bc_client(tmp_path):
+    cfg = Web(
+        api_database_url=API_TEST_URL, imports_dir=str(tmp_path),
+        archive_root=str(tmp_path), require_authenticated_user=True,
+        bc_link_key=BC_KEY,
+    )
+    return TestClient(create_app(cfg), raise_server_exceptions=False)
+
+
+def _follow(client, item_ref, link_pattern, *, typed=False):
+    """Open the item card from the URL BC stores (`warehouse_url`, which
+    encodes a slash as %2F), or from one typed by hand with the slash left
+    in, find one href on it, and request it exactly as a browser would."""
+    if typed:
+        page_url = f"http://testserver/item/{quote(item_ref, safe='/')}?k={BC_KEY}"
+    else:
+        page_url = warehouse_url(item_ref, base_url="http://testserver", link_key=BC_KEY)
+    page = client.get(page_url)
+    assert page.status_code == 200
+    href = html.unescape(re.search(link_pattern, page.text).group(1))
+    return client.get(urljoin(page_url, href))
+
+
+#: Every shape of item number in the catalogue (local DB, 2026-10-08): slashes,
+#: spaces, both, dots, `+`, commas, Slovene letters.
+REF_SHAPES = ["OPEN-1", "OPEN/2", "OPEN 3", "122 1/2L", "010.6042", "2289+2296",
+              "1601H 0,3X16 MM", "OBROČKI 22"]
+
+
+@pytest.mark.parametrize("typed", [False, True], ids=["bc-url", "typed-url"])
+@pytest.mark.parametrize("item_ref", REF_SHAPES)
+def test_open_link_serves_the_pdf_on_the_bc_key_alone(tmp_path, conn, item_ref, typed):
+    client = _bc_client(tmp_path)
+    _seed_doc_with_real_file(conn, tmp_path, item_ref)
+    resp = _follow(client, item_ref, r'<a href="([^"]*)">Open</a>', typed=typed)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.content == b"%PDF-1.4 seeded\n"
+
+
+@pytest.mark.parametrize("typed", [False, True], ids=["bc-url", "typed-url"])
+@pytest.mark.parametrize("item_ref", REF_SHAPES)
+def test_download_all_link_resolves_for_every_item_ref_shape(
+    tmp_path, conn, item_ref, typed
+):
+    """The link was relative, `{item_ref}/documents.zip`. From BC's own URL
+    (`1000%2F1`) that resolved correctly; from a typed `/item/1000/1` the
+    browser sent it to `/item/1000/1000/1/documents.zip`, a 404."""
+    client = _bc_client(tmp_path)
+    _seed_doc_with_real_file(conn, tmp_path, item_ref)
+    resp = _follow(client, item_ref, r'href="([^"]*documents\.zip[^"]*)"', typed=typed)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/zip"
+
+
+def test_item_file_needs_the_key(tmp_path, conn):
+    client = _bc_client(tmp_path)
+    doc_id = _seed_doc_with_real_file(conn, tmp_path, "KEY-1")
+    assert client.get(f"/item/KEY-1/documents/{doc_id}").status_code == 404
+    assert client.get(f"/item/KEY-1/documents/{doc_id}?k=wrong").status_code == 404
+
+
+def test_item_file_refuses_another_items_document(tmp_path, conn):
+    """The key is shared by every item, so the item in the path is what
+    scopes it. A document of another item is not this item's paperwork."""
+    client = _bc_client(tmp_path)
+    other = _seed_doc_with_real_file(conn, tmp_path, "OWN-A")
+    _seed_doc_with_real_file(conn, tmp_path, "OWN-B")
+    resp = client.get(f"/item/OWN-B/documents/{other}?k={BC_KEY}")
+    assert resp.status_code == 404
+
+
+@pytest.mark.parametrize("link_status, doc_status", [
+    ("staged", "production"),
+    ("production", "staged"),
+    ("production", "rejected"),
+])
+def test_item_file_serves_only_production(tmp_path, conn, link_status, doc_status):
+    """Only what the page and the zip already show. `/documents/{id}/file`
+    serves any document by a sequential id; this route must not become a
+    way to walk the rest of the archive on the shared key."""
+    client = _bc_client(tmp_path)
+    doc_id = _seed_item_with_doc(
+        conn, "PROD-ONLY", link_status=link_status, doc_status=doc_status
+    )
+    pdf = tmp_path / "seeded.pdf"
+    pdf.write_bytes(b"%PDF-1.4 seeded\n")
+    conn.execute(
+        "UPDATE document SET archive_url=%s WHERE doc_id=%s", (str(pdf), doc_id)
+    )
+    conn.commit()
+    resp = client.get(f"/item/PROD-ONLY/documents/{doc_id}?k={BC_KEY}")
+    assert resp.status_code == 404
+
+
+def test_item_file_serves_a_superseded_document_only_while_it_answers(tmp_path, conn):
+    """Per-item currency: the file follows the view, not the old flag."""
+    client = _bc_client(tmp_path)
+    doc_id = _seed_item_with_doc(conn, "SUP-FILE", doc_status="superseded")
+    pdf = tmp_path / "seeded.pdf"
+    pdf.write_bytes(b"%PDF-1.4 seeded\n")
+    conn.execute("UPDATE document SET archive_url=%s, validity_from='2020-01-01' WHERE doc_id=%s",
+                 (str(pdf), doc_id))
+    conn.commit()
+    assert client.get(f"/item/SUP-FILE/documents/{doc_id}?k={BC_KEY}").status_code == 200
+
+    newer = conn.execute(
+        "INSERT INTO document (type, regulation, validity_from, coverage_scope, content_hash, "
+        "archive_url, status) SELECT type, regulation, '2024-01-01', coverage_scope, "
+        "'sup-file-newer', archive_url, 'production' FROM document WHERE doc_id=%s "
+        "RETURNING doc_id", (doc_id,)).fetchone()["doc_id"]
+    conn.execute("INSERT INTO item_document (item_ref, doc_id, match_basis, status) "
+                 "VALUES ('SUP-FILE', %s, 'ref-list', 'production')", (newer,))
+    conn.commit()
+    assert client.get(f"/item/SUP-FILE/documents/{doc_id}?k={BC_KEY}").status_code == 404
+
+
+@pytest.mark.parametrize("name", [
+    "KLEŠČE EKSTR. ROUTURIER LEVO 122 1/2L",   # Š, Č: not latin-1
+    'SVEDER 5" DOLG',                          # a quote inside the name
+    "Widget",
+])
+def test_zip_download_name_survives_any_item_name(tmp_path, conn, name):
+    """The zip is named after the item, and a header is latin-1: a Slovene
+    name 500'd the whole download (1.159 of 4.849 items with production
+    documents, local DB 2026-10-08)."""
+    client = _bc_client(tmp_path)
+    _seed_doc_with_real_file(conn, tmp_path, "ZIPNAME-1")
+    conn.execute("UPDATE item_mirror SET name=%s WHERE item_ref='ZIPNAME-1'", (name,))
+    conn.commit()
+    resp = client.get(f"/item/ZIPNAME-1/documents.zip?k={BC_KEY}")
+    assert resp.status_code == 200
+    disposition = resp.headers["content-disposition"]
+    assert disposition.startswith("attachment;")
+    expected = name.replace("/", "-") + "-documents.zip"
+    if quote(expected) == expected:
+        assert f'filename="{expected}"' in disposition
+    else:
+        assert f"filename*=utf-8''{quote(expected)}" in disposition

@@ -1,8 +1,10 @@
 """`report.weekly` (S1.5) — handbook §9a. Read-only snapshot: no writes, no
 downstream jobs (payload immutability/C9 — a report reflects "now", not
 enqueue time). `expiring_documents` is shared with the scheduler's own
-expiry-scan tick (docs/specs/scheduler.md §3) — both read the same production
-visibility as everything else (PRD §9): `document.status = 'production'`.
+expiry-scan tick (docs/specs/scheduler.md §3) — both read `document_current`
+(per-item currency, migration 072): a document current for at least one item,
+or production with no production link at all. `document.status` alone is not
+currency any more.
 """
 
 from __future__ import annotations
@@ -86,7 +88,7 @@ def expiring_documents(conn, *, horizon_days: int, today: dt.date | None = None)
                (e.expires < %s) AS lapsed
           FROM document d
           JOIN document_effective_expiry e USING (doc_id)
-         -- Per-item currency (migration 071): a document that is history for every item it names draws no renewal, and one the old rule retired wrongly still does.
+         -- Per-item currency (migration 072): a document that is history for every item it names draws no renewal, and one the old rule retired wrongly still does.
          WHERE d.doc_id IN (SELECT doc_id FROM document_current)
            AND e.expires IS NOT NULL
            AND e.expires <= %s

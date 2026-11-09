@@ -429,7 +429,7 @@ against an empty database, and both fail *silently* when skipped.
   vendor_rows`, so a master that loaded but is missing even one code a playbook
   claims still dies on the raw `ForeignKeyViolation: Key (code_source,
   code)=(LJ, 001)`. That is a live risk with a client-supplied export, not a
-  theoretical one -- the 49 playbooks in the tree claim **57 distinct BC codes** (38 and 46 until 2026-09-29, 43 and 51 until 2026-09-30, 47 and 55 until 2026-10-01),
+  theoretical one -- the 79 playbooks in the tree claim **87 distinct BC codes** (38 and 46 until 2026-09-29, 43 and 51 until 2026-09-30, 47 and 55 until 2026-10-01, 49 and 57 until 2026-10-15),
   and the last recorded check that every claimed code is in the master covered 39
   codes on 2026-08-26 (migration 049's own comment). If step 3 dies on an FK, the
   fix is the missing vendor row, not the playbook.
@@ -468,24 +468,29 @@ A code re-pointed at a different manufacturer is **refused** unless you pass
 `--allow-renames`. That refusal is the guard against the write-once problem
 above; do not reach for the flag without reading what it would move.
 
-**Route B — BC `allmanufacturers`: NOT REACHABLE TODAY.**
-[app/vendor_master.py](../../app/vendor_master.py)`::read_odata` is written and
-tested against the endpoint b-s.si added on 2026-09-07, and it returns exactly
-what the file reader returns, so `diff`, `apply`, the rename refusal and the
-two-phase preview would all work unchanged. **It has no caller**: no CLI flag,
-no handler, no route. Reaching it needs (a) a `--from-bc` path on the
-`vendor-master` verb that builds a `BcClient` from `cfg.bc` and pages the
-endpoint, and (b) one sampled record, because `BC_MANUFACTURER_PROFILE`'s `no`
-and `name` are guessed from BC's other pages. The guard raises on the first
-record if they are wrong, so a bad guess fails loudly rather than importing 390
-nameless codes.
+**Route B — BC `allmanufacturers`, from the CLI** (since 2026-10-05). The same
+diff, apply and rename refusal, fed from BC's manufacturer page instead of the
+file. It needs `BC_BASE_URL` and the `BC_*` login on the worker (§ 3). It only
+reads BC: the page is not writable.
 
-Until then: **every combination hand-feeds `Proizvajalci.xlsx`**, and that is
-the documented fallback rather than a blocker — 390 rows that change rarely.
+```bash
+docker compose exec -T worker python -m app.cli vendor-master --from-bc          # dry run
+docker compose exec -T worker python -m app.cli vendor-master --from-bc --apply
+docker compose exec -T worker python -m app.cli manufacturers seed --apply       # entities for new codes, file aliases into the database
+docker compose exec -T worker python -m app.cli playbooks sync                   # aliases, before the next item ingest
+```
+
+Measured on live BC 2026-10-05: 390 manufacturers with `code`, `name`,
+`systemId`. Against the server's mirror that day: one code added in BC
+(`10204` EKOM, 2 items, both non-device), one gone from BC (`10198`, no name, no
+items), no renames. Until that day `BC_MANUFACTURER_PROFILE` guessed `no` for the
+code. The guard raised on the first live record instead of importing 390 nameless
+codes, which is how the guess was found. **No browser route yet.** The `/import`
+manufacturer card takes a file only.
 
 ### 6.3 Steps 3 and 4: playbooks (no branch)
 
-The 49 playbook JSON files ship in the repository, so they exist on a fresh
+The 79 playbook JSON files ship in the repository, so they exist on a fresh
 server whatever the data sources are. They are the seed; after import the
 database holds the bodies (migration 050) and the UI edits them.
 
@@ -594,11 +599,16 @@ docker compose run --rm worker python -m app.cli enqueue ingest.run \
 > day from the server: BC applies the preference (`preference-applied`, a
 > `nextLink`) and costs **about 0.058 s per record whatever is asked for** --
 > `$select` of the six profile fields cuts a record from 6 KB to 0.26 KB but
-> not the time -- so a 1.000-record page takes ~58 s and a full read of ~19.000
-> items ~19 minutes of BC time, inside the 30-minute visibility timeout but not
-> by much. Content checked on one page: all 1.000 carry `no`, `description`
-> and `manufacturerCode`, 361 a device class; 758 are in the mirror and all 758
-> carry the same manufacturer as the 09-25 export. Full read not yet re-run.
+> not the time -- so a 1.000-record page takes ~58 s. Content checked on one
+> page: all 1.000 carry `no`, `description` and `manufacturerCode`, 361 a
+> device class; 758 are in the mirror and all 758 carry the same manufacturer
+> as the 09-25 export. **The full read, run the same day (dry run, job 23729),
+> took ~3 min 50 s for 20.027 items in 21 pages**: the first page ~60 s, every
+> later one ~8 s. So the ~19 minutes extrapolated from the first page did not
+> hold. Read the duration from the worker log, not the job row:
+> `job.finished_at` records the handler's start
+> (`[job-finished-at-is-claim-time]`). The weekly procedure is in the
+> [runbook](../runbook.md#business-central-weekly-sync-and-the-first-write).
 
 > **There is no delta.** Nothing builds an OData `$filter`; `delta_since` is read
 > by the web form and by nothing else. Every OData run is a full catalogue read.
@@ -717,6 +727,17 @@ Sonnet 5 then 5.5; wave 3 (230 PDFs, 2026-09-30) ran about 6 PDFs a minute at
 $0.027 per PDF. Folders full of scans cost more: on the server 185 of
 DENSTPLY's 405 PDFs, 62 of DURR DENTAL's 85 and 33 of DENTAURUM's 37 have no
 text layer, so every page goes to the image tiers.
+
+**Since the extraction ladder (2026-10-12) these figures are history.** T1 runs
+on Haiku 5.5, a field the text proves stops there, the rest goes to a cheap
+Haiku 5.5 image read, and Sonnet reads only what neither settles: on the
+2026-10-08 evaluation (cached reads) 7 to 10 of 79 text documents reached
+Sonnet, against 55 of 79 before, and 24 of 34 scans. Re-measure per PDF on the
+first wave after the deploy (`/status` → Spend, per label). In batch mode
+(`EXTRACT_MODE=batch`) each of these steps is its own batch, so a document
+waits on up to four batches in turn (`doc-class`, `T1`, `T2-first`, `T2`), and
+a text document's image reads see pages 1-4 rather than the pages its open
+fields point at (`docs/dev/limits.md`). Sync stays the mode for a backfill.
 
 **Before a wave, find the legal names its folders print.** A document whose
 printed manufacturer no alias knows stops as `manufacturer-unresolved`, and its
@@ -839,9 +860,12 @@ The machine surface, checked the same day against `https://api.cw.dentalia.si`
 | `?k=` | `/item/{ref}` page, `/item/{ref}/documents.zip` | 200 HTML, 200 zip |
 | `X-API-Key` | `/archive/*`, `/api-reference` on the API name | 404 (the name rule) |
 
-The one thing a BC user will meet: **Open** on the item page asks for a staff
-login, and only **Download all** works on the link key alone
-([web.md](web.md) § Rules). Since 2026-09-30 the `Caddyfile` sends
+That table is the 2026-09-30 reading. Since 2026-10-08 **Open** on the item
+page goes to `/item/{ref}/documents/{id}?k=` and works on the link key alone,
+like **Download all** ([web.md](web.md) § Rules). Measured on the server after
+the `3a0af4b` deploy, from BC's own URL: 21 items, items with a `/` (`%2F`)
+and Č/Š/Ž names included, page 200, zip 200, every Open a PDF;
+`/documents/{id}/file` with only the key still 401. Since 2026-09-30 the `Caddyfile` sends
 `X-Robots-Tag: noindex, nofollow` on every response and answers `/robots.txt`
 with `Disallow: /` on both names; on the server that takes a pull and `docker compose restart caddy`
 (§ 5.1), not `deploy.sh` alone.
@@ -883,11 +907,11 @@ Know that before you hand the screen to anyone.
 | `failure-monitor` | 1h | Yes. Re-onboarding gated by `SCHEDULER_FAILURE_REONBOARD_ENABLED` (off) |
 | `coverage-scan` | 1h | **No** — gated by `SCHEDULER_COVERAGE_SCAN_ENABLED` (off). This is the one that sends uncovered groups through DISCOVER unattended, capped by `SCHEDULER_COVERAGE_SCAN_CAP`. `DISCOVER_HOLD` does **not** gate it |
 | `report.weekly` | 1h | Yes |
-| `email.poll` | 15m | **No** — needs IMAP credentials, `EMAIL_POLL_SINCE` (the deploy day; without it the poll dead-letters rather than read the mailbox's history) and `SCHEDULER_EMAIL_POLL_ENABLED`. Read-only: it never marks, moves or deletes mail |
+| `email.poll` | 15m | **No** — needs IMAP credentials, `EMAIL_POLL_SINCE` (the deploy day; without it the poll dead-letters rather than read the mailbox's history) and `SCHEDULER_EMAIL_POLL_ENABLED`. Read-only: it never marks, moves or deletes mail. On in production since 2026-10-06 |
 | `eudamed.certregister` | 6h | **No** — gated by `SCHEDULER_EUDAMED_CERTREGISTER_ENABLED` (off). The tick runs and emits nothing |
 | `eudamed.sweep-due` | 1h | Yes. It only marks manufacturers due (`due_at`); it emits no sweep |
 | `health-watch` | 5m | Yes |
-| `bc.push-drift` | 1h | Off until BOTH `BC_WRITE_ENABLED=true` and `SCHEDULER_BC_PUSH_DRIFT_ENABLED=true`. Writes stay off by Denis's decision (2026-09-24); when they go on, run and check one bulk apply at `/bc-push` before the drift switch |
+| `bc.push-drift` | 1h poll, **fires once a day** | Off until BOTH `BC_WRITE_ENABLED=true` and `SCHEDULER_BC_PUSH_DRIFT_ENABLED=true`. `BC_WRITE_ENABLED=true` set by Denis 2026-10-06 after the first write (605275) succeeded; run and check one bulk apply at `/bc-push` before the drift switch. The day is recorded in `scheduler_run` since 2026-10-06: before that, the per-day dedupe key held only while the day's jobs were active, so the hourly poll re-queued the run once they finished |
 
 Turning a gated cron on is a spend decision, not a config tidy-up: `coverage-scan` fetches and extracts, `eudamed.certregister` reaches a public register, and `email.poll` reads a mailbox. Turn them on one at a time, with someone watching `/scheduler` and the KPI board's spend tile.
 
@@ -966,8 +990,11 @@ was the September export `Artikli.xlsx`: `seen` 19.342, `non_md` 3.374,
 items and 8.412 groups; the `resolve.group` fan-out drained in 4 min 24 s with one worker.
 0 unnamed groups (1 group with no manufacturer code at all), 0 failed or dead,
 0 `discover.group`, 10 armed crons, `deploy.sh --check` verified, the office
-pages checked through the tunnel. Not yet done there: documents (step 6),
-discovery (step 7), ingress (§ 7), the first IMAP poll, the first BC read.
+pages checked through the tunnel. Done since: documents (step 6, backfill
+2026-09-28 to 2026-10-01), ingress (§ 7, 2026-09-30), the first IMAP poll
+(2026-10-05; every 6 hours since 2026-10-06), the first BC read (2026-10-02,
+applied 2026-10-06) and the first BC write (2026-10-06). Not yet: discovery
+(step 7; `DISCOVER_HOLD=true`).
 
 **Failed or dead jobs need reading, not just counting.** GATE raises rather than
 stages when a required field has no value, or when its evidence carries no
@@ -1009,10 +1036,11 @@ end.
   is implemented in the repo.
 - **Real logins.** Decisions record `user:admin` unless a trusted proxy sets
   `WEB_TRUSTED_USER_HEADER`. See `WEB_REQUIRE_AUTHENTICATED_USER`.
-- **BC write-back.** The stage is built and gated off (`BC_WRITE_ENABLED`);
-  the handler builds its client and addresses items correctly (2026-09-24), but
-  nothing has ever made a real PATCH: writes stay off until Denis turns them on.
-  [limits.md](limits.md) carries the detail.
+- **BC drift re-push.** Writes are live since 2026-10-06
+  (`BC_WRITE_ENABLED=true`; first write on 605275, a six-item push on
+  2026-10-07). The daily drift cron (`SCHEDULER_BC_PUSH_DRIFT_ENABLED`) stays off
+  until a bulk apply at `/bc-push` has been checked. [limits.md](limits.md)
+  carries the detail.
 - **A second Business Central.** There is one BC, one article numbering, one
   pipeline. Do not reintroduce a catalogue choice.
 

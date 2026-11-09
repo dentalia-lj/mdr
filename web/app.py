@@ -27,7 +27,7 @@ status board). `/manufacturers` and `/playbooks` are registered from
       INSERT-only grant it cannot read back)
     - `POST /staging/{doc_id}/apply`               -> `gate.apply`
     - `POST /links/{doc_id}/decide`                -> `gate.apply` (C17
-      link-level: confirm-link / reject-link / reopen-link)
+      link-level: confirm-link / reject-link / reopen-link / remove-link)
     - `POST /staging/suggestion/{id}/assign`       -> `resolve.group`
     - `POST /manual/{task_id}/resolve`             -> `discover.group` (a
       discovery dead end only; "Search again" on /missing posts here too)
@@ -65,7 +65,8 @@ status board). `/manufacturers` and `/playbooks` are registered from
     - `GET  /documents/{content_hash}/text` — extracted text layer
   * read-only JSON API (production-visibility only)
     - `GET  /api/items/{item_ref}/documents`, `/api/documents/{doc_id}`,
-      `/api/kpi` (`?include_superseded` adds the supersession chain, 070)
+      `/api/kpi` (`?include_superseded` on the item route returns every
+      published document linked to the item, `current` per row, 070/071)
 
 Every queue write goes through `app.queue.enqueue` (active-scope dedupe, C2) —
 this module never issues its own INSERT against `job`, and never writes
@@ -118,7 +119,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 # footing on which this module already imports `app.queue` and `web/registry.py`
 # imports `app.playbooks`. It is emphatically not `app.handlers` — the review
 # UI resolves a name to offer a choice; only GATE acts on the choice.
-from app import db, heartbeat, manufacturers, playbooks, queue, unmatched_names
+from app import db, heartbeat, item_picks, manufacturers, playbooks, queue, unmatched_names
+from app.currency import DOC_STATUS_FOR_ITEM
 # Export file types /import accepts. Mirrors the adapter's own set exactly, so
 # the form can never reject a file the worker would have read.
 # Imported as a symbol, not as `app.coverage`: this module already defines a
@@ -136,7 +138,7 @@ from app.config import Web, load_config
 from app.compliance import EXPIRY_HORIZON_DAYS
 
 log = logging.getLogger("dentalia.web")
-from web import access, bc_push_view, catalogue, failures, item_link, missing, onboarding, registry, scheduler_view, words
+from web import access, bc_push_view, catalogue, failures, item_link, item_picker, missing, onboarding, registry, scheduler_view, words
 from web.item_docs import item_documents
 # Re-exported: the Today page and the menu counts read the Missing documents
 # list through this name (office UI redesign spec § 4 and § 7).
@@ -387,6 +389,8 @@ REASON_CODE_CHIP = {
     "evidence-page-missing": "other",
     "iso-without-standard-number": "other",
     "date-label-not-adjacent": "other",
+    # part of a scan was not read: about the reading, not about our items
+    "pages-unread": "other",
 }
 
 # Link bases that follow a document into production when it is approved:
@@ -423,6 +427,11 @@ REGULATION_WORDS = {
 # Items listed by name above the Review panel's buttons before the rest fold
 # under "+ K more" (spec § 6).
 REVIEW_ITEMS_SHOWN = 10
+#: The item picker's row vocabulary (picker spec §3): document type chips and
+#: how an item's document of this type compares with the one being decided.
+PICKER_TYPE_SHORT = {"DoC": "DoC", "EC": "CE", "IFU": "IFU", "ISO": "ISO"}
+PICKER_COMPARE_WORDS = {"older": "older than this one", "newer": "newer than this one",
+                        "same date": "same date", "no date": "cannot compare, no date"}
 # `/documents/{doc_id}/file`'s answer when it serves the bytes (spec § 6): a
 # document's file never changes, so the browser may keep it a year without
 # asking again. See `document_file`.
@@ -500,6 +509,7 @@ DECISION_RECEIPTS = {
                           "minute."),
     "reopen": ("Reopened. It comes back to Review within a minute so it can be "
                "decided again."),
+    "add-items": "Items recorded. They show this document within a minute.",
 }
 
 #: The same, for a C17 link-level ruling: one item's link to one document.
@@ -508,6 +518,8 @@ LINK_RECEIPTS = {
     "reject-link": ("Link rejected. The document stays on file; this item stops "
                     "showing it within a minute."),
     "reopen-link": "Link reopened. It goes back to Review within a minute.",
+    "remove-link": ("Item removed. The document stays on file; this item stops "
+                    "showing it within a minute."),
 }
 
 # /staging rows per page. The board is a review queue over tables that grow
@@ -612,7 +624,7 @@ _LAPSING_CTE = """
                          ON id.doc_id = d.doc_id AND id.status='production'
                   LEFT JOIN item_group_member gm ON gm.item_ref = id.item_ref
                   LEFT JOIN item_group g ON g.group_id = gm.group_id
-                  -- Per-item currency (migration 071): a document that is history for every item it names draws no renewal, and one the old rule retired wrongly still does.
+                  -- Per-item currency (migration 072): a document that is history for every item it names draws no renewal, and one the old rule retired wrongly still does.
                   WHERE d.doc_id IN (SELECT doc_id FROM document_current)
                     AND e.expires IS NOT NULL
                     -- the whole retention window, partitioned below rather
@@ -896,6 +908,47 @@ def _resolve_archive_path(
             if resolved is not None and _sha256_file(resolved) == content_hash:
                 return resolved
     return None
+
+
+def _document_file_response(row, cfg) -> Response:
+    """One document's bytes, from a row carrying `archive_url` and
+    `content_hash`. Shared by `/documents/{id}/file` (staff, service) and
+    `/item/{ref}/documents/{id}` (the BC card): the two differ in who may ask
+    and which documents they may ask for, never in what they answer."""
+    archive_url = row["archive_url"] or ""
+    if urlsplit(archive_url).scheme in ("http", "https"):
+        # already client-reachable (storage.base_url configured) — hand the
+        # browser the real location rather than proxying bytes through here
+        return RedirectResponse(archive_url)
+    target = _resolve_archive_path(
+        archive_url, [cfg.archive_root, cfg.imports_dir],
+        rewrites=_parse_path_rewrites(cfg.path_rewrites),
+        content_hash=row["content_hash"],
+    )
+    if target is None:
+        raise HTTPException(
+            status_code=404,
+            detail="archived file is not reachable from this server",
+        )
+    # inline, not attachment: a reviewer clicking "Open full size" wants to
+    # LOOK at the PDF, and `attachment` downloads a fresh copy on every
+    # click instead.
+    #
+    # Cached for a year, privately (office UI redesign, spec § 6). The
+    # Review panel shows this file in an iframe every time a row is
+    # opened, and no request ever got a 304, so every reopening
+    # downloaded the whole file again (median 345 KB, largest 16 MB on
+    # dev). The bytes behind a doc_id never change -- the archive is
+    # hash-addressed and a new file is a new document -- so `immutable`
+    # is true, and `private` keeps it out of shared caches, since neither
+    # route is public. Only the file response carries it: every
+    # refusal above is an HTTPException, and a 404 must stay uncached.
+    # (Starlette's range answers copy these headers, so a 206 part of the
+    # same bytes is cached the same way.)
+    return FileResponse(target, media_type="application/pdf",
+                        filename=_download_name(target.name, row["content_hash"]),
+                        content_disposition_type="inline",
+                        headers={"Cache-Control": DOCUMENT_FILE_CACHE})
 
 
 def _recent_jobs(
@@ -1334,7 +1387,27 @@ def _mfr_binding_options(conn) -> list[dict]:
         "ORDER BY 1"
     ).fetchall()]
     counts = _mfr_bind_counts(conn, names)
-    return [{"canonical_name": n, "md_items": counts[n] or 0} for n in names]
+    brands = _bc_names(conn)
+    return [{"canonical_name": n, "md_items": counts[n] or 0, "bc_names": brands.get(n, [])}
+            for n in names]
+
+
+def _bc_names(conn) -> dict[str, list[str]]:
+    """Business Central's own name for each entity's codes, where it differs
+    from the legal name the list shows: Chemichl AG is "MIYO" and "JENSEN" in
+    BC, IVOCLAR is "IVOCLAR VIVADENT". The office knows the BC name, so a list
+    showing only the legal one hid the entity from the person choosing it
+    (Natasa, 2026-11-05: doc 16 rejected as "wrong manufacturer: MIYO /
+    JENSEN"). Display and search only; the option's value stays the legal name."""
+    rows = conn.execute(
+        "SELECT m.canonical_name, array_agg(DISTINCT v.name ORDER BY v.name) AS names "
+        "FROM manufacturer m "
+        "JOIN manufacturer_bc_code c ON c.manufacturer_id = m.id "
+        "JOIN vendor_master v ON v.code_source = c.code_source AND v.code = c.code "
+        "WHERE btrim(v.name) <> '' AND lower(btrim(v.name)) <> lower(m.canonical_name) "
+        "GROUP BY m.canonical_name"
+    ).fetchall()
+    return {r["canonical_name"]: r["names"] for r in rows}
 
 
 # `_mfr_unbindable_entities` lived here until 2026-08-31. It counted the
@@ -1506,6 +1579,49 @@ def _mfr_binding_suggestion(
     }
 
 
+def _picker_doc(conn, doc_id: int) -> dict | None:
+    """The document the item picker works on (picker spec §3): one covering
+    specific items, on Review (`staged`) or published (`production`). None for
+    anything else, so a whole-range document never gets a picker."""
+    doc = conn.execute(
+        "SELECT doc_id, type, regulation, validity_from, status, coverage_scope, "
+        "canonical_manufacturer, content_hash, archive_url, source_url "
+        "FROM document WHERE doc_id = %s", (doc_id,)).fetchone()
+    if doc is None or doc["coverage_scope"] != "group" or doc["status"] not in ("staged", "production"):
+        return None
+    doc["file_name"] = _file_name(doc["source_url"], doc["archive_url"], doc["content_hash"])
+    return doc
+
+
+def _picker_mfr_options(conn) -> list[dict]:
+    """The manufacturers the item picker may offer: `_mfr_binding_options`
+    narrowed to those with a `manufacturer` row. The binding list also carries
+    a bare BC code with no row (`COALESCE(alias, raw)`), which GATE's
+    `_bindable_manufacturer` refuses, so offering it would turn an Approve into
+    a dead job behind a receipt that said it was recorded."""
+    held = {r["canonical_name"] for r in conn.execute("SELECT canonical_name FROM manufacturer")}
+    return [o for o in _mfr_binding_options(conn) if o["canonical_name"] in held]
+
+
+def _picker_manufacturer(conn, doc: dict, asked: str) -> tuple[str | None, bool]:
+    """(manufacturer, locked). The document's confirmed one always wins and is
+    locked; otherwise a chosen name counts only if the picker offers it."""
+    if doc["canonical_manufacturer"]:
+        return doc["canonical_manufacturer"], True
+    asked = (asked or "").strip()
+    if asked and asked in {o["canonical_name"] for o in _picker_mfr_options(conn)}:
+        return asked, False
+    return None, False
+
+
+def _picker_refusal(problems: dict[str, list[str]]) -> str:
+    """`check_items`'s findings as one sentence per kind, naming the items."""
+    said = {"unknown": "not in the catalogue",
+            "other-manufacturer": "made by another manufacturer",
+            "refused": "refused earlier for this document"}
+    return " ".join(f"{', '.join(refs)}: {said[kind]}." for kind, refs in problems.items())
+
+
 def _staged_doc_detail(conn, doc_id: int) -> dict | None:
     """Everything the summary row omits, for exactly one staged document:
     per-field evidence, item links, and the open gate-manual task explaining
@@ -1600,6 +1716,8 @@ def _staged_doc_detail(conn, doc_id: int) -> dict | None:
     row["held_links"] = [
         lk for lk in links
         if lk["status"] == "staged" and lk["match_basis"] not in PUBLISHING_BASES]
+    for lk in row["approve_links"]:
+        lk["basis_words"] = _basis_words([lk])
     row["approve_basis"] = _basis_words(row["approve_links"])
     row["held_basis"] = _basis_words(row["held_links"])
     row["regulation_words"] = REGULATION_WORDS.get(doc["regulation"] or "",
@@ -2799,6 +2917,10 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         return f"/static/{rel}?v={version}" if version else f"/static/{rel}"
 
     templates.env.globals["static_url"] = static_url
+    # The agreement floor the evidence tables' confidence note names (PRD v3
+    # section 7, 2026-10-12): read from config, so the page cannot go on
+    # quoting 0.70 after `gate.agreement_min` moves.
+    templates.env.globals["agreement_min"] = load_config().gate.agreement_min
 
     def _duration(seconds: int | None) -> str:
         """Seconds as something a person reads at a glance.
@@ -3091,40 +3213,7 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             ).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="unknown document")
-        archive_url = row["archive_url"] or ""
-        if urlsplit(archive_url).scheme in ("http", "https"):
-            # already client-reachable (storage.base_url configured) — hand the
-            # browser the real location rather than proxying bytes through here
-            return RedirectResponse(archive_url)
-        target = _resolve_archive_path(
-            archive_url, [cfg.archive_root, cfg.imports_dir],
-            rewrites=_parse_path_rewrites(cfg.path_rewrites),
-            content_hash=row["content_hash"],
-        )
-        if target is None:
-            raise HTTPException(
-                status_code=404,
-                detail="archived file is not reachable from this server",
-            )
-        # inline, not attachment: a reviewer clicking "Open full size" wants to
-        # LOOK at the PDF, and `attachment` downloads a fresh copy on every
-        # click instead.
-        #
-        # Cached for a year, privately (office UI redesign, spec § 6). The
-        # Review panel shows this file in an iframe every time a row is
-        # opened, and no request ever got a 304, so every reopening
-        # downloaded the whole file again (median 345 KB, largest 16 MB on
-        # dev). The bytes behind a doc_id never change -- the archive is
-        # hash-addressed and a new file is a new document -- so `immutable`
-        # is true, and `private` keeps it out of shared caches, since this
-        # route is staff-only. Only the file response carries it: every
-        # refusal above is an HTTPException, and a 404 must stay uncached.
-        # (Starlette's range answers copy these headers, so a 206 part of the
-        # same bytes is cached the same way.)
-        return FileResponse(target, media_type="application/pdf",
-                            filename=_download_name(target.name, row["content_hash"]),
-                            content_disposition_type="inline",
-                            headers={"Cache-Control": DOCUMENT_FILE_CACHE})
+        return _document_file_response(row, cfg)
 
     @app.get("/documents/{content_hash}/text", response_class=PlainTextResponse)
     def document_text(content_hash: str):
@@ -3160,7 +3249,7 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
     def items(request: Request, q: str = "",
               page: int = Query(0, ge=0, le=MAX_PAGE)):
         """Browse the catalogue with its compliance coverage. Three buckets
-        per item, counted from the per-item currency views (migration 071),
+        per item, counted from the per-item currency views (migration 072),
         not from document.status: production (documents that answer for the
         item now, consumer visible), staged (found but not yet trusted enough
         to publish), and superseded (published documents a newer one replaced
@@ -3333,13 +3422,14 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             # three rules fired; a review horizon must never be rendered as though
             # the document claimed an expiry it does not have.
             docs = conn.execute(
-                "SELECT d.doc_id, d.type, d.regulation, d.validity_from, d.validity_to, "
-                "d.status AS doc_status, d.archive_url, d.content_hash, d.cert_number, "
+                f"SELECT d.doc_id, d.type, d.regulation, d.validity_from, d.validity_to, "
+                f"d.status AS doc_status, ({DOC_STATUS_FOR_ITEM}) AS item_status, "
+                "d.archive_url, d.content_hash, d.cert_number, "
                 "d.cert_doc_id, e.expires, e.basis AS expiry_basis, "
-                "id.status AS link_status, id.match_basis "
-                "FROM item_document id JOIN document d ON d.doc_id = id.doc_id "
+                "l.status AS link_status, l.match_basis "
+                "FROM item_document l JOIN document d ON d.doc_id = l.doc_id "
                 "LEFT JOIN document_effective_expiry e ON e.doc_id = d.doc_id "
-                "WHERE id.item_ref=%s AND id.status <> 'retracted' "
+                "WHERE l.item_ref=%s AND l.status <> 'retracted' "
                 "ORDER BY d.type, d.validity_from DESC NULLS LAST",
                 (item_ref,),
             ).fetchall()
@@ -3446,6 +3536,53 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
              "pager": _pager(page, DOCUMENTS_PAGE_SIZE, total)},
         )
 
+    @app.post("/documents/{doc_id:int}/items", response_class=HTMLResponse)
+    def document_add_items(request: Request, doc_id: int,
+                           items: list[str] = Form([]), manufacturer: str = Form(""),
+                           reopen: list[str] = Form([])):
+        """Picker spec §3.1: add ticked items to a published document."""
+        ctx = {"request": request}
+        picked = sorted({i.strip() for i in items if i.strip()})
+        reopened = sorted({i.strip() for i in reopen} & set(picked))
+        with _conn() as conn:
+            doc = _picker_doc(conn, doc_id)
+            refusal = mfr = None
+            if doc is None or doc["status"] != "production":
+                refusal = ("Items can be added only to a published document that covers "
+                           "specific items.")
+            elif not picked:
+                refusal = "Tick at least one item."
+            else:
+                confirmed = doc["canonical_manufacturer"]
+                asked = manufacturer.strip()
+                mfr, _ = _picker_manufacturer(conn, doc, asked)
+                if confirmed and asked and asked != confirmed:
+                    refusal = f"This document is {confirmed}'s, not {asked}'s."
+                elif mfr is None:
+                    refusal = "Choose the manufacturer before ticking items."
+                elif (problems := item_picks.check_items(conn, doc_id, mfr, picked, reopen=reopened)):
+                    refusal = _picker_refusal(problems)
+            if refusal:
+                ctx["error"] = f"{refusal} Nothing was changed."
+                return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
+            decided_by = _authenticated_user(request) or DEFAULT_DECIDED_BY
+            payload = {"doc_id": doc_id, "decision": "add-items", "decided_by": decided_by,
+                       "items": picked}
+            if reopened:
+                payload["reopen"] = reopened
+            if not doc["canonical_manufacturer"]:
+                payload["manufacturer"] = mfr
+            # The usual `apply:{doc}:{decision}` would drop a second batch sent
+            # while the first is still queued (picker spec §5.2).
+            digest = hashlib.sha1(",".join(picked).encode()).hexdigest()[:12]
+            dedupe_key = f"apply:{doc_id}:add-items:{digest}"
+            jid = queue.enqueue(conn, "gate.apply", payload, dedupe_key, priority="interactive")
+            conn.commit()
+        ctx["job_id"] = jid
+        ctx["dedupe_key"] = dedupe_key
+        ctx["receipt"] = words.receipt(DECISION_RECEIPTS["add-items"], jid)
+        return templates.TemplateResponse(request, "_result.html", ctx)
+
     @app.get("/documents/{doc_id:int}", response_class=HTMLResponse)
     def document_detail(request: Request, doc_id: int, eudamed: str = ""):
         """One document: the items it covers, its evidence, and both
@@ -3548,6 +3685,12 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         return templates.TemplateResponse(
             request, "document_detail.html",
             {"doc": doc, "items": items_covered,
+             # Picker spec §3.1: items can be added to a published document
+             # that covers specific items.
+             "offer_picker": doc["status"] == "production" and doc["coverage_scope"] == "group",
+             # Spec 2026-11-09 §5.2: the same two conditions as adding items.
+             "can_remove": doc["status"] in ("production", "superseded")
+                           and doc["coverage_scope"] == "group",
              "evidence": evidence, "chain": chain, "chases": chases,
              "eudamed": eudamed, "eudamed_rows": eudamed_rows,
              "old_rule_superseded": old_rule_superseded},
@@ -4019,13 +4162,14 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                        count(*)                          AS documents,
                        (array_agg(l.doc_id ORDER BY l.doc_id))[1] AS sample_doc_id,
                        (l.expires - current_date)::int   AS days_left,
-                       -- items that lose coverage: production links on any of
-                       -- the documents in this group, counted DISTINCT because
-                       -- one item can hold several of them
+                       -- items that lose coverage: the items any of the
+                       -- documents in this group is CURRENT for (per-item
+                       -- currency, ruling 10, 2026-10-02; an item a newer
+                       -- document of its type answers for loses nothing),
+                       -- counted DISTINCT because one item can hold several
                        (SELECT count(DISTINCT il.item_ref)
-                          FROM item_document il
-                         WHERE il.status='production'
-                           AND il.doc_id IN (SELECT doc_id FROM lapsing l2
+                          FROM item_document_production il
+                         WHERE il.doc_id IN (SELECT doc_id FROM lapsing l2
                                               WHERE l2.manufacturer = l.manufacturer
                                                 AND l2.cert_number IS NOT DISTINCT FROM l.cert_number
                                                 AND l2.expires = l.expires)) AS items_affected
@@ -4345,11 +4489,20 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                 ).fetchall():
                     if o["other_sources"]:
                         origins[o["content_hash"]] = o
+            # The empty state says what the poll last did, read from its jobs,
+            # not from a flag: a fixed "the poll is off" stayed on screen after
+            # the mailbox was wired and polling every 6 h (2026-10-07).
+            poll = conn.execute(
+                "SELECT (SELECT status::text FROM job WHERE type = 'email.poll' "
+                "        ORDER BY id DESC LIMIT 1) AS newest_status, "
+                "       (SELECT max(finished_at) FROM job "
+                "        WHERE type = 'email.poll' AND status = 'done') AS last_done"
+            ).fetchone()
         return templates.TemplateResponse(
             request, "emails.html",
             {"rows": rows, "total": total, "shown": len(rows), "docs": docs,
              "origins": origins, "today": datetime.now(timezone.utc).date(),
-             "disposition_words": ATTACHMENT_DISPOSITION_WORDS},
+             "disposition_words": ATTACHMENT_DISPOSITION_WORDS, "poll": poll},
         )
 
     # ----------------------------------------------------------------- #
@@ -4384,7 +4537,9 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             "FROM renewal_request_document rd "
             "JOIN document d ON d.doc_id = rd.doc_id "
             "LEFT JOIN document_effective_expiry e ON e.doc_id = d.doc_id "
-            "LEFT JOIN item_document id ON id.doc_id = d.doc_id AND id.status='production' "
+            # The items the document is CURRENT for (ruling 10, 2026-10-02):
+            # an item a newer document of its type answers for loses nothing.
+            "LEFT JOIN item_document_production id ON id.doc_id = d.doc_id "
             "WHERE rd.renewal_request_id = %s "
             "GROUP BY d.doc_id, d.type, d.regulation, d.cert_number, e.expires, e.basis "
             "ORDER BY e.expires NULLS LAST, d.doc_id", (renewal_request_id,)
@@ -5211,9 +5366,111 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             {"request": request, "row": row,
              "type_choices": TYPE_CHOICES, "regulation_choices": REGULATION_CHOICES,
              "reject_reasons": REJECT_REASONS, "reject_note_max": REJECT_NOTE_MAX,
-             "items_shown": REVIEW_ITEMS_SHOWN,
+             "items_shown": REVIEW_ITEMS_SHOWN, "picked": None,
              "today": datetime.now(timezone.utc).date()},
         )
+
+    def _picker_ctx(request, doc, manufacturer, locked) -> dict:
+        from urllib.parse import quote
+        return {
+            "request": request, "doc": doc, "manufacturer": manufacturer, "locked": locked,
+            "mode": "review" if doc["status"] == "staged" else "published",
+            "results_url": (f"/picker/{doc['doc_id']}/results"
+                            f"?manufacturer={quote(manufacturer or '')}"),
+            "doc_types": item_picker.DOC_TYPES, "type_short": PICKER_TYPE_SHORT,
+            "compare_words": PICKER_COMPARE_WORDS,
+        }
+
+    @app.get("/picker/{doc_id:int}", response_class=HTMLResponse)
+    def picker_open(request: Request, doc_id: int, manufacturer: str = ""):
+        """The item picker's body, loaded into the panel's <dialog> (picker
+        spec §3)."""
+        with _conn() as conn:
+            doc = _picker_doc(conn, doc_id)
+            if doc is None:
+                return templates.TemplateResponse(
+                    request, "_result.html",
+                    {"request": request, "error": "Items can be chosen only for a document "
+                     "that covers specific items. Nothing was changed."}, status_code=404)
+            mfr, locked = _picker_manufacturer(conn, doc, manufacturer)
+            ctx = _picker_ctx(request, doc, mfr, locked)
+            if mfr is None:
+                evidence = conn.execute(
+                    "SELECT field, value FROM evidence WHERE doc_id=%s", (doc_id,)).fetchall()
+                ctx.update(mfr_options=_picker_mfr_options(conn),
+                           mfr_suggestion=_mfr_binding_suggestion(conn, evidence))
+            else:
+                sugg = item_picker.suggestions(
+                    conn, doc, mfr,
+                    lambda d: _file_name(d["source_url"], d["archive_url"], d["content_hash"]))
+                first = sugg["words"][0] if sugg["words"] else ""
+                ctx.update(suggestions=sugg, first_word=first,
+                           result=item_picker.search(conn, doc, mfr, first),
+                           proposed=item_picker.proposed(conn, doc, mfr))
+        return templates.TemplateResponse(request, "_item_picker.html", ctx)
+
+    @app.get("/picker/{doc_id:int}/results", response_class=HTMLResponse)
+    def picker_results(request: Request, doc_id: int, manufacturer: str = "", q: str = "",
+                       similar: str = "", source_doc: int | None = None):
+        """One list in the picker: a search, Similar on a row, or a published
+        document's items (picker spec §4). Never outside the manufacturer."""
+        with _conn() as conn:
+            doc = _picker_doc(conn, doc_id)
+            if doc is None:
+                return templates.TemplateResponse(
+                    request, "_result.html", {"request": request, "error": "Not found."},
+                    status_code=404)
+            mfr, locked = _picker_manufacturer(conn, doc, manufacturer)
+            if similar:
+                result = item_picker.similar(conn, doc, mfr, similar)
+            elif source_doc is not None:
+                result = item_picker.items_of(conn, doc, mfr, source_doc)
+            else:
+                result = item_picker.search(conn, doc, mfr, q)
+            ctx = _picker_ctx(request, doc, mfr, locked)
+            ctx["result"] = result
+        return templates.TemplateResponse(request, "_item_picker_results.html", ctx)
+
+    @app.get("/picker/{doc_id:int}/summary", response_class=HTMLResponse)
+    def picker_summary(request: Request, doc_id: int, manufacturer: str = "",
+                       items: list[str] = Query([]), remove: list[str] = Query([])):
+        """The panel's scope section after Done (picker spec §3 step 3, §6), and
+        the Approve label to match, swapped out of band. Also after Remove and
+        Undo (spec 2026-11-09 §5.1): `remove` moves those links out of what
+        approving promises, so the list, the count and the label stay one."""
+        with _conn() as conn:
+            row = _staged_doc_detail(conn, doc_id)
+            doc = _picker_doc(conn, doc_id)
+            if row is None or doc is None:
+                return templates.TemplateResponse(
+                    request, "_result.html",
+                    {"request": request, "error": f"document #{doc_id} is no longer on Review"},
+                    status_code=404)
+            mfr, _ = _picker_manufacturer(conn, doc, manufacturer)
+            picked = item_picker.selected(conn, doc, mfr, items)
+        held = [r for r in picked if r.same_type]
+        held_line = None
+        if held:
+            counts: dict[str, int] = {}
+            for r in held:
+                counts[r.same_type["compare"]] = counts.get(r.same_type["compare"], 0) + 1
+            parts = ", ".join(f"{counts[k]} {k}" for k in ("older", "newer", "same date", "no date")
+                              if k in counts)
+            word = PICKER_TYPE_SHORT.get(doc["type"], doc["type"])
+            article = "an" if word in ("IFU", "ISO") else "a"
+            verb = "holds" if len(held) == 1 else "hold"
+            held_line = (f"{len(held)} of them already {verb} {article} {word} ({parts}); "
+                         f"this one is added beside it.")
+        gone = {r.strip() for r in remove if r.strip()}
+        removed_links = [lk for lk in row["approve_links"] if lk["item_ref"] in gone]
+        row["approve_links"] = [lk for lk in row["approve_links"] if lk["item_ref"] not in gone]
+        row["approve_basis"] = _basis_words(row["approve_links"])
+        n = len({lk["item_ref"] for lk in row["approve_links"]} | {r.item_ref for r in picked})
+        return templates.TemplateResponse(
+            request, "_picker_summary.html",
+            {"request": request, "row": row, "picked": picked, "held_line": held_line,
+             "removed_links": removed_links,
+             "items_shown": REVIEW_ITEMS_SHOWN, "doc_id": doc_id, "approve_count": n})
 
     @app.get("/staging/suggestion/{suggestion_id:int}/detail", response_class=HTMLResponse)
     def staging_suggestion_detail(request: Request, suggestion_id: int):
@@ -5306,6 +5563,12 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         reason: str = Form(""),
         reason_note: str = Form(""),
         confirm: str = Form(""),
+        # Picker spec §5.1: the items a reviewer ticked, sent with Approve.
+        items: list[str] = Form([]),
+        # Spec 2026-11-09 §4.2: the system-matched items the reviewer took off.
+        remove: list[str] = Form([]),
+        # Spec 2026-11-09 §4.4: the ticked items ticked despite an earlier refusal.
+        reopen: list[str] = Form([]),
     ):
         # Decisions per docs/dentalia-s0.3-ui-proposal.md (the real
         # handle_gate_apply contract) — "edit" is not a standalone decision;
@@ -5389,6 +5652,24 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         if note is not None:
             payload["note"] = note
 
+        # Every approval needs an issue date (picker spec §7, ruled 2026-10-02).
+        # A whole-range approval carries that one correction and no other.
+        if decision in ("approve", "bind-manufacturer"):
+            if decision == "bind-manufacturer" and "edits" in payload:
+                kept = {k: v for k, v in payload["edits"].items() if k == "validity_from"}
+                if kept:
+                    payload["edits"] = kept
+                else:
+                    del payload["edits"]
+            if not (payload.get("edits") or {}).get("validity_from"):
+                with _conn() as conn:
+                    stored = conn.execute("SELECT validity_from FROM document WHERE doc_id=%s",
+                                          (doc_id,)).fetchone()
+                if stored is None or stored["validity_from"] is None:
+                    ctx["error"] = ('This document states no issue date. Enter it under '
+                                    '"Correct a fact first" before approving. Nothing was changed.')
+                    return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
+
         if decision == "bind-manufacturer":
             manufacturer = manufacturer.strip()
             if not manufacturer:
@@ -5444,6 +5725,65 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                 )
                 return templates.TemplateResponse(request, "_result.html", ctx)
 
+        # Picker spec §5.1: the items a reviewer ticked, on Approve only. The
+        # route refuses what GATE would refuse, so a bad set never reaches the
+        # queue; GATE checks again (`item_picks.check_items`) as the last word.
+        if decision == "approve" and any(i.strip() for i in items):
+            picked = sorted({i.strip() for i in items if i.strip()})
+            reopened = sorted({i.strip() for i in reopen} & set(picked))
+            refusal = None
+            with _conn() as conn:
+                doc = _picker_doc(conn, doc_id)
+                if doc is None or doc["status"] != "staged":
+                    refusal = ("Items can be chosen only for a document on Review that "
+                               "covers specific items.")
+                else:
+                    asked = manufacturer.strip()
+                    confirmed = doc["canonical_manufacturer"]
+                    if confirmed and asked and asked != confirmed:
+                        refusal = f"This document is {confirmed}'s, not {asked}'s."
+                    else:
+                        mfr, _ = _picker_manufacturer(conn, doc, asked)
+                        if mfr is None:
+                            refusal = "Choose the manufacturer before ticking items."
+                        else:
+                            problems = item_picks.check_items(conn, doc_id, mfr, picked,
+                                                              reopen=reopened)
+                            if problems:
+                                refusal = _picker_refusal(problems)
+                            elif not confirmed:
+                                payload["manufacturer"] = mfr
+            if refusal:
+                ctx["error"] = f"{refusal} Nothing was changed."
+                return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
+            payload["items"] = picked
+            if reopened:
+                payload["reopen"] = reopened
+
+        # Spec 2026-11-09 §4.6: refuses what GATE would refuse, as for the ticks.
+        if decision == "approve" and any(i.strip() for i in remove):
+            gone = sorted({i.strip() for i in remove if i.strip()})
+            both = sorted(set(gone) & {i.strip() for i in items})
+            refusal = None
+            with _conn() as conn:
+                doc = _picker_doc(conn, doc_id)
+                if doc is None or doc["status"] != "staged":
+                    refusal = ("Items can be removed here only from a document on Review "
+                               "that covers specific items.")
+                elif both:
+                    refusal = f"{', '.join(both)}: both ticked and removed."
+                else:
+                    held = {r["item_ref"] for r in conn.execute(
+                        "SELECT item_ref FROM item_document WHERE doc_id=%s AND item_ref = ANY(%s)",
+                        (doc_id, gone)).fetchall()}
+                    missing = [r for r in gone if r not in held]
+                    if missing:
+                        refusal = f"{', '.join(missing)}: not linked to this document."
+            if refusal:
+                ctx["error"] = f"{refusal} Nothing was changed."
+                return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
+            payload["remove"] = gone
+
         # Per the proposal's suggested key: one active gate.apply per (doc, decision)
         # regardless of who submits it — a second reviewer clicking the same
         # decision on the same doc should dedupe, not double-enqueue.
@@ -5475,7 +5815,34 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
     #: decisions) rather than imported from `app.handlers.gate`: web/ is a
     #: producer and must not depend on handler internals, and an unknown value
     #: has to 422 here regardless of what the handler would do with it.
-    LINK_DECISIONS = ("confirm-link", "reject-link", "reopen-link")
+    LINK_DECISIONS = ("confirm-link", "reject-link", "reopen-link", "remove-link")
+
+    def _remove_link_refusal(conn, doc_id: int, item_ref: str) -> tuple[str | None, str | None]:
+        """Why this link cannot be removed now, and the document's type. A stale
+        page gets a sentence here rather than a dead job from GATE."""
+        doc = conn.execute("SELECT status, coverage_scope, type FROM document WHERE doc_id=%s",
+                           (doc_id,)).fetchone()
+        link = conn.execute("SELECT status FROM item_document WHERE doc_id=%s AND item_ref=%s",
+                            (doc_id, item_ref)).fetchone()
+        if (doc is None or doc["status"] not in ("production", "superseded")
+                or doc["coverage_scope"] != "group"
+                or link is None or link["status"] != "production"):
+            return (f"{item_ref} can no longer be removed from this document. "
+                    "Reload the page to see where it stands. Nothing was changed."), None
+        return None, doc["type"]
+
+    def _remove_link_lines(conn, doc_id: int, item_ref: str, doc_type: str) -> list[str]:
+        """Step one of a removal (spec 2026-11-09 §5.2). The last line is only
+        said when true, read at the moment of asking."""
+        lines = [f"Remove {item_ref} from this document?",
+                 "The document stops counting for this item right away."]
+        other = conn.execute(
+            "SELECT 1 FROM item_document_history WHERE item_ref=%s AND type=%s AND doc_id<>%s LIMIT 1",
+            (item_ref, doc_type, doc_id)).fetchone()
+        if other is None:
+            word = PICKER_TYPE_SHORT.get(doc_type, doc_type)
+            lines.append(f"{item_ref} will have no {word} left. This is the only current one it has.")
+        return lines
 
     @app.post("/links/{doc_id}/decide", response_class=HTMLResponse)
     def link_decide(
@@ -5484,6 +5851,10 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         item_ref: str = Form(...),
         decision: str = Form(...),
         decided_by: str = Form(""),
+        # remove-link only (spec 2026-11-09 §5.2): the table row it was pressed
+        # on, and the second press of the two-step.
+        row: str = Form(""),
+        confirm: str = Form(""),
     ):
         """C17: one human ruling on ONE (doc_id, item_ref) link.
 
@@ -5498,7 +5869,8 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         precondition -- document must be production, link must be in the status
         the decision expects -- and raises where it is not, so a stale button on
         an already-decided row dead-letters visibly instead of silently doing
-        nothing.
+        nothing. `remove-link` alone is also checked here, because it asks first
+        and a stale page then gets a sentence.
         """
         ctx = {"request": request}
         if decision not in LINK_DECISIONS:
@@ -5508,6 +5880,27 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         if not item_ref:
             ctx["error"] = "item_ref is required for a link decision"
             return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
+
+        if decision == "remove-link":
+            # An id built into `hx-target` and into Cancel's script: digits only.
+            if not (row.isascii() and row.isdigit()):
+                ctx["error"] = "The row is missing. Reload the page. Nothing was changed."
+                return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
+            with _conn() as conn:
+                refusal, doc_type = _remove_link_refusal(conn, doc_id, item_ref)
+                lines = (_remove_link_lines(conn, doc_id, item_ref, doc_type)
+                         if refusal is None and not confirm else None)
+            if refusal:
+                ctx["error"] = refusal
+                return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
+            if not confirm:
+                ctx.update(confirm_needed=lines,
+                           confirm_url=f"/links/{doc_id}/decide",
+                           confirm_target=f"link-slot-{doc_id}-{row}",
+                           confirm_fields={"item_ref": item_ref, "decision": decision, "row": row},
+                           confirm_label=f"Yes, remove {item_ref}")
+                return templates.TemplateResponse(request, "_result.html", ctx)
+            ctx["clear_cell"] = f"link-cell-{doc_id}-{row}"
 
         auth_user = _authenticated_user(request)
         decided_by = auth_user or decided_by.strip() or DEFAULT_DECIDED_BY
@@ -5864,10 +6257,12 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         """Production documents for one item, plus the item's own identity.
 
         `view=customer` narrows the response to what the webshop may render to
-        a clinic (spec §6). `include_superseded=true` widens the ROW SET to the
-        documents this item's paperwork replaced (migration 070). Both default
-        to today's behaviour, so this stays additive per
-        `docs/specs/read-api.md` §5.
+        a clinic (spec §6). `include_superseded=true` widens the ROW SET to
+        every published document linked to the item, `current` per row and
+        newest first (migrations 070, 072). The default response is the
+        current documents per type; it changed in migration 072, when it
+        stopped returning every production document linked to the item
+        (`docs/specs/read-api.md` §2).
 
         The two are refused together, and `item_docs` owns that rule -- the
         route only turns its ValueError into the status code, so the batch
@@ -5897,8 +6292,12 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             ).fetchone()
             if doc is None:
                 raise HTTPException(status_code=404, detail=f"production document {doc_id} not found")
+            # `agreed_model_id` / `agreed_confidence` (migration 071): the
+            # second read that agreed on the value, when `confidence` combines
+            # two reads. NULL on every other row.
             evidence = conn.execute(
-                "SELECT field, value, tier, model_id, confidence, verbatim, page, archive_url, extracted_at "
+                "SELECT field, value, tier, model_id, confidence, agreed_model_id, "
+                "agreed_confidence, verbatim, page, archive_url, extracted_at "
                 "FROM evidence WHERE doc_id=%s ORDER BY field",
                 (doc_id,),
             ).fetchall()

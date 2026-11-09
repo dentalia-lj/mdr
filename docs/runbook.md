@@ -271,7 +271,7 @@ again** and **Search again for these N** on Failed, which Today also offers.
 | `/documents/{doc_id}/file` | The archived PDF. **Always link here, never to `document.archive_url`** — that column is a storage handle (a host path for backfilled corpus documents, a `file://` URI in local dev), so rendering it into an href produces a dead link, which is what every "file" link in the UI used to be. Resolution order: the stored path as-is — the normal path now that `backfill.scan` archives through the StorageAdapter and `archive_url` is a uniform `/archive/{brand}/{type}/{hash12}__{name}.pdf` — then `WEB_PATH_REWRITES`, then a search of path tails under `WEB_ARCHIVE_ROOT`/`WEB_IMPORTS_DIR` accepted only when the file's sha256 matches the registry's `content_hash`. The last two are a safety net for rows written before that fix, not the working path. Served `inline` (clicking opens the PDF; `attachment` downloaded a fresh copy per click) and the archive's `{hash12}__` prefix is stripped from the download name, since manufacturers identify documents by their own filenames. Redirects instead of proxying when `storage.base_url` makes the archive already client-reachable. A served file carries `Cache-Control: private, max-age=31536000, immutable` (`DOCUMENT_FILE_CACHE`, 2026-09-11): the bytes behind a doc_id never change, and the Review panel's iframe re-reads the file every time a row is opened, which without it downloaded the whole PDF again each time. Starlette's range answers (206) copy the header; a 404 carries none |
 | `/staging/docs?page=&q=&reason=`, `/staging/suggestions?page=&q=` | HTMX partials: one page of summary rows for each section. `reason` is a reason chip (`REVIEW_REASON_CHIPS`); an unknown value is all reasons. `q` filters suggestions by `item_ref` — with thousands open, prev/next alone cannot reach a specific item. Also usable by hand to check what a page holds without loading the board |
 | `/staging/{doc_id}/detail`, `/staging/suggestion/{id}/detail` | HTMX partials: the expanded body of one row, including its decision form. 404 once the row is decided or resolved (someone got there first in another tab) |
-| `POST /links/{doc_id}/decide` | C17 link decisions: `confirm-link` / `reject-link` / `reopen-link` on one `(doc_id, item_ref)` pair, `item_ref` as a form field (catalogue refs contain literal slashes). Enqueues `gate.apply` at interactive priority and writes nothing — the handler owns every precondition and raises where it is not met, so a stale button on an already-decided row dead-letters visibly instead of silently doing nothing. Dedupe key `apply:{doc_id}:{item_ref}:{decision}`: two items under one document are two decisions and must not collapse. Reachable from `/staging` and from `/items/{item_ref}`'s **Decide** column |
+| `POST /links/{doc_id}/decide` | C17 link decisions: `confirm-link` / `reject-link` / `reopen-link` / `remove-link` (asks first, unless `confirm` is sent) on one `(doc_id, item_ref)` pair, `item_ref` as a form field (catalogue refs contain literal slashes). Enqueues `gate.apply` at interactive priority and writes nothing — the handler owns every precondition and raises where it is not met, so a stale button on an already-decided row dead-letters visibly instead of silently doing nothing; `remove-link` is also checked on the route and answers 422 in words. Dedupe key `apply:{doc_id}:{item_ref}:{decision}`: two items under one document are two decisions and must not collapse. Reachable from `/staging` and from `/items/{item_ref}`'s **Decide** column; `remove-link` from a document's **Covered items** |
 | `/manual` | Open `manual_task` rows; **searchable** by the document a task is about (manufacturer as printed, filename, cert number, Basic UDI-DI, doc id) — a `discovery-dead-end` task is about a group rather than a document and matches only on its payload; `discovery-dead-end` tasks resolve here (re-enqueues `discover.group`) or via an "Upload document" link to `/upload` (prefilled group + task id); `gate-manual` resolves via Staging |
 | `/missing` (added 2026-09-11, office UI redesign spec § 5) | **Missing documents**, the office's half of `/manual`: open `discovery-dead-end` tasks only, oldest first, 20 a page (`?page=`), filterable by `?manufacturer=` with chips for the six manufacturers holding the most and the rest behind "+ K more". `gate-manual` and `dead-job-followup` are not listed; `/manual` keeps all three. Each card: the task's `label`, the group's canonical manufacturer, its item numbers from `item_group_member`, and "Searched … on ⟨date⟩. Nothing found." read off the group's LAST run in `discovery_log` (the rows sharing the `at` of its latest `manual` row; one run is one transaction), not off `sources_tried`, which also lists rungs that skipped or had nothing to look at. Only two rungs can be named: `search` (a hit or miss row) and `playbook` (a crawl row with `pages_fetched` >= 1); `recency`, `known_url` and `eudamed` are never named, because their rows cannot show they looked at anything (`web/missing.py::NEVER_NAMED`), and a run that proves no place reads "Nothing found on ⟨date⟩." A repeat search that also finds nothing moves the date and the places. Actions: **Upload what I found** (`/upload?group_id=&manual_task_id=`), **⟨Manufacturer⟩ downloads ↗** and **Search the web ↗** from `prefilled_search_links` (split by host; the playbook's first `portal` source when the payload has none), and **Search again**, which is `POST /manual/{id}/resolve`; its receipt says the card leaves the list as soon as the search finds something to try, before the document is checked, because DISCOVER closes the task on any rung hit. Read-only: the page closes nothing; DISCOVER closes a task when a search finds something, `upload.ingest` when an upload is taken in. `missing_summary(conn)` gives the count, the top three manufacturers and the oldest date for Today |
 | Refetch one item | An admin can re-run discovery for a single item's group with the recency window bypassed ([admin-refetch-item], added 2026-08-24): the "Re-discover documents" button on `/items/{item_ref}` (`POST .../rediscover`), or `python -m app.cli discover-item <item_ref> --force` from the shell. Both enqueue `discover.group` at `interactive` priority, dedupe `discover:refetch:{group_id}:{date}` (same-day repeat is a no-op) — `--force`/the button set `ignore_recency: true`; without `--force` the CLI does an ordinary re-run. The flag only bypasses the recency-window checks — conditional GET and content-hash dedupe still run, so a forced refetch of unchanged bytes links rather than duplicating a document |
@@ -282,9 +282,10 @@ again** and **Search again for these N** on Failed, which Today also offers.
 | `/archive/{path}` | Serve an archived document from `Web.archive_root` (the `archive_data` volume, mounted read-only on `web`); 404 outside the root or on a missing file |
 | `/documents/{content_hash}/text` | Plain text of what EXTRACT read out of that PDF (`document_text`, migration 018); a placeholder line if the document is a scan, 404 if no row exists |
 | `/item/{item_ref}?k=` | **The BC item-card link.** One item and its production documents, for a caller that is not a staff browser: a support rep clicking the computed hyperlink from BC gets a standalone page (manufacturer identity first, since that is what is printed on the box), the webshop backend gets the same payload as JSON on `Accept: application/json` or `?format=json` — BC's HTTP client is not guaranteed to send a useful `Accept`, and a rep must never land on a raw JSON blob. `&view=customer` narrows it to what the shop may render to a clinic (drops `manufacturer_code`, `match_basis`, `expiry_basis` — `docs/specs/read-api.md`). The key is `WEB_BC_LINK_KEY`, shared and static because a BC hyperlink is a computed field built by string concatenation and cannot compute a signature; a wrong or missing key is a **404, never a 403**, since a 403 confirms the item exists. Reachable by the `bc`, `service` and `staff` classes only. Staff browsing the registry use `/items/{item_ref}` instead |
-| `/item/{item_ref}/documents.zip?k=` | Every production document for that item in one archive — the "papers" a client asks for on the phone are plural. Built in memory; a document whose bytes are unreachable is skipped, and an item with none is a 404 rather than an empty zip. Registered *before* `/item/{item_ref}` because the `:path` converter is greedy |
+| `/item/{item_ref}/documents.zip?k=` | Every production document for that item in one archive — the "papers" a client asks for on the phone are plural. Built in memory; a document whose bytes are unreachable is skipped, and an item with none is a 404 rather than an empty zip. Named after the item, RFC 5987-encoded when the name is not plain ASCII (a Č/Š/Ž name 500'd it until 2026-10-08). Registered *before* `/item/{item_ref}` because the `:path` converter is greedy |
+| `/item/{item_ref}/documents/{doc_id}?k=` | One of the item's documents, inline PDF: the card's **Open** link (2026-10-08). Only a production document with a production link to that item; anything else is the `/item/*` 404. `/documents/{id}/file` is not opened to the key because it serves any document by a sequential id. Registered *before* `/item/{item_ref}`, like the zip |
 | `/api-reference` (nav: **Developer → API**) | What this app exposes, to whom, and with which credential. The three caller classes (`staff` Basic auth, `service` `X-API-Key`, `bc` `?k=`), which paths each may reach, and an endpoint table — with **live example links built from an item_ref read out of the database**, so a documented example cannot drift into 404ing. Links out to FastAPI's generated `/docs` and `/openapi.json`, which answer "what are the parameters" but not "which of these may the webshop call" |
-| `/api/items/{item_ref}/documents` | JSON: the item's identity (`item_name`, `manufacturer`, `manufacturer_code`, `mfr_ref` — all null for an unmirrored item) plus its current documents per type (one, or several of the same issue date). `?view=customer` narrows it to the customer-safe projection; `?include_superseded=true` widens the ROW SET to every published document linked to the item, adding `current`, `status` and `superseded_by` (migrations 070/071). Both default to today's behaviour. The two cannot be combined — `400`, because a history row must never reach a clinic as coverage. Shares one implementation with `/item/{item_ref}` (`web/item_docs.py`) so the two cannot disagree about what an item's paperwork is |
+| `/api/items/{item_ref}/documents` | JSON: the item's identity (`item_name`, `manufacturer`, `manufacturer_code`, `mfr_ref` — all null for an unmirrored item) plus its current documents per type (one, or several of the same issue date). `?view=customer` narrows it to the customer-safe projection; `?include_superseded=true` widens the ROW SET to every published document linked to the item, adding `current`, `status` and `superseded_by` (migrations 070/071), newest first. The default response changed in 071: it used to be every production document linked to the item and is now the current one(s) per type. The two cannot be combined — `400`, because a history row must never reach a clinic as coverage. Shares one implementation with `/item/{item_ref}` (`web/item_docs.py`) so the two cannot disagree about what an item's paperwork is |
 | `/api/documents/{doc_id}` | JSON: a production **or superseded** document + its evidence. Superseded since 2026-09-16, so the `doc_id`s `?include_superseded` hands back are fetchable; staged, rejected and filed stay `404` |
 | `/api/kpi` | JSON: the same numbers as the `/status` KPI board |
 | `/healthz` | Liveness — the one route Caddy leaves unauthenticated |
@@ -575,7 +576,7 @@ site's copy, which holds 5 files where SFTP held 34.
 Documents whose printed manufacturer name no alias knows wait on Review flagged `manufacturer-unresolved`. The first card on `/data-quality` (and a line in the weekly report) lists each such name, its documents, and a suggested manufacturer with evidence: **Alias exists**, **Article numbers**, **Name only** or **No match**. Nothing there writes. To clear one:
 
 1. Add the name to the suggested manufacturer's playbook `aliases` (or start a playbook for it), commit, and deploy (`git pull`, `./scripts/deploy.sh`).
-2. Load it: `manufacturers seed --apply`, then `playbooks sync` (the sync is what writes `manufacturer_alias`, which VALIDATE reads).
+2. Load it: `manufacturers seed --apply`, then `playbooks sync` (the sync is what writes `manufacturer_alias`, which VALIDATE reads). Both, in that order: on the server the sync reads aliases from the database, and only the seed copies a new alias from the file into it, so `sync` alone reports `0 inserted` and the name stays unresolved (2026-10-14, the USTOMED alias "Ulrich Storz GmbH & Co. KG").
 3. Send the waiting documents round again:
 
 ```bash
@@ -584,6 +585,34 @@ docker compose exec worker python -m app.cli revalidate --name "botiss biomateri
 ```
 
 It refuses a name that does not resolve to exactly one manufacturer yet (step 2 not done). It sends only documents whose last validation flagged the name, that are staged or filed and that nobody touched: published, rejected, superseded, grouped, reviewer-edited, reopened, never-validated and still-validating documents are left alone and counted. What GATE then does is its usual rule: REFs match and the score clears `gate.high` with no capping flag → production, task closed; no REF matches and the score clears `gate.med` with no blocking flag → `filed` (C15, out of catalogue); otherwise staged or manual. A document that stays on Review keeps its task's old payload (`gate._push_manual` never refreshes an open task), so Review may still show `manufacturer-unresolved`; the card reads the latest validation instead and drops the row. **Row:** `app/revalidate_name.py`; the grouping is `app/unmatched_names.py`.
+
+### Documents need reading again after a model or prompt change (`reextract`)
+
+Invariant 6 says unchanged content is never re-parsed, and it keys on the bytes. After a model or prompt change the reader is no longer the same input, so a file read under the old one can hold a value the new one finds, and nothing else would send it back. The contract already allows for this: PRD v3 C2 freed terminal `extract:<hash>` keys so that re-extracting after a model swap is a normal operation, and the 2026-10-12 ruling "Certificate number on a DoC" (`docs/decisions.md`) asks for a re-read of the T1-read DoCs. `reextract` is that operation: it queues `extract.doc` again for chosen documents. Each re-read **appends** a new `extract_rev` (the old attempts stay), costs real model calls, and runs only with `--apply`. Selectors, combinable:
+
+- `--doc-cert-null`: DoCs whose latest read gave `cert_number` from T1 and left it null (T1 used to be told DoCs carry none).
+- `--dropped-scans`: scans with no text layer and no document, whose latest `extract.doc` result was `not-a-compliance-document`. A scan whose latest job is still active, or dead, has no result and is not counted.
+- `--hashes a,b,c` or `--hashes-file path`: an explicit list of content hashes (one per line, `#` comment lines allowed).
+
+Options: `--limit N` sends only the first N eligible hashes in hash order, which is a fair sample because content hashes are uniform; `--include-published` also re-reads published documents (below).
+
+Run it in the `worker` container. `DENTALIA_EXTRACT_MODE` is set there and nowhere else, and the batch-mode refusal reads the environment of the process the command runs in. A hashes file has to be inside that container too:
+
+```bash
+docker compose exec worker python -m app.cli reextract --doc-cert-null                 # dry run
+docker compose exec worker python -m app.cli reextract --doc-cert-null --apply
+docker compose exec worker python -m app.cli reextract --dropped-scans --limit 40 --apply   # a sample of 40 scans first
+docker compose cp sample.txt worker:/tmp/sample.txt
+docker compose exec worker python -m app.cli reextract --hashes-file /tmp/sample.txt --apply
+```
+
+The dry run prints, per selector, how many hashes it found, how many are eligible (and how many of those are published), and how many it leaves alone, counted by reason: no previous extract job (there is no payload to copy and none is guessed), an `extract.doc` job already active, rejected, superseded, approved by a reviewer, edited by a reviewer (any T3 evidence), reopened by a reviewer, published without `--include-published`, or already chosen by an earlier selector. Then the total to enqueue, how many `--limit` held back, and the first 12 hashes it would send. "Approved by a reviewer" means an `approve`, `bind-manufacturer` or `production-write` audit row by anyone but a machine actor (`gate`, `system`, `ops:*`, `tool:*`); those documents are never re-read, flag or no flag.
+
+The new job carries the payload of the hash's most recent `extract.doc` job (group, source URL, companion file) under the usual key `extract:<hash>`, so a terminal job never blocks it. One field is replaced: when the registry holds the document, its `archive_url` goes in instead of the old job's, because GATE prefers the payload's handle and an old one would undo a re-homed archive (`repair-archive-urls`). The dry run counts these. A hash that the new read still leaves null, or still refuses, stays selected, so a second run reads it again.
+
+**What a re-read does to a published document.** GATE replaces a published document only with a read that itself reaches production, and never replaces a superseded or rejected one (Denis, 2026-10-12 and -13; `gate._keeps`, `gate._kept`). A re-read that comes out `staged`, `manual`, `filed` or auto-superseded on a published document, or any re-read of a superseded or rejected one, on either route, keeps the document: the stored fields and evidence stay, no evidence is appended for its `extract_rev`, no review task opens and no chain pointer is set. On a rejected document nothing at all is written, not even a link, until a person reopens it. Otherwise the links it proposes are still written, at `staged` only (never production, never a retraction); on a published document they wait on Review under *Links waiting for review on published documents* (`web/app.py` `_staged_links_on_production` lists staged links on production documents only). Its `gate.candidate` result says `kept` (the status that held), gives the disposition the read scored, and lists the fields it read differently as `kept_differences`, counted in `counts.kept_differences`; both are absent when nothing differs. The read itself stays on `extraction_attempt` under its new `extract_rev`. To count the kept re-reads after a run: `SELECT result->>'kept' AS kept, count(*), sum((result->'counts'->>'kept_differences')::int) FROM job WHERE type='gate.candidate' AND result ? 'kept' AND finished_at > <run start> GROUP BY 1;`. A re-read that does reach production replaces: `gate._upsert_document` overwrites `type`, `regulation`, both validity dates, `coverage_scope`, `basic_udi_di`, `cert_number`, `stated_class` and `archive_url`; `supersedes`, `referenced_doc_id`, `cert_doc_id`, `source_url` and `canonical_manufacturer` keep their stored values when the new read has none; production and rejected links stay as they are; evidence is appended for the new `extract_rev`. Three things hold even then: a field a reviewer edited keeps its value and evidence (`reviewer_edits_kept` on the result), a read that would change `type`, `regulation` or `coverage_scope` of a published document in a supersession chain is kept and named in `chain_identity_changed`, and a stale revision writes nothing on either route. `--include-published` stays opt-in: re-reading a published document is still a decision, now one that cannot make it worse.
+
+**Sync mode only.** In batch mode (`DENTALIA_EXTRACT_MODE=batch`) the command refuses, dry run included: `batch_ref` is keyed `(content_hash, tier)` without a revision, so a resolved row returns the old results and the re-read would change nothing. The same holds for jobs already queued: if the worker is switched to batch while they wait, a hash with a resolved `batch_ref` row gets its old results written again as a new `extract_rev`. The server runs sync. Read the review queue before and after. **Row:** `app/reextract.py`; the mode is read by `batching.extract_mode()`, which the `extract.doc` dispatcher uses too.
 
 ### Komet coverage map (`komet-coverage`)
 
@@ -651,7 +680,7 @@ someone made in the UI, and an import must not silently revert it.
 
 **Importing the manufacturer master without shell access** (`/import`, BC vendor import upload slice B, 2026-08-26) is the same shape for `imports/Proizvajalci.xlsx`, the file `python -m app.cli vendor-master` reads — both go through `app/vendor_master.py`, so the browser and the CLI cannot drift. Upload it in the page's second section, read the preview, tick the box if it re-points any code, apply. What differs from the item import: the diff has **four** categories rather than two, one of them (**renamed**) is refused unless you opt in, a **disappeared** code is kept rather than deleted, and the handler **emits nothing at all** — no `resolve.group`, no alias sync.
 
-**Run `playbooks sync` yourself afterwards, and before the next item ingest.** A vendor import that adds or re-points codes leaves `manufacturer_alias` stale, and the confirm screen says so rather than fixing it: `sync` reports `orphaned_groups` — `item_group` rows still carrying a `canonical_manufacturer` it has just re-pointed away from, which it does **not** retro-fix — so a non-zero count is work a human has to act on, and running it as a side effect of an upload would produce that count where nobody reads it. `sync` also refuses outright on a playbook authoring conflict, which would dead-letter an otherwise clean vendor import for a reason having nothing to do with the vendor file.
+**Run `manufacturers seed --apply` and then `playbooks sync` yourself afterwards, and before the next item ingest.** The seed creates the entity for a code the import added; the sync refreshes the aliases. A vendor import that adds or re-points codes leaves `manufacturer_alias` stale, and the confirm screen says so rather than fixing it: `sync` reports `orphaned_groups` — `item_group` rows still carrying a `canonical_manufacturer` it has just re-pointed away from, which it does **not** retro-fix — so a non-zero count is work a human has to act on, and running it as a side effect of an upload would produce that count where nobody reads it. `sync` also refuses outright on a playbook authoring conflict, which would dead-letter an otherwise clean vendor import for a reason having nothing to do with the vendor file.
 
 **Starting a playbook from the UI** (2026-08-27). `/manufacturers?no_playbook=1` lists every entity with no playbook, gaps first and biggest first; each one's page now has a **Start a playbook** card that attaches a slug and an empty body at revision 0. That is the whole creation path — identity is inherited from the row the seed already derived from `vendor_master`, and authoring continues on `/playbooks/{slug}` with the controls below. Before this, `manufacturer.slug` was written only by `dentalia manufacturers seed`, so starting a playbook meant hand-writing `playbooks/{slug}.json` in the repo. That file route still works and is still how the 33 delivered playbooks got in; it is no longer the only one.
 
@@ -675,7 +704,7 @@ It **appends** a new `extract_rev` rather than overwriting, keeping the original
 
 `repair-stated-class` is the same shape for a different one-off: it records the risk class already-held documents state, for everything extracted before `stated_class` became a target (migration 032, 2026-08-21). Also free and also model-free — T0 reads the class off the text already stored in `document_text` (018), so no archived file is reopened and no API call is made. **Dry run by default**, re-runnable, and a no-op once every latest attempt carries the key.
 
-Its one load-bearing difference from `repair-ref-list`: it **emits no `validate.doc` and re-points no job**. `repair-ref-list` re-emits because it changes what a document COVERS, which has to be re-adjudicated; this changes nothing a disposition is made of (`stated_class` is in no VALIDATE rule, no GATE flag, and not in `REQUIRED_FIELDS`), so putting 768 settled dispositions back through the gate to record a display value would risk far more than the value is worth. The consequence is intended: historic documents carry the value in `extraction_attempt` and **not** in `document.stated_class`, which only a GATE write can fill (invariant 1) — so the `item_class_check` view (033) reads `COALESCE(document.stated_class, latest attempt)` and compares history without re-deciding it. Every scanned hash is reported under exactly one of `stated` / `abstained_multi` / `no_mention` / `already_has_key`; an abstain (a document printing several classes at once) is a finding, not a shrug.
+Its one load-bearing difference from `repair-ref-list`: it **emits no `validate.doc` and re-points no job**. `repair-ref-list` re-emits because it changes what a document COVERS, which has to be re-adjudicated; this changes nothing a disposition is made of (`stated_class` is in no VALIDATE rule, no GATE flag, and not in `REQUIRED_FIELDS`), so putting 768 settled dispositions back through the gate to record a display value would risk far more than the value is worth. The consequence is intended: historic documents carry the value in `extraction_attempt` and **not** in `document.stated_class`, which only a GATE write can fill (invariant 1) — so the `item_class_check` view (033) reads `COALESCE(document.stated_class, latest attempt)` and compares history without re-deciding it. Every scanned hash is reported under exactly one of `stated` / `abstained_multi` / `no_mention` / `already_has_key`; an abstain (a document printing several classes at once) is a finding, not a shrug. The report shows the rev each repair will be written at (past every attempt and every evidence row, so after a reviewer's edit it is not simply the next one). On `--apply`, a repair whose attempt is no longer the newest (a reading committed since the plan) is skipped and a `note:` line counts it, and one written at a later rev than shown (a reviewer's edit since the plan) is counted the same way; `repair-label-dates` does both too.
 
 `repair-mfr-overbind <doc_id>` retracts the `mfr-scope` production links of a QA certificate whose own text enumerates the devices it covers — the doc-310 cleanup (Kiwa Cermet MED 31385: three enumerated device types, machine-bound to 356 GC items; Denis ruling 2026-08-24, "Guard + clean 310"). It re-verifies the basis itself with the same detector the `device-enumeration` VALIDATE flag uses, and **refuses** (exit 1, nothing planned) when the stored text does not enumerate, when there is no usable `document_text` (a scan), or when the latest `bind-manufacturer` audit event was a human's — the guard never barred human bindings and ops tooling does not undo them. Retraction is a status flip to `retracted` with `match_basis` kept (append-only), one `audit_log` entry per link (`decided_by ops:repair-mfr-overbind`, the recorded invariant-1 exception); the document row itself stays untouched. **Dry run by default**, re-runnable — retracted links stop being selected, so a second run plans zero. Takes the doc_id as an argument; nothing is hardcoded to 310.
 
@@ -709,9 +738,9 @@ zero:
 | Count | What it means |
 |---|---|
 | `seen` | Rows read from the export that reached the MD gate |
-| `changed` | Rows whose mirrored values actually differ — the only ones that bump `mirror_rev` and emit `resolve.group` |
+| `changed` | Rows whose mirrored values actually differ — the only ones that bump `mirror_rev`. A medical-device or unclassified row also emits `resolve.group`; a non-MD row never does |
 | `unchanged` | Rows already mirrored identically; no job emitted (invariant 6 in the catalogue) |
-| `non_md` | Explicitly non-MD rows. A brand-new one is not mirrored at all |
+| `non_md` | Explicitly non-MD rows (`NI MP`). Mirrored with `md_flag=FALSE` since 2026-11-06 (they were dropped before), never grouped; a person links their documents through the item picker |
 | `reclassified_non_md` | Was MD, BC has declassified it: the mirror row is corrected to `md_flag=FALSE` so mfr-scope consumers stop treating it as a device |
 | `md_unknown` | Blank device class. Counted whether or not `process_md_unknown` lets it through — it is a fact about the export, not about our config |
 | `missing_mfr_ref` | Processed rows with no supplier article number. This rate bounds achievable AC1; it is descriptive, never a target |
@@ -720,13 +749,150 @@ zero:
 
 `anomalies` in the same envelope feed the standing ledger on `/data-quality`.
 
+### Business Central: weekly sync and the first write
+
+**Weekly sync, by hand** (Denis, 2026-10-05; the cron that will replace it is
+designed in [the spec](superpowers/specs/2026-10-05-bc-weekly-sync-design.md)
+and not built). On the server, in `/srv/compliance/app`. CLI only: the `/ingest`
+form's `bc_odata` option cannot build the address and always fails
+([limits](dev/limits.md)).
+
+**Manufacturers first.** RESOLVE files an item under its BC manufacturer code's
+name via `manufacturer_alias`. A code it does not know becomes its own
+"manufacturer" (the bare code, e.g. `10204`), and a group's manufacturer is never
+re-derived afterwards. So bring the manufacturer master and the aliases up to date
+before the items:
+
+```bash
+# 0. Manufacturers: dry run, read it, apply, seed the entities, then refresh the aliases.
+docker compose exec -T worker python -m app.cli vendor-master --from-bc
+docker compose exec -T worker python -m app.cli vendor-master --from-bc --apply
+docker compose exec -T worker python -m app.cli manufacturers seed            # dry run
+docker compose exec -T worker python -m app.cli manufacturers seed --apply
+docker compose exec -T worker python -m app.cli playbooks sync
+```
+
+A code BC adds gets its `manufacturer` row only from the seed; without it the new
+manufacturer has no entity page and no name row (EKOM, code 10204, waited from
+2026-10-05 to 2026-10-14).
+
+A renamed code is refused unless `--allow-renames`; read
+[deployment § 6.2](dev/deployment.md#62-step-2-the-manufacturer-master) before using
+it. `playbooks sync` writes directly and lists any `orphaned_groups`, which a
+person has to look at. `--from-bc` is on `main` from 2026-10-05; the server needs
+a deploy before step 0 works.
+
+Then the items:
+
+```bash
+# 1. Dry run: reads all of BC, writes nothing but the job row.
+KEY="ingest:bc-dry:$(date +%F)"
+docker compose exec -T worker sh -c '
+  python -m app.cli enqueue ingest.run "$0" --priority interactive \
+    --payload "{\"source\":\"bc_odata\",\"catalogue\":\"LJ\",\"dry_run\":true,\"ref\":\"$BC_BASE_URL/allitems\"}"
+' "$KEY"
+
+# 2. About 4 minutes later, read it (or /ingest -> Recent runs).
+docker compose exec -T postgres psql -U dentalia -d dentalia -At -c \
+  "SELECT status, (result - 'skipped_sample' - 'anomalies_preview')::text
+     FROM job WHERE dedupe_key = '$KEY' ORDER BY id DESC LIMIT 1"
+```
+
+The address comes from the worker's own `BC_BASE_URL` inside `sh -c`. Do not
+copy it out of `.env` with `cut`/`tr`: the value is quoted there, and on
+2026-10-05 a `tr` meant to drop the quotes also deleted every `2` and `7` from
+the URL (job 23736, dead on all five attempts).
+
+**Apply only if** the run is `done` and:
+
+- `seen` is not below last week's. 20.027 on 2026-10-02 and again on
+  2026-10-05; 20.039 on 2026-10-06 (applied, job 23784).
+- `skipped` is 0.
+- `changed` is plausible. 788 on 2026-10-05 (dry run 23737, 3 min 56 s),
+  against the 2026-09-25 export. A
+  four-figure number means BC changed something in bulk (798 on the
+  first apply, 2026-10-06, was the backlog since the export), or the API changed
+  meaning under us. Stop and look before applying. **Expected once:** the first
+  sync after non-MD items started being mirrored (2026-11-06) adds every `NI MP`
+  item, about 3.560, so `changed` is roughly `non_md` higher that one time.
+
+```bash
+# 3. Apply: the same job without dry_run.
+KEY="ingest:bc:$(date +%F)"
+docker compose exec -T worker sh -c '
+  python -m app.cli enqueue ingest.run "$0" --priority interactive \
+    --payload "{\"source\":\"bc_odata\",\"catalogue\":\"LJ\",\"ref\":\"$BC_BASE_URL/allitems\"}"
+' "$KEY"
+```
+
+The apply queues one `resolve.group` per changed item. With `DISCOVER_HOLD=true`
+those items are grouped and nobody searches for their documents yet. Judge the
+run by Today's failed and dead counts, not by an empty queue. A sync never
+deletes: an item gone from BC stays in our table.
+
+**First write to BC: item 605275, done 2026-10-06** (chosen by Denis,
+2026-10-05). Once Dentalia had granted the BC user edit rights, the write
+succeeded at 11:29 UTC and read back from BC. Writes have been on
+(`BC_WRITE_ENABLED=true`) since that day; on 2026-10-07 a push of six items sent
+all six (job 24607). The procedure below is kept as the record and for a
+repeat. Read on 2026-10-05, before the write:
+
+| Field | In BC now | We would send | Why |
+|---|---|---|---|
+| `pteValidDeclarationOfConformity` | false | **true** | Ivoclar declaration, production, covers the item's group, valid to 2031-05-04 |
+| `pteValidCECertificate` | false | false | Ivoclar's EC certificate is manufacturer-wide; the 2026-09-07 rule counts only a certificate naming the item's group ([design](superpowers/specs/2026-09-07-bc-writeback-design.md)) |
+| `pteWarehouseURL` | empty | `https://api.cw.dentalia.si/item/605275?k=…` | Opens the item's page (200, measured 2026-10-05); 89 characters of BC's 250 |
+
+1. Tell Dentalia when it happens. It is their live BC.
+2. In `.env` set `BC_WRITE_ENABLED=true`, then `docker compose up -d worker web`.
+   The daily drift cron stays off: it needs `SCHEDULER_BC_PUSH_DRIFT_ENABLED`
+   too, which is `false`. While writes are on, any staff login can press
+   **Update Business Central** on an item, so keep the window short.
+3. Press **Update Business Central** on `/items/605275`. The job should report
+   `sent: 1`, and `bc_push_log` should hold three rows with a 2xx status.
+4. Read it back from BC:
+
+   ```bash
+   docker compose exec -T worker python - <<'EOF'
+   from app.config import load_config
+   from app.adapters.bc_client import BcClient
+   c = load_config().bc
+   r = BcClient(c.base_url, username=c.username, password=c.password).get(c.base_url + "/dataitems('605275')")
+   print({k: str(v).split("?")[0] for k, v in r.items() if k.startswith("pte")})
+   EOF
+   ```
+
+   Then ask someone at Dentalia to click the link on the BC item card.
+5. Set `BC_WRITE_ENABLED=false` again, then `docker compose up -d worker web`.
+   The bulk push (`/bc-push`) is a separate decision.
+
+If BC refuses, the response says why:
+
+- **401:** the login. The job fails and is not retried in that process.
+- **400 `Application_DialogException` "Nimate pravic za urejanje artiklov"**
+  ("you have no rights to edit items"): the login works, but the BC user may
+  not edit items. **Measured 2026-10-05** with a no-change write on 605275
+  (its own values sent back, nothing altered, etag unchanged). Dentalia /
+  b-s.si granted the right 2026-10-06; if this comes back, it was withdrawn.
+- **403:** the account may read but not modify `dataitems`. That is a question
+  for b-s.si / Dentalia IT.
+- **404:** the item is missing from `dataitems`. Not expected: the page held all
+  20.027 items on 2026-10-05.
+
+Refused attempts stay in the ledger and do not count as sent, so a later push
+retries them: the bulk apply and the daily task the next day (once a day per
+item, 2026-10-07), the item button at once. **There is no undo tool.** A hand-made PATCH bypasses
+`bc_push_log`, so the ledger would still show the value, and the next push would
+skip the item. Add the matching ledger rows if you ever revert by hand.
+
 ## Configuration
 
 All config loads through [app/config.py](../app/config.py): environment variables first, then an optional TOML overlay named by `DENTALIA_CONFIG_TOML` (a set-but-unreadable file is a hard error by design), then defaults. The key surface is PRD v3 §11; [.env.example](../.env.example) lists every operational key with its dev default; tuning thresholds (`RESOLVE_NAME_*`, `DISCOVER_*`, `QUEUE_*`) are deliberately code-default-only until the S1.7 sweep recalibration (PHASES S1.3 posture: don't surface tuning keys prematurely). Highlights:
 
 - `DATABASE_URL`: worker-side connection (schema owner). Compose overrides it to reach Postgres by service name.
 - `API_DATABASE_URL`: web-side connection as `dentalia_api`. Never the owner (Invariant 1).
-- `MODELS_T1` / `MODELS_T2` / `MODELS_RANK`: extraction tier models. Swapping a tier requires the Phase 0 diff protocol re-run.
+- `MODELS_T1` / `MODELS_T2` / `MODELS_RANK`: extraction tier models. Swapping a tier requires the Phase 0 diff protocol re-run. `MODELS_T1` defaults to `claude-haiku-5-5` since 2026-10-12 (extraction-ladder plan Task 4; the T1 read and the text doc-class call, which sends thinking off); it was `claude-haiku-4-5`. No `MODELS_*` line reaches the server's containers (no env line in compose), and none is added (Denis, 2026-10-13): the image rebuild moves T1, and **rolling back means redeploying the previous commit**, never setting `MODELS_T1=claude-haiku-4-5` alone, because the ladder's settle and agreement thresholds were measured on Haiku 5.5 (plan commit 74d5814). `MODELS_VISION_FIRST` / `MODELS_SECOND_READ` (both `claude-haiku-5-5`) are the cheap image reads before Sonnet; `MODELS_SECOND_READ` also makes the second text read that confirms the gate fields (`T1-second`, since 2026-10-13).
+- `GATE_AGREEMENT_MIN` (0.70: two agreeing reads combine only when each states at least this) and `EXTRACT_IMAGE_SETTLE` (0.85: a scan or image-only value at or above it settles without Sonnet): the extraction ladder's thresholds, measured on Haiku 5.5; like the models, not set on the server.
 - `GATE_THRESHOLD_HIGH` / `_MED`, `FETCH_POLITENESS_MS`, `FETCH_RECENCY_WINDOW_DAYS`, `BUDGET_*_CAP_EUR`, `BATCH_POLL_INTERVAL_S`: pipeline tuning.
 - `WEB_REQUIRE_AUTHENTICATED_USER` / `WEB_TRUSTED_USER_HEADER`: G3 v0 auth — compose sets the former true so `web` trusts `caddy`'s forwarded header for `decided_by`; leave false for bare host-side runs. It is also what arms the caller-class policy in `web/access.py`: false means "no proxy in front", so every caller is `staff` and the guard is a no-op (local dev, tests).
 - `WEB_API_KEYS` / `WEB_BC_LINK_KEY`: **secrets** — top of `.env` beside `IMAP_USER` / `IMAP_PASSWORD`, never a runbook tuning key. `WEB_API_KEYS` is a comma-separated list (a second consumer, or a rotation, is an env change rather than a downtime swap) authenticating the `service` class via `X-API-Key`; `WEB_BC_LINK_KEY` is the single shared value BC concatenates into `/item/{ref}?k=…`. **Empty disables the class it names** — empty never means "allow everyone": with no `WEB_API_KEYS` no key is a service credential, and with no `WEB_BC_LINK_KEY` the `/item/*` routes 404 outright.
@@ -741,12 +907,12 @@ All config loads through [app/config.py](../app/config.py): environment variable
   Verified 2026-08-27, on the live containers rather than from the code: `/app/playbooks` **does not exist** in `dentalia-web-1` (`Dockerfile.web` copies only `app/` and `web/`), so web has no files to fall back to even by accident. The worker image *does* still carry the 38 JSON files — the seed needs them — so presence there proves nothing; it was checked by running that image with an empty tmpfs over `/app/playbooks`, where all 38 playbooks, 5 refused hosts and 5 T0 templates still resolved and `playbooks.reads_files(None)` returned `False`.
 
   `app.playbooks.reads_files(dir_path)` is the programmatic form of that question, and it is what the "playbooks directory not found" error is now gated on: that message can only appear when a directory is genuinely in use, so it no longer fires against a healthy row-backed deployment.
-- `SCHEDULER_INGEST_WATCH_DIR` (empty by default — the monthly ingest tick is a no-op until set, no live BC feed exists yet), `SCHEDULER_EXPIRY_EMAIL_ENABLED` / `SCHEDULER_FAILURE_REONBOARD_ENABLED` (both default off — gate `email.request` / `playbook.reonboard` emission until S2.4/S2.1 land). `DISCOVER_EMAIL_RUNG_ENABLED` (default off, added 2026-07-31) gates DISCOVER's email rung the same way — disabled, a known contact logs `skipped` and the group falls through to manual instead of emitting an `email.request` the no-op would swallow.
+- `SCHEDULER_INGEST_WATCH_DIR` (empty by default — the monthly ingest tick is a no-op until set; the live BC read is the weekly sync run by hand, § Business Central), `SCHEDULER_EXPIRY_EMAIL_ENABLED` / `SCHEDULER_FAILURE_REONBOARD_ENABLED` (both default off — gate `email.request` / `playbook.reonboard` emission until S2.4/S2.1 land). `DISCOVER_EMAIL_RUNG_ENABLED` (default off, added 2026-07-31) gates DISCOVER's email rung the same way — disabled, a known contact logs `skipped` and the group falls through to manual instead of emitting an `email.request` the no-op would swallow.
   The `/scheduler` panel renders these flags, so they are declared on the **`web`** service as well as `scheduler` (docker-compose.yml). A `SCHEDULER_*` var set on only one of the two makes the panel disagree with the process it describes.
 - **EUDAMED (S2.3 stage 2).** `SCHEDULER_EUDAMED_CERTREGISTER_ENABLED` (default off) gates the monthly whole-register pull (`eudamed.certregister`, 16 calls) — an operator turns this on deliberately, not because a downstream consumer is missing. `SCHEDULER_EUDAMED_CERTREGISTER_INTERVAL_DAYS` (default `30`) and `SCHEDULER_EUDAMED_SWEEP_INTERVAL_DAYS` (default `90`) size the two cadences (certificates monthly, device sweeps quarterly, Denis 2026-08-26 — certificates carry five-year validity and drift slowly, device catalogues move slower still than the ~38 pages it costs to re-read one). There is no enable flag for marking a sweep due: the scheduler always computes `eudamed_sweep_state.due_at` when a manufacturer holds a trusted SRN and has gone stale — it never enqueues `eudamed.sweep`, which only a human release button can do (see below). **Unlike the ticks above, neither shows up on the `/scheduler` panel** — that page's tick list (`web/scheduler_view.py`) was not extended for either; the due list itself (`/manufacturers/sweep-due`) is the only UI visibility this cadence has today.
 - `UPLOAD_MAX_MB` (default `25`): size cap enforced by `POST /upload` before the file is spooled into `upload_inbox`.
 - `DISCOVER_HOLD` (default off): corpus-first cold start. RESOLVE builds groups but emits no `discover.group`, so a first ingest does not web-search for documents already sitting in `imports/dentalia-sftp`. Held emissions are counted on the job result as `discover_held` (the settled "already covered" suppression leaves it 0, so the two are distinguishable). Unwind by dropping the variable and running `python -m app.cli regroup --manufacturer NAME --apply` — discovery then fires only for the groups the corpus did not cover. See PRD v3 §11.
-- **EMAIL inbound (`email.poll`, S2.4).** `SCHEDULER_EMAIL_POLL_ENABLED` (default off) gates emission of the mailbox poll — leave off until the client provisions the compliance inbox (GAP G8); enabling it without credentials is harmless (`ImapEmailAdapter` raises and the rung is a clean skip, never a dead job). `SCHEDULER_EMAIL_POLL_INTERVAL_HOURS` (default `6`) sizes the poll window (`dedupe_key email.poll:{YYYY-MM-DD:HH-band}`). Mailbox: `EMAIL_ADAPTER` (`imap` default | `fake` for tests), `IMAP_HOST` / `IMAP_PORT` (993) / `IMAP_SSL` (true) / `IMAP_FOLDER` (INBOX), `EMAIL_POLL_SINCE` (**required** once the mailbox is set: the first day of mail to read, YYYY-MM-DD; without it the poll dead-letters rather than read the mailbox's history), `EMAIL_POLL_MAX_MESSAGES` (200, pacing: the rest waits for the next poll, counted as `deferred_to_next_poll`). **The poll only reads**: it opens the folder with `EXAMINE`, never marks, moves or deletes, and keeps its own record in `email_poll_log` (2026-09-24; the mailbox is shared with people). Credentials `IMAP_USER` / `IMAP_PASSWORD` are secrets (top of `.env`, alongside the API keys), never surfaced as tuning keys. The poll **expands archives** before anything else (2026-08-20: a supplier sending `documents.zip` is sending documents; the magic-byte gate refuses the archive itself, so without expansion the PDFs inside were counted `non-pdf` and lost). One level only, bounded by `EMAIL_ZIP_*`; a zip-bomb is refused on declared sizes before decompression; nested archives are refused; members are recorded as `documents.zip!inner.pdf`. It then archives PDF attachments (skipping MSDS/business noise and non-PDFs, all counted) and enters the spine at `extract.doc`; processed emails are visible read-only at `/emails`. **Body summarisation** (`EMAIL_SUMMARY_ENABLED`, default on; `EMAIL_SUMMARY_MIN_CHARS` **0**, `EMAIL_SUMMARY_MAX_CHARS` 6000, `EMAIL_SUMMARY_MAX_TOKENS` 200, model `MODELS_EMAIL_SUMMARY`): the body is read at poll time, compressed by the cheap tier, and dropped — only the summary reaches `email_poll_log` (migration 030, invariant 12). One call per message, ever: the UID guard means a message is never polled twice, and a failed summary still records its row rather than retrying. **If there is a body it gets a summary, however short** (Denis, 2026-08-21): the floor was 120, then 40, on the theory that a one-liner is already its own summary — but the body is never stored, so skipping the call left the row blank, and half the fixture mailbox rendered emptier than the long messages beside it. `EMAIL_SUMMARY_MIN_CHARS` survives as a throttle for a noisy mailbox, so `too-short` stays in the vocabulary; nothing sets it. `summary_status` says why a summary is missing (`disabled` / `no-body` / `too-short` / `llm-error`), and the measured tokens and USD sit next to it — so "the summaries are negligible" stays a checkable claim — **measured 2026-08-21** against the GreenMail mailbox: 6 messages in, **6 summarised**, every one carrying an intent badge. The prior reading (2026-08-20, floor 40) was 10 in / 5 summarised for $0.003243 total (~$0.00065 each, 471-506 in / 30-36 out). Turning it off records `disabled` and makes no call. Only the INBOUND half exists — the outbound flow is the next slice (spec `docs/specs/email.md`), and per the client's 2026-08-20 ruling it will **draft only, never send** (spec §7.1). Mailbox named by the client: `mdr@dentalia.si`.
+- **EMAIL inbound (`email.poll`, S2.4).** `SCHEDULER_EMAIL_POLL_ENABLED` (default off) gates emission of the mailbox poll — on in production since 2026-10-06, reading `mdr@dentalia.si` every 6 hours; enabling it without credentials is harmless (`ImapEmailAdapter` raises and the rung is a clean skip, never a dead job). `SCHEDULER_EMAIL_POLL_INTERVAL_HOURS` (default `6`) sizes the poll window (`dedupe_key email.poll:{YYYY-MM-DD:HH-band}`). Mailbox: `EMAIL_ADAPTER` (`imap` default | `fake` for tests), `IMAP_HOST` / `IMAP_PORT` (993) / `IMAP_SSL` (true) / `IMAP_FOLDER` (INBOX), `EMAIL_POLL_SINCE` (**required** once the mailbox is set: the first day of mail to read, YYYY-MM-DD; without it the poll dead-letters rather than read the mailbox's history), `EMAIL_POLL_MAX_MESSAGES` (200, pacing: the rest waits for the next poll, counted as `deferred_to_next_poll`). **The poll only reads**: it opens the folder with `EXAMINE`, never marks, moves or deletes, and keeps its own record in `email_poll_log` (2026-09-24; the mailbox is shared with people). Credentials `IMAP_USER` / `IMAP_PASSWORD` are secrets (top of `.env`, alongside the API keys), never surfaced as tuning keys. **Sign-in name:** Dentalia's Exchange refuses the address and takes the domain account, so production sets `IMAP_LOGIN='DOMAIN\user'` beside `IMAP_USER=mdr@dentalia.si` (2026-10-05); `IMAP_USER` keeps naming the mailbox. The adapter signs in with `AUTHENTICATE PLAIN` when the server offers it (Exchange does) and `LOGIN` otherwise (GreenMail 2.1.12 offers only XOAUTH2). The poll **expands archives** before anything else (2026-08-20: a supplier sending `documents.zip` is sending documents; the magic-byte gate refuses the archive itself, so without expansion the PDFs inside were counted `non-pdf` and lost). One level only, bounded by `EMAIL_ZIP_*`; a zip-bomb is refused on declared sizes before decompression; nested archives are refused; members are recorded as `documents.zip!inner.pdf`. It then archives PDF attachments (skipping MSDS/business noise and non-PDFs, all counted) and enters the spine at `extract.doc`; processed emails are visible read-only at `/emails`. **Body summarisation** (`EMAIL_SUMMARY_ENABLED`, default on; `EMAIL_SUMMARY_MIN_CHARS` **0**, `EMAIL_SUMMARY_MAX_CHARS` 6000, `EMAIL_SUMMARY_MAX_TOKENS` 200, model `MODELS_EMAIL_SUMMARY`): the body is read at poll time, compressed by the cheap tier, and dropped — only the summary reaches `email_poll_log` (migration 030, invariant 12). One call per message, ever: the UID guard means a message is never polled twice, and a failed summary still records its row rather than retrying. **If there is a body it gets a summary, however short** (Denis, 2026-08-21): the floor was 120, then 40, on the theory that a one-liner is already its own summary — but the body is never stored, so skipping the call left the row blank, and half the fixture mailbox rendered emptier than the long messages beside it. `EMAIL_SUMMARY_MIN_CHARS` survives as a throttle for a noisy mailbox, so `too-short` stays in the vocabulary; nothing sets it. `summary_status` says why a summary is missing (`disabled` / `no-body` / `too-short` / `llm-error`), and the measured tokens and USD sit next to it — so "the summaries are negligible" stays a checkable claim — **measured 2026-08-21** against the GreenMail mailbox: 6 messages in, **6 summarised**, every one carrying an intent badge. The prior reading (2026-08-20, floor 40) was 10 in / 5 summarised for $0.003243 total (~$0.00065 each, 471-506 in / 30-36 out). Turning it off records `disabled` and makes no call. The outbound half **drafts only, never sends** (client ruling 2026-08-20, spec §7.1): drafts wait on `/drafts` for a person to send by hand. Mailbox named by the client: `mdr@dentalia.si`.
 
 - **Testing the mailbox without a real account (fake IMAP).** The IMAP wire path cannot be covered by unit tests (`FakeEmailAdapter` never opens a socket), so a GreenMail server stands in. It is in-memory: restarting it empties the mailbox, and `tools/seed_fake_mailbox.py` is the source of truth for what it holds.
 

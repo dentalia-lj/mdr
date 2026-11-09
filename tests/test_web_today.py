@@ -508,7 +508,8 @@ def test_one_renewal_email_reads_as_one(client, conn):
 # 5. The office menu (§ 7)
 # --------------------------------------------------------------------------- #
 
-#: The menu table of spec § 7, in order.
+#: The menu table of spec § 7, in order: three office groups (12), the
+#: operator block (9), Help (2).
 MENU = [
     ("/", "Today"),
     ("/staging", "Review"),
@@ -531,6 +532,8 @@ MENU = [
     ("/scheduler", "Scheduler"),
     ("/bc-push", "Business Central push"),
     ("/api-reference", "API"),
+    ("/guide/en", "Guide"),
+    ("/guide/sl", "Priročnik"),
 ]
 
 
@@ -553,9 +556,9 @@ def test_the_operator_group_is_one_collapsed_block_at_the_bottom(client):
     assert m, "the operator group is not a <details>"
     assert "open" not in m.group(0).split(">")[0], "the operator group starts expanded"
     inside = m.group(1)
-    for href, _ in MENU[12:]:
+    for href, _ in MENU[12:21]:
         assert f'href="{href}"' in inside, href
-    for href, _ in MENU[:12]:
+    for href, _ in MENU[:12] + MENU[21:]:
         assert f'href="{href}"' not in inside, href
 
 
@@ -568,6 +571,7 @@ def test_the_operator_group_is_hidden_from_an_office_login(client, tmp_path):
 
     office = app.get("/items", headers={"X-Forwarded-User": "mojca"}).text
     assert 'href="/scheduler"' not in _sidebar(office)
+    assert 'href="/guide/en"' in _sidebar(office)       # Help is for everyone
     operator = app.get("/items", headers={"X-Forwarded-User": "ops"}).text
     assert 'href="/scheduler"' in _sidebar(operator)
 

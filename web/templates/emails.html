@@ -170,7 +170,11 @@
     </tbody>
   </table>
   {% else %}
-  <p class="hint">No emails processed yet. The mailbox poll is off until a mailbox is wired (GAP G8).</p>
+  <p class="hint">No emails yet.
+  {%- if poll.newest_status in ('failed', 'dead') %} The last mailbox check failed; <a href="/dead">Failed tasks</a> says why.
+  {%- elif poll.last_done %} The mailbox was last checked on {{ poll.last_done | day }}, and nothing had arrived.
+  {%- else %} The mailbox has not been checked yet.
+  {%- endif %}</p>
   {% endif %}
 </div>
 {% endblock %}

@@ -388,7 +388,7 @@ def review_due_for_manufacturer(conn, manufacturer: str,
         "       d.regulation "
         "  FROM document d "
         "  JOIN document_effective_expiry e ON e.doc_id = d.doc_id "
-        # Per-item currency (migration 071): a document that is history for every item it names draws no renewal, and one the old rule retired wrongly still does.
+        # Per-item currency (migration 072): a document that is history for every item it names draws no renewal, and one the old rule retired wrongly still does.
         " WHERE d.doc_id IN (SELECT doc_id FROM document_current) AND d.type = 'DoC' "
         "   AND e.basis = 'staleness' AND e.expires IS NOT NULL "
         "   AND e.expires <= %s "
@@ -640,7 +640,7 @@ def lapsing_for_manufacturer(conn, manufacturer: str, *, horizon_days: int,
             JOIN item_document id ON id.doc_id = d.doc_id AND id.status = 'production'
             JOIN item_group_member gm ON gm.item_ref = id.item_ref
             JOIN item_group g ON g.group_id = gm.group_id
-           -- Per-item currency (migration 071): a document that is history for every item it names draws no renewal, and one the old rule retired wrongly still does.
+           -- Per-item currency (migration 072): a document that is history for every item it names draws no renewal, and one the old rule retired wrongly still does.
            WHERE d.doc_id IN (SELECT doc_id FROM document_current)
              AND e.expires IS NOT NULL
              AND e.expires <= %s
@@ -649,10 +649,12 @@ def lapsing_for_manufacturer(conn, manufacturer: str, *, horizon_days: int,
         SELECT l.type, l.regulation, l.cert_number, l.expires,
                array_agg(DISTINCT l.doc_id) AS doc_ids,
                count(DISTINCT l.doc_id)     AS documents,
+               -- the items a lapsing document is CURRENT for (ruling 10,
+               -- 2026-10-02): an item a newer document of its type answers
+               -- for loses nothing, so the letter does not count it
                (SELECT count(DISTINCT il.item_ref)
-                  FROM item_document il
-                 WHERE il.status = 'production'
-                   AND il.doc_id IN (SELECT doc_id FROM lapsing l2
+                  FROM item_document_production il
+                 WHERE il.doc_id IN (SELECT doc_id FROM lapsing l2
                                       WHERE l2.type = l.type
                                         AND l2.regulation = l.regulation
                                         AND l2.cert_number IS NOT DISTINCT FROM l.cert_number

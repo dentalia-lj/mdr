@@ -18,9 +18,10 @@
 </p>
 <p class="hint">
   The run itself is real: INGEST parses the file, mirrors the catalogue and
-  reports its counts below. Only <code>csv</code> works —
-  <code>bc_odata</code> is not wired to a live endpoint and every job using it
-  dead-letters.
+  reports its counts below. Only <code>csv</code> works from this form: its
+  <code>bc_odata</code> option sends a company and a date where Business
+  Central needs its address, so a job started here dead-letters. The live
+  Business Central read is the weekly sync a developer runs on the server.
 </p>
 
 <div class="card">

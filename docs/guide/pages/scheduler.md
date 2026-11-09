@@ -82,7 +82,7 @@ The ten tasks, and whether each one has a working **Run now** button:
 | **EUDAMED certificate register pull** | Downloads the EU certificate register in one go and matches it to our manufacturers | **Yes** — and this is the only way it ever refreshes, because its own schedule is switched off |
 | **EUDAMED device sweep — mark due** | Marks manufacturers as due for a device check. It never starts one: a person presses **Start the check** for each supplier, from [Manufacturers](manufacturers.md) | No |
 | **Health watch** | Sends one line to the alert channel when a service stops reporting in, the queue stops moving, or one of these tasks dies. Once per problem, with a second line when it clears | No |
-| **Business Central — re-push what drifted** | Sends the three compliance fields back to Business Central for the items whose answer has changed, oldest first. Needs two switches: the writeback itself, and a second one for this task alone, so a first bulk send can be checked before this starts filling Business Central on its own. Both are off, which is the normal setting | No |
+| **Business Central — re-push what drifted** | Once a day, sends the three compliance fields back to Business Central for the items whose answer has changed, oldest first. Needs two switches: the writeback itself, and a second one for this task alone, so a first bulk send can be checked before this starts filling Business Central on its own. Both are off, which is the normal setting | No |
 
 The seven without a button run inside the system itself — there is nothing
 separate to start by hand. The screen says so directly, in the small print
@@ -98,7 +98,7 @@ says.
 | **ok** | This task has already run for the current period | Nothing | Good |
 | **due** | Not run for the current period yet, but the last run was recent enough that this is normal | Nothing, unless it stays **due** far longer than its own schedule | Fine, for now |
 | **stale** | This task has not run in a long time — longer than two of its own cycles | Tell a developer | A developer's problem |
-| **never** | This task has no recorded run at all | Tell a developer — the scheduler itself may not be switched on | A developer's problem |
+| **never** | This task has no recorded run at all | If its row says it is switched off (*Business Central — re-push what drifted* and the monthly catalogue import are off unless someone turned them on), nothing. Otherwise tell a developer — the scheduler itself may not be switched on | A developer's problem |
 | **unledgered** | Only on *EUDAMED device sweep — mark due*. That task keeps no run record on purpose, so there is no period to judge | Nothing. Check its **Armed** column instead | Normal |
 | **not armed** in the Armed column | That task has stopped and will not run again until it is put back | Press **Re-arm** next to it. If it keeps stopping, tell a developer | Yours to press, a developer's if it repeats |
 | The banner *"The scheduler has never run against this database"* | The whole scheduler is not running | A developer's problem — it needs starting | A developer's problem |

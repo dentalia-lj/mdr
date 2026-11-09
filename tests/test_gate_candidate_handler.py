@@ -5,7 +5,7 @@ Tests don't commit (conn fixture rolls back). Score comes from the seeded
 extraction's (calibrated) confidences; ref_gate/flags/links come from the
 payload. The [gate-c6] persistence of 2026-07-31 (a newer document retiring an
 older one at production or approval) was removed by per-item currency
-(2026-10-02, migration 071); the tests near the bottom of this file now pin that
+(2026-10-02, migration 072); the tests near the bottom of this file now pin that
 neither the gate.candidate production path nor gate.apply approve retires
 anything.
 """
@@ -1348,7 +1348,7 @@ def test_production_gate_is_idempotent(conn):
 # --- C6 supersession persistence, removed 2026-10-02 (per-item currency) --------
 
 def test_a_newer_production_candidate_retires_nothing(conn):
-    """Per-item currency (migration 071): the view decides which document
+    """Per-item currency (migration 072): the view decides which document
     answers for each item. GATE no longer flips the older one, even when the
     payload still carries a stale `supersedes` from an old VALIDATE."""
     _seed_ext(conn, "gc-old", _fields(conf=0.97))
@@ -1376,7 +1376,8 @@ def test_approving_a_newer_document_retires_nothing(conn):
     assert r_new["disposition"] == "staged"
 
     gh.handle_gate_apply(conn, {"id": 99, "type": "gate.apply", "payload": {
-        "doc_id": r_new["doc_id"], "decision": "approve", "decided_by": "user:marta"}})
+        "doc_id": r_new["doc_id"], "decision": "approve", "decided_by": "user:marta",
+        "edits": {"validity_from": "2026-01-01"}}})
 
     assert conn.execute(
         "SELECT status FROM document WHERE doc_id=%s", (r_old["doc_id"],)
@@ -2077,6 +2078,20 @@ def test_a_suspected_ref_truncation_does_not_block_production(conn):
     assert res["disposition"] == "production"
 
 
+def test_pages_unread_does_not_block_production(conn):
+    """`pages-unread` (2026-10-12): a scan longer than the pages its image reads
+    see left a field empty. The fields that were read stand on their own
+    evidence, and a missing required field stops the document through the rules
+    that test for it, so the flag is context, never a veto."""
+    _seed_ext(conn, "h-unread", _fields())
+    _seed_item(conn, "IT-UNREAD")
+    res = gh.handle_gate_candidate(conn, _job(
+        "h-unread", ref_gate=True, flags=[tiers.PAGES_UNREAD_FLAG],
+        links=[{"item_ref": "IT-UNREAD", "match_basis": "ref-list"}]))
+    assert res["disposition"] == "production"
+    assert tiers.PAGES_UNREAD_FLAG in gh.INFORMATIONAL_FLAGS
+
+
 def test_a_capping_flag_still_holds_a_document_at_staged(conn):
     """`downgrade-uncomparable` means we could not compare dates at all. That is
     a real unknown about supersession and a human still owns it."""
@@ -2153,6 +2168,7 @@ def _flags_emitted_by_the_pipeline() -> set[str]:
     # VALIDATE also extends its list with tiers.integrity_flags(), whose flags
     # are constants rather than literals at the append site.
     found.add(tiers.REF_TRUNCATION_FLAG)
+    found.add(tiers.PAGES_UNREAD_FLAG)
     assert len(found) >= 13, (
         f"only {len(found)} flags scraped from the handlers -- the append idiom "
         "changed and this guard has gone blind")

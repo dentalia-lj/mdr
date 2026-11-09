@@ -133,7 +133,8 @@ catalogue identity.</p>
   <strong>every published document</strong> linked to the item, including the
   older ones that are history for it. Works on
   <code>/api/items/{item_ref}/documents</code> and on the batch endpoint,
-  where it applies to every entry.</p>
+  where it applies to every entry. Flagged rows come newest first by issue
+  date, undated documents last.</p>
 <p>Flagged documents carry three extra fields, and only when the flag is on:
   <code>current</code> (true when the document answers for this item),
   <code>status</code> (<code>production</code> or <code>superseded</code>; not
@@ -163,6 +164,14 @@ client asks for on the phone are plural. <code>404</code> when the item has no
 reachable production documents &mdash; an empty archive is a worse answer than
 saying there is nothing.</p>
 
+<h3><code>GET /item/{item_ref}/documents/{doc_id}</code></h3>
+<p><strong>bc</strong> &middot; <strong>service</strong> &middot; <strong>staff</strong>
+&mdash; one of the item's documents, the PDF the card's <em>Open</em> link
+serves on the BC key alone. Only a production document with a production link
+to <em>that</em> item; any other <code>doc_id</code> is a <code>404</code>, like
+the rest of <code>/item/*</code>. The webshop keeps using
+<code>/documents/{doc_id}/file</code> below.</p>
+
 <h3><code>GET /documents/{doc_id}/file</code></h3>
 <p><strong>service</strong> &middot; <strong>staff</strong> &mdash; the archived
 PDF. This is the supported way to get bytes; the webshop relays them under its
@@ -173,7 +182,11 @@ own origin.</p>
 production document and its complete evidence.
 <strong class="warn">Internal.</strong> Carries <code>model_id</code>,
 <code>confidence</code> and <code>verbatim</code>. Never render this to a
-customer.{% if example_doc_id %} Try
+customer. <code>confidence</code> is the model's own number, not calibrated;
+where two reads agreed on the value, each at least
+{{ "%.2f"|format(agreement_min) }}, it combines the two and the row names the
+second read in <code>agreed_model_id</code> and <code>agreed_confidence</code>,
+and it is 1.0 for a regulation its printed citation proves.{% if example_doc_id %} Try
 <a href="/api/documents/{{ example_doc_id }}">/api/documents/{{ example_doc_id }}</a>.{% endif %}</p>
 
 <h3><code>GET /api/kpi</code></h3>

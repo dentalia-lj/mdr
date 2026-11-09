@@ -118,7 +118,8 @@ def plan(conn) -> tuple[list[dict], dict]:
                 fields_new["stated_class"] = fresh
             counts["corrected"] += 1
             repairs.append({**row, "fields_new": fields_new, "kind": "corrected",
-                            "old_value": old["stated_class"].get("value")})
+                            "old_value": old["stated_class"].get("value"),
+                            "new_rev": tiers.next_extract_rev(conn, row["content_hash"])})
             continue
         ev = extract_stated_class(text)
         if ev is None:
@@ -129,7 +130,8 @@ def plan(conn) -> tuple[list[dict], dict]:
             continue
         counts["stated"] += 1
         repairs.append({**row, "fields_new": {**old, "stated_class": ev},
-                        "kind": "stated"})
+                        "kind": "stated",
+                        "new_rev": tiers.next_extract_rev(conn, row["content_hash"])})
     return repairs, counts
 
 
@@ -142,15 +144,40 @@ def apply(conn, repairs: list[dict]) -> dict:
     invariant 2 needs the attribution to stay with them. `tier` likewise — the
     row summarises the ladder that produced the FIELDS, and the added key is a
     T0 read from a ladder that always begins at T0.
+
+    A repair whose copied attempt is no longer the newest at apply (a reading
+    committed since the plan) is skipped and counted, `skipped_newer_reading`:
+    the newer reading stands, and a re-run plans off it. The rev is allocated
+    again here (`tiers.next_extract_rev`, past every attempt and every
+    evidence row of the document), never assumed to be the planned `new_rev`
+    the report printed: `revs_moved` counts the repairs written at another
+    rev than that, which a reviewer's edit made since the plan causes.
     """
+    appended = moved = skipped = 0
     for r in repairs:
+        if not _base_is_newest(conn, r):
+            skipped += 1
+            continue
+        rev = tiers.next_extract_rev(conn, r["content_hash"])
+        moved += rev != r.get("new_rev", rev)
         tiers.write_extraction_attempt(
             conn, r["content_hash"], [r["tier"]], r["fields_new"],
-            extract_rev=tiers.next_extract_rev(conn, r["content_hash"]),
-            model_id=r["model_id"],
+            extract_rev=rev, model_id=r["model_id"],
             playbook_slug=r["playbook_slug"], playbook_rev=r["playbook_rev"],
         )
-    return {"appended": len(repairs)}
+        appended += 1
+    return {"appended": appended, "revs_moved": moved, "skipped_newer_reading": skipped}
+
+
+def _base_is_newest(conn, r: dict) -> bool:
+    """Whether the attempt this repair copies is still the newest reading of
+    its document. A reading committed between plan and apply is newer than
+    the copy, and appending the copy past it would put the old reading back
+    on top (review 2026-10-13, F6)."""
+    newest = conn.execute(
+        "SELECT max(extract_rev) AS rev FROM extraction_attempt WHERE content_hash=%s",
+        (r["content_hash"],)).fetchone()["rev"]
+    return newest == r["extract_rev"]
 
 
 def render(repairs: list[dict], counts: dict, limit: int = 40) -> list[str]:
@@ -162,10 +189,10 @@ def render(repairs: list[dict], counts: dict, limit: int = 40) -> list[str]:
         if r["kind"] == "corrected":
             new = f"{ev['value']} {ev['verbatim'][:38]!r}" if ev else "(retracted)"
             out.append(f"  {r['content_hash'][:12]}  rev{r['extract_rev']} -> "
-                       f"{r['extract_rev'] + 1}  {r['old_value']} -> {new}")
+                       f"{r['new_rev']}  {r['old_value']} -> {new}")
         else:
             out.append(f"  {r['content_hash'][:12]}  rev{r['extract_rev']} -> "
-                       f"{r['extract_rev'] + 1}  {ev['value']:4s} {ev['verbatim'][:44]!r}")
+                       f"{r['new_rev']}  {ev['value']:4s} {ev['verbatim'][:44]!r}")
     if len(repairs) > limit:
         out.append(f"  ... and {len(repairs) - limit} more not shown")
     out.append("")

@@ -5,6 +5,8 @@ __pycache__/
 .pytest_cache/
 pgdata/
 /imports/
+# model-comparison runs (tools/haiku_compare.py): verbatim supplier text
+/eval/
 /archive-local/
 # regenerable `python -m tools` output (datasets + reports); a report worth
 # keeping gets copied into docs/ by hand

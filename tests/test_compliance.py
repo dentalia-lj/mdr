@@ -400,6 +400,21 @@ def test_article_level_declaration_turns_the_doc_row_green(conn):
     assert rows[ROW_DOC]["doc_id"] == doc
 
 
+def test_a_refused_link_reads_as_missing_not_as_a_decision_owed(conn):
+    """A person ruled on it. "review" would say somebody still has to, and point
+    at the very document they refused (spec 2026-11-09 §6)."""
+    seed_item(conn, "IIA-RJ", manufacturer_raw="ACME", product_class="IIa")
+    doc = seed_document(
+        conn, content_hash="h-doc-refused", archive_url="file:///a.pdf",
+        doc_type="DoC", status="production", validity_to="2030-01-01",
+    )
+    seed_link(conn, "IIA-RJ", doc, match_basis="ref-item", status="rejected")
+
+    rows = _rows(item_completeness(conn, "IIA-RJ", today=TODAY))
+    assert rows[ROW_DOC]["state"] == "missing"
+    assert rows[ROW_DOC]["doc_id"] is None
+
+
 def test_notified_body_row_reads_the_certificate_number_off_the_declaration(conn):
     """ECJ C-10/24: the distributor's duty is that the four-digit number is
     present, not that the certificate itself is held. So this row is satisfied

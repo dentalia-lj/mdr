@@ -268,3 +268,47 @@ def test_the_preview_and_the_push_agree(conn, certified):
     conn.commit()
 
     assert _previewed(conn, item_ref) == _pushed(conn, item_ref)
+
+
+# --------------------------------------------------------------------------- #
+# Once a day (Denis, 2026-10-07): bulk and drift send an item at most once per
+# calendar day; a click on the item page is the exception.
+# --------------------------------------------------------------------------- #
+def _attempted_today(conn, item_ref, status=500):
+    conn.execute(
+        "INSERT INTO bc_push_log (item_ref, field, new_value, http_status) "
+        "VALUES (%s,'pteWarehouseURL','u',%s)", (item_ref, status))
+    conn.commit()
+
+
+def test_a_click_is_marked_as_the_exception(client, conn, seeded):
+    client.post(f"/items/{seeded}/bc-push", follow_redirects=False)
+
+    assert _jobs(conn)[0]["payload"]["manual"] is True
+
+
+def test_a_bulk_apply_is_not(client, conn, seeded):
+    client.post("/bc-push/apply", data={"confirm": "1"}, follow_redirects=False)
+
+    assert "manual" not in _jobs(conn)[0]["payload"]
+
+
+def test_the_preview_holds_back_what_went_today(client, conn, seeded):
+    """The page must not offer what the job would skip as too soon: a preview
+    that disagrees with the job is a wrong answer an operator acts on."""
+    _attempted_today(conn, seeded)
+
+    plan = bc_push_view.plan(conn, Web())
+    resp = client.get("/bc-push")
+
+    assert seeded not in [r["item_ref"] for r in plan["rows"]]
+    assert plan["counts"]["too_soon"] == 1
+    assert "already sent today" in resp.text
+
+
+def test_apply_skips_what_went_today(client, conn, seeded):
+    _attempted_today(conn, seeded)
+
+    client.post("/bc-push/apply", data={"confirm": "1"}, follow_redirects=False)
+
+    assert _jobs(conn) == []

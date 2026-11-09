@@ -34,9 +34,9 @@
     Does not
   </button>
   {% elif link_status == 'rejected' %}
-  {# The only way out of `rejected` — machines are locked out of it (the
+  {# A person's way out of `rejected` — machines are locked out of it (the
      STICKY_LINK_STATUSES rule), so if a coverage map later proves the refusal
-     wrong, this button is the sole remedy that leaves an audit trail. It
+     wrong, this button is a remedy that leaves an audit trail. It
      returns the link to `staged`, never straight to production: it has to be
      confirmed again on the merits. #}
   <button type="submit" name="decision" value="reopen-link" class="btn-secondary"
@@ -46,4 +46,18 @@
   {% endif %}
 </form>
 {% endif %}
+{% endmacro %}
+
+{# Remove on a published document's "Covered items" (spec 2026-11-09 §5.2). Its
+   own macro, so the item page and /staging do not gain it. The first press
+   only asks: the answer lands in the row's slot, whose id is built from the
+   row number because item numbers carry "/" and spaces and `hx-target` is a
+   CSS selector. #}
+{% macro remove_button(doc_id, item_ref, row) %}
+<form class="link-actions" hx-post="/links/{{ doc_id }}/decide"
+      hx-target="#link-slot-{{ doc_id | replace('.', '-') }}-{{ row | replace('.', '-') }}" hx-swap="innerHTML">
+  <input type="hidden" name="item_ref" value="{{ item_ref }}">
+  <input type="hidden" name="row" value="{{ row }}">
+  <button type="submit" name="decision" value="remove-link" class="linkbtn danger">Remove</button>
+</form>
 {% endmacro %}
