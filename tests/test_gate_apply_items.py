@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+from app import item_picks
 from app.handlers import gate as gh
 
 MFR = "ACME"
@@ -238,6 +239,284 @@ def test_add_items_leaves_open_review_tasks_alone(conn):
     gh.handle_gate_apply(conn, _job(doc_id, decision="add-items", items=["A1"]))
     assert conn.execute("SELECT status FROM manual_task WHERE doc_id=%s",
                         (doc_id,)).fetchone()["status"] == "open"
+
+
+def _existing(conn, doc_id, ref, status="staged", basis="ref-list"):
+    _item(conn, ref)
+    conn.execute("INSERT INTO item_document (item_ref, doc_id, match_basis, status) "
+                 "VALUES (%s, %s, %s, %s::link_status)", (ref, doc_id, basis, status))
+
+
+# --- reversing a refusal: `reopen` beside `items` (spec 2026-11-09 §4.4) -----
+
+def test_a_refused_item_in_items_alone_still_raises(conn):
+    doc_id = _doc(conn, "alone")
+    _existing(conn, doc_id, "A1", "rejected")
+    with pytest.raises(ValueError, match="refused: A1"):
+        gh.handle_gate_apply(conn, _job(doc_id, items=["A1"]))
+    assert _link(conn, doc_id, "A1")["status"] == "rejected"
+    assert _doc_status(conn, doc_id) == "staged"
+
+
+def test_check_items_lets_a_listed_refusal_through(conn):
+    doc_id = _doc(conn, "chk")
+    _existing(conn, doc_id, "A1", "rejected")
+    _item(conn, "A2")
+    conn.execute("UPDATE item_mirror SET manufacturer_raw=%s WHERE item_ref='A1'", (MFR,))
+    conn.execute("INSERT INTO manufacturer_alias (raw_name, canonical_name, source) "
+                 "VALUES (%s,%s,'vendor-master') ON CONFLICT (raw_name) DO NOTHING", (MFR, MFR))
+    assert item_picks.check_items(conn, doc_id, MFR, ["A1"]) == {"refused": ["A1"]}
+    assert item_picks.check_items(conn, doc_id, MFR, ["A1"], reopen=["A1"]) == {}
+
+
+def test_reopen_reverses_a_refusal_on_approve(conn):
+    doc_id = _doc(conn, "rev")
+    _existing(conn, doc_id, "A1", "rejected")
+
+    gh.handle_gate_apply(conn, _job(doc_id, items=["A1"], reopen=["A1"]))
+
+    assert dict(_link(conn, doc_id, "A1")) == {"status": "production", "match_basis": "manual", "udi": None}
+    assert [e for e in _trail(conn, doc_id) if e[1] == "A1"] == [
+        ("link-reopened", "A1"), ("link-confirmed", "A1"), ("production-write", "A1")]
+    detail = _detail(conn, doc_id, "link-reopened")
+    assert detail["via"] == "approve"
+    assert detail["link_status_before"] == "rejected"
+    assert detail["match_basis_before"] == "ref-list"
+
+
+def test_reopen_works_on_add_items(conn):
+    doc_id = _doc(conn, "revadd", status="production")
+    _existing(conn, doc_id, "A1", "rejected")
+
+    gh.handle_gate_apply(conn, _job(doc_id, decision="add-items", items=["A1"], reopen=["A1"]))
+
+    assert _link(conn, doc_id, "A1")["status"] == "production"
+    assert _detail(conn, doc_id, "link-reopened")["via"] == "add-items"
+
+
+@pytest.mark.parametrize("extra", [
+    {"items": ["A1"], "reopen": ["A2"]},
+    {"reopen": ["A1"]},
+    {"items": ["A1"], "reopen": "A1"},
+])
+def test_reopen_must_name_ticked_items(conn, extra):
+    doc_id = _doc(conn, "subset")
+    _existing(conn, doc_id, "A1", "rejected")
+    with pytest.raises(ValueError, match="reopen"):
+        gh.handle_gate_apply(conn, _job(doc_id, **extra))
+    assert _link(conn, doc_id, "A1")["status"] == "rejected"
+    assert _doc_status(conn, doc_id) == "staged"
+
+
+def test_a_reopened_trusted_link_is_confirmed_not_promoted(conn):
+    """Spec §4.5: reopened before the promote it would publish unconfirmed."""
+    doc_id = _doc(conn, "order")
+    _existing(conn, doc_id, "A1", "rejected", "ref-item")
+
+    gh.handle_gate_apply(conn, _job(doc_id, items=["A1"], reopen=["A1"]))
+
+    assert _link(conn, doc_id, "A1")["match_basis"] == "manual"
+    assert _trail(conn, doc_id).count(("link-confirmed", "A1")) == 1
+
+
+def test_a_redelivered_reopen_writes_nothing_more(conn):
+    doc_id = _doc(conn, "again")
+    _existing(conn, doc_id, "A1", "rejected")
+    job = _job(doc_id, items=["A1"], reopen=["A1"])
+
+    gh.handle_gate_apply(conn, job)
+    first = _trail(conn, doc_id).count(("link-reopened", "A1"))
+    gh.handle_gate_apply(conn, job)
+
+    assert first == 1
+    assert _trail(conn, doc_id).count(("link-reopened", "A1")) == 1
+
+
+# --- taking an item off on Review: `remove` on approve (spec 2026-11-09 §4.2) --
+
+def test_approve_remove_refuses_the_link_and_publishes_the_rest(conn):
+    doc_id = _doc(conn, "rm")
+    _existing(conn, doc_id, "A1", "staged", "ref-item")
+    _existing(conn, doc_id, "A2", "staged", "ref-list")
+
+    gh.handle_gate_apply(conn, _job(doc_id, remove=["A1"]))
+
+    assert _doc_status(conn, doc_id) == "production"
+    assert _link(conn, doc_id, "A1")["status"] == "rejected"
+    assert _link(conn, doc_id, "A1")["match_basis"] == "ref-item"
+    assert _link(conn, doc_id, "A2")["status"] == "production"
+    detail = _detail(conn, doc_id, "link-rejected")
+    assert detail == {"match_basis_before": "ref-item", "link_status_before": "staged",
+                      "via": "approve"}
+    assert _detail(conn, doc_id, "approve")["removed"] == 1
+
+
+@pytest.mark.parametrize("start,end,audited,skipped", [
+    ("staged", "rejected", 1, 0),
+    ("production", "rejected", 1, 0),
+    ("rejected", "rejected", 0, 0),
+    ("retracted", "retracted", 0, 1),
+])
+def test_what_remove_does_to_each_link_status(conn, start, end, audited, skipped):
+    doc_id = _doc(conn, f"st-{start}")
+    _existing(conn, doc_id, "A1", start)
+
+    out = gh.handle_gate_apply(conn, _job(doc_id, remove=["A1"]))
+
+    assert _link(conn, doc_id, "A1")["status"] == end
+    assert _trail(conn, doc_id).count(("link-rejected", "A1")) == audited
+    assert out.get("remove_skipped", 0) == skipped
+
+
+def test_removing_an_item_with_no_link_raises(conn):
+    doc_id = _doc(conn, "norow")
+    with pytest.raises(LookupError, match="A9"):
+        gh.handle_gate_apply(conn, _job(doc_id, remove=["A9"]))
+    assert _doc_status(conn, doc_id) == "staged"
+
+
+def test_the_same_item_in_remove_and_items_raises(conn):
+    doc_id = _doc(conn, "both")
+    _existing(conn, doc_id, "A1")
+    with pytest.raises(ValueError, match="both"):
+        gh.handle_gate_apply(conn, _job(doc_id, items=["A1"], remove=["A1"]))
+    assert _link(conn, doc_id, "A1")["status"] == "staged"
+    assert _doc_status(conn, doc_id) == "staged"
+
+
+def test_remove_on_a_whole_range_document_raises(conn):
+    doc_id = _doc(conn, "whole", scope="manufacturer")
+    _existing(conn, doc_id, "A1")
+    with pytest.raises(ValueError, match="whole range"):
+        gh.handle_gate_apply(conn, _job(doc_id, remove=["A1"]))
+    assert _doc_status(conn, doc_id) == "staged"
+
+
+def test_a_redelivered_approve_with_remove_writes_no_second_audit_row(conn):
+    doc_id = _doc(conn, "redeliver")
+    _existing(conn, doc_id, "A1")
+    job = _job(doc_id, remove=["A1"])
+
+    gh.handle_gate_apply(conn, job)
+    gh.handle_gate_apply(conn, job)
+
+    assert _trail(conn, doc_id).count(("link-rejected", "A1")) == 1
+
+
+def test_a_re_proposal_after_removal_stays_rejected(conn):
+    doc_id = _doc(conn, "sticky")
+    _existing(conn, doc_id, "A1")
+    gh.handle_gate_apply(conn, _job(doc_id, remove=["A1"]))
+
+    gh._upsert_link(conn, "A1", doc_id, None, "ref-list", "staged")
+
+    assert _link(conn, doc_id, "A1")["status"] == "rejected"
+
+
+# --- taking an item off a published document: `remove-link` (§4.3) ------------
+
+def _remove_link(doc_id, ref="A1"):
+    return _job(doc_id, decision="remove-link", item_ref=ref)
+
+
+def test_remove_link_refuses_a_published_link(conn):
+    doc_id = _doc(conn, "pub", status="production")
+    _existing(conn, doc_id, "A1", "production", "ref-item")
+
+    gh.handle_gate_apply(conn, _remove_link(doc_id))
+
+    assert dict(_link(conn, doc_id, "A1")) == {"status": "rejected", "match_basis": "ref-item", "udi": None}
+    detail = _detail(conn, doc_id, "link-rejected")
+    assert detail["link_status_before"] == "production"
+    assert detail["match_basis_before"] == "ref-item"
+
+
+def test_remove_link_needs_a_published_link(conn):
+    doc_id = _doc(conn, "pubstaged", status="production")
+    _existing(conn, doc_id, "A1", "staged")
+    with pytest.raises(ValueError, match="expected 'production'"):
+        gh.handle_gate_apply(conn, _remove_link(doc_id))
+    assert _link(conn, doc_id, "A1")["status"] == "staged"
+
+
+def test_remove_link_needs_a_published_document(conn):
+    doc_id = _doc(conn, "docstaged")
+    _existing(conn, doc_id, "A1", "production")
+    with pytest.raises(ValueError, match="not 'production'"):
+        gh.handle_gate_apply(conn, _remove_link(doc_id))
+
+
+def test_remove_link_refuses_a_whole_range_document(conn):
+    doc_id = _doc(conn, "pubwhole", status="production", scope="manufacturer")
+    _existing(conn, doc_id, "A1", "production", "mfr-scope")
+    with pytest.raises(ValueError, match="whole range"):
+        gh.handle_gate_apply(conn, _remove_link(doc_id))
+    assert _link(conn, doc_id, "A1")["status"] == "production"
+
+
+def test_a_redelivered_remove_link_is_quiet(conn):
+    doc_id = _doc(conn, "pubagain", status="production")
+    _existing(conn, doc_id, "A1", "production")
+
+    gh.handle_gate_apply(conn, _remove_link(doc_id))
+    out = gh.handle_gate_apply(conn, _remove_link(doc_id))
+
+    assert out["idempotent"] is True
+    assert _trail(conn, doc_id).count(("link-rejected", "A1")) == 1
+
+
+def test_a_removed_link_comes_back_through_reopen_and_confirm(conn):
+    doc_id = _doc(conn, "pubback", status="production")
+    _existing(conn, doc_id, "A1", "production")
+    gh.handle_gate_apply(conn, _remove_link(doc_id))
+
+    gh.handle_gate_apply(conn, _job(doc_id, decision="reopen-link", item_ref="A1"))
+    assert _link(conn, doc_id, "A1")["status"] == "staged"
+    gh.handle_gate_apply(conn, _job(doc_id, decision="confirm-link", item_ref="A1"))
+
+    assert dict(_link(conn, doc_id, "A1")) == {"status": "production", "match_basis": "manual", "udi": None}
+
+
+# --- a replayed job must not override a later person (review finding 2) --------
+
+def test_a_replayed_approve_does_not_undo_a_later_re_tick(conn):
+    doc_id = _doc(conn, "replay-a")
+    _existing(conn, doc_id, "A1")
+    approve = _job(doc_id, remove=["A1"])
+    gh.handle_gate_apply(conn, approve)
+    gh.handle_gate_apply(conn, _job(doc_id, decision="add-items", jid=32, items=["A1"], reopen=["A1"]))
+
+    gh.handle_gate_apply(conn, approve)
+
+    assert _link(conn, doc_id, "A1")["status"] == "production"
+    assert _trail(conn, doc_id).count(("link-rejected", "A1")) == 1
+
+
+def test_a_replayed_approve_does_not_reverse_a_later_removal(conn):
+    doc_id = _doc(conn, "replay-b")
+    _existing(conn, doc_id, "A1", "rejected")
+    approve = _job(doc_id, items=["A1"], reopen=["A1"])
+    gh.handle_gate_apply(conn, approve)
+    gh.handle_gate_apply(conn, _job(doc_id, decision="remove-link", jid=33, item_ref="A1"))
+
+    gh.handle_gate_apply(conn, approve)
+
+    assert _link(conn, doc_id, "A1")["status"] == "rejected"
+    assert _trail(conn, doc_id).count(("link-reopened", "A1")) == 1
+    assert _trail(conn, doc_id).count(("link-confirmed", "A1")) == 1
+
+
+def test_a_replayed_add_items_does_not_reverse_a_later_removal(conn):
+    doc_id = _doc(conn, "replay-c", status="production")
+    _existing(conn, doc_id, "A1", "rejected")
+    add = _job(doc_id, decision="add-items", items=["A1"], reopen=["A1"])
+    gh.handle_gate_apply(conn, add)
+    gh.handle_gate_apply(conn, _job(doc_id, decision="remove-link", jid=33, item_ref="A1"))
+
+    gh.handle_gate_apply(conn, add)
+
+    assert _link(conn, doc_id, "A1")["status"] == "rejected"
+    assert _trail(conn, doc_id).count(("link-confirmed", "A1")) == 1
 
 
 def _undated(conn, key, scope="group"):

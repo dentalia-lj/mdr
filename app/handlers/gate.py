@@ -759,8 +759,8 @@ def _retract_unsupported_links(conn, doc_id, links, job, group_id=None) -> int:
 #: and because only `production` was sticky, the very next candidate naming
 #: the same (item_ref, doc_id) rewrote the row back to `staged`. A machine
 #: silently un-rejecting what a person refused is the one direction this
-#: registry must never move in. `gate.apply reopen-link` is the only way out,
-#: and it requires a named human.
+#: registry must never move in. `gate.apply reopen-link` and the `reopen` list
+#: of `approve` / `add-items` are the only ways out, and both need a named human.
 #:
 #: `retracted` is deliberately ABSENT. It is a machine state meaning "the
 #: current extraction stopped claiming this link" (`_retract_unsupported_links`),
@@ -1806,6 +1806,9 @@ LINK_DECISIONS = {
     "confirm-link": ("staged",   "production", "link-confirmed"),
     "reject-link":  ("staged",   "rejected",   "link-rejected"),
     "reopen-link":  ("rejected", "staged",     "link-reopened"),
+    # A person taking a wrong item off a published document (spec 2026-11-09
+    # §4.3). The basis stays; the row stays; the way back is `reopen-link`.
+    "remove-link":  ("production", "rejected", "link-rejected"),
 }
 
 
@@ -1846,6 +1849,12 @@ def _apply_link_decision(conn, job, decision) -> dict:
             f"gate.apply {decision}: document {doc_id} is '{doc_status}', not 'production' — "
             f"a link decision may only be taken on a published document"
         )
+    if decision == "remove-link":
+        scope = conn.execute("SELECT coverage_scope FROM document WHERE doc_id=%s",
+                             (doc_id,)).fetchone()["coverage_scope"]
+        if scope != "group":
+            raise ValueError(f"gate.apply remove-link: document {doc_id} covers a whole range; "
+                             f"items cannot be taken off it")
 
     link = conn.execute(
         "SELECT status, match_basis FROM item_document WHERE doc_id=%s AND item_ref=%s",
@@ -1905,9 +1914,10 @@ def _apply_link_decision(conn, job, decision) -> dict:
             "link_status": new_status, "match_basis_before": was}
 
 
-def _picked_items(conn, doc_id, p) -> tuple[str, list[str]] | None:
+def _picked_items(conn, doc_id, p) -> tuple[str, list[str], list[str]] | None:
     """The reviewer's ticks on `approve` / `add-items` (picker spec §5.3 steps
-    1-2): (manufacturer, sorted unique item refs), or None when there are none.
+    1-2): (manufacturer, sorted unique item refs, the refs ticked despite an
+    earlier refusal), or None when there are none.
 
     Runs BEFORE any write, so a refused payload leaves the registry as it was
     even outside the runner's rollback. Every failure raises and names what
@@ -1915,9 +1925,12 @@ def _picked_items(conn, doc_id, p) -> tuple[str, list[str]] | None:
     as the decision being ignored (C17).
     """
     items = p.get("items")
+    decision = p["decision"]
+    reopen = p.get("reopen") or []
+    if not isinstance(reopen, list) or not set(reopen) <= set(items or []):
+        raise ValueError(f"gate.apply {decision}: reopen must name items that are ticked")
     if not items:
         return None
-    decision = p["decision"]
     if not isinstance(items, list) or not all(isinstance(i, str) and i.strip() for i in items):
         raise ValueError(f"gate.apply {decision}: items must be a list of item numbers")
     doc = conn.execute(
@@ -1938,11 +1951,65 @@ def _picked_items(conn, doc_id, p) -> tuple[str, list[str]] | None:
         raise ValueError(f"gate.apply {decision}: document {doc_id} has no manufacturer "
                          f"and the payload names none we hold")
     refs = sorted(set(items))
-    problems = item_picks.check_items(conn, doc_id, manufacturer, refs)
+    problems = item_picks.check_items(conn, doc_id, manufacturer, refs, reopen=reopen)
     if problems:
         raise ValueError(f"gate.apply {decision}: document {doc_id}: " + "; ".join(
             f"{kind}: {', '.join(found)}" for kind, found in problems.items()))
-    return manufacturer, refs
+    return manufacturer, refs, sorted(set(reopen))
+
+
+def _removal_targets(conn, doc_id, p, picked_refs) -> list[str]:
+    """The items `approve` must take off (spec 2026-11-09 §4.2, §4.6): sorted
+    unique refs, [] when there are none. An explicit list, never a final set, so
+    an item the reviewer never saw is untouched. Runs before any write and raises
+    on anything it cannot carry out."""
+    remove = p.get("remove")
+    if not remove:
+        return []
+    if not isinstance(remove, list) or not all(isinstance(i, str) and i.strip() for i in remove):
+        raise ValueError("gate.apply approve: remove must be a list of item numbers")
+    doc = conn.execute("SELECT coverage_scope FROM document WHERE doc_id=%s", (doc_id,)).fetchone()
+    if doc is None:
+        raise LookupError(f"gate.apply approve: no document {doc_id}")
+    if doc["coverage_scope"] != "group":
+        raise ValueError(f"gate.apply approve: document {doc_id} covers a whole range; "
+                         f"items cannot be taken off it")
+    refs = sorted(set(remove))
+    both = sorted(set(refs) & set(picked_refs))
+    if both:
+        raise ValueError(f"gate.apply approve: document {doc_id}: both ticked and removed: "
+                         f"{', '.join(both)}")
+    held = {r["item_ref"] for r in conn.execute(
+        "SELECT item_ref FROM item_document WHERE doc_id=%s AND item_ref = ANY(%s)",
+        (doc_id, refs)).fetchall()}
+    missing = [r for r in refs if r not in held]
+    if missing:
+        raise LookupError(f"gate.apply approve: document {doc_id} has no link to "
+                          f"{', '.join(missing)}")
+    return refs
+
+
+def _remove_links(conn, doc_id, refs, decided_by, job) -> dict:
+    """Spec 2026-11-09 §4.6: `staged` and `production` become `rejected`, each
+    audited with the basis it had. `rejected` is left alone, so a re-delivered
+    job writes nothing more. `retracted` is left alone and counted: PRD C17 keeps
+    it out of every human decision.
+
+    Runs BEFORE `_promote_pending_links`, or these would publish."""
+    removed = skipped = 0
+    for r in conn.execute(
+            "SELECT item_ref, status, match_basis FROM item_document "
+            "WHERE doc_id=%s AND item_ref = ANY(%s)", (doc_id, refs)).fetchall():
+        if r["status"] == "retracted":
+            skipped += 1
+        elif r["status"] != "rejected":
+            conn.execute("UPDATE item_document SET status='rejected' "
+                         "WHERE doc_id=%s AND item_ref=%s", (doc_id, r["item_ref"]))
+            _audit(conn, "link-rejected", doc_id, decided_by, job, item_ref=r["item_ref"],
+                   detail={"match_basis_before": r["match_basis"],
+                           "link_status_before": r["status"], "via": "approve"})
+            removed += 1
+    return {"removed": removed, "remove_skipped": skipped}
 
 
 def _require_issue_date(conn, doc_id, decision) -> None:
@@ -1955,6 +2022,36 @@ def _require_issue_date(conn, doc_id, decision) -> None:
                          f"the reviewer enters one before approving")
 
 
+def _reopen_links(conn, doc_id, refs, decided_by, job, via) -> None:
+    """Spec 2026-11-09 §4.4: the links a person ticked despite a refusal, out of
+    `rejected` and back to `staged`, each with its own `link-reopened` entry, so
+    that `_write_items` can confirm them. `rejected` is sticky to `_upsert_link`,
+    and this and `reopen-link` are the only ways out of it (PRD C17). Only rows
+    still refused move, so a re-delivered job writes nothing more.
+
+    Runs AFTER `_promote_pending_links`. Before it, a reopened trusted link would
+    be published on its old basis with no `link-confirmed` entry.
+    """
+    # A job replayed after a person has since refused the item again must not
+    # reverse them: each job reopens an item once.
+    if job.get("id") is not None:
+        done = {r["item_ref"] for r in conn.execute(
+            "SELECT item_ref FROM audit_log WHERE event='link-reopened' AND via_job=%s "
+            "AND doc_id=%s", (job["id"], doc_id)).fetchall()}
+        refs = [r for r in refs if r not in done]
+    if not refs:
+        return
+    reopened = conn.execute(
+        "UPDATE item_document SET status='staged' "
+        "WHERE doc_id=%s AND item_ref = ANY(%s) AND status='rejected' "
+        "RETURNING item_ref, match_basis",
+        (doc_id, refs)).fetchall()
+    for r in reopened:
+        _audit(conn, "link-reopened", doc_id, decided_by, job, item_ref=r["item_ref"],
+               detail={"match_basis_before": r["match_basis"],
+                       "link_status_before": "rejected", "via": via})
+
+
 def _write_items(conn, doc_id, manufacturer, refs, decided_by, job, via) -> None:
     """Picker spec §5.3 steps 1, 3, 4: record the manufacturer on a document
     that had none, then link each ticked item the way `confirm-link` does.
@@ -1963,7 +2060,8 @@ def _write_items(conn, doc_id, manufacturer, refs, decided_by, job, via) -> None
     ticks were checked: a staged trusted-basis link has just followed the
     document to production, and must be skipped rather than re-based and
     audited a second time. `_upsert_link` keeps `production` and `rejected`
-    sticky; `rejected` was refused before any write. The existing `udi` is
+    sticky; a link still `rejected` here is a replay a person has since overruled,
+    and stays as they left it. The existing `udi` is
     passed back because the upsert overwrites a non-sticky row's `udi`.
     """
     conn.execute(
@@ -1974,8 +2072,9 @@ def _write_items(conn, doc_id, manufacturer, refs, decided_by, job, via) -> None
         "WHERE doc_id=%s AND item_ref = ANY(%s)", (doc_id, refs)).fetchall()}
     for ref in refs:
         link = current.get(ref)
-        if link and link["status"] == "production":
-            continue  # already trusted: basis kept, nothing to audit, re-delivery is quiet
+        if link and link["status"] in ("production", "rejected"):
+            continue  # production: basis kept, nothing to audit, re-delivery is quiet
+                      # rejected: a replay of a job a person has since overruled
         _upsert_link(conn, ref, doc_id, link["udi"] if link else None, "manual", "production")
         _audit(conn, "link-confirmed", doc_id, decided_by, job, item_ref=ref,
                detail={"match_basis_before": link["match_basis"] if link else None,
@@ -2006,14 +2105,23 @@ def handle_gate_apply(conn, job: dict) -> dict:
     if decision == "add-items" and picked is None:
         raise ValueError("gate.apply add-items: items is required")
     items_detail = None
+    # Spec 2026-11-09 §4.2: what the reviewer took off, checked with the ticks.
+    to_remove = (_removal_targets(conn, doc_id, p, picked[1] if picked else [])
+                 if decision == "approve" else [])
+    removal = None
 
     if decision == "approve":
         _apply_edits(conn, doc_id, p.get("edits"))
         _require_issue_date(conn, doc_id, decision)
         _promote(conn, doc_id)
+        # Only on the transition to published: a replay must not undo a person
+        # who has since put the item back.
+        if to_remove and prev_status != "production":
+            removal = _remove_links(conn, doc_id, to_remove, decided_by, job)
         _promote_pending_links(conn, doc_id)
         if picked:
-            _write_items(conn, doc_id, *picked, decided_by, job, via="approve")
+            _reopen_links(conn, doc_id, picked[2], decided_by, job, via="approve")
+            _write_items(conn, doc_id, *picked[:2], decided_by, job, via="approve")
             items_detail = {"items": len(picked[1]), "manufacturer": picked[0]}
         # C6 human path: a STAGED candidate that carried a supersession target
         # (document.supersedes, written sticky at candidate-write time — it must
@@ -2090,7 +2198,8 @@ def handle_gate_apply(conn, job: dict) -> dict:
     elif decision == "add-items":
         # Picker spec §3.1: the approve link steps on a published document,
         # without the promote. Ticks were checked above.
-        _write_items(conn, doc_id, *picked, decided_by, job, via="add-items")
+        _reopen_links(conn, doc_id, picked[2], decided_by, job, via="add-items")
+        _write_items(conn, doc_id, *picked[:2], decided_by, job, via="add-items")
         items_detail = {"items": len(picked[1]), "manufacturer": picked[0]}
     else:
         raise ValueError(f"gate.apply: unknown decision '{decision}'")
@@ -2106,13 +2215,15 @@ def handle_gate_apply(conn, job: dict) -> dict:
     detail = _note_detail(p)
     if items_detail:
         detail = {**(detail or {}), **items_detail}
+    if removal:
+        detail = {**(detail or {}), "removed": removal["removed"]}
     _audit(conn, decision, doc_id, decided_by, job, detail=detail)
     # §9: every production write is audited — the human promote paths log it
     # alongside the decision, once per staged->production transition (same
     # prev_status guard as gate.candidate, idempotent under re-delivery).
     if decision in ("approve", "bind-manufacturer") and prev_status != "production":
         _audit(conn, "production-write", doc_id, decided_by, job)
-    return {"decision": decision, "doc_id": doc_id}
+    return {"decision": decision, "doc_id": doc_id, **(removal or {})}
 
 
 register("gate.apply", handle_gate_apply)

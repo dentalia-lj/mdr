@@ -6,19 +6,25 @@ last word against hand-built payloads and replays and raises before writing.
 """
 from __future__ import annotations
 
+from collections.abc import Collection
+
 from app import manufacturers
 
 
 def check_items(conn, doc_id: int, manufacturer: str | None,
-                refs: list[str]) -> dict[str, list[str]]:
+                refs: list[str], reopen: Collection[str] = ()) -> dict[str, list[str]]:
     """What is wrong with ticking `refs` for `doc_id` under `manufacturer`.
 
     `unknown`: not in the catalogue mirror (never synced, or BC deleted it).
     `other-manufacturer`: not under any BC code the manufacturer fans out to
     (`item_codes_for`); a name with no codes owns nothing, so every item is
     this. `refused`: a person rejected this item's link to this document
-    (C17); it comes back only through `reopen-link`. Empty dict when clean.
+    (C17); it comes back only through `reopen-link`, or by being named in
+    `reopen`, the list of items ticked despite the refusal (spec 2026-11-09
+    §4.4). Listed separately so that a stale page or a script error sending a
+    refused item in `refs` alone is still refused. Empty dict when clean.
     """
+    reopen = set(reopen)
     codes = set(manufacturers.item_codes_for(conn, manufacturer)) if manufacturer else set()
     rows = conn.execute(
         "SELECT t.item_ref, m.manufacturer_raw, l.status "
@@ -34,7 +40,7 @@ def check_items(conn, doc_id: int, manufacturer: str | None,
             kind = "unknown"
         elif r["manufacturer_raw"] not in codes:
             kind = "other-manufacturer"
-        elif r["status"] == "rejected":
+        elif r["status"] == "rejected" and r["item_ref"] not in reopen:
             kind = "refused"
         else:
             continue
