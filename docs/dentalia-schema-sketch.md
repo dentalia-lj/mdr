@@ -555,7 +555,7 @@ CREATE TABLE item_document (
 -- intact so the trail records how the refused link was proposed; reopen-link puts a
 -- rejected link back to staged. 'rejected' is sticky on upsert alongside 'production'
 -- -- a later candidate must never resurrect a coverage claim a human refused, and
--- reopen-link is the ONLY way back out. 'retracted' is not sticky: it is a machine
+-- reopen-link (or the reopen list on approve / add-items) is the ONLY way back out. 'retracted' is not sticky: it is a machine
 -- state (the current extraction stopped claiming this link), so new evidence
 -- reviving it is correct, and no human decision may target it.
 -- LIVE since 005 as CONSTRAINT item_document_trusted_basis_ck, widened by 021:

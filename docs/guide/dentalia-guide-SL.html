@@ -869,7 +869,7 @@ tbody tr:last-child td{border-bottom:0}
 <p>Skoraj nič — z eno izjemo, in ta je povrnljiva.</p>
 <ul>
 <li>Nič tukaj ne izbriše dokumenta, ga ne odobri in ne objavi. Odobritev se zgodi na <a href="#pages/review">Review</a>.</li>
-<li><strong>Izjema: Reopen this document.</strong> Pojavi se le pri dokumentu, ki ga je nekdo že zavrnil, in ga vrne na <a href="#pages/review">Review</a> med čakajoče. Ga <strong>ne</strong> odobri in ne vrne izdelkov, na katere je bil vezan — ti ostanejo zavrnjeni, dokler ni vsak posebej ponovno odprt. Če ga po pomoti ponovno odprete, ga na Review preprosto znova zavrnite. Za ime vas vpraša zato, ker se razveljavitev tuje odločitve zabeleži.</li>
+<li><strong>Izjema: Reopen this document.</strong> Pojavi se le pri dokumentu, ki ga je nekdo že zavrnil, in ga vrne na <a href="#pages/review">Review</a> med čakajoče. Ga <strong>ne</strong> odobri in ne vrne izdelkov, na katere je bil vezan — ti ostanejo zavrnjeni, dokler ni vsak posebej ponovno odprt ali znova označen v izbirniku. Če ga po pomoti ponovno odprete, ga na Review preprosto znova zavrnite. Za ime vas vpraša zato, ker se razveljavitev tuje odločitve zabeleži.</li>
 <li><strong>Look up in EUDAMED</strong> le vpraša evropsko bazo podatkov, kaj ve o napravi tega dokumenta. Na dokumentu samem to nič ne spremeni.</li>
 <li>Če gumb vrne napako, se ni zgodilo nič. Poskusite znova ali vprašajte razvijalca.</li>
 </ul>
@@ -899,6 +899,7 @@ tbody tr:last-child td{border-bottom:0}
 <li>Če dokument še čaka na odločitev, kliknite <strong>review this document</strong>, da greste neposredno nanjo na <a href="#pages/review">Review</a>.</li>
 <li>Če dokument navaja Basic UDI-DI in želite hiter navzkrižni pregled, pritisnite <strong>Look up in EUDAMED</strong>.</li>
 <li>Na objavljenem dokumentu, ki pokriva določene artikle, <strong>Add items this document covers…</strong> odpre isti izbirnik kot na <a href="#pages/review">Review</a>: poiščite in označite artikle, nato pritisnite <strong>Add these N items</strong>. Vsak postane potrjena povezava pod vašim imenom v minuti. Uporabite ga, ko pride nov artikel, ki ga obstoječi dokument pokriva.</li>
+<li>Na takem dokumentu <strong>Remove</strong> ob artiklu v <strong>Covered items</strong> artikel odstrani. Najprej vpraša in pove, če artikel ne bo imel več nobenega dokumenta te vrste. Business Central obdrži staro vrednost do naslednje posodobitve. Za razveljavitev pritisnite <strong>Re-open</strong>, nato <strong>Covers this item</strong>.</li>
 </ol>
 <hr>
 <h2 id="pages/documents--kaj-se-zgodi-nato">Kaj se zgodi nato</h2>
@@ -1934,11 +1935,13 @@ tbody tr:last-child td{border-bottom:0}
 <li>Proizvajalec je zaklenjen na proizvajalca dokumenta. Če ta ni potrjen, ga najprej izberite; najti je mogoče samo njegove artikle. Kjer se ime v Business Centralu razlikuje od uradnega, ga seznam prikaže poleg njega.</li>
 <li>Iskanje se začne z besedo iz imena datoteke. Vpišite številko artikla ali besedo iz imena. Številka prikaže artikle, katerih številka jo vsebuje, pod njimi pa 10 številk pred njo in 10 za njo, ki so pogosto iz iste družine: preverite vsako. Beseda najde tudi podobno zapisane ("varibase", "emax" za E.MAX). Prikaže največ 200 artiklov; če jih ustreza več, uporabite ožjo besedo.</li>
 <li><strong>Similar</strong> v katerikoli vrstici prikaže artikle istega proizvajalca s podobnim imenom. Objavljen dokument istega proizvajalca, ponujen pod iskalnim poljem, prikaže artikle, ki jih pokriva.</li>
-<li>Artikle označite enega za drugim ali z <strong>Tick all</strong> v katalogni skupini. Ničesar ne označimo namesto vas. Artikla, ki je bil za ta dokument že zavrnjen, ni mogoče označiti.</li>
+<li>Artikle označite enega za drugim ali z <strong>Tick all</strong> v katalogni skupini. Ničesar ne označimo namesto vas. Artikel, ki je bil za ta dokument že zavrnjen, ima oznako <strong>Refused earlier</strong>. Namenoma ga lahko označite posamično, s čimer ob odobritvi razveljavite zavrnitev. <strong>Tick all</strong> ga preskoči.</li>
 <li>Vsaka vrstica pokaže, ali ga Business Central vodi kot medicinski pripomoček, katere dokumente že ima (DoC, CE, IFU, ISO) in njegov najnovejši dokument te vrste z datumom.</li>
 <li><strong>Done</strong> zapre izbirnik, plošča pa pokaže, za katere artikle bo dokument veljal po odobritvi. <strong>Cancel</strong> ohrani prejšnjo izbiro.</li>
 </ul>
 <p>Dokler ne odobrite, ni povezano nič. Nato vsak označeni artikel postane potrjena povezava pod vašim imenom. Artikel, ki že ima dokument iste vrste, ga obdrži; novi se doda zraven.</p>
+<h3 id="pages/review--odstranitev-napačnega-artikla">Odstranitev napačnega artikla</h3>
+<p>Na seznamu <em>Approving makes it count for…</em> ima vsak artikel, ki ga je našel sistem, gumb <strong>Remove</strong>. Artikel se premakne pod <em>Will not count</em>, z <strong>Undo</strong> ga vrnete. Dokler ne odobrite, se nič ne shrani. Ob odobritvi se vsak zabeleži kot nepokrit in ponovno branje dokumenta ga ne bo več povezalo. Uporabite ga, kadar dokument navaja številko drugega izdelka, na primer v tabeli za naročanje.</p>
 <h3 id="pages/review--prikaz-ene-vrste-razloga-naenkrat">Prikaz ene vrste razloga naenkrat</h3>
 <p>Gumbi nad seznamom pokažejo dokumente, ki čakajo zaradi ene vrste razloga. <strong>All reasons</strong> spet pokaže vse.</p>
 <div class="tw"><table><thead><tr>

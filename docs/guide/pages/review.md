@@ -143,7 +143,9 @@ covers…**.
   published document of the same manufacturer, offered under the search box,
   lists the items it covers.
 - Tick items one by one, or **Tick all** in a catalogue group. Nothing is ticked
-  for you. An item refused earlier for this document cannot be ticked.
+  for you. An item refused earlier for this document shows **Refused earlier**. You
+  can tick it on purpose, one at a time, which reverses the refusal when you
+  approve. **Tick all** skips it.
 - Each row shows whether Business Central marks the item as a medical device,
   which documents it already has (DoC, CE, IFU, ISO), and its newest document of
   this type with its date.
@@ -153,6 +155,14 @@ covers…**.
 Nothing is linked until you approve. Each ticked item then becomes a confirmed
 link under your name. An item that already has a document of the same type
 keeps it; the new one is added beside it.
+
+### Taking a wrong item off
+
+In the list *Approving makes it count for…*, each item the system matched has
+**Remove**. The item moves to *Will not count*, and **Undo** brings it back.
+Nothing is saved until you approve. Each one is then recorded as not covered,
+and a later re-read of the document will not link it again. Use it when a
+document prints another product's number, for example in an ordering table.
 
 ### Showing one kind of reason at a time
 

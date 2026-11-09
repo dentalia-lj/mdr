@@ -236,7 +236,7 @@ document is not — it sits in `/staging` or `/manual` until a human acts.
 
 **9. `gate.apply` — a human decides.**
 Three decisions that matter here (C17 link-only decisions —
-`confirm-link`/`reject-link`/`reopen-link` — return before touching
+`confirm-link`/`reject-link`/`reopen-link`/`remove-link` — return before touching
 `document` at all, `app/handlers/gate.py:1983-1984`):
    - **`approve`**: promotes the document to `production`
      (`_promote`, `gate.py:1709-1710`), promotes any staged link whose basis

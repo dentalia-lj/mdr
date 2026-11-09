@@ -17,7 +17,7 @@ Almost nothing — with one exception, and it is reversible.
   somebody has already rejected, and it puts that document back into
   [Review](review.md) as waiting. It does **not** approve it and it does not
   bring back the products it was linked to — those stay rejected until each is
-  reopened on its own. If you reopen one by mistake, reject it again on Review.
+  reopened on its own, or ticked again in the picker. If you reopen one by mistake, reject it again on Review.
   You are asked for your name because undoing somebody else's decision is
   recorded.
 - **Look up in EUDAMED** only asks a European database what it knows about this
@@ -83,6 +83,10 @@ to browse everything.
    tick the items, then **Add these N items**. Each becomes a confirmed link
    under your name within a minute. Use it when a new item arrives that an
    existing document covers.
+10. On the same kind of document, **Remove** next to an item in **Covered items**
+    takes it off. It asks first, and says so if the item would have no document
+    of that type left. Business Central keeps its old value until its next
+    update. To undo it, press **Re-open**, then **Covers this item**.
 
 ---
 

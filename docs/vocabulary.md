@@ -122,7 +122,7 @@ to make.
 |---|---|
 | `staged` | proposed, not published. Either the document is not trusted yet, or the link's own basis is capped (§4) and needs a person |
 | `production` | live coverage. Consumers require BOTH this and `document.status = 'production'` |
-| `rejected` | a named person refused this link. **Sticky against machines** (C17): no candidate may rewrite it, and `gate.apply reopen-link` is the only way back to `staged` |
+| `rejected` | a named person refused this link. **Sticky against machines** (C17): no candidate may rewrite it, and only a named person takes it back to `staged`: `gate.apply reopen-link`, or the `reopen` list of `approve` / `add-items` |
 | `retracted` | the current extraction no longer supports it — machine-withdrawn, distinct from a human `rejected`, and deliberately NOT sticky: a later extraction that claims the link again revives it, and no human decision targets it |
 
 Nothing is ever deleted: supersession is append-only with a 10-year retention
@@ -162,10 +162,11 @@ raise a coverage number.
 does.** A capped link leaves `staged` by one route only: a person ruling on
 that link with `gate.apply confirm-link`, which re-bases it to `manual` (C17).
 The sibling decisions are `reject-link` (the link is refused; the basis is kept
-so the trail records how it was proposed) and `reopen-link` (the only way out
+so the trail records how it was proposed) and `reopen-link` (a person's way out
 of `rejected` — machines are locked out of that status, see the `link_status`
 table above). All three act on ONE `(doc_id, item_ref)` pair and none of them
-touches the document.
+touches the document. `remove-link` (2026-11-09) is the same refusal for a
+`production` link on a published document.
 
 ---
 

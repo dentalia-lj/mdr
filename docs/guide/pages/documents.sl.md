@@ -16,7 +16,7 @@ Skoraj nič — z eno izjemo, in ta je povrnljiva.
 - **Izjema: Reopen this document.** Pojavi se le pri dokumentu, ki ga je
   nekdo že zavrnil, in ga vrne na [Review](review.sl.md) med čakajoče. Ga
   **ne** odobri in ne vrne izdelkov, na katere je bil vezan — ti ostanejo
-  zavrnjeni, dokler ni vsak posebej ponovno odprt. Če ga po pomoti ponovno
+  zavrnjeni, dokler ni vsak posebej ponovno odprt ali znova označen v izbirniku. Če ga po pomoti ponovno
   odprete, ga na Review preprosto znova zavrnite. Za ime vas vpraša zato, ker
   se razveljavitev tuje odločitve zabeleži.
 - **Look up in EUDAMED** le vpraša evropsko bazo podatkov, kaj ve o napravi
@@ -82,6 +82,10 @@ prazno, če želite brskati po vsem.
    poiščite in označite artikle, nato pritisnite **Add these N items**. Vsak
    postane potrjena povezava pod vašim imenom v minuti. Uporabite ga, ko pride
    nov artikel, ki ga obstoječi dokument pokriva.
+10. Na takem dokumentu **Remove** ob artiklu v **Covered items** artikel odstrani.
+    Najprej vpraša in pove, če artikel ne bo imel več nobenega dokumenta te
+    vrste. Business Central obdrži staro vrednost do naslednje posodobitve. Za
+    razveljavitev pritisnite **Re-open**, nato **Covers this item**.
 
 ---
 

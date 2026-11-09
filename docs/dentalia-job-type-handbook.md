@@ -942,7 +942,7 @@ def handle_gate_apply(job):
         # C17 link decisions rule on ONE (doc_id, item_ref) and never touch the
         # document, so they take neither the manual-task resolution nor the
         # document-level audit below. They return first.
-        if decision in ("confirm-link", "reject-link", "reopen-link"):
+        if decision in ("confirm-link", "reject-link", "reopen-link", "remove-link"):
             return apply_link_decision(job, decision)
         match job.payload["decision"]:
             case "approve":
@@ -990,6 +990,7 @@ LINK_DECISIONS = {                # decision -> (required status, new status, au
     "confirm-link": ("staged",   "production", "link-confirmed"),
     "reject-link":  ("staged",   "rejected",   "link-rejected"),
     "reopen-link":  ("rejected", "staged",     "link-reopened"),
+    "remove-link":  ("production", "rejected", "link-rejected"),
 }
 
 def apply_link_decision(job, decision):

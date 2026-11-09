@@ -866,7 +866,7 @@ tbody tr:last-child td{border-bottom:0}
 <p>Almost nothing — with one exception, and it is reversible.</p>
 <ul>
 <li>Nothing here deletes a document, approves it, or publishes it. Approving happens on <a href="#pages/review">Review</a>.</li>
-<li><strong>The exception: Reopen this document.</strong> It appears only on a document somebody has already rejected, and it puts that document back into <a href="#pages/review">Review</a> as waiting. It does <strong>not</strong> approve it and it does not bring back the products it was linked to — those stay rejected until each is reopened on its own. If you reopen one by mistake, reject it again on Review. You are asked for your name because undoing somebody else's decision is recorded.</li>
+<li><strong>The exception: Reopen this document.</strong> It appears only on a document somebody has already rejected, and it puts that document back into <a href="#pages/review">Review</a> as waiting. It does <strong>not</strong> approve it and it does not bring back the products it was linked to — those stay rejected until each is reopened on its own, or ticked again in the picker. If you reopen one by mistake, reject it again on Review. You are asked for your name because undoing somebody else's decision is recorded.</li>
 <li><strong>Look up in EUDAMED</strong> only asks a European database what it knows about this document's device. It does not change anything about the document itself.</li>
 <li>If a button gives you an error, nothing happened. Try again, or ask a developer.</li>
 </ul>
@@ -896,6 +896,7 @@ tbody tr:last-child td{border-bottom:0}
 <li>If the document is still waiting for a decision, click <strong>review this document</strong> to go straight to it on <a href="#pages/review">Review</a>.</li>
 <li>If the document names a Basic UDI-DI and you want a quick cross-check, press <strong>Look up in EUDAMED</strong>.</li>
 <li>On a published document that covers specific items, <strong>Add items this document covers…</strong> opens the same picker as on <a href="#pages/review">Review</a>: find and tick the items, then <strong>Add these N items</strong>. Each becomes a confirmed link under your name within a minute. Use it when a new item arrives that an existing document covers.</li>
+<li>On the same kind of document, <strong>Remove</strong> next to an item in <strong>Covered items</strong> takes it off. It asks first, and says so if the item would have no document of that type left. Business Central keeps its old value until its next update. To undo it, press <strong>Re-open</strong>, then <strong>Covers this item</strong>.</li>
 </ol>
 <hr>
 <h2 id="pages/documents--what-happens-then">What happens then</h2>
@@ -1932,11 +1933,13 @@ tbody tr:last-child td{border-bottom:0}
 <li>The manufacturer is locked to the document's. If the document has none confirmed, choose it first; only its items can be found. The list shows the Business Central name next to the legal one where they differ.</li>
 <li>The search starts with a word from the file name. Type an item number or a word from the name. A number lists the items whose number contains it, and below them the 10 numbers before and after it, which are often the same family: check each one. A word finds close spellings too ("varibase", "emax" for E.MAX). At most 200 items are listed; if more match, use a narrower word.</li>
 <li><strong>Similar</strong> on any row lists the manufacturer's items with names like it. A published document of the same manufacturer, offered under the search box, lists the items it covers.</li>
-<li>Tick items one by one, or <strong>Tick all</strong> in a catalogue group. Nothing is ticked for you. An item refused earlier for this document cannot be ticked.</li>
+<li>Tick items one by one, or <strong>Tick all</strong> in a catalogue group. Nothing is ticked for you. An item refused earlier for this document shows <strong>Refused earlier</strong>. You can tick it on purpose, one at a time, which reverses the refusal when you approve. <strong>Tick all</strong> skips it.</li>
 <li>Each row shows whether Business Central marks the item as a medical device, which documents it already has (DoC, CE, IFU, ISO), and its newest document of this type with its date.</li>
 <li><strong>Done</strong> closes the picker and the panel lists what approving will make the document count for. <strong>Cancel</strong> keeps what you had before.</li>
 </ul>
 <p>Nothing is linked until you approve. Each ticked item then becomes a confirmed link under your name. An item that already has a document of the same type keeps it; the new one is added beside it.</p>
+<h3 id="pages/review--taking-a-wrong-item-off">Taking a wrong item off</h3>
+<p>In the list <em>Approving makes it count for…</em>, each item the system matched has <strong>Remove</strong>. The item moves to <em>Will not count</em>, and <strong>Undo</strong> brings it back. Nothing is saved until you approve. Each one is then recorded as not covered, and a later re-read of the document will not link it again. Use it when a document prints another product's number, for example in an ordering table.</p>
 <h3 id="pages/review--showing-one-kind-of-reason-at-a-time">Showing one kind of reason at a time</h3>
 <p>The buttons above the list show the documents waiting for one kind of reason. <strong>All reasons</strong> shows everything again.</p>
 <div class="tw"><table><thead><tr>

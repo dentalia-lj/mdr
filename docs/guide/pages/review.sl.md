@@ -143,8 +143,10 @@ this document covers…**.
   podobnim imenom. Objavljen dokument istega proizvajalca, ponujen pod iskalnim
   poljem, prikaže artikle, ki jih pokriva.
 - Artikle označite enega za drugim ali z **Tick all** v katalogni skupini.
-  Ničesar ne označimo namesto vas. Artikla, ki je bil za ta dokument že
-  zavrnjen, ni mogoče označiti.
+  Ničesar ne označimo namesto vas. Artikel, ki je bil za ta dokument že
+  zavrnjen, ima oznako **Refused earlier**. Namenoma ga lahko označite
+  posamično, s čimer ob odobritvi razveljavite zavrnitev. **Tick all** ga
+  preskoči.
 - Vsaka vrstica pokaže, ali ga Business Central vodi kot medicinski pripomoček,
   katere dokumente že ima (DoC, CE, IFU, ISO) in njegov najnovejši dokument te
   vrste z datumom.
@@ -154,6 +156,14 @@ this document covers…**.
 Dokler ne odobrite, ni povezano nič. Nato vsak označeni artikel postane potrjena
 povezava pod vašim imenom. Artikel, ki že ima dokument iste vrste, ga obdrži;
 novi se doda zraven.
+
+### Odstranitev napačnega artikla
+
+Na seznamu *Approving makes it count for…* ima vsak artikel, ki ga je našel
+sistem, gumb **Remove**. Artikel se premakne pod *Will not count*, z **Undo** ga
+vrnete. Dokler ne odobrite, se nič ne shrani. Ob odobritvi se vsak zabeleži kot
+nepokrit in ponovno branje dokumenta ga ne bo več povezalo. Uporabite ga, kadar
+dokument navaja številko drugega izdelka, na primer v tabeli za naročanje.
 
 ### Prikaz ene vrste razloga naenkrat
 
