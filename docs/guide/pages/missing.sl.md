@@ -78,9 +78,11 @@ proizvajalca.
 
 ## Kaj se zgodi nato
 
-- Po nalaganju kartica izgine s seznama, takoj ko sistem datoteko prevzame.
-  Nato jo prebere in poveže z artiklom. Če je prepričan, dokument šteje
-  takoj. Če ni, počaka na vas na strani [Review](review.sl.md).
+- Po nalaganju kartica ostane tu, medtem ko sistem bere datoteko, in piše
+  *A file was uploaded for this item*. Ponovno nalaganje ne škodi. Kartica
+  izgine s seznama, ko iz datoteke nastane dokument: šteje takoj ali pa počaka
+  na vas na strani [Review](review.sl.md). Napačna datoteka kartico pusti na
+  mestu, povezava **See what happened** pa pove, zakaj.
 - Po **Search again** se pod kartico pojavi vrstica: "The system will search
   again for this item." Če iskanje najde kaj, kar je vredno poskusiti, kartica
   takoj izgine s seznama, še preden je znano, ali je to pravi dokument.
@@ -101,7 +103,7 @@ proizvajalca.
 | "Task #… is already closed." po **Search again** | Odkar ste odprli stran, je nekdo naložil dokument zanj ali pa je iskanje našlo kaj, kar je vredno poskusiti | Znova naložite stran | V redu |
 | Kartica, ki pove le "Nothing found on …" | Sistem je tisti dan poskusil, a njegov dnevnik ne navaja nobenega mesta, kjer je iskal, na primer ker spletno iskanje ni nastavljeno | Dokument poiščite sami. Če to piše na vsaki kartici, povejte razvijalcu | Potrebno je vaše dejanje |
 | Ista kartica še dneve po **Search again** | Sistem je znova iskal in spet ni našel ničesar | Dokument poiščite sami ali ga prosite pri proizvajalcu | Potrebno je vaše dejanje |
-| S kartice ste naložili napačno datoteko | Kartica je vseeno izginila s seznama | Dokument zavrnite na strani [Review](review.sl.md). Da sistem artikel znova poišče, ga odprite pod [Items](items.sl.md) in pritisnite **Re-discover documents**. Če iskanje ne najde ničesar, se artikel vrne sem | Popravljivo |
+| S kartice ste naložili napačno datoteko | Če sploh ni dokument o skladnosti, kartica preprosto ostane. Če je videti kot tak, gre na [Review](review.sl.md) in kartica izgine s seznama | Dokument zavrnite na strani Review. Kartica se vrne sem | Popravljivo |
 | Sporočilo o napaki, ki ga ne prepoznate | Nekaj je spodletelo na strani sistema in ni se zgodilo nič | Poskusite znova ali vprašajte razvijalca | Poskusite znova |
 
 ## Besede, ki jih uporablja zaslon

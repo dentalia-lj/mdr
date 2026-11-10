@@ -2225,7 +2225,7 @@ tbody tr:last-child td{border-bottom:0}
 </ol>
 <h2 id="pages/missing--what-happens-then">What happens then</h2>
 <ul>
-<li>After an upload, the card leaves this list as soon as the system has taken the file in. The system then reads it and matches it to the item. If it is confident, the document counts straight away. If not, it waits for you on <a href="#pages/review">Review</a>.</li>
+<li>After an upload, the card stays here while the system reads the file, and says <em>A file was uploaded for this item</em>. Uploading it again does no harm. The card leaves this list once a document has come out of the file: counted straight away, or waiting for you on <a href="#pages/review">Review</a>. A wrong file leaves the card where it is, and <strong>See what happened</strong> tells you why.</li>
 <li>After <strong>Search again</strong>, a line appears under the card: "The system will search again for this item." If the search finds something to try, the card leaves this list at once, before anyone knows whether it is the right document. What it found then goes through the usual checks, so it may turn up on Review. If it is not the document, the item does not come back to this list straight away: open it under <a href="#pages/items">Items</a> and press <strong>Re-discover documents</strong>. If the search finds nothing, the card stays and shows the new date.</li>
 <li>Nothing on this screen asks the manufacturer by email. That is not built yet.</li>
 </ul>
@@ -2280,8 +2280,8 @@ tbody tr:last-child td{border-bottom:0}
 </tr>
 <tr>
 <td>You uploaded the wrong file from a card</td>
-<td>The card has left the list anyway</td>
-<td>Reject the document on <a href="#pages/review">Review</a>. To have the item searched for again, open it under <a href="#pages/items">Items</a> and press <strong>Re-discover documents</strong>. If that finds nothing, the item comes back here</td>
+<td>If it is not a compliance document at all, the card simply stays. If it looks like one, it goes to <a href="#pages/review">Review</a> and the card leaves the list</td>
+<td>Reject the document on Review. The card comes back here</td>
 <td>Fixable</td>
 </tr>
 <tr>
@@ -3114,27 +3114,28 @@ tbody tr:last-child td{border-bottom:0}
 <li><a href="#glossary">Glossary</a> — every word in one place</li>
 </ul></section>
 <section class="page" id="pages/upload"><h1 id="pages/upload--upload">Upload</h1>
-<p><strong>In one sentence:</strong> this is where you hand the system one document by hand.</p>
+<p><strong>In one sentence:</strong> this is where you hand the system documents by hand, one or several at once.</p>
 <h2 id="pages/upload--status">Status</h2>
-<p>Live. Checked against the code on 2026-09-15.</p>
+<p>Live. Checked against the code on 2026-11-09.</p>
 <h2 id="pages/upload--can-i-break-anything-here">Can I break anything here?</h2>
 <p>No.</p>
 <ul>
 <li>Nothing here deletes a file. Once you upload a document, it stays on file — whatever the system decides about it afterwards.</li>
 <li>Uploading the exact same file twice does not create a second copy.</li>
 <li>Your document does not count towards anything by itself. Either the system is confident and it counts right away, or it waits for a person on <strong>Review</strong> — the same rule as any document the system finds on its own.</li>
-<li>The one thing worth care: when you come from a <strong>Missing documents</strong> card, the page is set to the item on that card. A document for a different item uploaded from there is suggested for the wrong item. Nothing is deleted even then: rejecting it on <strong>Review</strong> fixes it.</li>
-<li>If the button gives you an error, nothing was saved. Try again, or ask a developer.</li>
+<li>The one thing worth care: when you come from a <strong>Missing documents</strong> card, the page is set to the item on that card. A document for a different item uploaded from there is suggested for the wrong item, and every file you add on that page goes to that item. Nothing is deleted even then: rejecting it on <strong>Review</strong> fixes it.</li>
+<li>If a file's line shows an error, that file was not saved. The other files in the list are not affected.</li>
 </ul>
 <h2 id="pages/upload--what-this-is">What this is</h2>
-<p>This is where you hand the system one document — a declaration, a certificate, or an instruction leaflet — that you found yourself, rather than the system finding it on its own. One PDF at a time.</p>
+<p>This is where you hand the system documents — declarations, certificates, or instruction leaflets — that you found yourself, rather than the system finding them on its own. You can add several PDFs at once; each one is read and handled separately.</p>
 <h2 id="pages/upload--when-you-use-it">When you use it</h2>
 <p>You have a document, from a supplier or an email or anywhere else, and you want it read and matched to your products. Or you clicked <strong>Upload what I found</strong> on a <strong>Missing documents</strong> card (or <strong>Upload document</strong> on the <strong>Manual</strong> screen), because the system searched for one itself and found nothing.</p>
 <h2 id="pages/upload--before-you-start">Before you start</h2>
 <ul>
-<li>You need the file saved on your computer or device.</li>
-<li>It must be a PDF. The system accepts a file only when its name ends in <code>.pdf</code>.</li>
-<li>It must be under 25 MB. That is today's default limit; a developer can raise it. If a file is refused, the message on screen states the actual limit in force.</li>
+<li>You need the files saved on your computer or device.</li>
+<li>Each one must be a PDF. The system accepts a file only when its name ends in <code>.pdf</code>.</li>
+<li>Each one must be under 25 MB. That is today's default limit; a developer can raise it. If a file is refused, the message on screen states the actual limit in force.</li>
+<li>You can add up to 50 files at a time.</li>
 <li>You do not need to know which item the document covers. The system works that out by reading the item numbers printed in the PDF.</li>
 <li>When you come from a <strong>Missing documents</strong> card, the page already knows the item: two hidden fields carry the item and the card. You never fill them in yourself.</li>
 </ul>
@@ -3142,17 +3143,78 @@ tbody tr:last-child td{border-bottom:0}
 <ol>
 <li>Click <strong>Upload a document</strong> in the menu on the left, or <strong>Upload what I found</strong> on a <strong>Missing documents</strong> card.</li>
 <li>If you came from a card, the line under the heading names the item, for example "Uploading a document for FUJI PLUS CAPSULES (GC, item 003234)". Check that it is the item your document is for.</li>
-<li>Under <strong>PDF file</strong>, choose the document from your computer.</li>
-<li>Click <strong>Upload</strong>.</li>
+<li>Drag your PDF files onto the page, or click <strong>Choose files</strong> and select one or several. Nothing is sent yet: the files appear in a list.</li>
+<li>If a file should not be there, click <strong>Remove</strong> on its line.</li>
+<li>Click <strong>Upload N files</strong>. The files go one after another; stay on the page until the list above the button is empty or shows only problems.</li>
 </ol>
 <h2 id="pages/upload--what-happens-then">What happens then</h2>
-<p>The page does not reload. A line appears below the button: <em>Document received. The system reads it and it appears in Review within a few minutes, or on the item straight away if everything on it is clear.</em> That is your receipt.</p>
+<p>The page does not reload. Each file that arrives moves down to <strong>Recent uploads</strong>, which says what became of it and updates by itself while a file is still being read. It is still there if you leave and come back. It shows the last 100 uploads, from everyone.</p>
+<div class="tw"><table><thead><tr>
+<th>Recent uploads says</th>
+<th>It means</th>
+<th>What you can do</th>
+</tr></thead><tbody>
+<tr>
+<td>Being read</td>
+<td>The system is working on it. Usually a minute or so, longer if it is busy</td>
+<td>Wait, or come back later</td>
+</tr>
+<tr>
+<td>Waiting for review</td>
+<td>A person has to look at it</td>
+<td><strong>Open in Review</strong></td>
+</tr>
+<tr>
+<td>Published</td>
+<td>It counts</td>
+<td><strong>Open document</strong></td>
+</tr>
+<tr>
+<td>On file</td>
+<td>Read correctly, but it covers nothing you sell</td>
+<td><strong>Open document</strong></td>
+</tr>
+<tr>
+<td>Replaced</td>
+<td>An older version of a document you already have</td>
+<td><strong>Open document</strong></td>
+</tr>
+<tr>
+<td>Rejected</td>
+<td>Someone rejected this file earlier</td>
+<td><strong>Open document</strong></td>
+</tr>
+<tr>
+<td>Nothing filed: Not a compliance document</td>
+<td>It is not a declaration, certificate or instruction leaflet</td>
+<td>Check you picked the right file</td>
+</tr>
+<tr>
+<td>Nothing filed: Could not read enough</td>
+<td>The system could not get the facts it needs from it</td>
+<td>Try a clearer copy, or ask a developer</td>
+</tr>
+<tr>
+<td>Nothing filed: Read before, no document came of it</td>
+<td>This exact file came earlier and produced no document</td>
+<td>Check you picked the right file</td>
+</tr>
+<tr>
+<td>Failed</td>
+<td>Something broke on the system's side</td>
+<td>Ask a developer</td>
+</tr>
+<tr>
+<td>No result</td>
+<td>A day has passed with no answer</td>
+<td>Ask a developer</td>
+</tr>
+</tbody></table></div>
 <ul>
 <li>Your file is saved permanently, whatever happens next.</li>
 <li>If this exact file was uploaded before, and the page did not name an item, nothing more happens: the system already has it.</li>
 <li>Otherwise the system reads it and tries to match it to your products, the same as anything it finds by itself. If it is confident, the document counts straight away. If not, it waits for you on <strong>Review</strong>.</li>
-<li>If you came from a <strong>Missing documents</strong> card, or a <strong>Manual</strong> request, it leaves that list as soon as the system has taken the file in.</li>
-<li>This screen does not tell you which of these happened. Check <strong>Review</strong> or <strong>Documents</strong> afterwards if you want to know.</li>
+<li>If you came from a <strong>Missing documents</strong> card, or a <strong>Manual</strong> request, it leaves that list once a document has come out of one of your files. A wrong file leaves the card where it is. If the document is rejected on <strong>Review</strong>, the card comes back.</li>
 </ul>
 <h2 id="pages/upload--what-can-go-wrong">What can go wrong</h2>
 <div class="tw"><table><thead><tr>
@@ -3180,9 +3242,21 @@ tbody tr:last-child td{border-bottom:0}
 <td>Bad — nothing was saved</td>
 </tr>
 <tr>
-<td><em>Document received…</em> and then nothing more</td>
-<td>Normal. The system works on it in the background</td>
-<td>Check <strong>Review</strong> or <strong>Documents</strong> later if you want to know what happened</td>
+<td><em>Failed to send</em> with a <strong>Try again</strong> button</td>
+<td>The file did not reach the system, usually a dropped connection</td>
+<td>Click <strong>Try again</strong> on that line</td>
+<td>Bad — nothing was saved for this file, the others are fine</td>
+</tr>
+<tr>
+<td><em>This is a folder</em></td>
+<td>You dropped a folder instead of files</td>
+<td>Open the folder and drop the PDF files inside it</td>
+<td>Bad — nothing was sent</td>
+</tr>
+<tr>
+<td><em>already added, not added again</em></td>
+<td>You added the same file twice</td>
+<td>Nothing to do</td>
 <td>OK</td>
 </tr>
 <tr>
@@ -3198,12 +3272,20 @@ tbody tr:last-child td{border-bottom:0}
 <th>It means</th>
 </tr></thead><tbody>
 <tr>
-<td>"A PDF you already have: the system reads it, and it appears in Review or on the item itself"</td>
+<td>"A PDF you already have: the system reads it, and Recent uploads below says what came of it"</td>
 <td>The line under the heading, saying what this screen does</td>
 </tr>
 <tr>
 <td>"Uploading a document for …"</td>
 <td>The item this upload is for, named from the <strong>Missing documents</strong> card you came from</td>
+</tr>
+<tr>
+<td>"Every file below goes to this item"</td>
+<td>You came from a <strong>Missing documents</strong> card: all files you add here are suggested for that one item</td>
+</tr>
+<tr>
+<td>"Waiting", "Uploading..."</td>
+<td>The file is in the list and has not been sent yet, or is being sent now</td>
 </tr>
 <tr>
 <td>"Technical details"</td>

@@ -79,10 +79,11 @@ manufacturer's items.
 
 ## What happens then
 
-- After an upload, the card leaves this list as soon as the system has taken
-  the file in. The system then reads it and matches it to the item. If it is
-  confident, the document counts straight away. If not, it waits for you on
-  [Review](review.md).
+- After an upload, the card stays here while the system reads the file, and
+  says *A file was uploaded for this item*. Uploading it again does no harm.
+  The card leaves this list once a document has come out of the file: counted
+  straight away, or waiting for you on [Review](review.md). A wrong file leaves
+  the card where it is, and **See what happened** tells you why.
 - After **Search again**, a line appears under the card: "The system will
   search again for this item." If the search finds something to try, the card
   leaves this list at once, before anyone knows whether it is the right
@@ -105,7 +106,7 @@ manufacturer's items.
 | "Task #… is already closed." after **Search again** | Since you opened the page, someone uploaded a document for it, or a search found something to try | Reload the page | Fine |
 | A card that says only "Nothing found on …" | The system tried on that date, but its log names no place it searched, for example because web search is not set up | Look for the document yourself. If every card says this, tell a developer | Needs you |
 | The same card, days after **Search again** | The system looked again and still found nothing | Find the document yourself, or ask the manufacturer for it | Needs you |
-| You uploaded the wrong file from a card | The card has left the list anyway | Reject the document on [Review](review.md). To have the item searched for again, open it under [Items](items.md) and press **Re-discover documents**. If that finds nothing, the item comes back here | Fixable |
+| You uploaded the wrong file from a card | If it is not a compliance document at all, the card simply stays. If it looks like one, it goes to [Review](review.md) and the card leaves the list | Reject the document on Review. The card comes back here | Fixable |
 | An error you do not recognise | Something failed on the system's side, and nothing happened | Try again, or ask a developer | Try again |
 
 ## Words the screen uses

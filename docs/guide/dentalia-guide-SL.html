@@ -2227,7 +2227,7 @@ tbody tr:last-child td{border-bottom:0}
 </ol>
 <h2 id="pages/missing--kaj-se-zgodi-nato">Kaj se zgodi nato</h2>
 <ul>
-<li>Po nalaganju kartica izgine s seznama, takoj ko sistem datoteko prevzame. Nato jo prebere in poveže z artiklom. Če je prepričan, dokument šteje takoj. Če ni, počaka na vas na strani <a href="#pages/review">Review</a>.</li>
+<li>Po nalaganju kartica ostane tu, medtem ko sistem bere datoteko, in piše <em>A file was uploaded for this item</em>. Ponovno nalaganje ne škodi. Kartica izgine s seznama, ko iz datoteke nastane dokument: šteje takoj ali pa počaka na vas na strani <a href="#pages/review">Review</a>. Napačna datoteka kartico pusti na mestu, povezava <strong>See what happened</strong> pa pove, zakaj.</li>
 <li>Po <strong>Search again</strong> se pod kartico pojavi vrstica: "The system will search again for this item." Če iskanje najde kaj, kar je vredno poskusiti, kartica takoj izgine s seznama, še preden je znano, ali je to pravi dokument. Najdeno gre nato skozi običajna preverjanja, zato se lahko pojavi na strani Review. Če to ni pravi dokument, se artikel ne vrne na ta seznam takoj: odprite ga pod <a href="#pages/items">Items</a> in pritisnite <strong>Re-discover documents</strong>. Če iskanje ne najde ničesar, kartica ostane in pokaže nov datum.</li>
 <li>Nič na tem zaslonu ne vpraša proizvajalca po e-pošti. Tega še ni.</li>
 </ul>
@@ -2282,8 +2282,8 @@ tbody tr:last-child td{border-bottom:0}
 </tr>
 <tr>
 <td>S kartice ste naložili napačno datoteko</td>
-<td>Kartica je vseeno izginila s seznama</td>
-<td>Dokument zavrnite na strani <a href="#pages/review">Review</a>. Da sistem artikel znova poišče, ga odprite pod <a href="#pages/items">Items</a> in pritisnite <strong>Re-discover documents</strong>. Če iskanje ne najde ničesar, se artikel vrne sem</td>
+<td>Če sploh ni dokument o skladnosti, kartica preprosto ostane. Če je videti kot tak, gre na <a href="#pages/review">Review</a> in kartica izgine s seznama</td>
+<td>Dokument zavrnite na strani Review. Kartica se vrne sem</td>
 <td>Popravljivo</td>
 </tr>
 <tr>
@@ -3116,27 +3116,28 @@ tbody tr:last-child td{border-bottom:0}
 <li><a href="#glossary">Glossary</a> — vse besede na enem mestu</li>
 </ul></section>
 <section class="page" id="pages/upload"><h1 id="pages/upload--upload">Upload</h1>
-<p><strong>V enem stavku:</strong> tu sistemu ročno predate en dokument.</p>
+<p><strong>V enem stavku:</strong> tu sistemu ročno predate dokumente, enega ali več hkrati.</p>
 <h2 id="pages/upload--stanje">Stanje</h2>
-<p>Deluje. Preverjeno s kodo 15. 9. 2026.</p>
+<p>Deluje. Preverjeno s kodo 9. 11. 2026.</p>
 <h2 id="pages/upload--ali-lahko-tu-kaj-pokvarim">Ali lahko tu kaj pokvarim?</h2>
 <p>Ne.</p>
 <ul>
 <li>Nič tukaj ne izbriše datoteke. Ko naložite dokument, ostane shranjen — ne glede na to, kaj sistem kasneje sklene o njem.</li>
 <li>Če isto datoteko naložite dvakrat, se ne ustvari druga kopija.</li>
 <li>Vaš dokument sam po sebi ne šteje k ničemur. Sistem je bodisi dovolj prepričan in dokument šteje takoj, ali pa počaka na osebo na strani <strong>Review</strong> — enako pravilo kot za vsak dokument, ki ga sistem najde sam.</li>
-<li>Edina stvar, pri kateri je potrebna previdnost: če pridete s kartice na strani <strong>Missing documents</strong>, je stran nastavljena na artikel s te kartice. Dokument za drug artikel, naložen od tam, bo predlagan za napačen artikel. A tudi tedaj se nič ne izbriše: napaka se popravi z zavrnitvijo na strani <strong>Review</strong>.</li>
-<li>Če gumb vrne napako, ni bilo shranjeno nič. Poskusite znova ali se obrnite na razvijalca.</li>
+<li>Edina stvar, pri kateri je potrebna previdnost: če pridete s kartice na strani <strong>Missing documents</strong>, je stran nastavljena na artikel s te kartice. Dokument za drug artikel, naložen od tam, bo predlagan za napačen artikel, in vsaka datoteka, ki jo dodate na tej strani, gre k temu artiklu. A tudi tedaj se nič ne izbriše: napaka se popravi z zavrnitvijo na strani <strong>Review</strong>.</li>
+<li>Če je v vrstici datoteke napaka, ta datoteka ni bila shranjena. Na druge datoteke na seznamu to ne vpliva.</li>
 </ul>
 <h2 id="pages/upload--kaj-je-to">Kaj je to</h2>
-<p>Tu sistemu predate en dokument — izjavo, certifikat ali navodilo za uporabo — ki ste ga našli sami, namesto da bi ga sistem našel sam. En PDF naenkrat.</p>
+<p>Tu sistemu predate dokumente — izjave, certifikate ali navodila za uporabo — ki ste jih našli sami, namesto da bi jih sistem našel sam. Dodate lahko več PDF-jev hkrati; vsak se prebere in obravnava posebej.</p>
 <h2 id="pages/upload--kdaj-to-uporabite">Kdaj to uporabite</h2>
 <p>Imate dokument — od dobavitelja, iz e-pošte ali od koderkoli — in želite, da ga sistem prebere in poveže z vašimi izdelki. Ali pa ste kliknili <strong>Upload what I found</strong> na kartici na strani <strong>Missing documents</strong> (ali <strong>Upload document</strong> na zaslonu <strong>Manual</strong>), ker je sistem sam iskal dokument in ga ni našel.</p>
 <h2 id="pages/upload--preden-začnete">Preden začnete</h2>
 <ul>
-<li>Datoteka mora biti shranjena na vašem računalniku ali napravi.</li>
-<li>Biti mora PDF. Sistem sprejme datoteko le, če se njeno ime konča na <code>.pdf</code>.</li>
-<li>Manjša mora biti od 25 MB. To je današnja privzeta omejitev; razvijalec jo lahko dvigne. Če je datoteka zavrnjena, sporočilo na zaslonu navaja dejansko veljavno omejitev.</li>
+<li>Datoteke morajo biti shranjene na vašem računalniku ali napravi.</li>
+<li>Vsaka mora biti PDF. Sistem sprejme datoteko le, če se njeno ime konča na <code>.pdf</code>.</li>
+<li>Vsaka mora biti manjša od 25 MB. To je današnja privzeta omejitev; razvijalec jo lahko dvigne. Če je datoteka zavrnjena, sporočilo na zaslonu navaja dejansko veljavno omejitev.</li>
+<li>Naenkrat lahko dodate največ 50 datotek.</li>
 <li>Ni vam treba vedeti, kateri artikel dokument pokriva. Sistem to ugotovi iz številk artiklov, natisnjenih v PDF-ju.</li>
 <li>Če pridete s kartice na strani <strong>Missing documents</strong>, stran artikel že pozna: dve skriti polji nosita artikel in kartico. Vanju nikoli ne vpisujete sami.</li>
 </ul>
@@ -3144,17 +3145,78 @@ tbody tr:last-child td{border-bottom:0}
 <ol>
 <li>Kliknite <strong>Upload a document</strong> v meniju na levi ali <strong>Upload what I found</strong> na kartici na strani <strong>Missing documents</strong>.</li>
 <li>Če ste prišli s kartice, vrstica pod naslovom navede artikel, na primer "Uploading a document for FUJI PLUS CAPSULES (GC, item 003234)". Preverite, ali je to artikel, za katerega imate dokument.</li>
-<li>Pod <strong>PDF file</strong> izberite dokument z računalnika.</li>
-<li>Kliknite <strong>Upload</strong>.</li>
+<li>Povlecite datoteke PDF na stran ali kliknite <strong>Choose files</strong> in izberite eno ali več. Nič se še ne pošlje: datoteke se pojavijo na seznamu.</li>
+<li>Če datoteka ne sodi zraven, v njeni vrstici kliknite <strong>Remove</strong>.</li>
+<li>Kliknite <strong>Upload N files</strong>. Datoteke gredo druga za drugo; ostanite na strani, dokler seznam nad gumbom ni prazen ali kaže le še težave.</li>
 </ol>
 <h2 id="pages/upload--kaj-se-zgodi-nato">Kaj se zgodi nato</h2>
-<p>Stran se ne osveži znova. Pod gumbom se pojavi vrstica: <em>Document received. The system reads it and it appears in Review within a few minutes, or on the item straight away if everything on it is clear.</em> To je vaše potrdilo.</p>
+<p>Stran se ne osveži znova. Vsaka prispela datoteka se premakne navzdol v <strong>Recent uploads</strong>, kjer piše, kaj se je z njo zgodilo. Seznam se sam osvežuje, dokler se kakšna datoteka še bere, in ostane tam tudi, če stran zapustite in se vrnete. Prikazuje zadnjih 100 nalaganj vseh uporabnikov.</p>
+<div class="tw"><table><thead><tr>
+<th>Recent uploads pravi</th>
+<th>Pomeni</th>
+<th>Kaj lahko storite</th>
+</tr></thead><tbody>
+<tr>
+<td>Being read</td>
+<td>Sistem dela na tem. Navadno kakšno minuto, dlje, če je zaseden</td>
+<td>Počakajte ali se vrnite pozneje</td>
+</tr>
+<tr>
+<td>Waiting for review</td>
+<td>Pogledati mora oseba</td>
+<td><strong>Open in Review</strong></td>
+</tr>
+<tr>
+<td>Published</td>
+<td>Dokument šteje</td>
+<td><strong>Open document</strong></td>
+</tr>
+<tr>
+<td>On file</td>
+<td>Pravilno prebran, a ne pokriva ničesar, kar prodajate</td>
+<td><strong>Open document</strong></td>
+</tr>
+<tr>
+<td>Replaced</td>
+<td>Starejša različica dokumenta, ki ga že imate</td>
+<td><strong>Open document</strong></td>
+</tr>
+<tr>
+<td>Rejected</td>
+<td>To datoteko je nekdo že prej zavrnil</td>
+<td><strong>Open document</strong></td>
+</tr>
+<tr>
+<td>Nothing filed: Not a compliance document</td>
+<td>Ni izjava, certifikat ali navodilo za uporabo</td>
+<td>Preverite, ali ste izbrali pravo datoteko</td>
+</tr>
+<tr>
+<td>Nothing filed: Could not read enough</td>
+<td>Sistem iz nje ni mogel dobiti potrebnih podatkov</td>
+<td>Poskusite z bolj čitljivo kopijo ali se obrnite na razvijalca</td>
+</tr>
+<tr>
+<td>Nothing filed: Read before, no document came of it</td>
+<td>Ista datoteka je že prišla in iz nje ni nastal dokument</td>
+<td>Preverite, ali ste izbrali pravo datoteko</td>
+</tr>
+<tr>
+<td>Failed</td>
+<td>Nekaj se je pokvarilo na strani sistema</td>
+<td>Obrnite se na razvijalca</td>
+</tr>
+<tr>
+<td>No result</td>
+<td>Minil je dan brez odgovora</td>
+<td>Obrnite se na razvijalca</td>
+</tr>
+</tbody></table></div>
 <ul>
 <li>Vaša datoteka je trajno shranjena, ne glede na to, kaj se zgodi potem.</li>
 <li>Če je bila ista datoteka že prej naložena in stran ni navedla artikla, se ne zgodi nič več: sistem jo že ima.</li>
 <li>Sicer jo sistem prebere in poskusi povezati z vašimi izdelki, enako kot vse, kar najde sam. Če je prepričan, dokument šteje takoj. Če ni, počaka na vas na strani <strong>Review</strong>.</li>
-<li>Če ste prišli s kartice na strani <strong>Missing documents</strong> ali iz zahteve <strong>Manual</strong>, ta izgine s svojega seznama, takoj ko sistem datoteko prevzame.</li>
-<li>Ta zaslon vam ne pove, kaj od tega se je zgodilo. Če želite vedeti, pozneje preverite <strong>Review</strong> ali <strong>Documents</strong>.</li>
+<li>Če ste prišli s kartice na strani <strong>Missing documents</strong> ali iz zahteve <strong>Manual</strong>, ta izgine s svojega seznama, ko iz ene od vaših datotek nastane dokument. Napačna datoteka kartico pusti na mestu. Če je dokument na strani <strong>Review</strong> zavrnjen, se kartica vrne.</li>
 </ul>
 <h2 id="pages/upload--kaj-lahko-gre-narobe">Kaj lahko gre narobe</h2>
 <div class="tw"><table><thead><tr>
@@ -3182,9 +3244,21 @@ tbody tr:last-child td{border-bottom:0}
 <td>Slabo — nič ni bilo shranjeno</td>
 </tr>
 <tr>
-<td><em>Document received…</em> in nato nič več</td>
-<td>Normalno. Sistem dela na tem v ozadju</td>
-<td>Če želite vedeti, kaj se je zgodilo, pozneje preverite <strong>Review</strong> ali <strong>Documents</strong></td>
+<td><em>Failed to send</em> z gumbom <strong>Try again</strong></td>
+<td>Datoteka ni prišla do sistema, navadno zaradi prekinjene povezave</td>
+<td>V tej vrstici kliknite <strong>Try again</strong></td>
+<td>Slabo — za to datoteko ni bilo shranjeno nič, druge so v redu</td>
+</tr>
+<tr>
+<td><em>This is a folder</em></td>
+<td>Spustili ste mapo namesto datotek</td>
+<td>Odprite mapo in spustite datoteke PDF iz nje</td>
+<td>Slabo — nič ni bilo poslano</td>
+</tr>
+<tr>
+<td><em>already added, not added again</em></td>
+<td>Isto datoteko ste dodali dvakrat</td>
+<td>Ni treba storiti ničesar</td>
 <td>V redu</td>
 </tr>
 <tr>
@@ -3200,12 +3274,20 @@ tbody tr:last-child td{border-bottom:0}
 <th>Pomeni</th>
 </tr></thead><tbody>
 <tr>
-<td>"A PDF you already have: the system reads it, and it appears in Review or on the item itself"</td>
+<td>"A PDF you already have: the system reads it, and Recent uploads below says what came of it"</td>
 <td>Vrstica pod naslovom, ki pove, kaj ta zaslon počne</td>
 </tr>
 <tr>
 <td>"Uploading a document for …"</td>
 <td>Artikel, za katerega je to nalaganje, poimenovan s kartice na strani <strong>Missing documents</strong>, s katere ste prišli</td>
+</tr>
+<tr>
+<td>"Every file below goes to this item"</td>
+<td>Prišli ste s kartice na strani <strong>Missing documents</strong>: vse datoteke, ki jih dodate tukaj, so predlagane za ta artikel</td>
+</tr>
+<tr>
+<td>"Waiting", "Uploading..."</td>
+<td>Datoteka je na seznamu in še ni poslana ali pa se pravkar pošilja</td>
 </tr>
 <tr>
 <td>"Technical details"</td>

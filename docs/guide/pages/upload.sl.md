@@ -1,10 +1,10 @@
 # Upload
 
-**V enem stavku:** tu sistemu ročno predate en dokument.
+**V enem stavku:** tu sistemu ročno predate dokumente, enega ali več hkrati.
 
 ## Stanje
 
-Deluje. Preverjeno s kodo 15. 9. 2026.
+Deluje. Preverjeno s kodo 9. 11. 2026.
 
 ## Ali lahko tu kaj pokvarim?
 
@@ -19,16 +19,17 @@ Ne.
 - Edina stvar, pri kateri je potrebna previdnost: če pridete s kartice na
   strani **Missing documents**, je stran nastavljena na artikel s te
   kartice. Dokument za drug artikel, naložen od tam, bo predlagan za napačen
-  artikel. A tudi tedaj se nič ne izbriše: napaka se popravi z zavrnitvijo
-  na strani **Review**.
-- Če gumb vrne napako, ni bilo shranjeno nič. Poskusite znova ali se
-  obrnite na razvijalca.
+  artikel, in vsaka datoteka, ki jo dodate na tej strani, gre k temu artiklu.
+  A tudi tedaj se nič ne izbriše: napaka se popravi z zavrnitvijo na strani
+  **Review**.
+- Če je v vrstici datoteke napaka, ta datoteka ni bila shranjena. Na druge
+  datoteke na seznamu to ne vpliva.
 
 ## Kaj je to
 
-Tu sistemu predate en dokument — izjavo, certifikat ali navodilo za
-uporabo — ki ste ga našli sami, namesto da bi ga sistem našel sam. En PDF
-naenkrat.
+Tu sistemu predate dokumente — izjave, certifikate ali navodila za
+uporabo — ki ste jih našli sami, namesto da bi jih sistem našel sam. Dodate
+lahko več PDF-jev hkrati; vsak se prebere in obravnava posebej.
 
 ## Kdaj to uporabite
 
@@ -40,12 +41,13 @@ dokument in ga ni našel.
 
 ## Preden začnete
 
-- Datoteka mora biti shranjena na vašem računalniku ali napravi.
-- Biti mora PDF. Sistem sprejme datoteko le, če se njeno ime konča na
+- Datoteke morajo biti shranjene na vašem računalniku ali napravi.
+- Vsaka mora biti PDF. Sistem sprejme datoteko le, če se njeno ime konča na
   `.pdf`.
-- Manjša mora biti od 25 MB. To je današnja privzeta omejitev; razvijalec
+- Vsaka mora biti manjša od 25 MB. To je današnja privzeta omejitev; razvijalec
   jo lahko dvigne. Če je datoteka zavrnjena, sporočilo na zaslonu navaja
   dejansko veljavno omejitev.
+- Naenkrat lahko dodate največ 50 datotek.
 - Ni vam treba vedeti, kateri artikel dokument pokriva. Sistem to ugotovi
   iz številk artiklov, natisnjenih v PDF-ju.
 - Če pridete s kartice na strani **Missing documents**, stran artikel že
@@ -59,14 +61,32 @@ dokument in ga ni našel.
 2. Če ste prišli s kartice, vrstica pod naslovom navede artikel, na primer
    "Uploading a document for FUJI PLUS CAPSULES (GC, item 003234)".
    Preverite, ali je to artikel, za katerega imate dokument.
-3. Pod **PDF file** izberite dokument z računalnika.
-4. Kliknite **Upload**.
+3. Povlecite datoteke PDF na stran ali kliknite **Choose files** in izberite
+   eno ali več. Nič se še ne pošlje: datoteke se pojavijo na seznamu.
+4. Če datoteka ne sodi zraven, v njeni vrstici kliknite **Remove**.
+5. Kliknite **Upload N files**. Datoteke gredo druga za drugo; ostanite na
+   strani, dokler seznam nad gumbom ni prazen ali kaže le še težave.
 
 ## Kaj se zgodi nato
 
-Stran se ne osveži znova. Pod gumbom se pojavi vrstica: *Document received.
-The system reads it and it appears in Review within a few minutes, or on the
-item straight away if everything on it is clear.* To je vaše potrdilo.
+Stran se ne osveži znova. Vsaka prispela datoteka se premakne navzdol v
+**Recent uploads**, kjer piše, kaj se je z njo zgodilo. Seznam se sam osvežuje,
+dokler se kakšna datoteka še bere, in ostane tam tudi, če stran zapustite in se
+vrnete. Prikazuje zadnjih 100 nalaganj vseh uporabnikov.
+
+| Recent uploads pravi | Pomeni | Kaj lahko storite |
+|---|---|---|
+| Being read | Sistem dela na tem. Navadno kakšno minuto, dlje, če je zaseden | Počakajte ali se vrnite pozneje |
+| Waiting for review | Pogledati mora oseba | **Open in Review** |
+| Published | Dokument šteje | **Open document** |
+| On file | Pravilno prebran, a ne pokriva ničesar, kar prodajate | **Open document** |
+| Replaced | Starejša različica dokumenta, ki ga že imate | **Open document** |
+| Rejected | To datoteko je nekdo že prej zavrnil | **Open document** |
+| Nothing filed: Not a compliance document | Ni izjava, certifikat ali navodilo za uporabo | Preverite, ali ste izbrali pravo datoteko |
+| Nothing filed: Could not read enough | Sistem iz nje ni mogel dobiti potrebnih podatkov | Poskusite z bolj čitljivo kopijo ali se obrnite na razvijalca |
+| Nothing filed: Read before, no document came of it | Ista datoteka je že prišla in iz nje ni nastal dokument | Preverite, ali ste izbrali pravo datoteko |
+| Failed | Nekaj se je pokvarilo na strani sistema | Obrnite se na razvijalca |
+| No result | Minil je dan brez odgovora | Obrnite se na razvijalca |
 
 - Vaša datoteka je trajno shranjena, ne glede na to, kaj se zgodi potem.
 - Če je bila ista datoteka že prej naložena in stran ni navedla artikla,
@@ -75,10 +95,9 @@ item straight away if everything on it is clear.* To je vaše potrdilo.
   vse, kar najde sam. Če je prepričan, dokument šteje takoj. Če ni,
   počaka na vas na strani **Review**.
 - Če ste prišli s kartice na strani **Missing documents** ali iz zahteve
-  **Manual**, ta izgine s svojega seznama, takoj ko sistem datoteko
-  prevzame.
-- Ta zaslon vam ne pove, kaj od tega se je zgodilo. Če želite vedeti,
-  pozneje preverite **Review** ali **Documents**.
+  **Manual**, ta izgine s svojega seznama, ko iz ene od vaših datotek nastane
+  dokument. Napačna datoteka kartico pusti na mestu. Če je dokument na strani
+  **Review** zavrnjen, se kartica vrne.
 
 ## Kaj lahko gre narobe
 
@@ -87,15 +106,19 @@ item straight away if everything on it is clear.* To je vaše potrdilo.
 | *only PDF uploads are accepted* | Izbrana datoteka ni PDF ali se njeno ime ne konča na `.pdf` | Shranite ali izvozite dokument kot PDF in poskusite znova | Slabo — nič ni bilo shranjeno |
 | *that file is named .pdf but its contents are not a PDF* | Datoteka se konča na `.pdf`, a znotraj ni PDF. Skoraj vedno gre za spletno stran, shranjeno iz brskalnika: shranila se je stran, ne dokument, na katerega stran kaže | Znova odprite stran, z desnim klikom na povezavo do dokumenta izberite **Shrani povezavo kot** in naložite tisto datoteko | Slabo, a dobro ujeto: pred septembrom 2026 se je taka datoteka vložila kot prava izjava |
 | *file exceeds the 25 MB limit* | Vaša datoteka je večja, kot jo sistem trenutno dovoljuje | Prosite razvijalca za dvig omejitve ali pošljite manjšo datoteko | Slabo — nič ni bilo shranjeno |
-| *Document received…* in nato nič več | Normalno. Sistem dela na tem v ozadju | Če želite vedeti, kaj se je zgodilo, pozneje preverite **Review** ali **Documents** | V redu |
+| *Failed to send* z gumbom **Try again** | Datoteka ni prišla do sistema, navadno zaradi prekinjene povezave | V tej vrstici kliknite **Try again** | Slabo — za to datoteko ni bilo shranjeno nič, druge so v redu |
+| *This is a folder* | Spustili ste mapo namesto datotek | Odprite mapo in spustite datoteke PDF iz nje | Slabo — nič ni bilo poslano |
+| *already added, not added again* | Isto datoteko ste dodali dvakrat | Ni treba storiti ničesar | V redu |
 | Sporočilo o napaki, ki ga ne prepoznate | Nekaj je spodletelo na strani sistema | Nič ni bilo shranjeno. Poskusite znova ali se obrnite na razvijalca | Slabo, a varno |
 
 ## Besede, ki jih uporablja zaslon
 
 | Zaslon pravi | Pomeni |
 |---|---|
-| "A PDF you already have: the system reads it, and it appears in Review or on the item itself" | Vrstica pod naslovom, ki pove, kaj ta zaslon počne |
+| "A PDF you already have: the system reads it, and Recent uploads below says what came of it" | Vrstica pod naslovom, ki pove, kaj ta zaslon počne |
 | "Uploading a document for …" | Artikel, za katerega je to nalaganje, poimenovan s kartice na strani **Missing documents**, s katere ste prišli |
+| "Every file below goes to this item" | Prišli ste s kartice na strani **Missing documents**: vse datoteke, ki jih dodate tukaj, so predlagane za ta artikel |
+| "Waiting", "Uploading..." | Datoteka je na seznamu in še ni poslana ali pa se pravkar pošilja |
 | "Technical details" | Odpre številko opravila za vašim potrdilom. Uporabna le, če morate o njej vprašati razvijalca |
 | "Already in progress." | To nalaganje se že bere. Vaš pritisk ni ničesar spremenil |
 
