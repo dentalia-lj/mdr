@@ -688,3 +688,70 @@ def test_reopening_a_superseded_document_clears_its_old_pointer(conn):
 
     assert conn.execute("SELECT superseded_by FROM document WHERE doc_id=%s",
                         (doc_id,)).fetchone()["superseded_by"] is None
+
+
+# --- rejecting the document an upload closed its card with ------------------
+
+def _closed_card(conn, doc_id, group_id=55, resolved_by="upload", seed_group=True):
+    if seed_group:
+        conn.execute("INSERT INTO item_group (group_id, canonical_manufacturer) "
+                     "VALUES (%s, 'ACME') ON CONFLICT DO NOTHING", (group_id,))
+    return conn.execute(
+        "INSERT INTO manual_task (kind, group_id, payload, status, resolved_by, resolved_at) "
+        "VALUES ('discovery-dead-end', %s, jsonb_build_object('closed_by_doc', %s::bigint, 'label', 'x'), "
+        "'resolved', %s, now()) RETURNING id", (group_id, doc_id, resolved_by),
+    ).fetchone()["id"]
+
+
+def _card_status(conn, tid):
+    return conn.execute("SELECT status, resolved_by, resolved_at, payload FROM manual_task "
+                        "WHERE id=%s", (tid,)).fetchone()
+
+
+def test_rejecting_the_document_brings_the_card_back(conn):
+    doc_id = _seed_staged_doc(conn, "ga-card")
+    tid = _closed_card(conn, doc_id)
+    res = gh.handle_gate_apply(conn, _apply(doc_id, "reject"))
+    row = _card_status(conn, tid)
+    assert (row["status"], row["resolved_by"], row["resolved_at"]) == ("open", None, None)
+    assert "closed_by_doc" not in row["payload"]
+    assert row["payload"]["label"] == "x"
+    assert res["cards_reopened"] == 1
+
+
+def test_a_card_is_not_brought_back_beside_a_newer_one(conn):
+    doc_id = _seed_staged_doc(conn, "ga-card-new")
+    tid = _closed_card(conn, doc_id)
+    conn.execute("INSERT INTO manual_task (kind, group_id, payload) "
+                 "VALUES ('discovery-dead-end', 55, '{}')")
+    gh.handle_gate_apply(conn, _apply(doc_id, "reject"))
+    assert _card_status(conn, tid)["status"] == "resolved"
+
+
+def test_a_card_is_not_brought_back_to_a_merged_away_group(conn):
+    doc_id = _seed_staged_doc(conn, "ga-card-gone")
+    tid = _closed_card(conn, doc_id, group_id=56, seed_group=False)
+    gh.handle_gate_apply(conn, _apply(doc_id, "reject"))
+    assert _card_status(conn, tid)["status"] == "resolved"
+
+
+def test_a_card_closed_by_something_else_stays_closed(conn):
+    doc_id = _seed_staged_doc(conn, "ga-card-other")
+    tid = _closed_card(conn, doc_id, resolved_by="discover")
+    gh.handle_gate_apply(conn, _apply(doc_id, "reject"))
+    assert _card_status(conn, tid)["status"] == "resolved"
+
+
+def test_rejecting_another_document_leaves_the_card_closed(conn):
+    doc_id = _seed_staged_doc(conn, "ga-card-a")
+    other = _seed_staged_doc(conn, "ga-card-b")
+    tid = _closed_card(conn, doc_id)
+    gh.handle_gate_apply(conn, _apply(other, "reject"))
+    assert _card_status(conn, tid)["status"] == "resolved"
+
+
+def test_approving_leaves_the_card_closed(conn):
+    doc_id = _seed_staged_doc(conn, "ga-card-ok")
+    tid = _closed_card(conn, doc_id)
+    gh.handle_gate_apply(conn, _apply(doc_id, "approve"))
+    assert _card_status(conn, tid)["status"] == "resolved"

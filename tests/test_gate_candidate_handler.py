@@ -2409,3 +2409,89 @@ def test_a_redelivery_never_moves_a_document_backward(
     assert again == doc_id, "the conflict clause did not fire"
     assert conn.execute("SELECT status FROM document WHERE doc_id=%s",
                         (doc_id,)).fetchone()["status"] == expected
+
+
+# --- the Missing documents card an upload came from -------------------------
+# Closed here and not at intake: only now is it known a document came out.
+
+def _card(conn, group_id=7, status="open", kind="discovery-dead-end", resolved_by=None):
+    return conn.execute(
+        "INSERT INTO manual_task (kind, group_id, payload, status, resolved_by) "
+        "VALUES (%s::manual_kind, %s, '{}'::jsonb, %s::manual_status, %s) RETURNING id",
+        (kind, group_id, status, resolved_by),
+    ).fetchone()["id"]
+
+
+def _card_row(conn, tid):
+    return conn.execute(
+        "SELECT status, resolved_by, resolved_at, payload FROM manual_task WHERE id=%s", (tid,)
+    ).fetchone()
+
+
+@pytest.mark.parametrize("conf,status", [(0.97, "production"), (0.80, "staged"), (0.60, "staged")])
+def test_a_document_from_an_upload_closes_its_card(conn, conf, status):
+    ch, tid = f"card-{conf}", _card(conn)
+    _seed_ext(conn, ch, _fields(conf=conf))
+    res = gh.handle_gate_candidate(
+        conn, _job(ch, ref_gate=True, flags=[], links=[], manual_task_id=tid))
+    assert _doc_status(conn, ch) == status
+    row = _card_row(conn, tid)
+    assert (row["status"], row["resolved_by"]) == ("resolved", "upload")
+    assert row["resolved_at"] is not None
+    assert row["payload"]["closed_by_doc"] == res["doc_id"]
+    assert res["card_closed"] == tid
+
+
+def test_the_manufacturer_route_closes_the_card_too(conn):
+    ch, tid = "card-mfr", _card(conn)
+    _seed_ext(conn, ch, _mfr_fields("Nobody We Know GmbH"))
+    res = gh.handle_gate_candidate(conn, _job(ch, route="mfr-binding", manual_task_id=tid))
+    assert _doc_status(conn, ch) == "staged"
+    assert _card_row(conn, tid)["status"] == "resolved"
+    assert res["card_closed"] == tid
+
+
+def test_a_candidate_without_a_card_closes_nothing(conn):
+    ch, tid = "card-none", _card(conn)
+    _seed_ext(conn, ch, _fields())
+    res = gh.handle_gate_candidate(conn, _job(ch, ref_gate=True, flags=[], links=[]))
+    assert _card_row(conn, tid)["status"] == "open"
+    assert "card_closed" not in res
+
+
+def test_a_stale_reading_leaves_the_card_open(conn):
+    ch, tid = "card-stale", _card(conn)
+    _seed_ext(conn, ch, _fields(), rev=1)
+    _seed_ext(conn, ch, _fields(), rev=2)
+    res = gh.handle_gate_candidate(
+        conn, _job(ch, rev=1, ref_gate=True, flags=[], links=[], manual_task_id=tid))
+    assert res["skipped"] == "superseded-rev"
+    assert _card_row(conn, tid)["status"] == "open"
+
+
+@pytest.mark.parametrize("kept", ["rejected", "superseded"])
+def test_a_kept_document_leaves_the_card_open(conn, kept):
+    ch, tid = f"card-{kept}", _card(conn)
+    _seed_ext(conn, ch, _fields())
+    gh.handle_gate_candidate(conn, _job(ch, ref_gate=True, flags=[], links=[]))
+    conn.execute("UPDATE document SET status=%s::doc_status WHERE content_hash=%s", (kept, ch))
+    gh.handle_gate_candidate(
+        conn, _job(ch, ref_gate=True, flags=[], links=[], manual_task_id=tid))
+    assert _card_row(conn, tid)["status"] == "open"
+
+
+def test_an_already_closed_card_is_not_touched(conn):
+    ch, tid = "card-done", _card(conn, status="resolved", resolved_by="discover")
+    _seed_ext(conn, ch, _fields())
+    res = gh.handle_gate_candidate(
+        conn, _job(ch, ref_gate=True, flags=[], links=[], manual_task_id=tid))
+    assert _card_row(conn, tid)["resolved_by"] == "discover"
+    assert "card_closed" not in res
+
+
+def test_only_a_missing_documents_card_is_closed(conn):
+    ch, tid = "card-kind", _card(conn, kind="gate-manual")
+    _seed_ext(conn, ch, _fields())
+    gh.handle_gate_candidate(
+        conn, _job(ch, ref_gate=True, flags=[], links=[], manual_task_id=tid))
+    assert _card_row(conn, tid)["status"] == "open"

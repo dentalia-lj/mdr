@@ -166,7 +166,7 @@ def archive_handle_for_hash(conn, content_hash):
 
 # --- emits ------------------------------------------------------------------
 
-def emit_validate(conn, content_hash, rev, group_id):
+def emit_validate(conn, content_hash, rev, group_id, manual_task_id=None):
     # The C3 re-entry payload carries the stored copy's handle when the
     # registry already holds one (defect fix, 2026-08-24): a validate.doc
     # without archive_url made GATE fall back to fetch_log.url_normalized —
@@ -178,6 +178,8 @@ def emit_validate(conn, content_hash, rev, group_id):
     handle = archive_handle_for_hash(conn, content_hash)
     if handle:
         payload["archive_url"] = handle
+    if manual_task_id is not None:
+        payload["manual_task_id"] = manual_task_id
     queue.enqueue(
         conn, "validate.doc",
         payload,
@@ -185,10 +187,9 @@ def emit_validate(conn, content_hash, rev, group_id):
     )
 
 
-def emit_extract(conn, archive_url, content_hash, group_id, source_url):
-    queue.enqueue(
-        conn, "extract.doc",
-        {"archive_url": archive_url, "content_hash": content_hash,
-         "group_id": group_id, "source_url": source_url},
-        dedupe_key=f"extract:{content_hash}",
-    )
+def emit_extract(conn, archive_url, content_hash, group_id, source_url, manual_task_id=None):
+    payload = {"archive_url": archive_url, "content_hash": content_hash,
+               "group_id": group_id, "source_url": source_url}
+    if manual_task_id is not None:
+        payload["manual_task_id"] = manual_task_id
+    queue.enqueue(conn, "extract.doc", payload, dedupe_key=f"extract:{content_hash}")

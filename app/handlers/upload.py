@@ -9,10 +9,11 @@ spine forward exactly like FETCH's post-download tail:
     seen + extracted, no grp -> nothing to link, skip
     seen + not-yet-extracted -> extract.doc (carry the group)
 
-When the upload originated from a `discovery-dead-end` manual task (an admin
-clicked "Upload document" on the /manual dead-end), the payload carries
-`manual_task_id` and this handler resolves that task worker-side — the web
-role is SELECT-only on `manual_task`.
+When the upload originated from a `discovery-dead-end` manual task (a Missing
+documents card, or "Upload document" on /manual), the payload carries
+`manual_task_id` and this handler passes it down the chain. It does not close
+the task: taking a file in says nothing about whether it was the right one.
+GATE closes it when a document actually comes out.
 
 Producer only (invariant 1): writes fetch_log + the archived file, emits jobs;
 never document/item_document/evidence. AI:none (invariant 12). Idempotent: the
@@ -70,7 +71,8 @@ def handle_upload_ingest(conn, job, *, store=None):
     if rev is not None:
         if group_id is not None:
             archiving.link_existing_doc(conn, url_norm, content_hash)
-            archiving.emit_validate(conn, content_hash, rev, group_id)
+            archiving.emit_validate(conn, content_hash, rev, group_id,
+                                    manual_task_id=manual_task_id)
             result = {"outcome": "linked", "content_hash": content_hash,
                       "emitted": "validate.doc", "group_id": group_id}
         else:
@@ -84,23 +86,12 @@ def handle_upload_ingest(conn, job, *, store=None):
             archiving.archive_path(manufacturer, content_hash, row["filename"], "application/pdf"),
         )
         archiving.emit_extract(conn, archive_url, content_hash, group_id,
-                               source_url=f"upload:{row['filename']}")
+                               source_url=f"upload:{row['filename']}",
+                               manual_task_id=manual_task_id)
         result = {"outcome": "archived", "content_hash": content_hash,
                   "archive_url": archive_url, "emitted": "extract.doc", "group_id": group_id}
 
     conn.execute("DELETE FROM upload_inbox WHERE id=%s", (upload_id,))
-
-    if manual_task_id is not None:
-        # Worker-side (dentalia_api is SELECT-only on manual_task): the upload
-        # satisfied the discovery-dead-end that requested this doc. Mirrors
-        # discover.group's resolve. Guarded so it is idempotent and only ever
-        # closes an open dead-end task.
-        conn.execute(
-            "UPDATE manual_task SET status='resolved', resolved_by='upload', "
-            "resolved_at=now() WHERE id=%s AND kind='discovery-dead-end' "
-            "AND status='open'",
-            (manual_task_id,),
-        )
 
     return result
 

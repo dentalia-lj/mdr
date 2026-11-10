@@ -2170,3 +2170,30 @@ def test_a_future_issue_date_is_not_checked_on_the_whole_range_route(conn):
     p = _payload(conn, "vh-futwhole")
     assert p["route"] == "mfr-binding"
     assert "date-insane" not in p.get("flags", [])
+
+
+# --- the card an upload came from rides to GATE, on both routes -------------
+
+def test_the_card_rides_to_gate_on_the_ref_route(conn):
+    group_id = _seed_group(conn, basic_udi_di="07640169310123")
+    _seed_member(conn, group_id, "IT-CARD", mfr_ref="AAA")
+    _seed(conn, "vh-card", _fields(ref_list=_ev(["ZZZ"]), basic_udi_di=_ev("OTHER")))
+    vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": "vh-card", "extract_rev": 1, "group_id": group_id, "manual_task_id": 9}})
+    assert _gate_jobs(conn, "vh-card")[0]["payload"]["manual_task_id"] == 9
+
+
+def test_the_card_rides_to_gate_on_the_manufacturer_route(conn):
+    _seed(conn, "vh-card-m", _fields(
+        coverage_scope=_ev("manufacturer"), ref_list=_ev([]), basic_udi_di=_ev(None)))
+    vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": "vh-card-m", "extract_rev": 1, "group_id": 7, "manual_task_id": 9}})
+    assert _gate_jobs(conn, "vh-card-m")[0]["payload"]["manual_task_id"] == 9
+
+
+def test_no_card_adds_no_field_to_the_candidate(conn):
+    _seed(conn, "vh-nocard", _fields(
+        coverage_scope=_ev("manufacturer"), ref_list=_ev([]), basic_udi_di=_ev(None)))
+    vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": "vh-nocard", "extract_rev": 1, "group_id": 7}})
+    assert "manual_task_id" not in _gate_jobs(conn, "vh-nocard")[0]["payload"]

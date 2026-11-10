@@ -34,7 +34,7 @@ Format per job type: input payload variants → handler pseudo-code → outputs 
 | 13 | `email.reminder` (P2) | `{request_id}` | renewal_request | renewal_request | escalation entry |
 | 14 | `playbook.reonboard` (P2) | `{manufacturer_id, reason}` | discovery_log stats | notification | (human/agent workflow) |
 | 15 | `report.weekly` | `{period_key}` (cron, S1.5) | document, job | — | — |
-| 16 | `upload.ingest` | `{upload_id, manual_task_id?}` (web `/upload`, dedupe `upload:{upload_id}`) | upload_inbox, item_group, extraction_attempt | fetch_log, archive file, upload_inbox (delete), manual_task (worker-side dead-end resolve) | `extract.doc` (new hash) \| `validate.doc` (seen hash + group — C3-style link) |
+| 16 | `upload.ingest` | `{upload_id, filename, group_id?, manual_task_id?}` (web `/upload`, dedupe `upload:{upload_id}`) | upload_inbox, item_group, extraction_attempt | fetch_log, archive file, upload_inbox (delete); `manual_task_id` rides to `gate.candidate`, which resolves the task (2026-11-10) | `extract.doc` (new hash) \| `validate.doc` (seen hash + group — C3-style link) |
 | 17 | `eudamed.certregister` | `{}` (scheduler cron, monthly, config-gated off) | EUDAMED certificate register (16 calls), manufacturer_alias, manufacturer | eudamed_certificate, manufacturer_srn, manufacturer (upsert) | — (leaf; never emits) |
 | 18 | `eudamed.sweep` | `{manufacturer: canonical_name}` (no scheduler, no handler enqueues it — the operator's release button is its sole producer) | trusted_manufacturer_srn, manufacturer (srn_probed_at), item_mirror + item_group(_member) + manufacturer_alias (article-probe fallback candidates) | eudamed_mirror, eudamed_sweep_state, manufacturer_srn (probe bootstrap only) | — (leaf; never emits) |
 | 19 | `scheduler.tick` | `{cron}` (one perpetual job per cron, dedupe `scheduler.tick:{cron}`) | scheduler_run | scheduler_run | whatever the named cron emits — never completes, self-defers via `queue.defer` |
@@ -482,14 +482,9 @@ def handle_upload_ingest(job):
                          "group_id": row.target_group_id, "source_url": f"upload:{row.filename}"},
                 dedupe_key=f"extract:{h}")
 
+    # Both enqueues above add manual_task_id to the payload when present.
+    # gate.candidate resolves the task once a document is staged or production.
     upload_inbox.delete(p["upload_id"])
-
-    if p.get("manual_task_id") is not None:
-        # Worker-side only — dentalia_api is SELECT-only on manual_task. Guarded
-        # so it is idempotent and only ever closes an open dead-end task.
-        manual_task.update(where={"id": p["manual_task_id"], "kind": "discovery-dead-end", "status": "open"},
-                            set={"status": "resolved", "resolved_by": "upload"})
-
     job.finish()
 ```
 

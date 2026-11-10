@@ -811,6 +811,9 @@ def handle_validate_doc(conn, job: dict) -> dict:
     # destroyed by the next re-dump. That fallback is what put a /imports/... URL
     # on all 130 documents of the GC pilot.
     archive_url = p.get("archive_url")
+    # The Missing documents card an upload came from, for GATE to close. Carried
+    # the same way, and absent for everything that did not come from a card.
+    manual_task_id = p.get("manual_task_id")
 
     row = conn.execute(
         "SELECT fields FROM extraction_attempt WHERE content_hash=%s AND extract_rev=%s",
@@ -897,6 +900,8 @@ def handle_validate_doc(conn, job: dict) -> dict:
             candidate["manufacturer"] = manufacturer
         if archive_url:
             candidate["archive_url"] = archive_url
+        if manual_task_id is not None:
+            candidate["manual_task_id"] = manual_task_id
         queue.enqueue(
             conn, "gate.candidate", candidate,
             dedupe_key=f"gate:{content_hash}:{extract_rev}:mfr-binding",
@@ -1163,6 +1168,8 @@ def handle_validate_doc(conn, job: dict) -> dict:
         candidate["related_doc_id"] = related_doc_id
     if archive_url:
         candidate["archive_url"] = archive_url
+    if manual_task_id is not None:
+        candidate["manual_task_id"] = manual_task_id
 
     queue.enqueue(
         conn, "gate.candidate", candidate,

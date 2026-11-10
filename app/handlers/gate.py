@@ -1394,7 +1394,7 @@ def _candidate_result(disposition, doc_id, score, payload, flags) -> dict:
     return out
 
 
-def handle_gate_candidate(conn, job: dict) -> dict:
+def _gate_candidate(conn, job: dict) -> dict:
     p = job["payload"]
     if p.get("route") == "mfr-binding":
         return _handle_mfr_binding(conn, job)
@@ -1642,6 +1642,35 @@ def handle_gate_candidate(conn, job: dict) -> dict:
                       prev, fields, held)
 
 
+def _close_requesting_card(conn, task_id, doc_id) -> bool:
+    """Close the Missing documents card an upload came from, once it is known a
+    document came out: one a person will see (`staged`) or one already counting
+    (`production`). A rejected, replaced or out-of-catalogue document leaves the
+    card open. The document goes in the payload rather than in `doc_id`, because
+    `_resolve_manual_tasks` closes every open task holding a `doc_id`, and would
+    close this card again the moment a rejection reopened it."""
+    return conn.execute(
+        "UPDATE manual_task SET status='resolved', resolved_by='upload', resolved_at=now(), "
+        "       payload = payload || jsonb_build_object('closed_by_doc', %s::bigint) "
+        " WHERE id=%s AND kind='discovery-dead-end' AND status='open' "
+        "   AND EXISTS (SELECT 1 FROM document "
+        "                WHERE doc_id=%s AND status IN ('staged','production'))",
+        (doc_id, task_id, doc_id),
+    ).rowcount > 0
+
+
+def handle_gate_candidate(conn, job: dict) -> dict:
+    """GATE a candidate, then settle the card it came from. Around the whole
+    decision because it returns from a dozen places on two routes, and the card
+    depends only on where the document ended up."""
+    out = _gate_candidate(conn, job)
+    task_id = job["payload"].get("manual_task_id")
+    if (task_id is not None and out.get("doc_id") is not None
+            and _close_requesting_card(conn, task_id, out["doc_id"])):
+        out["card_closed"] = task_id
+    return out
+
+
 register("gate.candidate", handle_gate_candidate)
 
 
@@ -1754,6 +1783,23 @@ def _derive_mfr_scope_links(conn, doc_id, manufacturer) -> None:
     ).fetchall()
     for r in rows:
         _upsert_link(conn, r["item_ref"], doc_id, None, "mfr-scope", "production")
+
+
+def _reopen_requesting_cards(conn, doc_id) -> int:
+    """A rejected document did not supply what its card asked for, so the card
+    comes back. Not beside a newer card for the same item group, and not for a
+    group since merged away (`regroup` deletes it, no FK stops the reference)."""
+    return conn.execute(
+        "UPDATE manual_task mt SET status='open', resolved_by=NULL, resolved_at=NULL, "
+        "       payload = payload - 'closed_by_doc' "
+        " WHERE mt.kind='discovery-dead-end' AND mt.status='resolved' "
+        "   AND mt.resolved_by='upload' AND mt.payload->>'closed_by_doc' = %s "
+        "   AND (mt.group_id IS NULL OR EXISTS "
+        "        (SELECT 1 FROM item_group g WHERE g.group_id = mt.group_id)) "
+        "   AND NOT EXISTS (SELECT 1 FROM manual_task o WHERE o.kind='discovery-dead-end' "
+        "                    AND o.status='open' AND o.group_id = mt.group_id)",
+        (str(doc_id),),
+    ).rowcount
 
 
 def _resolve_manual_tasks(conn, doc_id, decided_by) -> None:
@@ -2083,6 +2129,7 @@ def handle_gate_apply(conn, job: dict) -> dict:
     to_remove = (_removal_targets(conn, doc_id, p, picked[1] if picked else [])
                  if decision == "approve" else [])
     removal = None
+    reopened = 0
 
     if decision == "approve":
         _apply_edits(conn, doc_id, p.get("edits"))
@@ -2108,6 +2155,7 @@ def handle_gate_apply(conn, job: dict) -> dict:
         ).fetchall()
         for r in cascaded:
             _audit(conn, "link-rejected", doc_id, decided_by, job, item_ref=r["item_ref"])
+        reopened = _reopen_requesting_cards(conn, doc_id)
         group_id = p.get("group_id")
         if group_id is not None:
             queue.enqueue(
@@ -2198,7 +2246,8 @@ def handle_gate_apply(conn, job: dict) -> dict:
     # prev_status guard as gate.candidate, idempotent under re-delivery).
     if decision in ("approve", "bind-manufacturer") and prev_status != "production":
         _audit(conn, "production-write", doc_id, decided_by, job)
-    return {"decision": decision, "doc_id": doc_id, **(removal or {})}
+    return {"decision": decision, "doc_id": doc_id, **(removal or {}),
+            **({"cards_reopened": reopened} if reopened else {})}
 
 
 register("gate.apply", handle_gate_apply)

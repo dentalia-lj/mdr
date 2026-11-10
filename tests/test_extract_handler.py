@@ -995,3 +995,38 @@ def test_batch_path_empty_answer_never_erases_the_t0_ref_list(conn, fixture_pdf)
     assert ref["tier"] == "T0"
     assert len(ref["value"]) == 6
     assert "005117" in ref["value"]
+
+
+# A card opened by an upload is closed by GATE, so EXTRACT carries it on.
+def test_the_card_rides_to_validate(conn, fixture_pdf):
+    path = fixture_pdf(ISO_CERT)
+    job = {"payload": {"archive_url": path, "content_hash": "sha-card", "group_id": 42,
+                       "manual_task_id": 9}}
+    eh.handle_extract_doc(conn, job, llm=StubLlm())
+    v = conn.execute("SELECT payload FROM job WHERE type='validate.doc'").fetchone()
+    assert v["payload"]["manual_task_id"] == 9
+
+
+def test_the_card_rides_to_validate_in_batch_mode(conn, fixture_pdf):
+    path = fixture_pdf(ISO_CERT)
+    jid = queue.enqueue(
+        conn, "extract.doc",
+        {"archive_url": path, "content_hash": "sha-card-b", "group_id": 5, "manual_task_id": 9},
+        "extract:sha-card-b")
+    conn.commit()
+    job = conn.execute("SELECT * FROM job WHERE id=%s", (jid,)).fetchone()
+    bc = StubBatchClient({"T1": _iso_t1_proven()}, ready_after=0)
+    eh.handle_extract_doc(conn, job, batch_client=bc, poll_interval_s=0)
+    conn.commit()
+    eh.handle_extract_doc(conn, job, batch_client=bc, poll_interval_s=0)
+    conn.commit()
+    v = conn.execute("SELECT payload FROM job WHERE type='validate.doc'").fetchone()
+    assert v["payload"]["manual_task_id"] == 9
+
+
+def test_no_card_adds_no_field(conn, fixture_pdf):
+    path = fixture_pdf(ISO_CERT)
+    job = {"payload": {"archive_url": path, "content_hash": "sha-nocard", "group_id": 42}}
+    eh.handle_extract_doc(conn, job, llm=StubLlm())
+    v = conn.execute("SELECT payload FROM job WHERE type='validate.doc'").fetchone()
+    assert "manual_task_id" not in v["payload"]

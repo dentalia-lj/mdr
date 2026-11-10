@@ -103,38 +103,44 @@ def test_missing_row_is_idempotent_noop(conn):
     assert res["outcome"] == "already-processed"
 
 
-def test_upload_resolves_originating_dead_end_task(conn):
-    conn.execute("INSERT INTO item_group (group_id, canonical_manufacturer) VALUES (12, 'ACME')")
-    tid = conn.execute(
+def _open_card(conn, group_id):
+    conn.execute("INSERT INTO item_group (group_id, canonical_manufacturer) "
+                 "VALUES (%s, 'ACME')", (group_id,))
+    return conn.execute(
         "INSERT INTO manual_task (kind, group_id, payload, status) "
-        "VALUES ('discovery-dead-end', 12, '{}'::jsonb, 'open') RETURNING id"
+        "VALUES ('discovery-dead-end', %s, '{}'::jsonb, 'open') RETURNING id", (group_id,)
     ).fetchone()["id"]
+
+
+def test_upload_leaves_the_card_open_and_hands_it_to_extract(conn):
+    # A file being taken in says nothing about whether it is the right one:
+    # GATE closes the card, and only when a document comes out.
+    tid = _open_card(conn, 12)
     uid = _insert_upload(conn, b"%PDF-DEADEND", group_id=12)
 
     uh.handle_upload_ingest(
         conn, {"payload": {"upload_id": uid, "manual_task_id": tid}}, store=FakeStore())
 
-    row = conn.execute(
-        "SELECT status, resolved_by FROM manual_task WHERE id=%s", (tid,)).fetchone()
-    assert row["status"] == "resolved"
-    assert row["resolved_by"] == "upload"
+    assert conn.execute("SELECT status FROM manual_task WHERE id=%s",
+                        (tid,)).fetchone()["status"] == "open"
+    job = conn.execute("SELECT payload FROM job WHERE type='extract.doc'").fetchone()
+    assert job["payload"]["manual_task_id"] == tid
 
 
-def test_upload_manual_task_resolve_guard_ignores_already_resolved(conn):
-    conn.execute("INSERT INTO item_group (group_id, canonical_manufacturer) VALUES (13, 'ACME')")
-    # an already-resolved dead-end task must not be re-touched (idempotent guard)
-    done = conn.execute(
-        "INSERT INTO manual_task (kind, group_id, payload, status, resolved_by) "
-        "VALUES ('discovery-dead-end', 13, '{}'::jsonb, 'resolved', 'discover') RETURNING id"
-    ).fetchone()["id"]
-    uid = _insert_upload(conn, b"%PDF-GUARD", group_id=13)
+def test_upload_of_seen_content_hands_the_card_to_validate(conn):
+    import hashlib
+    body = b"%PDF-SEEN-CARD"
+    _seed_extracted(conn, hashlib.sha256(body).hexdigest(), rev=2)
+    tid = _open_card(conn, 13)
+    uid = _insert_upload(conn, body, group_id=13)
 
     uh.handle_upload_ingest(
-        conn, {"payload": {"upload_id": uid, "manual_task_id": done}}, store=FakeStore())
+        conn, {"payload": {"upload_id": uid, "manual_task_id": tid}}, store=FakeStore())
 
-    row = conn.execute(
-        "SELECT resolved_by FROM manual_task WHERE id=%s", (done,)).fetchone()
-    assert row["resolved_by"] == "discover"     # untouched — guard held
+    job = conn.execute("SELECT payload FROM job WHERE type='validate.doc'").fetchone()
+    assert job["payload"]["manual_task_id"] == tid
+    assert conn.execute("SELECT status FROM manual_task WHERE id=%s",
+                        (tid,)).fetchone()["status"] == "open"
 
 
 # --- the archive gate (`[gate-covers-only-fetch]`, 2026-09-02) --------------

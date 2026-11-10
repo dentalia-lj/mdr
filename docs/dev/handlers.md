@@ -23,12 +23,12 @@ never clobber a real handler.
 | `resolve.group` | `handlers/resolve.py:278` | `discover.group` | `test_resolve_handler.py` |
 | `discover.group` | `handlers/discover.py:910` | `fetch.url` ×k, `email.request`, `validate.doc` | `test_discover_handler.py` |
 | `fetch.url` | `handlers/fetch.py:145` | `extract.doc` or `validate.doc`, **or nothing** when the body is not a document | `test_fetch_handler.py` |
-| `extract.doc` | `handlers/extract.py:369` | `validate.doc`, **or nothing** when the doc-class call answers `not-a-compliance-document` | `test_extract_handler.py`, `test_extract_cost.py`, `test_doc_class_gate.py` |
+| `extract.doc` | `handlers/extract.py:375` | `validate.doc`, **or nothing** when the doc-class call answers `not-a-compliance-document` | `test_extract_handler.py`, `test_extract_cost.py`, `test_doc_class_gate.py` |
 | `validate.doc` | `handlers/validate.py:802` | `gate.candidate` | `test_validate_handler.py` |
-| `gate.candidate` | `handlers/gate.py:1397` | nothing (terminal) | `test_gate_candidate_handler.py` |
-| `gate.apply` | `handlers/gate.py:2060` | `discover.group` on reject | `test_gate_apply_handler.py` |
+| `gate.candidate` | `handlers/gate.py:1662` | nothing (terminal) | `test_gate_candidate_handler.py` |
+| `gate.apply` | `handlers/gate.py:2106` | `discover.group` on reject | `test_gate_apply_handler.py` |
 | `backfill.scan` | `handlers/backfill.py:270` | `extract.doc` | `test_backfill_handler.py` |
-| `upload.ingest` | `handlers/upload.py:33` | `extract.doc` or `validate.doc` | `test_upload_handler.py` |
+| `upload.ingest` | `handlers/upload.py:34` | `extract.doc` or `validate.doc` | `test_upload_handler.py` |
 | `vendor.import` | `handlers/vendor_import.py:40` | nothing, deliberately | `test_vendor_import_handler.py` |
 | `email.poll` | `handlers/email_poll.py:361` | `extract.doc` | `test_email_poll_handler.py` |
 | `email.request` | `handlers/email_request.py:862` | `email.reminder` | `test_email_request_handler.py` |
@@ -90,7 +90,7 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 - note: **robots.txt is read before the document request** (2026-09-11, `[robots-reader-unwired]`), after the recency skip and inside the lease, over the same httpx → Playwright ladder (`_RobotsTransport`). A refusal finishes the job as `robots-refused` with its `reason`; a transport failure raises `FetchError` into the backoff. `fetch.robots_ttl_hours` is passed here, the one caller that does
 
 ### `extract.doc`
-- consumes: `content_hash`, `archive_url`, `group_id?`, `companion_archive_url?`
+- consumes: `content_hash`, `archive_url`, `group_id?`, `companion_archive_url?`, `manual_task_id?` (passed on to `validate.doc`, unread here)
 - writes: `extraction_attempt`, `extraction_cost`, `document_text`, `batch_ref`
 - emits: `validate.doc`, `validate:{hash}:{rev}:{group_id}`
 - fails how: an unopenable PDF is a counted, non-raising result and emits nothing. Batch mode self-defers per tier until the Anthropic batch is done. A read label sent twice in one extraction raises `ValueError` before anything is written (the cost ledger keeps one row per label). A doc-class answer cut at `max_tokens` (text or image, since 2026-10-12 on both), or a batch doc-class result with no answer, raises `RuntimeError` rather than reading as `not-a-compliance-document` (which would drop the file for good)
@@ -105,7 +105,7 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 - note: `extract_rev` is `tiers.next_extract_rev`: past every attempt AND every evidence row of the document (since Task 5b), so a reading made after a reviewer's edit (`MAX(evidence.extract_rev) + 1`) never takes the edit's rev
 
 ### `validate.doc`
-- consumes: `content_hash`, `extract_rev`, `group_id?`, `archive_url?`
+- consumes: `content_hash`, `extract_rev`, `group_id?`, `archive_url?`, `manual_task_id?` (passed on to `gate.candidate` on both routes, unread here)
 - writes: **nothing** — stateless by design
 - emits: `gate.candidate` always, either `gate:{hash}:{rev}:mfr-binding` or `gate:{hash}:{rev}:{group_id}`
 - fails how: missing extraction row or incomplete required fields are suppressed and counted, job finishes `done` with no emit
@@ -118,6 +118,7 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 - writes: `document`, `item_document`, `evidence`, `manual_task`, `audit_log`
 - emits: nothing — terminal
 - fails how: a stale `extract_rev` is a counted no-op on both routes (the manufacturer-binding route since 2026-10-12). Missing extraction raises. Unusable evidence raises, a `conf` that is not a number (a numeric string included) among it. An UNATTRIBUTABLE manufacturer bind raises rather than promoting nothing ([gate-bind-zero-links], `gate.py:1762`) — that is a name resolving to no BC *codes*. A name that resolves fine but whose items carry no MD flag is **not** a fault and never was: since migration 053 it is a legitimate bind that records the manufacturer and links nothing
+- note: `manual_task_id?` (2026-11-10): the Missing documents card an upload came from. `handle_gate_candidate` wraps both routes and closes the card (`_close_requesting_card`) when the document ended `staged` or `production`, recording `closed_by_doc` in the card's payload, not in `doc_id`, because `_resolve_manual_tasks` closes every open task holding a `doc_id`. Reported as `card_closed` on the result
 - note: GATE no longer retires documents (2026-10-02, migration 072; `_apply_supersession` is deleted). Neither a production write nor `gate.apply approve` changes another document; the one chain pointer left is the task-5 fast path's `superseded_by` on the older candidate itself. Which document answers for an item is read from `item_document_production` / `document_current`
 - note: `TRUSTED_BASES` (`gate.py:54`) is what caps `name-family` / `fetch-context` / `ref-catalogue` at staged, backed structurally by the DB CHECK in migrations 005/021
 - note: **combined confidence** (PRD v3 section 7, 2026-10-12). `_score` takes the minimum of `_gate_confidence` over `type`, `regulation`, `coverage_scope`: a field whose evidence carries `agreed_model_id` + `agreed_conf` counts `1 - (1 - own)(1 - agreed)` when both calibrated numbers are at least `gate.agreement_min`; a `regulation` with `proven: "citation"` counts 1.0; T0 and T3 (no `model_id`) keep their own number; a `coverage_scope` marked `follows: "type"` is left out of the minimum (`_follows_type`, Denis's ruling D3, 2026-10-13: the type is in it, combined when confirmed; the scope's own number, the type's, is still what `scope_stated` reads and what its evidence row stores). One function (`_confidences`) decides the scored and the stored number together. The disposition and per-link production read that score. The one-field guards read the stored read's own number through `_field_confidence`, never the combined one: `scope_stated` and the manufacturer-name check on the auto-bind route, and the supersede fast path's `validity_from`. The extraction stamps the agreement keys since 2026-10-13 (`extract.doc` above, plan Task 5b); on the eval's cached replay the score clears `gate.high` on 65 of 79 text documents and 25 of 34 scans (the score alone, before VALIDATE's flags)
@@ -133,9 +134,10 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 - note: `note` (2026-09-11, office UI redesign P1a) is the reviewer's reason, `"<reason>"` or `"<reason>: <free text>"`. It goes into the decision's own `audit_log.detail` (`_note_detail`, merged into a link decision's detail) and never onto the cascaded `link-rejected` rows. Optional: without it the audit row is what it always was. The review UI sends it on `reject` only, where one of `REJECT_REASONS` is required and the free text is capped at `REJECT_NOTE_MAX` (500)
 - writes: `document`, `item_document`, `manual_task`, `audit_log`
 - emits: `discover.group` on reject with a `group_id`, interactive priority
+- note: `reject` brings back a card this document closed (`_reopen_requesting_cards`, 2026-11-10), unless a newer card is open for the group or the group has been merged away. Reported as `cards_reopened`, absent when zero
 - fails how: every link-decision precondition raises rather than no-opping — a person put their name to it, so it dead-letters where somebody sees it. Idempotent re-delivery returns quietly
 - note: `reopen` (2026-09-04) is the only way back out of `rejected` and the only document decision whose precondition is a STATUS — it raises unless the document is currently `rejected` or `superseded` (`superseded` added 2026-10-02: the repair route for documents the old document-wide rule retired wrongly; their links were never touched, so they stay production). It exists because making `rejected` sticky in `_upsert_document` closed the hole where any re-delivery silently un-rejected a document, and that hole was also the only escape. It deliberately does NOT cascade the links back: `reject` cascades them to `rejected` so none is left staged under a rejected document, and re-staging them would recreate exactly that state. Each returns through `reopen-link`
-- note: human edits are written as T3 evidence, `tier='T3'`, `model_id=NULL`, `confidence=1.0`, pageless, `agreed_*` NULL (`gate.py:1700`). Their rev is `MAX(evidence.extract_rev) + 1`, which the next reading shares; `gate.candidate` holds T3 fields so that never matters
+- note: human edits are written as T3 evidence, `tier='T3'`, `model_id=NULL`, `confidence=1.0`, pageless, `agreed_*` NULL (`gate.py:1690`). Their rev is `MAX(evidence.extract_rev) + 1`, which the next reading shares; `gate.candidate` holds T3 fields so that never matters
 - note: on `bind-manufacturer` the column is written BEFORE the links are derived, so a bind that links nothing still records the decision
 
 ### `backfill.scan`
@@ -146,9 +148,9 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 - note: never a silent zero-result
 
 ### `upload.ingest`
-- consumes: `upload_id`, `manual_task_id?`
-- writes: `fetch_log`, deletes the `upload_inbox` row, resolves a `discovery-dead-end` task
-- emits: `extract.doc` or `validate.doc`
+- consumes: `upload_id`, `filename`, `group_id?`, `manual_task_id?` (`filename` and `group_id` are read by Recent uploads, `web/uploads.py`, not by the handler)
+- writes: `fetch_log`, deletes the `upload_inbox` row
+- emits: `extract.doc` or `validate.doc`, carrying `manual_task_id` when present. The card is closed by `gate.candidate`, not here, since 2026-11-10
 - fails how: a missing spool row is a normal result, not a raise — idempotent after a committed delete
 - note: the web role holds INSERT on `upload_inbox` and nothing else
 

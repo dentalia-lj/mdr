@@ -113,7 +113,8 @@ def _default_batch_client():
 
 
 def _finalize(conn, content_hash, group_id, doc_class, tiers_used, fields,
-              usage_log=(), archive_url=None, steering=None, hinted=False) -> dict:
+              usage_log=(), archive_url=None, steering=None, hinted=False,
+              manual_task_id=None) -> dict:
     """Write the extraction_attempt and emit validate.doc (shared completion path
     for both transports). Dedupe includes group_id + extract_rev (C3).
 
@@ -180,6 +181,8 @@ def _finalize(conn, content_hash, group_id, doc_class, tiers_used, fields,
     }
     if archive_url:
         validate_payload["archive_url"] = archive_url
+    if manual_task_id is not None:
+        validate_payload["manual_task_id"] = manual_task_id
     queue.enqueue(
         conn,
         "validate.doc",
@@ -231,7 +234,7 @@ def _scan_thresholds() -> dict:
 
 
 def _handle_sync(conn, doc, filename, content_hash, group_id, llm, result=None,
-                 companion_url=None, hints=None, steering=None) -> dict:
+                 companion_url=None, hints=None, steering=None, manual_task_id=None) -> dict:
     tier_client = llm if llm is not None else _default_llm()
     doc_class, fields, tiers_used = tiers.run_extraction(doc, filename, llm=tier_client,
                                                          result=result,
@@ -239,7 +242,8 @@ def _handle_sync(conn, doc, filename, content_hash, group_id, llm, result=None,
                                                          hints=hints, **_scan_thresholds())
     out = _finalize(conn, content_hash, group_id, doc_class, tiers_used, fields,
                     usage_log=getattr(tier_client, "usage_log", ()),
-                    archive_url=filename, steering=steering, hinted=hints is not None)
+                    archive_url=filename, steering=steering, hinted=hints is not None,
+                    manual_task_id=manual_task_id)
     # An image read with an explicit page list that cited an image it was not
     # sent has that page nulled (`llm._cited_pages`). Counted here so it is
     # never silent; absent when zero, so every result without one is unchanged.
@@ -252,7 +256,7 @@ def _handle_sync(conn, doc, filename, content_hash, group_id, llm, result=None,
 
 def _handle_batch(conn, job, doc, filename, content_hash, group_id,
                   batch_client, poll_interval_s, result=None, companion_url=None,
-                  hints=None, steering=None) -> dict:
+                  hints=None, steering=None, manual_task_id=None) -> dict:
     """Batch transport: the sync path's own ladder (`tiers.run_text_ladder`, or
     `tiers.run_scan_ladder` for a document with no text page), each read a
     batch-of-1 under its own label, deferring until that batch has ended.
@@ -279,7 +283,8 @@ def _handle_batch(conn, job, doc, filename, content_hash, group_id,
     tiers_used = ["T0"]
     if doc_class in ("business-doc", "msds"):
         return _finalize(conn, content_hash, group_id, doc_class, tiers_used, fields,
-                         archive_url=filename, steering=steering, hinted=hints is not None)
+                         archive_url=filename, steering=steering, hinted=hints is not None,
+                    manual_task_id=manual_task_id)
 
     bc_kwargs = {"hints": hints} if hints is not None else {}
 
@@ -311,7 +316,8 @@ def _handle_batch(conn, job, doc, filename, content_hash, group_id,
     except tiers.Deferred as d:
         return {"_deferred": True, "waiting_on": d.label, "state": d.state}
     return _finalize(conn, content_hash, group_id, doc_class, tiers_used, fields,
-                     archive_url=filename, steering=steering, hinted=hints is not None)
+                     archive_url=filename, steering=steering, hinted=hints is not None,
+                    manual_task_id=manual_task_id)
 
 
 def _batch_step(conn, job, batch_client, content_hash, label, requests, poll_interval_s):
@@ -453,10 +459,12 @@ def handle_extract_doc(conn, job: dict, llm=None, batch_client=None,
     if batch_client is not None:
         result = _handle_batch(conn, job, doc, filename, content_hash, group_id,
                                batch_client, poll_interval_s, result=r,
-                               companion_url=companion_url, hints=hints, steering=steering)
+                               companion_url=companion_url, hints=hints, steering=steering,
+                               manual_task_id=payload.get("manual_task_id"))
     else:
         result = _handle_sync(conn, doc, filename, content_hash, group_id, llm, result=r,
-                              companion_url=companion_url, hints=hints, steering=steering)
+                              companion_url=companion_url, hints=hints, steering=steering,
+                              manual_task_id=payload.get("manual_task_id"))
     result["text"] = text_summary
 
     # Only the genuine-scan case reaches here -- the unreadable case already
