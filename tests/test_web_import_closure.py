@@ -133,7 +133,7 @@ def test_tiers_still_exports_the_same_list():
 WEB_MODULES = [
     "web.access", "web.app", "web.bc_push_view", "web.catalogue", "web.failures",
     "web.item_docs", "web.item_link", "web.item_picker", "web.missing", "web.onboarding", "web.registry",
-    "web.scheduler_view", "web.words",
+    "web.scheduler_view", "web.uploads", "web.words",
 ]
 
 

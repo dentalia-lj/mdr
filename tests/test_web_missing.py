@@ -556,6 +556,30 @@ def test_upload_for_a_task_with_many_items(client, conn):
             in _text(page))
 
 
+def test_upload_for_a_task_says_every_file_goes_to_that_item(client, conn):
+    tid, gid = _dead_end(conn, manufacturer="GC", label="FUJI PLUS CAPSULES",
+                         refs=("003234",))
+    conn.commit()
+    page = client.get("/upload", params={"group_id": gid, "manual_task_id": tid}).text
+    assert "Every file below goes to this item" in page
+    assert re.search(r'<input[^>]*type="file"[^>]*\bmultiple\b', page)
+
+
+def test_a_card_says_when_a_file_was_uploaded_for_it(client, conn):
+    tid, _ = _dead_end(conn, manufacturer="GC", label="FUJI PLUS CAPSULES", refs=("003234",))
+    other, _ = _dead_end(conn, manufacturer="KOMET", label="SVEDER", refs=("K-1",))
+    conn.execute(
+        "INSERT INTO job (type, payload, dedupe_key) VALUES ('upload.ingest', %s, 'upload:77')",
+        (Json({"upload_id": 77, "filename": "a.pdf", "manual_task_id": tid}),))
+    conn.commit()
+    page = client.get("/missing").text
+    card = page[page.index(f'id="task-{tid}"'):]
+    card = card[:card.index("</article>")]
+    assert "A file was uploaded for this" in card
+    other_card = page[page.index(f'id="task-{other}"'):]
+    assert "A file was uploaded for this" not in other_card[:other_card.index("</article>")]
+
+
 def test_upload_with_ids_that_resolve_to_nothing_is_the_plain_form(client, conn):
     for params in ({"manual_task_id": "abc", "group_id": "xyz"},
                    {"manual_task_id": "999999", "group_id": "999999"}):
@@ -579,7 +603,7 @@ def test_upload_without_a_task_still_works(client, conn):
     assert posted.status_code == 200
     job = conn.execute("SELECT priority, payload FROM job WHERE type='upload.ingest'").fetchone()
     assert job["priority"] == "interactive"
-    assert set(job["payload"]) == {"upload_id"}
+    assert set(job["payload"]) == {"upload_id", "filename"}
 
 
 # --------------------------------------------------------------------------- #

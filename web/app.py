@@ -139,6 +139,7 @@ from app.compliance import EXPIRY_HORIZON_DAYS
 
 log = logging.getLogger("dentalia.web")
 from web import access, bc_push_view, catalogue, failures, item_link, item_picker, missing, onboarding, registry, scheduler_view, words
+from web import uploads
 from web.item_docs import item_documents
 # Re-exported: the Today page and the menu counts read the Missing documents
 # list through this name (office UI redesign spec § 4 and § 7).
@@ -4875,8 +4876,20 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                     conn, manual_task_id=manual_task_id, group_id=group_id)
         ctx = {"request": request, "subject": upload["subject"],
                "prefill_group_id": upload["group_id"],
-               "prefill_manual_task_id": manual_task_id}
+               "prefill_manual_task_id": manual_task_id,
+               "max_mb": cfg.upload_max_mb, **_recent_uploads_ctx()}
         return templates.TemplateResponse(request, "upload.html", ctx)
+
+    def _recent_uploads_ctx() -> dict:
+        with _conn() as conn:
+            rows = uploads.recent_uploads(conn)
+        return {"uploads": rows, "uploads_open": any(r["open"] for r in rows)}
+
+    @app.get("/upload/recent", response_class=HTMLResponse)
+    def upload_recent(request: Request):
+        """The Recent uploads list on its own, for the page to refresh."""
+        return templates.TemplateResponse(
+            request, "_upload_recent.html", {"request": request, **_recent_uploads_ctx()})
 
     @app.post("/upload", response_class=HTMLResponse)
     def upload_submit(
@@ -4892,24 +4905,28 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         if priority not in PRIORITIES:
             error = f"unknown priority {priority!r}"
 
-        content = file.file.read()
+        content = b""
         if error is None:
             is_pdf = (file.content_type == "application/pdf"
                       or (file.filename or "").lower().endswith(".pdf"))
             if not is_pdf:
                 error = "only PDF uploads are accepted"
-            elif not archiving.is_document(content):
-                # The name and the browser's content-type both lie, and the
-                # `.pdf` one lies in the direction that costs us: a saved web
-                # page named `Declaration_of_Conformity.pdf` is exactly the file
-                # that reached production in September 2026. Check the bytes
-                # while the person is still here to pick a different file
-                # (`[gate-covers-only-fetch]`).
-                error = ("that file is named .pdf but its contents are not a PDF "
-                         f"(it starts with {archiving.magic_of(content)!r}). "
-                         "if you saved it from a website, download the file itself")
-            elif len(content) > cfg.upload_max_mb * 1024 * 1024:
+            elif file.size > cfg.upload_max_mb * 1024 * 1024:
+                # Before the read: `web` has no memory limit, and the parser has
+                # already spooled the body to disk, so `size` costs nothing.
                 error = f"file exceeds the {cfg.upload_max_mb} MB limit"
+            else:
+                content = file.file.read()
+                if not archiving.is_document(content):
+                    # The name and the browser's content-type both lie, and the
+                    # `.pdf` one lies in the direction that costs us: a saved web
+                    # page named `Declaration_of_Conformity.pdf` is exactly the
+                    # file that reached production in September 2026. Check the
+                    # bytes while the person is still here to pick a different
+                    # file (`[gate-covers-only-fetch]`).
+                    error = ("that file is named .pdf but its contents are not a PDF "
+                             f"(it starts with {archiving.magic_of(content)!r}). "
+                             "if you saved it from a website, download the file itself")
 
         gid = None
         if error is None and target_group_id.strip():
@@ -4944,7 +4961,11 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             )
             uid = conn.execute("SELECT currval('upload_inbox_id_seq') AS id").fetchone()["id"]
             dedupe_key = f"upload:{uid}"
-            payload = {"upload_id": uid}
+            # The name and the item, because the spool row holding them is
+            # deleted once it is read and Recent uploads still has to say them.
+            payload = {"upload_id": uid, "filename": file.filename}
+            if gid is not None:
+                payload["group_id"] = gid
             if mtid is not None:
                 payload["manual_task_id"] = mtid
             jid = queue.enqueue(conn, "upload.ingest", payload, dedupe_key, priority=priority)
@@ -4953,9 +4974,7 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         ctx["job_id"] = jid
         ctx["dedupe_key"] = dedupe_key
         ctx["receipt"] = words.receipt(
-            "Document received. The system reads it and it appears in Review "
-            "within a few minutes, or on the item straight away if everything "
-            "on it is clear.", jid)
+            "Received. Follow it under Recent uploads below.", jid)
         return templates.TemplateResponse(request, "_result.html", ctx)
 
     # ----------------------------------------------------------------------- #

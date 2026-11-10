@@ -2672,7 +2672,7 @@ def test_upload_valid_inserts_spool_and_enqueues(client, conn):
     assert spool[0]["target_group_id"] is None
 
     job = conn.execute("SELECT payload, dedupe_key FROM job WHERE type='upload.ingest'").fetchone()
-    assert job["payload"] == {"upload_id": spool[0]["id"]}
+    assert job["payload"] == {"upload_id": spool[0]["id"], "filename": "cert.pdf"}
     assert job["dedupe_key"] == f"upload:{spool[0]['id']}"
 
 
@@ -2772,6 +2772,38 @@ def test_upload_rejects_oversize(client, conn):
     )
     assert resp.status_code == 422
     assert conn.execute("SELECT count(*) c FROM upload_inbox").fetchone()["c"] == 0
+
+
+def test_upload_refuses_oversize_before_reading_the_contents(client, conn):
+    # Not a PDF inside AND too big: the size answer proves the bytes were never
+    # read into memory, since the contents check is what needs them.
+    big = b"<html>" + b"0" * (26 * 1024 * 1024)
+    resp = client.post("/upload", files={"file": ("big.pdf", big, "application/pdf")})
+    assert resp.status_code == 422
+    assert "exceeds the 25 MB limit" in resp.text
+
+
+def test_upload_page_takes_several_files_and_states_the_limit(client):
+    page = client.get("/upload").text
+    assert re.search(r'<input[^>]*type="file"[^>]*\bmultiple\b', page)
+    assert 'data-max-mb="25"' in page
+    assert "upload.js" in page
+    assert "Every file" not in page       # no item on the plain page
+
+
+def test_upload_receipt_promises_only_that_it_was_received(client, conn):
+    resp = client.post("/upload", files={"file": ("a.pdf", _PDF, "application/pdf")})
+    assert "Received" in resp.text
+    assert "appears in Review" not in resp.text
+
+
+def test_two_uploads_are_two_spool_rows_and_two_jobs(client, conn):
+    for name in ("a.pdf", "b.pdf"):
+        assert client.post(
+            "/upload", files={"file": (name, _PDF, "application/pdf")}).status_code == 200
+    assert conn.execute("SELECT count(*) c FROM upload_inbox").fetchone()["c"] == 2
+    assert conn.execute(
+        "SELECT count(*) c FROM job WHERE type='upload.ingest'").fetchone()["c"] == 2
 
 
 # --------------------------------------------------------------------------- #

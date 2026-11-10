@@ -58,6 +58,7 @@
   <p>{{ task.manufacturer or "" }}{% if task.manufacturer and task.item_numbers %} · {% endif %}{{ task.item_numbers }}</p>
   {% endif %}
   <p>{{ task.searched }}</p>
+  {% if task.file_uploaded %}<p class="hint">A file was uploaded for this item. <a href="/upload">See what happened</a></p>{% endif %}
   <div class="form-actions">
     <a class="btn" href="/upload?{{ task.upload_query }}">Upload what I found</a>
     {% if task.downloads %}

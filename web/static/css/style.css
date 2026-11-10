@@ -915,6 +915,51 @@ button[disabled]:hover, .btn[disabled]:hover {
   padding: var(--pad-card);
 }
 
+/* /upload: the drop zone, then one row per file with that file's own answer. */
+.drop-zone {
+  border: 2px dashed var(--dentalia-border);
+  border-radius: var(--radius-md);
+  background: var(--dentalia-surface);
+  padding: 24px 12px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+.drop-zone.is-dragover {
+  border-color: var(--dentalia-action);
+  background: var(--dentalia-surface-2);
+}
+.drop-zone button { margin-left: 6px; }
+#recent-uploads { margin-top: 16px; }
+/* "Being read": the one state with nothing to read off it but that it is moving. */
+.upload-spinner {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 5px;
+  vertical-align: -1px;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: upload-spin 0.8s linear infinite;
+}
+@keyframes upload-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .upload-spinner { animation: none; } }
+.upload-list { list-style: none; margin: 0 0 12px; padding: 0; }
+.upload-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) 5rem minmax(0, 3fr) 5rem;
+  gap: 4px 12px;
+  align-items: start;
+  padding: 6px 0;
+  border-top: 1px solid var(--dentalia-border);
+}
+.upload-name { overflow-wrap: anywhere; }
+.upload-row .result { margin-top: 0; }
+@media (max-width: 640px) {
+  .upload-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .upload-row > div { grid-column: 1 / -1; }
+}
+
 /* /staging review rows. The board is a queue over unbounded tables (5.8k open
    grouping suggestions when this was written), so rows render collapsed and
    fetch their detail on expand. Native <details> rather than JS: HTMX's

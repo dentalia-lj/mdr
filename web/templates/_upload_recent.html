@@ -1,0 +1,26 @@
+{# What became of each file. Asks again only while something is still moving,
+   and whenever the page has just sent a file (`upload-sent`, upload.js). #}
+<section id="recent-uploads" class="card" hx-get="/upload/recent" hx-swap="outerHTML"
+         hx-trigger="upload-sent from:body{% if uploads_open %}, every 5s{% endif %}">
+  <h2>Recent uploads</h2>
+  {% if uploads %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>File</th><th>Uploaded</th><th>Item</th><th>What happened</th><th></th></tr></thead>
+      <tbody>
+        {% for u in uploads %}
+        <tr>
+          <td class="upload-name">{{ u.filename }}</td>
+          <td class="nowrap">{{ u.when }}</td>
+          <td>{{ u.item }}</td>
+          <td><span class="badge badge-{{ u.tone }}">{% if u.tone == "running" %}<span class="upload-spinner" aria-hidden="true"></span>{% endif %}{{ u.state }}</span>{% if u.detail %} <span class="hint-inline">{{ u.detail }}</span>{% endif %}</td>
+          <td class="nowrap">{% if u.href %}<a href="{{ u.href }}">{{ u.link_text }}</a>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="hint">Nothing uploaded yet.</p>
+  {% endif %}
+</section>

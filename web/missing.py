@@ -263,6 +263,15 @@ def _decorate(conn, rows) -> list[dict]:
             last_search[r["group_id"]] = r["at"]
             last_run.setdefault(r["group_id"], []).append(r)
 
+    # Not "being read": a wrong file also leaves the card open, and Recent
+    # uploads is what says which it was.
+    uploaded = {u["task"] for u in conn.execute(
+        "SELECT DISTINCT (payload->>'manual_task_id')::bigint AS task FROM job "
+        "WHERE type='upload.ingest' AND created_at > now() - interval '24 hours' "
+        "AND (payload->>'manual_task_id')::bigint = ANY(%s)",
+        ([r["id"] for r in rows],),
+    ).fetchall()}
+
     loaded = None
     cards = []
     for r in rows:
@@ -290,6 +299,7 @@ def _decorate(conn, rows) -> list[dict]:
             "downloads": downloads,
             "web_search": web,
             "upload_query": urlencode(upload),
+            "file_uploaded": r["id"] in uploaded,
         })
     return cards
 
