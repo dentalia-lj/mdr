@@ -2253,7 +2253,20 @@ def handle_gate_apply(conn, job: dict) -> dict:
     if decision == "retype":
         return _apply_retype(conn, job)
 
-    prev_status = _doc_status(conn, doc_id)
+    # Every other document decision locks the row first (spec 2026-11-12 §7), so
+    # a retype and a decision on the same document run one after the other and
+    # the status / scope read here is the one the writes below act on.
+    row = conn.execute("SELECT status, coverage_scope FROM document WHERE doc_id=%s FOR UPDATE",
+                       (doc_id,)).fetchone()
+    prev_status = row["status"] if row else None
+    # The scope the screen showed. Absent = a job queued before this field
+    # existed, accepted; present and different = the document was retyped under
+    # the reviewer's feet, and approving it would publish the wrong range.
+    if decision in ("approve", "bind-manufacturer") and p.get("expected_scope") is not None \
+            and row is not None and p["expected_scope"] != row["coverage_scope"]:
+        raise ValueError(
+            f"gate.apply {decision}: document {doc_id} now covers "
+            f"'{row['coverage_scope']}', the screen showed '{p['expected_scope']}'")
 
     # Picker spec §5: the reviewer's ticks, checked before anything is written.
     if decision == "add-items" and prev_status != "production":
@@ -2343,6 +2356,9 @@ def handle_gate_apply(conn, job: dict) -> dict:
         # they give it -- which is exactly what happened before this line.
         # A whole-range approval takes one correction, the issue date, and
         # needs one like every approval (picker spec §7, ruled 2026-10-02).
+        if row is None or row["coverage_scope"] != "manufacturer":
+            raise ValueError(f"gate.apply bind-manufacturer: document {doc_id} does not cover "
+                             f"a whole manufacturer range; items are chosen on approve")
         edits = p.get("edits") or {}
         if set(edits) - {"validity_from"}:
             raise ValueError("gate.apply bind-manufacturer: only the issue date may be "

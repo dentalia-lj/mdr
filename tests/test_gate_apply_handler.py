@@ -14,13 +14,13 @@ import pytest
 from app.handlers import gate as gh
 
 
-def _seed_staged_doc(conn, content_hash, archive="file:///a.pdf"):
+def _seed_staged_doc(conn, content_hash, archive="file:///a.pdf", scope="group"):
     return conn.execute(
         # Dated: every approval needs an issue date (picker spec §7).
         "INSERT INTO document (type, regulation, coverage_scope, content_hash, archive_url, "
-        "status, validity_from) VALUES ('DoC','MDR','group',%s,%s,'staged','2024-01-01') "
+        "status, validity_from) VALUES ('DoC','MDR',%s,%s,%s,'staged','2024-01-01') "
         "RETURNING doc_id",
-        (content_hash, archive),
+        (scope, content_hash, archive),
     ).fetchone()["doc_id"]
 
 
@@ -103,7 +103,7 @@ def test_reject_marks_rejected_and_enqueues_interactive_discover(conn):
 
 
 def test_bind_manufacturer_derives_mfr_scope_links(conn):
-    doc_id = _seed_staged_doc(conn, "ga-bind")
+    doc_id = _seed_staged_doc(conn, "ga-bind", scope="manufacturer")
     _seed_manual(conn, doc_id)
     _seed_item(conn, "M-1", "ACME", md_flag=True)
     _seed_item(conn, "M-2", "ACME", md_flag=True)
@@ -146,7 +146,7 @@ def test_bind_manufacturer_refuses_a_name_that_links_nothing(conn):
     is not. The handler runs inside `with conn.transaction()`, so the promote and
     both audit rows roll back with it -- asserted below, because a raise that
     left the document on production would be the worse bug."""
-    doc_id = _seed_staged_doc(conn, "ga-bind-zero")
+    doc_id = _seed_staged_doc(conn, "ga-bind-zero", scope="manufacturer")
     _seed_manual(conn, doc_id)
     _seed_item(conn, "MZ-1", "SOMEONE-ELSE", md_flag=True)
 
@@ -197,7 +197,7 @@ def test_approve_of_already_production_doc_emits_no_second_production_write(conn
 def test_bind_manufacturer_reaches_items_via_alias(conn):
     # [gate-binding]: the payload carries the CANONICAL manufacturer; catalogue
     # rows spell it raw. The alias table (populated by RESOLVE) bridges the two.
-    doc_id = _seed_staged_doc(conn, "ga-alias")
+    doc_id = _seed_staged_doc(conn, "ga-alias", scope="manufacturer")
     _seed_manual(conn, doc_id)
     _seed_item(conn, "A-1", "Acme Dental GmbH & Co. KG", md_flag=True)   # raw BC spelling
     _seed_item(conn, "A-2", "ACME", md_flag=True)                        # raw == canonical
@@ -222,7 +222,7 @@ def test_bind_manufacturer_accepts_an_alias_not_only_the_canonical(conn):
     # links ZERO items in silence. Measured on the live registry 2026-08-17:
     # "Ivoclar Vivadent AG" -> 0 items, where resolving raw->canonical first
     # reaches all 1069.
-    doc_id = _seed_staged_doc(conn, "ga-alias-rev")
+    doc_id = _seed_staged_doc(conn, "ga-alias-rev", scope="manufacturer")
     _seed_manual(conn, doc_id)
     _seed_item(conn, "R-1", "001", md_flag=True)
     _seed_item(conn, "R-2", "005", md_flag=True)
@@ -245,7 +245,7 @@ def test_bind_manufacturer_matches_case_and_accent_insensitively(conn):
     # The catalogue shouts ("3SHAPE TRIOS A/S"), the PDF does not ("3Shape TRIOS
     # A/S"). An exact comparison misses 194 live rows on that pair alone. Both
     # sides fold through the same normalizer VALIDATE already uses.
-    doc_id = _seed_staged_doc(conn, "ga-alias-case")
+    doc_id = _seed_staged_doc(conn, "ga-alias-case", scope="manufacturer")
     _seed_manual(conn, doc_id)
     _seed_item(conn, "C-1", "10005", md_flag=True)
     conn.execute(
@@ -269,7 +269,7 @@ def test_bind_manufacturer_on_an_unknown_name_links_nothing(conn):
     # reach that outcome by returning silently, having already promoted the
     # document and written its audit entries. Linking nothing is still correct;
     # doing it quietly, behind a production-write record, was not.
-    doc_id = _seed_staged_doc(conn, "ga-alias-miss")
+    doc_id = _seed_staged_doc(conn, "ga-alias-miss", scope="manufacturer")
     _seed_manual(conn, doc_id)
     _seed_item(conn, "U-1", "001", md_flag=True)
     conn.execute(
@@ -513,7 +513,7 @@ def test_bind_manufacturer_records_the_binding_with_no_md_items(conn):
     _seed_entity(conn, "3SHAPE TRIOS A/S")
     conn.execute("INSERT INTO manufacturer_alias (raw_name, canonical_name) "
                  "VALUES ('10005','3SHAPE TRIOS A/S')")
-    doc_id = _seed_staged_doc(conn, "ga-3shape")
+    doc_id = _seed_staged_doc(conn, "ga-3shape", scope="manufacturer")
     _seed_manual(conn, doc_id)
     conn.execute(
         "INSERT INTO item_mirror (item_ref, name, manufacturer_raw, md_flag, "
@@ -539,7 +539,7 @@ def test_bind_manufacturer_still_refuses_an_unresolvable_name(conn):
     in the tree claimed it did, and 3SHAPE TRIOS A/S resolving to
     ['10004','10005'] is the counter-example."""
     _seed_entity(conn, "GHOST AG")
-    doc_id = _seed_staged_doc(conn, "ga-ghost")
+    doc_id = _seed_staged_doc(conn, "ga-ghost", scope="manufacturer")
     _seed_manual(conn, doc_id)
 
     with pytest.raises(ValueError, match="resolves to no BC"):
@@ -755,3 +755,100 @@ def test_approving_leaves_the_card_closed(conn):
     tid = _closed_card(conn, doc_id)
     gh.handle_gate_apply(conn, _apply(doc_id, "approve"))
     assert _card_status(conn, tid)["status"] == "resolved"
+
+
+# --------------------------------------------------------------------------- #
+# Change type, spec 2026-11-12 §7: the row lock, expected_scope, scope guards
+# --------------------------------------------------------------------------- #
+def _set_scope(conn, doc_id, scope):
+    conn.execute("UPDATE document SET coverage_scope=%s WHERE doc_id=%s", (scope, doc_id))
+
+
+def test_bind_manufacturer_refuses_a_group_scope_document(conn):
+    doc_id = _seed_staged_doc(conn, "ga-bind-group")
+    _seed_item(conn, "G-1", "ACME", md_flag=True)
+    with pytest.raises(ValueError, match="whole manufacturer range"):
+        gh.handle_gate_apply(conn, _apply(doc_id, "bind-manufacturer", manufacturer="ACME"))
+    assert _status(conn, doc_id) == "staged"
+    assert _link_status(conn, doc_id, "G-1") is None
+
+
+@pytest.mark.parametrize("decision, extra, scope", [
+    ("approve", {}, "manufacturer"),
+    ("bind-manufacturer", {"manufacturer": "ACME"}, "manufacturer"),
+])
+def test_approve_and_bind_refuse_when_expected_scope_differs(conn, decision, extra, scope):
+    """A stale screen after a retype: a group-panel Approve with no items must
+    not publish a document that now covers a whole range."""
+    doc_id = _seed_staged_doc(conn, f"ga-exp-{decision}")
+    _set_scope(conn, doc_id, scope)
+    _seed_item(conn, "E-1", "ACME", md_flag=True)
+    with pytest.raises(ValueError, match="the screen showed 'group'"):
+        gh.handle_gate_apply(conn, _apply(doc_id, decision, expected_scope="group", **extra))
+    assert _status(conn, doc_id) == "staged"
+
+
+def test_approve_refuses_when_expected_scope_differs(conn):
+    doc_id = _seed_staged_doc(conn, "ga-exp-approve")
+    _set_scope(conn, doc_id, "manufacturer")
+    with pytest.raises(ValueError, match="the screen showed 'group'"):
+        gh.handle_gate_apply(conn, _apply(doc_id, "approve", expected_scope="group"))
+    assert _status(conn, doc_id) == "staged"
+
+
+def test_bind_manufacturer_refuses_when_expected_scope_differs(conn):
+    doc_id = _seed_staged_doc(conn, "ga-exp-bind")
+    _set_scope(conn, doc_id, "manufacturer")
+    _seed_item(conn, "E-2", "ACME", md_flag=True)
+    with pytest.raises(ValueError, match="the screen showed 'group'"):
+        gh.handle_gate_apply(conn, _apply(doc_id, "bind-manufacturer", manufacturer="ACME",
+                                          expected_scope="group"))
+    assert _status(conn, doc_id) == "staged"
+
+
+def test_a_payload_without_expected_scope_is_accepted(conn):
+    """A job queued before the field existed carries none."""
+    doc_id = _seed_staged_doc(conn, "ga-exp-absent")
+    gh.handle_gate_apply(conn, _apply(doc_id, "approve"))
+    assert _status(conn, doc_id) == "production"
+
+
+def test_a_matching_expected_scope_is_accepted(conn):
+    doc_id = _seed_staged_doc(conn, "ga-exp-same")
+    gh.handle_gate_apply(conn, _apply(doc_id, "approve", expected_scope="group"))
+    assert _status(conn, doc_id) == "production"
+
+
+def test_approve_with_items_on_a_retyped_whole_range_document_is_refused(conn):
+    doc_id = _seed_staged_doc(conn, "ga-retyped-items")
+    _set_scope(conn, doc_id, "manufacturer")
+    _seed_item(conn, "R-1", "ACME", md_flag=True)
+    with pytest.raises(ValueError, match="covers a whole range"):
+        gh.handle_gate_apply(conn, _apply(doc_id, "approve", items=["R-1"]))
+    assert _status(conn, doc_id) == "staged"
+
+
+def test_every_document_decision_locks_the_row(conn, connect_test):
+    """A second connection holding the row makes each decision wait, and with
+    a short lock_timeout the wait surfaces as an error (spec §7)."""
+    import psycopg
+
+    doc_id = _seed_staged_doc(conn, "ga-lock")
+    _seed_item(conn, "L-1", "ACME", md_flag=True)
+    conn.commit()
+    holder = connect_test(autocommit=False)
+    holder.execute("SELECT doc_id FROM document WHERE doc_id=%s FOR UPDATE", (doc_id,))
+    payloads = {
+        "approve": {}, "reject": {}, "reopen": {},
+        "bind-manufacturer": {"manufacturer": "ACME"},
+        "add-items": {"items": ["L-1"]},
+        "retype": {"type": "DoC", "regulation": "MDR", "coverage_scope": "group",
+                   "expected": {}},
+    }
+    for decision, extra in payloads.items():
+        conn.rollback()
+        conn.execute("SET lock_timeout = '200ms'")
+        with pytest.raises(psycopg.errors.LockNotAvailable):
+            gh.handle_gate_apply(conn, _apply(doc_id, decision, **extra))
+    conn.rollback()
+    holder.rollback()
