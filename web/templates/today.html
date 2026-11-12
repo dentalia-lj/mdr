@@ -117,6 +117,43 @@
 </section>
 {% endif %}
 
+{#- Link checks (2026-11-12): every published link against the manufacturer
+    Business Central gives its item, live on every load (web/link_checks.py).
+    Always shown, so a clean registry says it was checked. -#}
+{% set lc = links %}
+<section class="card today-list" id="today-links">
+  <h2>Link checks{% if lc.problems %} <span class="today-n">{{ lc.problems | num }} to look at</span>{% endif %}</h2>
+  {% if not lc.published %}
+  <p class="hint">No published links yet.</p>
+  {% elif not lc.problems %}
+  <p>All {{ lc.published | num }} published link{{ "" if lc.published == 1 else "s" }}
+    {{ "matches" if lc.published == 1 else "match" }} the manufacturer Business Central gives each item.</p>
+  {% else %}
+  {% if lc.crossing %}
+  <p>{{ lc.crossing_links | num }} published link{{ "" if lc.crossing_links == 1 else "s" }}
+    {{ "reaches" if lc.crossing_links == 1 else "reach" }} an item another manufacturer makes in Business Central:</p>
+  <ul>
+    {% for f in lc.crossing[:10] %}
+    <li><a href="/documents/{{ f.doc_id }}">Doc {{ f.doc_id }}</a> ({{ f.manufacturer }}, {{ f.doc_type | doc_type }})
+      &rarr; {% for name, n in f.others %}{{ n | num }} item{{ "" if n == 1 else "s" }} of {{ name }}{{ ", " if not loop.last }}{% endfor %}</li>
+    {% endfor %}
+  </ul>
+  {% if lc.crossing | length > 10 %}<p class="hint">and {{ (lc.crossing | length - 10) | num }} more documents.</p>{% endif %}
+  {% endif %}
+  {% if lc.unowned %}
+  <p>{{ lc.unowned_links | num }} published link{{ "" if lc.unowned_links == 1 else "s" }}
+    {{ "sits" if lc.unowned_links == 1 else "sit" }} under a document with no confirmed manufacturer:</p>
+  <ul>
+    {% for f in lc.unowned[:10] %}
+    <li><a href="/documents/{{ f.doc_id }}">Doc {{ f.doc_id }}</a> ({{ f.doc_type | doc_type }}, {{ f.links | num }} item{{ "" if f.links == 1 else "s" }})</li>
+    {% endfor %}
+  </ul>
+  {% if lc.unowned | length > 10 %}<p class="hint">and {{ (lc.unowned | length - 10) | num }} more documents.</p>{% endif %}
+  {% endif %}
+  <p class="hint">Open the document and use Remove on the wrong item.</p>
+  {% endif %}
+</section>
+
 <section class="card" id="today-coverage">
   {#- D4, the figure to quote to Dentalia, from the one helper and the one
       macro the System status board also renders -- the sentence has to read

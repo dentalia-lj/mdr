@@ -887,3 +887,86 @@ def test_the_type_scale_is_the_only_source_of_size():
     assert used <= declared, (
         "a rule reads a token nothing declares: "
         + ", ".join(sorted(used - declared)))
+
+
+# --------------------------------------------------------------------------- #
+# Link checks (2026-11-12): every published link against Business Central
+# --------------------------------------------------------------------------- #
+
+def _maker(conn, canonical: str, code: str) -> None:
+    """A manufacturer entity and the BC code its items carry."""
+    conn.execute("INSERT INTO manufacturer (canonical_name) VALUES (%s) "
+                 "ON CONFLICT DO NOTHING", (canonical,))
+    conn.execute("INSERT INTO manufacturer_alias (raw_name, canonical_name, source) "
+                 "VALUES (%s,%s,'vendor-master') ON CONFLICT DO NOTHING", (code, canonical))
+
+
+def _published(conn, canonical: str | None, doc_type: str = "DoC") -> int:
+    doc_id = _doc(conn, status="production", doc_type=doc_type)
+    conn.execute("UPDATE document SET canonical_manufacturer=%s WHERE doc_id=%s",
+                 (canonical, doc_id))
+    return doc_id
+
+
+def test_link_checks_say_every_published_link_matches(client, conn):
+    _maker(conn, "ACMECO", "901")
+    _item(conn, "LC-1", manufacturer="901")
+    _item(conn, "LC-2", manufacturer="901")
+    doc_id = _published(conn, "ACMECO")
+    _link(conn, "LC-1", doc_id, status="production")
+    _link(conn, "LC-2", doc_id, status="production")
+    conn.commit()
+
+    card = _text(_section(client.get("/").text, "today-links"))
+    assert "Link checks" in card
+    assert "All 2 published links match the manufacturer Business Central gives each item" in card
+
+
+def test_link_checks_name_a_link_to_another_manufacturers_item(client, conn):
+    _maker(conn, "ACMECO", "901")
+    _maker(conn, "OTHERCO", "902")
+    _item(conn, "LC-OK", manufacturer="901")
+    _item(conn, "LC-X1", manufacturer="902")
+    _item(conn, "LC-X2", manufacturer="902")
+    doc_id = _published(conn, "ACMECO", doc_type="EC")
+    for ref in ("LC-OK", "LC-X1", "LC-X2"):
+        _link(conn, ref, doc_id, status="production")
+    conn.commit()
+
+    page = client.get("/").text
+    card = _text(_section(page, "today-links"))
+    assert "2 to look at" in card
+    assert "2 published links reach an item another manufacturer makes in Business Central" in card
+    assert f"Doc {doc_id}" in card and "ACMECO" in card and "2 items of OTHERCO" in card
+    assert f'href="/documents/{doc_id}"' in _section(page, "today-links")
+    assert "All " not in card
+
+
+def test_link_checks_name_a_published_link_with_no_confirmed_manufacturer(client, conn):
+    _item(conn, "LC-N1", manufacturer="903")
+    doc_id = _published(conn, None)
+    _link(conn, "LC-N1", doc_id, status="production")
+    conn.commit()
+
+    card = _text(_section(client.get("/").text, "today-links"))
+    assert "1 to look at" in card
+    assert "1 published link sits under a document with no confirmed manufacturer" in card
+    assert f"Doc {doc_id}" in card
+
+
+def test_link_checks_ignore_what_is_not_published(client, conn):
+    # A staged link, or any link under a staged document, is Review's business:
+    # nothing published asserts it yet.
+    _maker(conn, "ACMECO", "901")
+    _maker(conn, "OTHERCO", "902")
+    _item(conn, "LC-S1", manufacturer="902")
+    published = _published(conn, "ACMECO")
+    _link(conn, "LC-S1", published, status="staged")
+    staged = _doc(conn, status="staged")
+    conn.execute("UPDATE document SET canonical_manufacturer='ACMECO' WHERE doc_id=%s", (staged,))
+    _link(conn, "LC-S1", staged, status="production")
+    conn.commit()
+
+    card = _text(_section(client.get("/").text, "today-links"))
+    assert "to look at" not in card
+    assert "No published links yet" in card
