@@ -645,6 +645,13 @@ def lapsing_for_manufacturer(conn, manufacturer: str, *, horizon_days: int,
              AND e.expires IS NOT NULL
              AND e.expires <= %s
              AND g.canonical_manufacturer = %s
+        ),
+        -- MATERIALIZED is load-bearing: the per-row `items` subquery filters
+        -- current links by doc_id, which cannot go below the rank window, so
+        -- inlined it re-ranks every production link once per letter row
+        -- (migration 074, tests/test_per_item_currency.py guards it).
+        current_link AS MATERIALIZED (
+          SELECT item_ref, doc_id FROM item_document_production
         )
         SELECT l.type, l.regulation, l.cert_number, l.expires,
                array_agg(DISTINCT l.doc_id) AS doc_ids,
@@ -653,7 +660,7 @@ def lapsing_for_manufacturer(conn, manufacturer: str, *, horizon_days: int,
                -- 2026-10-02): an item a newer document of its type answers
                -- for loses nothing, so the letter does not count it
                (SELECT count(DISTINCT il.item_ref)
-                  FROM item_document_production il
+                  FROM current_link il
                  WHERE il.doc_id IN (SELECT doc_id FROM lapsing l2
                                       WHERE l2.type = l.type
                                         AND l2.regulation = l.regulation
