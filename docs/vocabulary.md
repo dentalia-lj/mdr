@@ -102,6 +102,8 @@ Replaced — from the office UI redesign's word list (spec § 9), which lives in
 Nothing but the last step before a reader's eye is translated: every query,
 payload, API response and migration in this document means the stored value.
 
+Two more words belong beside the statuses. `retype` is the `gate.apply` decision by which a person changes what a `staged` document is (type, regulation, what it covers); it never changes the status and never publishes. `route-held` is the `gate.candidate` disposition for a reading that arrives after a person set a document's `coverage_scope`: the reading never publishes, links or re-routes that document.
+
 `filed` is a disposition, not a judgement. A manufacturer publishes documents for
 their whole product line and a distributor buys a slice of it, so a correctly
 read document routinely covers nothing we sell: on the IVOCLAR backfill,

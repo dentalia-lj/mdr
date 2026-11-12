@@ -1960,6 +1960,16 @@ tbody tr:last-child td{border-bottom:0}
 <p>Nothing is linked until you approve. Each ticked item then becomes a confirmed link under your name. An item that already has a document of the same type keeps it; the new one is added beside it.</p>
 <h3 id="pages/review--taking-a-wrong-item-off">Taking a wrong item off</h3>
 <p>In the list <em>Approving publishes it for…</em>, each item the system matched has <strong>Remove</strong>. The item moves to <em>Will not count</em>, and <strong>Undo</strong> brings it back. Nothing is saved until you approve. Each one is then recorded as not covered, and a later re-read of the document will not link it again. Use it when a document prints another product's number, for example in an ordering table.</p>
+<h3 id="pages/review--changing-what-kind-of-document-it-is">Changing what kind of document it is</h3>
+<p>Sometimes the system read the document wrongly: a declaration filed as a certificate, say. Under the facts on the right, above the buttons, press <strong>Change type...</strong> (a small outlined button on a line of its own). It is on every document waiting on Review, and a short line beside it says when to use it.</p>
+<ol>
+<li>A small form opens, filled in with what the document is now: <strong>Type</strong>, <strong>Rules</strong> and <strong>What it covers</strong> (<em>specific items</em> or <em>whole range</em>). Change what is wrong. When you change <strong>Type</strong>, <strong>What it covers</strong> moves to what that type usually covers: declarations and instructions cover specific items, certificates (EC, ISO) the whole range. You can still change it back.</li>
+<li>Press <strong>Check what changes</strong>. Nothing is saved yet. Under the form the screen lists every consequence, and only the ones that apply: - the type, the rules and what it covers, each as <em>before → after</em>, or <em>(unchanged)</em>; - <em>N items now linked will be taken off: …</em> (the first ten are named); - declarations that cite this document as their certificate and will no longer; - for a certificate, the declarations that will point to it, or <em>No declaration can point to it until a certificate number is entered.</em>; - what happens to the certificate number and the expiry date. They stay as they are; correct them under <strong>Correct a fact first</strong> when you approve if they are wrong; - the last line: <em>It stays on Review. Nothing is published. You approve it next, in the specific items panel.</em> (or <em>whole range</em>).</li>
+<li>Tick the box, <em>I have checked the document: it is a ⟨type⟩, for ⟨what it covers⟩.</em> The button <strong>Yes, change the type</strong> stays grey until you do. <strong>Cancel</strong> changes nothing.</li>
+<li>Press <strong>Yes, change the type</strong>. The row is replaced by <em>The type change for this document is recorded. It comes back on Review in the specific items panel within a minute, and you approve it there. Nothing is published.</em></li>
+</ol>
+<p>The document does not leave Review and nothing counts because of the change. After a minute it is back, in the panel that matches what it covers now, with a line <em>Type changed by ⟨your name⟩ on ⟨date⟩.</em> in its reason. Then decide as usual: approve or reject. Every type change is saved with your name and the time. A later re-read of the document never changes what you set for <strong>What it covers</strong>, and never links items to it; add items yourself with <strong>Find items this document covers…</strong>.</p>
+<p><strong>A published document.</strong> <strong>Change type...</strong> appears only on documents waiting on Review. A published or replaced document has to leave first: reject it, then open it again from <strong>Documents</strong> with <strong>Reopen this document</strong>. It comes back to Review, and there you can change its type.</p>
 <h3 id="pages/review--showing-one-kind-of-reason-at-a-time">Showing one kind of reason at a time</h3>
 <p>The buttons above the list show the documents waiting for one kind of reason. <strong>All reasons</strong> shows everything again.</p>
 <div class="tw"><table><thead><tr>
@@ -2116,6 +2126,59 @@ tbody tr:last-child td{border-bottom:0}
 <td><em>The dates on this document do not look right.</em></td>
 <td>A date is impossible, or wildly out of range</td>
 <td>Usually a badly scanned page. Do not approve without reading it. A printed day past the end of its month (<em>April 31st, 2020</em>) is not flagged: it is recorded as the month's last day, 30 April 2020, and the evidence keeps what was printed</td>
+</tr>
+</tbody></table></div>
+<h3 id="pages/review--when-a-button-refuses">When a button refuses</h3>
+<p>A refusal means nothing happened. Each ends with <em>Nothing was changed.</em></p>
+<div class="tw"><table><thead><tr>
+<th>The screen says</th>
+<th>What that means</th>
+<th>What to do</th>
+</tr></thead><tbody>
+<tr>
+<td><em>A reading of this document is in progress, or another decision on it is waiting to apply. Try again later.</em></td>
+<td>The system is re-reading the document, or a decision on it has not been applied yet</td>
+<td>Wait a minute and press again</td>
+</tr>
+<tr>
+<td><em>This document changed after you checked it. Reload the page and check again.</em></td>
+<td>Someone, or the system, changed the document after <strong>Check what changes</strong> showed its list</td>
+<td>Reload the page, press <strong>Change type...</strong> again and read the new list</td>
+</tr>
+<tr>
+<td><em>This document is no longer on Review. Reload the page to see where it stands.</em></td>
+<td>It was decided or moved while your screen was open</td>
+<td>Reload the page</td>
+</tr>
+<tr>
+<td><em>Nothing to change.</em></td>
+<td>The type, rules and what it covers are the ones it already has</td>
+<td>Change one of them, or press <strong>Cancel</strong></td>
+</tr>
+<tr>
+<td><em>This document is part of a chain of versions, so its type cannot be changed here.</em></td>
+<td>It has been replaced by, or replaces, another document</td>
+<td>Tell a developer</td>
+</tr>
+<tr>
+<td><em>This document already counts for an item, so its type cannot be changed here. Ask the person who looks after the system.</em></td>
+<td>A link is already published</td>
+<td>Tell a developer</td>
+</tr>
+<tr>
+<td><em>Tick the box to confirm.</em></td>
+<td><strong>Yes, change the type</strong> was pressed without the tick</td>
+<td>Tick the box, then press it again</td>
+</tr>
+<tr>
+<td><em>A change of type is waiting for this document. Wait for it to apply, then decide.</em></td>
+<td>You pressed <strong>Approve</strong> or <strong>Reject</strong>, or approved for all items, while a type change you confirmed is still being applied</td>
+<td>Wait for the row to come back on Review (within a minute), then decide</td>
+</tr>
+<tr>
+<td><em>This document names specific items, so it cannot be approved for a whole manufacturer. Reload the page to see where it stands.</em></td>
+<td>You pressed <strong>Approve for all N items</strong> on a document that covers specific items, usually because its type was changed after the page opened</td>
+<td>Reload the page. Use <strong>Approve for these N items</strong></td>
 </tr>
 </tbody></table></div>
 <hr>

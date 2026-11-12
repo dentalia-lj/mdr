@@ -167,6 +167,52 @@ Nothing is saved until you approve. Each one is then recorded as not covered,
 and a later re-read of the document will not link it again. Use it when a
 document prints another product's number, for example in an ordering table.
 
+### Changing what kind of document it is
+
+Sometimes the system read the document wrongly: a declaration filed as a
+certificate, say. Under the facts on the right, above the buttons, press
+**Change type...** (a small outlined button on a line of its own). It is on every
+document waiting on Review, and a short line beside it says when to use it.
+
+1. A small form opens, filled in with what the document is now: **Type**,
+   **Rules** and **What it covers** (*specific items* or *whole range*). Change
+   what is wrong. When you change **Type**, **What it covers** moves to what
+   that type usually covers: declarations and instructions cover specific items,
+   certificates (EC, ISO) the whole range. You can still change it back.
+2. Press **Check what changes**. Nothing is saved yet. Under the form the screen
+   lists every consequence, and only the ones that apply:
+   - the type, the rules and what it covers, each as *before → after*, or
+     *(unchanged)*;
+   - *N items now linked will be taken off: …* (the first ten are named);
+   - declarations that cite this document as their certificate and will no
+     longer;
+   - for a certificate, the declarations that will point to it, or *No
+     declaration can point to it until a certificate number is entered.*;
+   - what happens to the certificate number and the expiry date. They stay as
+     they are; correct them under **Correct a fact first** when you approve if
+     they are wrong;
+   - the last line: *It stays on Review. Nothing is published. You approve it
+     next, in the specific items panel.* (or *whole range*).
+3. Tick the box, *I have checked the document: it is a ⟨type⟩, for ⟨what it
+   covers⟩.* The button **Yes, change the type** stays grey until you do.
+   **Cancel** changes nothing.
+4. Press **Yes, change the type**. The row is replaced by *The type change for
+   this document is recorded. It comes back on Review in the specific items
+   panel within a minute, and you approve it there. Nothing is published.*
+
+The document does not leave Review and nothing counts because of the change.
+After a minute it is back, in the panel that matches what it covers now, with
+a line *Type changed by ⟨your name⟩ on ⟨date⟩.* in its reason. Then decide as
+usual: approve or reject. Every type change is saved with your name and the
+time. A later re-read of the document never changes what you set for **What it
+covers**, and never links items to it; add items yourself with **Find items this
+document covers…**.
+
+**A published document.** **Change type...** appears only on documents waiting
+on Review. A published or replaced document has to leave first: reject it, then
+open it again from **Documents** with **Reopen this document**. It comes back to
+Review, and there you can change its type.
+
 ### Showing one kind of reason at a time
 
 The buttons above the list show the documents waiting for one kind of reason.
@@ -236,6 +282,22 @@ thirteen of them. They fall into three groups.
 | *This is older than the document already on file for these items.* | Its date is earlier than the one you already hold | Reject with the reason **Out of date**, unless you know the one on file is wrong. If this keeps happening, the source we are pulling from is stale — tell a developer |
 | *Older than the document already on file for every item it names.* | This document is an older version of what is already on file. Approving keeps it as history; it does not replace the current one for any item | Reject it if it is only an old copy |
 | *The dates on this document do not look right.* | A date is impossible, or wildly out of range | Usually a badly scanned page. Do not approve without reading it. A printed day past the end of its month (*April 31st, 2020*) is not flagged: it is recorded as the month's last day, 30 April 2020, and the evidence keeps what was printed |
+
+### When a button refuses
+
+A refusal means nothing happened. Each ends with *Nothing was changed.*
+
+| The screen says | What that means | What to do |
+|---|---|---|
+| *A reading of this document is in progress, or another decision on it is waiting to apply. Try again later.* | The system is re-reading the document, or a decision on it has not been applied yet | Wait a minute and press again |
+| *This document changed after you checked it. Reload the page and check again.* | Someone, or the system, changed the document after **Check what changes** showed its list | Reload the page, press **Change type...** again and read the new list |
+| *This document is no longer on Review. Reload the page to see where it stands.* | It was decided or moved while your screen was open | Reload the page |
+| *Nothing to change.* | The type, rules and what it covers are the ones it already has | Change one of them, or press **Cancel** |
+| *This document is part of a chain of versions, so its type cannot be changed here.* | It has been replaced by, or replaces, another document | Tell a developer |
+| *This document already counts for an item, so its type cannot be changed here. Ask the person who looks after the system.* | A link is already published | Tell a developer |
+| *Tick the box to confirm.* | **Yes, change the type** was pressed without the tick | Tick the box, then press it again |
+| *A change of type is waiting for this document. Wait for it to apply, then decide.* | You pressed **Approve** or **Reject**, or approved for all items, while a type change you confirmed is still being applied | Wait for the row to come back on Review (within a minute), then decide |
+| *This document names specific items, so it cannot be approved for a whole manufacturer. Reload the page to see where it stands.* | You pressed **Approve for all N items** on a document that covers specific items, usually because its type was changed after the page opened | Reload the page. Use **Approve for these N items** |
 
 ---
 

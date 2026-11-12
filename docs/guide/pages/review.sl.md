@@ -167,6 +167,52 @@ vrnete. Dokler ne odobrite, se nič ne shrani. Ob odobritvi se vsak zabeleži ko
 nepokrit in ponovno branje dokumenta ga ne bo več povezalo. Uporabite ga, kadar
 dokument navaja številko drugega izdelka, na primer v tabeli za naročanje.
 
+### Sprememba vrste dokumenta
+
+Včasih je sistem dokument napačno prebral: izjavo, na primer, je vpisal kot
+certifikat. Pod dejstvi na desni, nad gumbi, pritisnite **Change type...** (majhen
+obrobljen gumb v svoji vrstici). Na voljo je pri vsakem dokumentu, ki čaka na
+Review, kratka vrstica ob njem pa pove, kdaj ga uporabiti.
+
+1. Odpre se majhen obrazec, izpolnjen s tem, kar dokument zdaj je: **Type**,
+   **Rules** in **What it covers** (*specific items* ali *whole range*).
+   Spremenite, kar je narobe. Ko spremenite **Type**, se **What it covers**
+   premakne na to, kar ta vrsta običajno pokriva: izjave in navodila pokrivajo
+   določene artikle, certifikati (EC, ISO) celoten program. Lahko ga še vedno
+   vrnete nazaj.
+2. Pritisnite **Check what changes**. Še nič se ne shrani. Pod obrazcem zaslon
+   našteje vsako posledico, in to samo tiste, ki veljajo:
+   - vrsto, pravila in kaj dokument pokriva, vsako kot *prej → potem* ali
+     *(unchanged)*;
+   - *N items now linked will be taken off: …* (prvih deset je poimenovanih);
+   - izjave, ki ta dokument navajajo kot svoj certifikat in ga ne bodo več;
+   - pri certifikatu izjave, ki bodo nanj kazale, ali *No declaration can point
+     to it until a certificate number is entered.*;
+   - kaj se zgodi s številko certifikata in datumom izteka. Ostaneta, kakršna
+     sta; če sta napačna, ju popravite pod **Correct a fact first**, ko
+     odobrite;
+   - zadnja vrstica: *It stays on Review. Nothing is published. You approve it
+     next, in the specific items panel.* (ali *whole range*).
+3. Obkljukajte polje *I have checked the document: it is a ⟨vrsta⟩, for ⟨kaj
+   pokriva⟩.* Gumb **Yes, change the type** ostane siv, dokler tega ne storite.
+   **Cancel** ne spremeni ničesar.
+4. Pritisnite **Yes, change the type**. Vrstica se zamenja z *The type change
+   for this document is recorded. It comes back on Review in the specific items
+   panel within a minute, and you approve it there. Nothing is published.*
+
+Dokument ne zapusti Review in zaradi spremembe nič ne šteje. Čez minuto je
+nazaj, v plošči, ki ustreza temu, kar zdaj pokriva, v njegovem razlogu pa piše
+*Type changed by ⟨vaše ime⟩ on ⟨datum⟩.* Nato odločite kot običajno: odobrite ali
+zavrnite. Vsaka sprememba vrste se shrani z vašim imenom in časom. Ponovno
+branje dokumenta pozneje nikoli ne spremeni tistega, kar ste nastavili pri
+**What it covers**, in mu nikoli ne poveže artiklov; artikle dodajte sami z
+**Find items this document covers…**.
+
+**Objavljen dokument.** **Change type...** se pojavi samo pri dokumentih, ki
+čakajo na Review. Objavljen ali nadomeščen dokument mora najprej stran: zavrnite
+ga, nato ga pod **Documents** znova odprite z **Reopen this document**. Vrne se
+na Review, tam pa mu lahko spremenite vrsto.
+
 ### Prikaz ene vrste razloga naenkrat
 
 Gumbi nad seznamom pokažejo dokumente, ki čakajo zaradi ene vrste razloga.
@@ -236,6 +282,22 @@ trinajst. Razvrščena so v tri skupine.
 | *This is older than the document already on file for these items.* | Njegov datum je starejši od tistega, ki ga za te izdelke že imate | Zavrnite z razlogom **Out of date**, razen če veste, da je tisti na voljo napačen. Če se to ponavlja, je vir, iz katerega črpamo, zastarel — povejte razvijalcu |
 | *Older than the document already on file for every item it names.* | Ta dokument je starejša različica tega, kar je že v evidenci. Odobritev ga ohrani kot zgodovino; za noben izdelek ne nadomesti veljavnega | Zavrnite ga, če je le star izvod |
 | *The dates on this document do not look right.* | Datum je nemogoč ali močno izven razumnega razpona | Običajno slabo skeniran dokument. Ne odobrite brez branja. Natisnjen dan, ki presega konec meseca (*April 31st, 2020*), se ne označi: zabeleži se zadnji dan meseca, 30. april 2020, dokaz pa ohrani natisnjeno |
+
+### Kadar gumb zavrne
+
+Zavrnitev pomeni, da se ni zgodilo nič. Vsaka se konča z *Nothing was changed.*
+
+| Zaslon pravi | Kaj to pomeni | Kaj storiti |
+|---|---|---|
+| *A reading of this document is in progress, or another decision on it is waiting to apply. Try again later.* | Sistem dokument ravno bere znova ali pa odločitev o njem še ni uveljavljena | Počakajte minuto in pritisnite znova |
+| *This document changed after you checked it. Reload the page and check again.* | Nekdo ali sistem je dokument spremenil, potem ko ga je **Check what changes** prikazal s seznamom | Ponovno naložite stran, znova pritisnite **Change type...** in preberite nov seznam |
+| *This document is no longer on Review. Reload the page to see where it stands.* | Dokument je bil odločen ali premaknjen, medtem ko je bil vaš zaslon odprt | Ponovno naložite stran |
+| *Nothing to change.* | Vrsta, pravila in kaj dokument pokriva so že taki, kot so izbrani | Spremenite enega od njih ali pritisnite **Cancel** |
+| *This document is part of a chain of versions, so its type cannot be changed here.* | Dokument je nadomestil drug dokument ali ga je ta nadomestil | Sporočite razvijalcu |
+| *This document already counts for an item, so its type cannot be changed here. Ask the person who looks after the system.* | Povezava je že objavljena | Sporočite razvijalcu |
+| *Tick the box to confirm.* | **Yes, change the type** je bil pritisnjen brez kljukice | Obkljukajte polje in znova pritisnite gumb |
+| *A change of type is waiting for this document. Wait for it to apply, then decide.* | Pritisnili ste **Approve** ali **Reject** ali odobritev za vse artikle, medtem ko se potrjena sprememba vrste še uveljavlja | Počakajte, da se vrstica vrne na Review (v minuti), nato odločite |
+| *This document names specific items, so it cannot be approved for a whole manufacturer. Reload the page to see where it stands.* | Pritisnili ste **Approve for all N items** pri dokumentu, ki pokriva določene artikle, običajno zato, ker se je njegova vrsta spremenila po odprtju strani | Ponovno naložite stran. Uporabite **Approve for these N items** |
 
 ---
 

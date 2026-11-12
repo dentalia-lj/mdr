@@ -1962,6 +1962,16 @@ tbody tr:last-child td{border-bottom:0}
 <p>Dokler ne odobrite, ni povezano nič. Nato vsak označeni artikel postane potrjena povezava pod vašim imenom. Artikel, ki že ima dokument iste vrste, ga obdrži; novi se doda zraven.</p>
 <h3 id="pages/review--odstranitev-napačnega-artikla">Odstranitev napačnega artikla</h3>
 <p>Na seznamu <em>Approving publishes it for…</em> ima vsak artikel, ki ga je našel sistem, gumb <strong>Remove</strong>. Artikel se premakne pod <em>Will not count</em>, z <strong>Undo</strong> ga vrnete. Dokler ne odobrite, se nič ne shrani. Ob odobritvi se vsak zabeleži kot nepokrit in ponovno branje dokumenta ga ne bo več povezalo. Uporabite ga, kadar dokument navaja številko drugega izdelka, na primer v tabeli za naročanje.</p>
+<h3 id="pages/review--sprememba-vrste-dokumenta">Sprememba vrste dokumenta</h3>
+<p>Včasih je sistem dokument napačno prebral: izjavo, na primer, je vpisal kot certifikat. Pod dejstvi na desni, nad gumbi, pritisnite <strong>Change type...</strong> (majhen obrobljen gumb v svoji vrstici). Na voljo je pri vsakem dokumentu, ki čaka na Review, kratka vrstica ob njem pa pove, kdaj ga uporabiti.</p>
+<ol>
+<li>Odpre se majhen obrazec, izpolnjen s tem, kar dokument zdaj je: <strong>Type</strong>, <strong>Rules</strong> in <strong>What it covers</strong> (<em>specific items</em> ali <em>whole range</em>). Spremenite, kar je narobe. Ko spremenite <strong>Type</strong>, se <strong>What it covers</strong> premakne na to, kar ta vrsta običajno pokriva: izjave in navodila pokrivajo določene artikle, certifikati (EC, ISO) celoten program. Lahko ga še vedno vrnete nazaj.</li>
+<li>Pritisnite <strong>Check what changes</strong>. Še nič se ne shrani. Pod obrazcem zaslon našteje vsako posledico, in to samo tiste, ki veljajo: - vrsto, pravila in kaj dokument pokriva, vsako kot <em>prej → potem</em> ali <em>(unchanged)</em>; - <em>N items now linked will be taken off: …</em> (prvih deset je poimenovanih); - izjave, ki ta dokument navajajo kot svoj certifikat in ga ne bodo več; - pri certifikatu izjave, ki bodo nanj kazale, ali <em>No declaration can point to it until a certificate number is entered.</em>; - kaj se zgodi s številko certifikata in datumom izteka. Ostaneta, kakršna sta; če sta napačna, ju popravite pod <strong>Correct a fact first</strong>, ko odobrite; - zadnja vrstica: <em>It stays on Review. Nothing is published. You approve it next, in the specific items panel.</em> (ali <em>whole range</em>).</li>
+<li>Obkljukajte polje <em>I have checked the document: it is a ⟨vrsta⟩, for ⟨kaj pokriva⟩.</em> Gumb <strong>Yes, change the type</strong> ostane siv, dokler tega ne storite. <strong>Cancel</strong> ne spremeni ničesar.</li>
+<li>Pritisnite <strong>Yes, change the type</strong>. Vrstica se zamenja z <em>The type change for this document is recorded. It comes back on Review in the specific items panel within a minute, and you approve it there. Nothing is published.</em></li>
+</ol>
+<p>Dokument ne zapusti Review in zaradi spremembe nič ne šteje. Čez minuto je nazaj, v plošči, ki ustreza temu, kar zdaj pokriva, v njegovem razlogu pa piše <em>Type changed by ⟨vaše ime⟩ on ⟨datum⟩.</em> Nato odločite kot običajno: odobrite ali zavrnite. Vsaka sprememba vrste se shrani z vašim imenom in časom. Ponovno branje dokumenta pozneje nikoli ne spremeni tistega, kar ste nastavili pri <strong>What it covers</strong>, in mu nikoli ne poveže artiklov; artikle dodajte sami z <strong>Find items this document covers…</strong>.</p>
+<p><strong>Objavljen dokument.</strong> <strong>Change type...</strong> se pojavi samo pri dokumentih, ki čakajo na Review. Objavljen ali nadomeščen dokument mora najprej stran: zavrnite ga, nato ga pod <strong>Documents</strong> znova odprite z <strong>Reopen this document</strong>. Vrne se na Review, tam pa mu lahko spremenite vrsto.</p>
 <h3 id="pages/review--prikaz-ene-vrste-razloga-naenkrat">Prikaz ene vrste razloga naenkrat</h3>
 <p>Gumbi nad seznamom pokažejo dokumente, ki čakajo zaradi ene vrste razloga. <strong>All reasons</strong> spet pokaže vse.</p>
 <div class="tw"><table><thead><tr>
@@ -2118,6 +2128,59 @@ tbody tr:last-child td{border-bottom:0}
 <td><em>The dates on this document do not look right.</em></td>
 <td>Datum je nemogoč ali močno izven razumnega razpona</td>
 <td>Običajno slabo skeniran dokument. Ne odobrite brez branja. Natisnjen dan, ki presega konec meseca (<em>April 31st, 2020</em>), se ne označi: zabeleži se zadnji dan meseca, 30. april 2020, dokaz pa ohrani natisnjeno</td>
+</tr>
+</tbody></table></div>
+<h3 id="pages/review--kadar-gumb-zavrne">Kadar gumb zavrne</h3>
+<p>Zavrnitev pomeni, da se ni zgodilo nič. Vsaka se konča z <em>Nothing was changed.</em></p>
+<div class="tw"><table><thead><tr>
+<th>Zaslon pravi</th>
+<th>Kaj to pomeni</th>
+<th>Kaj storiti</th>
+</tr></thead><tbody>
+<tr>
+<td><em>A reading of this document is in progress, or another decision on it is waiting to apply. Try again later.</em></td>
+<td>Sistem dokument ravno bere znova ali pa odločitev o njem še ni uveljavljena</td>
+<td>Počakajte minuto in pritisnite znova</td>
+</tr>
+<tr>
+<td><em>This document changed after you checked it. Reload the page and check again.</em></td>
+<td>Nekdo ali sistem je dokument spremenil, potem ko ga je <strong>Check what changes</strong> prikazal s seznamom</td>
+<td>Ponovno naložite stran, znova pritisnite <strong>Change type...</strong> in preberite nov seznam</td>
+</tr>
+<tr>
+<td><em>This document is no longer on Review. Reload the page to see where it stands.</em></td>
+<td>Dokument je bil odločen ali premaknjen, medtem ko je bil vaš zaslon odprt</td>
+<td>Ponovno naložite stran</td>
+</tr>
+<tr>
+<td><em>Nothing to change.</em></td>
+<td>Vrsta, pravila in kaj dokument pokriva so že taki, kot so izbrani</td>
+<td>Spremenite enega od njih ali pritisnite <strong>Cancel</strong></td>
+</tr>
+<tr>
+<td><em>This document is part of a chain of versions, so its type cannot be changed here.</em></td>
+<td>Dokument je nadomestil drug dokument ali ga je ta nadomestil</td>
+<td>Sporočite razvijalcu</td>
+</tr>
+<tr>
+<td><em>This document already counts for an item, so its type cannot be changed here. Ask the person who looks after the system.</em></td>
+<td>Povezava je že objavljena</td>
+<td>Sporočite razvijalcu</td>
+</tr>
+<tr>
+<td><em>Tick the box to confirm.</em></td>
+<td><strong>Yes, change the type</strong> je bil pritisnjen brez kljukice</td>
+<td>Obkljukajte polje in znova pritisnite gumb</td>
+</tr>
+<tr>
+<td><em>A change of type is waiting for this document. Wait for it to apply, then decide.</em></td>
+<td>Pritisnili ste <strong>Approve</strong> ali <strong>Reject</strong> ali odobritev za vse artikle, medtem ko se potrjena sprememba vrste še uveljavlja</td>
+<td>Počakajte, da se vrstica vrne na Review (v minuti), nato odločite</td>
+</tr>
+<tr>
+<td><em>This document names specific items, so it cannot be approved for a whole manufacturer. Reload the page to see where it stands.</em></td>
+<td>Pritisnili ste <strong>Approve for all N items</strong> pri dokumentu, ki pokriva določene artikle, običajno zato, ker se je njegova vrsta spremenila po odprtju strani</td>
+<td>Ponovno naložite stran. Uporabite <strong>Approve for these N items</strong></td>
 </tr>
 </tbody></table></div>
 <hr>
