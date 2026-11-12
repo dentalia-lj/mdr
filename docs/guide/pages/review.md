@@ -205,8 +205,13 @@ After a minute it is back, in the panel that matches what it covers now, with
 a line *Type changed by ⟨your name⟩ on ⟨date⟩.* in its reason. Then decide as
 usual: approve or reject. Every type change is saved with your name and the
 time. A later re-read of the document never changes what you set for **What it
-covers**, and never links items to it; add items yourself with **Find items this
-document covers…**.
+covers**, and never links items to it. For a document that covers specific
+items, add them yourself: here with **Find items this document covers…**, and
+once it is published from **Documents** with **Add items this document
+covers…**. A whole-range document whose type you changed counts for the items
+it was approved for and no more: an item added to the catalogue later does not
+join it, and items cannot be added to it by hand. Tell a developer when such a
+certificate needs to cover a new item.
 
 **A published document.** **Change type...** appears only on documents waiting
 on Review. A published or replaced document has to leave first: reject it, then

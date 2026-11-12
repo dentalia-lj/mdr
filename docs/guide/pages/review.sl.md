@@ -205,8 +205,13 @@ nazaj, v plošči, ki ustreza temu, kar zdaj pokriva, v njegovem razlogu pa piš
 *Type changed by ⟨vaše ime⟩ on ⟨datum⟩.* Nato odločite kot običajno: odobrite ali
 zavrnite. Vsaka sprememba vrste se shrani z vašim imenom in časom. Ponovno
 branje dokumenta pozneje nikoli ne spremeni tistega, kar ste nastavili pri
-**What it covers**, in mu nikoli ne poveže artiklov; artikle dodajte sami z
-**Find items this document covers…**.
+**What it covers**, in mu nikoli ne poveže artiklov. Dokumentu, ki pokriva
+določene artikle, jih dodajte sami: tukaj z **Find items this document
+covers…**, ko je objavljen, pa pod **Documents** z **Add items this document
+covers…**. Dokument za celoten program, ki ste mu spremenili vrsto, velja za
+artikle, za katere je bil odobren, in za nobene druge: artikel, ki pride v
+katalog pozneje, se mu ne pridruži, ročno pa mu artiklov ni mogoče dodati.
+Povejte razvijalcu, kadar mora tak certifikat pokriti nov artikel.
 
 **Objavljen dokument.** **Change type...** se pojavi samo pri dokumentih, ki
 čakajo na Review. Objavljen ali nadomeščen dokument mora najprej stran: zavrnite
