@@ -31,10 +31,11 @@ is a followup for when RESOLVE/FETCH make the chain live.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 from psycopg.types.json import Json
 
-from app import item_picks, manufacturers, queue
+from app import item_picks, manufacturers, queue, retype
 from app.config import GateThresholds, load_config
 from app.dates import parse_date
 from app.extract import tiers
@@ -615,12 +616,16 @@ def _upsert_document(conn, fields, content_hash, archive_url, status, *,
     ).fetchone()["doc_id"]
 
 
-def _backresolve_citing_docs(conn, doc_id, cert_number):
+def _backresolve_citing_docs(conn, doc_id, cert_number) -> list[int]:
     """A newly-held certificate retroactively answers every DoC that cited it.
     Without this, resolution would depend on fetch order: a declaration
-    processed before its certificate would stay unresolved forever."""
+    processed before its certificate would stay unresolved forever.
+
+    Returns the ids it pointed at the certificate, sorted (the retype audit row
+    records them). `app/retype.py` `plan` lists the same rows for the confirm
+    screen with the same predicate: keep the two identical."""
     if not cert_number:
-        return 0
+        return []
     # A trailing R-code is stripped from both sides, exactly as
     # `validate._resolve_cited_certificate` does it (Denis's ruling, 2026-08-19).
     # It has to be the same rule in both directions or the identical pair of
@@ -635,10 +640,10 @@ def _backresolve_citing_docs(conn, doc_id, cert_number):
         "RETURNING doc_id",
         (doc_id, cert_number),
     ).fetchall()
-    return len(rows)
+    return sorted(r["doc_id"] for r in rows)
 
 
-def _backresolve_here(conn, doc_id) -> int:
+def _backresolve_here(conn, doc_id) -> list[int]:
     """Back-resolve if this document is itself a certificate. Both routes.
 
     Task 4's back-resolution had exactly one call site, in
@@ -671,7 +676,7 @@ def _backresolve_here(conn, doc_id) -> int:
     row = conn.execute("SELECT type, cert_number FROM document WHERE doc_id=%s",
                        (doc_id,)).fetchone()
     if row is None or row["type"] not in ("EC", "ISO"):
-        return 0
+        return []
     return _backresolve_citing_docs(conn, doc_id, row["cert_number"])
 
 
@@ -2099,6 +2104,138 @@ def _write_items(conn, doc_id, manufacturer, refs, decided_by, job, via) -> None
         _audit(conn, "production-write", doc_id, decided_by, job, item_ref=ref)
 
 
+def _retarget_task(conn, doc_id: int, scope: str, retyped: dict | None) -> None:
+    """Point the document's open `gate-manual` task at the panel for `scope`
+    (spec 2026-11-12 §6 write 6), or open one with that payload.
+
+    Only that kind: any other open task on the document is someone else's
+    question. `manufacturer` scope sets `route = 'mfr-binding'` and the
+    manufacturer (the document's binding, else the task's own), and `reason =
+    'md-class-unknown'` when that manufacturer holds no MD item; `group` scope
+    removes `route` and `reason`. Either way `flags` go (they came from a
+    reading that no longer describes the document and would mislead "Why it
+    needs you" and the board chips), and `retyped = {by, at}` is set, or
+    removed when `retyped` is None (Task 5's route-held path on a document no
+    person retyped). A new task takes the `group_id` of the document's latest
+    `gate-manual` task, so a later Reject can still re-run discovery."""
+    canonical = conn.execute("SELECT canonical_manufacturer FROM document WHERE doc_id=%s",
+                             (doc_id,)).fetchone()["canonical_manufacturer"]
+
+    def rewrite(payload: dict) -> dict:
+        out = {k: v for k, v in (payload or {}).items() if k not in ("flags", "retyped")}
+        if scope == "manufacturer":
+            out["route"] = "mfr-binding"
+            name = canonical or out.get("manufacturer")
+            out.pop("manufacturer", None)
+            out.pop("reason", None)
+            if name:
+                out["manufacturer"] = name
+                codes = manufacturers.item_codes_for(conn, name)
+                md_items = conn.execute(
+                    "SELECT count(*) c FROM item_mirror "
+                    "WHERE md_flag IS TRUE AND manufacturer_raw = ANY(%s)",
+                    (codes,)).fetchone()["c"] if codes else 0
+                if not md_items:
+                    out["reason"] = "md-class-unknown"
+        else:
+            out.pop("route", None)
+            out.pop("reason", None)
+        if retyped is not None:
+            out["retyped"] = retyped
+        return out
+
+    tasks = conn.execute(
+        "SELECT id, payload FROM manual_task "
+        "WHERE kind='gate-manual' AND doc_id=%s AND status='open' ORDER BY id",
+        (doc_id,)).fetchall()
+    for t in tasks:
+        conn.execute("UPDATE manual_task SET payload=%s WHERE id=%s",
+                     (Json(rewrite(t["payload"])), t["id"]))
+    if not tasks:
+        conn.execute(
+            "INSERT INTO manual_task (kind, doc_id, group_id, payload) "
+            "VALUES ('gate-manual', %s, "
+            "        (SELECT group_id FROM manual_task WHERE kind='gate-manual' "
+            "          AND doc_id=%s ORDER BY id DESC LIMIT 1), %s)",
+            (doc_id, doc_id, Json(rewrite({}))))
+
+
+def _apply_retype(conn, job) -> dict:
+    """A person changes what a staged document IS: type, regulation, what it
+    covers (spec 2026-11-12 §6; PRD v3 decision `retype`).
+
+    The row is locked first and every check runs after the lock, on the same
+    list the web route refused on (`app/retype.py` `problems`); each one raises,
+    so the job dead-letters where somebody sees it. Then the seven writes, in
+    the spec's order. Never a status change, a promote, a `production-write`, a
+    production link, or a job: the document is still waiting on her, in the
+    panel its new scope belongs to, and `_resolve_manual_tasks` is not called.
+    `cert_number` and `validity_to` are kept (write 1a): on a misread the number
+    on the page does not change meaning, only our reading of it did."""
+    p = job["payload"]
+    doc_id, decided_by = p["doc_id"], p["decided_by"]
+    conn.execute("SELECT doc_id FROM document WHERE doc_id=%s FOR UPDATE", (doc_id,))
+    after = {f: p.get(f) for f in retype.FIELDS}
+    # An absent `expected` is refused as stale, never read as "skip the check":
+    # that is step 1's mode, and step 1 never reaches the queue.
+    expected = p.get("expected") if isinstance(p.get("expected"), dict) else {}
+    found = retype.problems(conn, doc_id, after, expected, own_job_id=job.get("id"))
+    if found:
+        raise ValueError(f"gate.apply retype: document {doc_id}: {', '.join(found)}")
+    plan = retype.plan(conn, doc_id, after)
+    old_t, new_t = plan.before["type"], after["type"]
+
+    # 1. Type and scope always, regulation when changed: the tick confirms
+    # both, and a type-only retype would otherwise leave the scope unheld.
+    edits = {"type": new_t}
+    if after["regulation"] != plan.before["regulation"]:
+        edits["regulation"] = after["regulation"]
+    edits["coverage_scope"] = after["coverage_scope"]
+    _apply_edits(conn, doc_id, edits)
+
+    # 2. A whole-range document holds no proposed item links, changed or not.
+    links_off = 0
+    if after["coverage_scope"] == "manufacturer":
+        off = conn.execute(
+            "UPDATE item_document SET status='rejected' "
+            "WHERE doc_id=%s AND status='staged' RETURNING item_ref, match_basis",
+            (doc_id,)).fetchall()
+        for r in sorted(off, key=lambda r: r["item_ref"]):
+            _audit(conn, "link-rejected", doc_id, decided_by, job, item_ref=r["item_ref"],
+                   detail={"match_basis_before": r["match_basis"],
+                           "link_status_before": "staged", "via": "retype"})
+        links_off = len(off)
+
+    # 3. No declaration may point at a document that is no longer a certificate.
+    cleared: list[int] = []
+    if old_t in retype.CERT_TYPES and new_t not in retype.CERT_TYPES:
+        cleared = sorted(r["doc_id"] for r in conn.execute(
+            "UPDATE document SET cert_doc_id=NULL WHERE cert_doc_id=%s RETURNING doc_id",
+            (doc_id,)).fetchall())
+
+    # 4. A new certificate answers the declarations that cite its number.
+    set_ids: list[int] = []
+    if new_t in retype.CERT_TYPES and old_t not in retype.CERT_TYPES:
+        set_ids = _backresolve_here(conn, doc_id)
+
+    # 5. Only a declaration cites a certificate.
+    if old_t == "DoC" and new_t != "DoC":
+        conn.execute("UPDATE document SET cert_doc_id=NULL "
+                     "WHERE doc_id=%s AND cert_doc_id IS NOT NULL", (doc_id,))
+
+    # 6. The task follows the new scope, so the panel and the reason match.
+    _retarget_task(conn, doc_id, after["coverage_scope"],
+                   {"by": decided_by, "at": datetime.now(timezone.utc).isoformat()})
+
+    # 7. The decision's own row.
+    _audit(conn, "retype", doc_id, decided_by, job, detail={
+        "before": plan.before, "after": after, "links_off": links_off,
+        "citations_cleared": cleared, "citations_set": set_ids,
+        **(_note_detail(p) or {})})
+    return {"decision": "retype", "doc_id": doc_id, "links_off": links_off,
+            "citations_cleared": cleared, "citations_set": set_ids}
+
+
 def handle_gate_apply(conn, job: dict) -> dict:
     p = job["payload"]
     doc_id = p["doc_id"]
@@ -2110,6 +2247,11 @@ def handle_gate_apply(conn, job: dict) -> dict:
     # the paper. They return before any of it.
     if decision in LINK_DECISIONS:
         return _apply_link_decision(conn, job, decision)
+    # `retype` (spec 2026-11-12 §6) returns before the shared tail for the same
+    # reason: the document is still waiting on its person, so no task is
+    # resolved and nothing is published.
+    if decision == "retype":
+        return _apply_retype(conn, job)
 
     prev_status = _doc_status(conn, doc_id)
 
