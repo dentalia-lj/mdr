@@ -929,6 +929,22 @@ production link exactly as `confirm-link` records one (`link-confirmed` with
 decision's audit row gains `{"items": N, "manufacturer": ...}`. The decision
 `add-items` does the same on a `production` document, without the promote.
 
+`retype` (2026-11-12) changes what a `staged` document is. `expected` is what the confirm screen showed; GATE refuses if the row differs. Writes type and scope as held T3 evidence, takes staged links off when the scope becomes the whole range, publishes nothing and enqueues nothing:
+
+```json
+{ "doc_id": 831, "decision": "retype", "decided_by": "user:natasa",
+  "type": "DoC", "regulation": "MDR", "coverage_scope": "group",
+  "expected": {"type": "ISO", "regulation": "MDR", "coverage_scope": "manufacturer"} }
+```
+
+Its result: `{"decision": "retype", "doc_id": 831, "links_off": 0, "citations_cleared": [], "citations_set": []}`.
+
+A later machine reading of a document whose scope a person holds lands on the disposition `route-held` instead of routing by the reading (PRD §7). On a published document the result is a kept document with no links and no task:
+
+```json
+{ "disposition": "route-held", "doc_id": 831, "status": "production", "links": 0 }
+```
+
 ```python
 def handle_gate_apply(job):
     with db.tx():
