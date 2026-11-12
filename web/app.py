@@ -5685,8 +5685,11 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                     stored = conn.execute("SELECT validity_from FROM document WHERE doc_id=%s",
                                           (doc_id,)).fetchone()
                 if stored is None or stored["validity_from"] is None:
-                    ctx["error"] = ('This document states no issue date. Enter it under '
-                                    '"Correct a fact first" before approving. Nothing was changed.')
+                    # A date field holding a day the calendar has not got (31.04)
+                    # sends nothing, so "you typed none" may be untrue: say both.
+                    ctx["error"] = ('No issue date reached us. Enter it under "Correct a fact '
+                                    'first" before approving. If you typed one, check that it '
+                                    'is a real date: 31.04 is not. Nothing was changed.')
                     return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
 
         if decision == "bind-manufacturer":

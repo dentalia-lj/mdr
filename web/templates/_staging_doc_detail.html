@@ -193,12 +193,14 @@
           {% endif %}
           <div class="field">
             <label>Issued</label>
-            <input type="date" name="edit_validity_from" form="{{ owner }}" value="{{ row.doc.validity_from or '' }}">
+            <input type="date" name="edit_validity_from" form="{{ owner }}" value="{{ row.doc.validity_from or '' }}"
+                   data-date-check="Issued">
           </div>
           {% if not row.is_mfr_binding %}
           <div class="field">
             <label>Valid until</label>
-            <input type="date" name="edit_validity_to" form="{{ owner }}" value="{{ row.doc.validity_to or '' }}">
+            <input type="date" name="edit_validity_to" form="{{ owner }}" value="{{ row.doc.validity_to or '' }}"
+                   data-date-check="Valid until">
           </div>
           <div class="field">
             <label>Certificate no.</label>

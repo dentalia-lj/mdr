@@ -567,6 +567,30 @@ def test_approve_is_refused_until_a_date_is_entered(client, conn):
     assert ok.status_code == 200 and len(_jobs(conn)) == 1
 
 
+def test_the_refusal_says_a_typed_date_may_not_be_real(client, conn):
+    # A browser date field holding 31.04 sends nothing, so a reviewer who typed
+    # a date was told the document "states no issue date" (Nataša, doc 1502).
+    _mfr(conn)
+    doc_id = _doc(conn, "web-baddate", issued=None)
+    conn.commit()
+    r = client.post(f"/staging/{doc_id}/apply", data={
+        "decision": "approve", "edit_validity_from": "",
+        "edit_baseline": '{"validity_from": ""}'})
+    assert r.status_code == 422 and "check that it is a real date" in _text(r.text)
+    assert _jobs(conn) == []
+
+
+def test_the_date_fields_are_checked_before_sending(client, conn):
+    # The browser check names the field (`data-date-check`); base.html stops
+    # the request while a date field holds a day the calendar has not got.
+    _mfr(conn)
+    doc_id = _doc(conn, "web-datecheck", issued=None)
+    conn.commit()
+    html = client.get(f"/staging/{doc_id}/detail").text
+    assert 'name="edit_validity_from"' in html and 'data-date-check="Issued"' in html
+    assert 'data-date-check="Valid until"' in html
+
+
 def test_the_panel_says_the_date_is_needed(client, conn):
     _mfr(conn)
     doc_id = _doc(conn, "web-fact", issued=None)

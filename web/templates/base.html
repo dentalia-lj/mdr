@@ -108,6 +108,42 @@
       });
     });
 
+    // Review's date fields (`data-date-check`, _staging_doc_detail.html). A date
+    // field holding a day the calendar has not got (31.04) reports
+    // `validity.badInput` and sends an empty value, which the server can only
+    // read as "no date typed". Stop the request here and name the field instead
+    // (Nataša, doc 1502, 2026-11-12). Progressive enhancement only: without JS
+    // the server's refusal still says to check the date is real.
+    document.addEventListener("htmx:beforeRequest", function (evt) {
+      var elt = evt.detail && evt.detail.elt;
+      var form = elt && elt.closest ? elt.closest("form") : null;
+      // A reject sends no correction, so a bad date must not hold it up.
+      var side = form && !form.classList.contains("reject-form") && form.closest(".review-side");
+      if (!side) return;
+      var bad = Array.prototype.filter.call(
+        side.querySelectorAll("input[data-date-check]"),
+        function (input) { return input.validity && input.validity.badInput; });
+      var note = form.querySelector("p.result.error[data-date-error]");
+      if (!bad.length) {
+        if (note) note.remove();
+        return;
+      }
+      evt.preventDefault();
+      if (!note) {
+        note = document.createElement("p");
+        note.className = "result error";
+        note.setAttribute("data-date-error", "");
+        var actions = form.querySelector(".panel-actions");
+        form.insertBefore(note, actions || null);
+      }
+      var names = bad.map(function (input) { return input.getAttribute("data-date-check"); });
+      note.textContent = "The " + names.join(" and ") + " date is not a real date (31.04 is not). "
+        + "Correct it under “Correct a fact first”, then try again. Nothing was changed.";
+      var details = bad[0].closest("details");
+      if (details) details.open = true;
+      bad[0].focus();
+    });
+
     // The one number formatter on the client, matching Python's `{:,}` so a
     // label this script rewrites reads the same as the one the server rendered
     // (`web/words.py::num`, the `| num` filter). `data-items` stays a raw
