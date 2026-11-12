@@ -113,7 +113,7 @@ def test_step_1_for_831_is_lines_1_and_6_and_enqueues_nothing(client, conn):
 
     assert r.status_code == 200
     assert _lines(r.text) == [
-        "Type: ISO → DoC. Regulation: MDR (unchanged). Covers: whole range → specific items.",
+        "Type: ISO → DoC. Rules: MDR (unchanged). What it covers: whole range → specific items.",
         LINE_6_GROUP,
     ]
     assert _gate_apply_count(conn) == before
@@ -136,7 +136,7 @@ def test_step_1_for_832_names_the_number_and_the_expiry(client, conn):
 
     expiry = words.day_text(date(2027, 5, 25))
     assert _lines(r.text) == [
-        "Type: ISO → DoC. Regulation: MDR (unchanged). Covers: whole range → specific items.",
+        "Type: ISO → DoC. Rules: MDR (unchanged). What it covers: whole range → specific items.",
         f"Certificate number 028/MDR will be read as the certificate this declaration cites. "
         f"Expiry {expiry} stays. Correct them under Correct a fact first when you approve "
         f"if they are wrong.",
@@ -147,7 +147,7 @@ def test_step_1_for_832_names_the_number_and_the_expiry(client, conn):
 def test_line_1_names_only_what_changes():
     lines = words.retype_lines(_plan(before=("DoC", "MDD", "group"),
                                      after=("DoC", "MDR", "group")))
-    assert lines[0] == "Type: DoC (unchanged). Regulation: MDD → MDR. Covers: specific items (unchanged)."
+    assert lines[0] == "Type: DoC (unchanged). Rules: MDD → MDR. What it covers: specific items (unchanged)."
 
 
 def _plan(*, before, after, **over):
@@ -168,7 +168,7 @@ def test_line_2_names_the_first_ten_links_and_counts_the_rest(client, conn):
 
     first = ", ".join(f"r-l12-{i:02d}" for i in range(1, 11))
     assert _lines(r.text) == [
-        "Type: DoC (unchanged). Regulation: MDR (unchanged). Covers: specific items → whole range.",
+        "Type: DoC (unchanged). Rules: MDR (unchanged). What it covers: specific items → whole range.",
         f"12 items now linked will be taken off: {first}, and 2 more.",
         LINE_6_RANGE,
     ]
@@ -567,3 +567,45 @@ def test_correct_a_fact_first_has_no_type_field(client, conn):
     corrections = re.search(r'<details class="corrections">.*?</details>', text, re.S).group(0)
     assert "Document type" not in corrections
     assert ">Rules<" in corrections
+
+
+def test_the_bad_date_guard_lets_a_type_change_through():
+    """base.html stops a Review request while a date field holds a day the
+    calendar has not got. A type change sends no date, so its form and the
+    confirm swapped into `.retype-confirm` are exempt, as the reject form is.
+    Static: no test here runs the page's JS."""
+    import pathlib
+
+    src = (pathlib.Path(__file__).resolve().parents[1] / "web" / "templates"
+           / "base.html").read_text(encoding="utf-8")
+    guard = src[src.index('addEventListener("htmx:beforeRequest"'):]
+    guard = guard[:guard.index('form.closest(".review-side")')]
+    for exempt in ('classList.contains("reject-form")', 'classList.contains("retype-form")',
+                   'form.closest(".retype-confirm")'):
+        assert exempt in guard, exempt
+
+
+def test_a_new_certificate_no_declaration_cites_says_so():
+    lines = words.retype_lines(_plan(before=("DoC", "MDR", "group"),
+                                     after=("EC", "MDR", "manufacturer"),
+                                     cert_number="CE 607775"))
+    assert "No declaration on file cites certificate CE 607775 yet." in lines
+
+
+def test_the_refusal_table_covers_every_code_problems_can_emit():
+    """Set equality, read off `problems` itself, so a code added there without
+    a sentence here fails this test rather than reaching Nataša as an error."""
+    import inspect
+
+    from app import retype
+
+    src = inspect.getsource(retype.problems)
+    emitted = set(re.findall(r'out\.append\("([a-z-]+)"\)', src)) \
+        | set(re.findall(r'return \["([a-z-]+)"\]', src))
+    assert emitted, "no codes found -- did problems() change shape?"
+    assert emitted == set(words.RETYPE_REFUSALS) == set(words.RETYPE_REFUSAL_ORDER)
+
+
+def test_an_unknown_refusal_code_still_gets_a_sentence():
+    said = words.retype_refusal(["some-new-code"])
+    assert said == f"{words.RETYPE_REFUSAL_FALLBACK} Nothing was changed."

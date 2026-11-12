@@ -466,8 +466,8 @@ def retype_lines(plan) -> list[str]:
     scope = lambda s: RETYPE_SCOPE_WORDS.get(s, s)  # noqa: E731
     lines = [" ".join((
         _was_now("Type", b["type"], a["type"]),
-        _was_now("Regulation", b["regulation"], a["regulation"]),
-        _was_now("Covers", b["coverage_scope"], a["coverage_scope"], scope)))]
+        _was_now("Rules", b["regulation"], a["regulation"]),
+        _was_now("What it covers", b["coverage_scope"], a["coverage_scope"], scope)))]
     if plan.links_off:
         named = plan.links_off[:RETYPE_LINKS_NAMED]
         rest = len(plan.links_off) - len(named)
@@ -513,10 +513,15 @@ def retype_tick(doc_type: str, scope: str) -> str:
             f"for {RETYPE_SCOPE_TICK.get(scope, scope)}.")
 
 
+RETYPE_REFUSAL_FALLBACK = "The type could not be changed. Reload the page and try again."
+
+
 def retype_refusal(codes: list[str]) -> str:
-    """The one sentence for a refused retype, ending as every refusal does."""
-    code = next(c for c in RETYPE_REFUSAL_ORDER if c in codes)
-    return f"{RETYPE_REFUSALS[code]} Nothing was changed."
+    """The one sentence for a refused retype, ending as every refusal does. A
+    code this table does not know (one added to `app.retype.problems` later)
+    gets the general sentence rather than an error page."""
+    code = next((c for c in RETYPE_REFUSAL_ORDER if c in codes), None)
+    return f"{RETYPE_REFUSALS.get(code, RETYPE_REFUSAL_FALLBACK)} Nothing was changed."
 
 
 def retyped_head(retyped) -> str | None:

@@ -186,8 +186,10 @@ Review, kratka vrstica ob njem pa pove, kdaj ga uporabiti.
      *(unchanged)*;
    - *N items now linked will be taken off: …* (prvih deset je poimenovanih);
    - izjave, ki ta dokument navajajo kot svoj certifikat in ga ne bodo več;
-   - pri certifikatu izjave, ki bodo nanj kazale, ali *No declaration can point
-     to it until a certificate number is entered.*;
+   - pri certifikatu izjave, ki bodo nanj kazale; ali *No declaration on file
+     cites certificate ⟨številka⟩ yet.*, kadar ga nobena ne navaja; ali *No
+     declaration can point to it until a certificate number is entered.*,
+     kadar nima številke;
    - kaj se zgodi s številko certifikata in datumom izteka. Ostaneta, kakršna
      sta; če sta napačna, ju popravite pod **Correct a fact first**, ko
      odobrite;

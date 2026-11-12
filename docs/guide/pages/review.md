@@ -186,8 +186,10 @@ document waiting on Review, and a short line beside it says when to use it.
    - *N items now linked will be taken off: …* (the first ten are named);
    - declarations that cite this document as their certificate and will no
      longer;
-   - for a certificate, the declarations that will point to it, or *No
-     declaration can point to it until a certificate number is entered.*;
+   - for a certificate, the declarations that will point to it; or *No
+     declaration on file cites certificate ⟨number⟩ yet.* when none does; or
+     *No declaration can point to it until a certificate number is entered.*
+     when it has no number;
    - what happens to the certificate number and the expiry date. They stay as
      they are; correct them under **Correct a fact first** when you approve if
      they are wrong;

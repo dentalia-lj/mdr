@@ -118,8 +118,11 @@
     document.addEventListener("htmx:beforeRequest", function (evt) {
       var elt = evt.detail && evt.detail.elt;
       var form = elt && elt.closest ? elt.closest("form") : null;
-      // A reject sends no correction, so a bad date must not hold it up.
-      var side = form && !form.classList.contains("reject-form") && form.closest(".review-side");
+      // A reject sends no correction, and a type change (its form and its
+      // confirm) sends none either, so a bad date must not hold them up.
+      var exempt = form && (form.classList.contains("reject-form")
+        || form.classList.contains("retype-form") || form.closest(".retype-confirm"));
+      var side = form && !exempt && form.closest(".review-side");
       if (!side) return;
       var bad = Array.prototype.filter.call(
         side.querySelectorAll("input[data-date-check]"),

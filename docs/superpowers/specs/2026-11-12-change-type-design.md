@@ -84,8 +84,9 @@ Step 1 (no `confirm`): writes nothing. Validates the values and the
 preconditions in section 6, then answers into the panel's slot with the
 consequence list, computed from the registry now:
 
-1. "Type: ISO -> DoC. Regulation: MDR (unchanged). Covers: whole range ->
-   specific items." Only changed lines say "->".
+1. "Type: ISO -> DoC. Rules: MDR (unchanged). What it covers: whole range ->
+   specific items." Only changed lines say "->". *(Labels amended 2026-11-12
+   after final review: the form's own labels, one vocabulary on one screen.)*
 2. Scope becomes whole range and the document has staged links: "N items now
    linked will be taken off: <first 10 item refs>, and N-10 more." (Zero ->
    line omitted.)
