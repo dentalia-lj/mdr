@@ -77,6 +77,22 @@ Ta števila so samo napake, ki še potrebujejo koga. Delo, ki ste ga že poslali
 nazaj, izpade iz njih in se na zaslonu Failed pokaže kot *trying again* ali
 *searching again*.
 
+### Link checks
+
+Ob vsakem odprtju zaslon preveri vse objavljene povezave glede na Business
+Central. Običajno kartica pravi **All N published links match the manufacturer
+Business Central gives each item**, kar pomeni, da ni treba storiti nič. Ko kaj
+najde, naslov pokaže **N to look at**, kartica pa imenuje vsak dokument:
+
+| Vrstica | Kaj pomeni | Kaj storite |
+|---|---|---|
+| **N published links reach an item another manufacturer makes in Business Central** | Objavljen dokument šteje za artikel, ki ga BC vodi pod drugim proizvajalcem. Vrstica pove, katerim in koliko artiklov | Odprite dokument. Če je artikel napačen, na njem uporabite **Remove**. Če BC artikel vodi pod napačnim proizvajalcem, povejte tistemu, ki ureja BC |
+| **N published links sit under a document with no confirmed manufacturer** | Objavljen dokument šteje za artikle, proizvajalec zanj pa ni bil nikoli potrjen | Odprite dokument in povejte razvijalcu |
+
+Ne vidi dokumenta prave blagovne znamke, a napačnega izdelovalca, na primer
+certifikata podizvajalca, ki šteje za celoten program blagovne znamke. Za to je
+potrebno polje izdelovalca v Business Centralu, ki ga sistem še ne bere.
+
 ### Stavek o izjavah
 
 **Declarations on file for X of Y medical-device items (Z%)** je številka za

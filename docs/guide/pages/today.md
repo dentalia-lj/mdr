@@ -78,6 +78,22 @@ These counts are only the failures that still need someone. Work you have
 already sent back drops out of them and shows on the Failed screen as *trying
 again* or *searching again*.
 
+### Link checks
+
+Every time the screen opens it checks every published link against Business
+Central. Normally the card says **All N published links match the manufacturer
+Business Central gives each item**, which means nothing to do. When it finds
+something, the heading shows **N to look at** and the card names each document:
+
+| Line | What it means | What you do |
+|---|---|---|
+| **N published links reach an item another manufacturer makes in Business Central** | A published document counts for an item that BC files under a different manufacturer. The line says which, and how many items | Open the document. If the item is wrong, use **Remove** on it. If BC files the item under the wrong manufacturer, tell whoever keeps BC |
+| **N published links sit under a document with no confirmed manufacturer** | A published document counts for items but no manufacturer was ever confirmed for it | Open the document and tell a developer |
+
+It cannot see a document from the right brand but the wrong maker, such as a
+contract maker's certificate counted for the brand's whole range. That needs
+Business Central's maker field, which the system does not read yet.
+
 ### The declarations sentence
 
 **Declarations on file for X of Y medical-device items (Z%)** is the figure to

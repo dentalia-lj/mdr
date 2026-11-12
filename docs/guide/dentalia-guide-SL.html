@@ -508,6 +508,25 @@ tbody tr:last-child td{border-bottom:0}
 </tr>
 </tbody></table></div>
 <p>Ta števila so samo napake, ki še potrebujejo koga. Delo, ki ste ga že poslali nazaj, izpade iz njih in se na zaslonu Failed pokaže kot <em>trying again</em> ali <em>searching again</em>.</p>
+<h3 id="pages/today--link-checks">Link checks</h3>
+<p>Ob vsakem odprtju zaslon preveri vse objavljene povezave glede na Business Central. Običajno kartica pravi <strong>All N published links match the manufacturer Business Central gives each item</strong>, kar pomeni, da ni treba storiti nič. Ko kaj najde, naslov pokaže <strong>N to look at</strong>, kartica pa imenuje vsak dokument:</p>
+<div class="tw"><table><thead><tr>
+<th>Vrstica</th>
+<th>Kaj pomeni</th>
+<th>Kaj storite</th>
+</tr></thead><tbody>
+<tr>
+<td><strong>N published links reach an item another manufacturer makes in Business Central</strong></td>
+<td>Objavljen dokument šteje za artikel, ki ga BC vodi pod drugim proizvajalcem. Vrstica pove, katerim in koliko artiklov</td>
+<td>Odprite dokument. Če je artikel napačen, na njem uporabite <strong>Remove</strong>. Če BC artikel vodi pod napačnim proizvajalcem, povejte tistemu, ki ureja BC</td>
+</tr>
+<tr>
+<td><strong>N published links sit under a document with no confirmed manufacturer</strong></td>
+<td>Objavljen dokument šteje za artikle, proizvajalec zanj pa ni bil nikoli potrjen</td>
+<td>Odprite dokument in povejte razvijalcu</td>
+</tr>
+</tbody></table></div>
+<p>Ne vidi dokumenta prave blagovne znamke, a napačnega izdelovalca, na primer certifikata podizvajalca, ki šteje za celoten program blagovne znamke. Za to je potrebno polje izdelovalca v Business Centralu, ki ga sistem še ne bere.</p>
 <h3 id="pages/today--stavek-o-izjavah">Stavek o izjavah</h3>
 <p><strong>Declarations on file for X of Y medical-device items (Z%)</strong> je številka za navedbo Dentalii, vrstica pod njo pa pove točno, kaj šteje: artikle, ki jih Business Central označi kot medicinske pripomočke, in, če takšni so, koliko artiklov BC sploh ni razvrstil, zato niso šteti. Povezava odpre <a href="#pages/coverage">Coverage gaps</a>, kjer je število <strong>No Declaration of Conformity</strong> vedno isto.</p>
 <h3 id="pages/today--tedensko-poročilo">Tedensko poročilo</h3>

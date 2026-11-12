@@ -505,6 +505,25 @@ tbody tr:last-child td{border-bottom:0}
 </tr>
 </tbody></table></div>
 <p>These counts are only the failures that still need someone. Work you have already sent back drops out of them and shows on the Failed screen as <em>trying again</em> or <em>searching again</em>.</p>
+<h3 id="pages/today--link-checks">Link checks</h3>
+<p>Every time the screen opens it checks every published link against Business Central. Normally the card says <strong>All N published links match the manufacturer Business Central gives each item</strong>, which means nothing to do. When it finds something, the heading shows <strong>N to look at</strong> and the card names each document:</p>
+<div class="tw"><table><thead><tr>
+<th>Line</th>
+<th>What it means</th>
+<th>What you do</th>
+</tr></thead><tbody>
+<tr>
+<td><strong>N published links reach an item another manufacturer makes in Business Central</strong></td>
+<td>A published document counts for an item that BC files under a different manufacturer. The line says which, and how many items</td>
+<td>Open the document. If the item is wrong, use <strong>Remove</strong> on it. If BC files the item under the wrong manufacturer, tell whoever keeps BC</td>
+</tr>
+<tr>
+<td><strong>N published links sit under a document with no confirmed manufacturer</strong></td>
+<td>A published document counts for items but no manufacturer was ever confirmed for it</td>
+<td>Open the document and tell a developer</td>
+</tr>
+</tbody></table></div>
+<p>It cannot see a document from the right brand but the wrong maker, such as a contract maker's certificate counted for the brand's whole range. That needs Business Central's maker field, which the system does not read yet.</p>
 <h3 id="pages/today--the-declarations-sentence">The declarations sentence</h3>
 <p><strong>Declarations on file for X of Y medical-device items (Z%)</strong> is the figure to quote to Dentalia, and the line under it says exactly what it counts: items Business Central marks as medical devices, and, where there are any, how many items BC has not classified at all and so are not counted. The link opens <a href="#pages/coverage">Coverage gaps</a>, where the <strong>No Declaration of Conformity</strong> count is always the same number.</p>
 <h3 id="pages/today--the-weeks-report">The week's report</h3>
