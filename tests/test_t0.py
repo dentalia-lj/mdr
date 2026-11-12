@@ -166,6 +166,56 @@ def test_iso_wins_when_it_is_the_only_type_family_on_the_page():
     assert t0.extract_type(text, "")["value"] == "ISO"
 
 
+#: Doc 592 on the server (2026-11-12): a T-Injecta product brochure. Its only
+#: type marker is a sentence about the manufacturer's QMS, and it was typed
+#: ISO at 1.0 and offered for approval as a whole-range certificate.
+DOC_592_HEAD = (
+    "[[page 1]]\nwww.t-injecta.sk\nWe supply values for life\n"
+    "CHIRANA® 3-part disposable syringes\n"
+    "ergonomic design, smooth flow, higly transparent barrel, tight\n"
+    "black extended graduation, easy to read\n" + "feature line\n" * 30 +
+    "According to EN, ISO standards | Quality management certiﬁed according "
+    "to EN ISO 13485:2016 | CE marked\n"
+)
+
+
+def test_a_brochure_citing_iso_13485_is_not_a_settled_iso():
+    """No certificate word in its title, so the citation is a hint the ladder
+    may overrule, never a settled type."""
+    ev = t0.extract_type(DOC_592_HEAD, "CHIRANA-3-part-disposable-syringes.pdf")
+    assert ev["value"] == "ISO"
+    assert ev["conf"] < t0._TYPE_SETTLED_CONF
+
+
+@pytest.mark.parametrize("title", [
+    "Certificate",            # 31 of the 53 server ISO certificates
+    "ZERTIFIKAT",             # docs 178, 630, 640, 1157
+    "Certificato",            # Italian bodies (docs 1105, 783, ...)
+    "Certiﬁcate",             # the same word through an fi ligature
+])
+def test_a_titled_iso_certificate_stays_settled(title):
+    """Every ISO certificate on the server (2026-11-12) prints its certificate
+    word within the first 264 characters, however late the standard comes."""
+    text = f"[[page 1]]\n{title}\n" + "holder address line\n" * 50 + "EN ISO 13485:2016"
+    ev = t0.extract_type(text, "")
+    assert ev["value"] == "ISO"
+    assert ev["conf"] == 1.0
+
+
+@pytest.mark.parametrize("title", [
+    "Izjava EU o skladnosti",           # Zlatarna Celje docs 831-837
+    "Dichiarazione UE di conformità",
+    "Dichiarazione UE di conformita",
+])
+def test_an_eu_declaration_title_is_a_declaration(title):
+    """The `EU`/`UE` between the words broke the DoC marker, so a declaration
+    citing the manufacturer's ISO 13485 certification was typed ISO."""
+    text = f"[[page 1]]\n{title}\nProizvajalec: ZLATARNA CELJE d.o.o.\nEN ISO 13485:2016"
+    ev = t0.extract_type(text, "")
+    assert ev["value"] == "DoC"
+    assert ev["conf"] == 1.0
+
+
 def test_a_type_mentioned_deep_in_the_body_is_not_settled():
     """conf 1.0 means "an exact phrase matched", never "the type is certain".
     A marker found past the title region is a mention; it must stay under

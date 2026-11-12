@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import os
 import re
+import unicodedata
 
 from datetime import date
 
@@ -58,6 +59,13 @@ _TYPE_MARKERS = [
     ("declaration de conformite", "DoC"),
     ("dichiarazione di conformità", "DoC"),
     ("dichiarazione di conformita", "DoC"),
+    # The EU-variant titles, which put `EU`/`UE` between the words and so
+    # matched neither marker above. Zlatarna Celje's seven "Izjava EU o
+    # skladnosti" declarations (server docs 831-837, 2026-11-12) typed ISO off
+    # the ISO 13485 certification they cite.
+    ("izjava eu o skladnosti", "DoC"),
+    ("dichiarazione ue di conformità", "DoC"),
+    ("dichiarazione ue di conformita", "DoC"),
     # `iso 13485` is the ONLY ISO signal. "quality management system" was one
     # too until 2026-08-20 and typed seven documents across five manufacturers
     # wrong -- doc 420 reached `production` as ISO off a title that reads "EU
@@ -500,6 +508,24 @@ _TYPE_TITLE_CHARS = 4000
 _TYPE_MENTION_CONF = 0.6
 
 
+#: How far into the text an ISO certificate's own title word may sit. Measured
+#: over the 53 ISO certificates on the server (2026-11-12): the latest prints
+#: it at character 264. The margin costs nothing on the documents it exists
+#: for -- brochures that cite the standard carry no certificate word at all.
+_ISO_TITLE_CHARS = 500
+#: `certificat` covers certificate, certificato, certificat; `certified` and
+#: `certify` are deliberately absent, because a brochure says "quality
+#: management certified according to EN ISO 13485" (server doc 592).
+_CERTIFICATE_WORDS = ("certificat", "zertifikat", "certifikat")
+
+
+def _titled_certificate(text: str) -> bool:
+    """Whether the document's opening calls itself a certificate. NFKC folds
+    the `ﬁ` ligature some PDF text layers carry back to `fi`."""
+    head = unicodedata.normalize("NFKC", text[:_ISO_TITLE_CHARS]).lower()
+    return any(w in head for w in _CERTIFICATE_WORDS)
+
+
 def extract_type(text: str, filename: str = "", playbook=None) -> dict | None:
     """Type from the EARLIEST marker in the document, not the first in the list.
 
@@ -540,6 +566,8 @@ def extract_type(text: str, filename: str = "", playbook=None) -> dict | None:
     if best is not None:
         i, _, marker, value = best
         conf = 1.0 if i < _TYPE_TITLE_CHARS else _TYPE_MENTION_CONF
+        if value == "ISO" and not _titled_certificate(text):
+            conf = _TYPE_MENTION_CONF
         return field_ev(value, conf, text[i : i + len(marker)])
     # BASENAME, never the whole path. `filename` is the archive_url, and
     # `archiving.archive_path` builds it as `{manufacturer}/{doc|ifu|iso}/...`
