@@ -21,6 +21,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Callable
+from typing import NamedTuple
 
 _WS_RE = re.compile(r"\s+")
 _PUNCT_SPACE_RE = re.compile(r"\s*([.,])\s*")
@@ -201,3 +202,36 @@ def item_codes_resolver(conn) -> Callable[[str], list[str]]:
         return sorted(code for key in accepted for code in codes_by_key.get(key, ()))
 
     return codes_for
+
+
+class DeviceClass(NamedTuple):
+    """What BC says about the device class of one manufacturer's items.
+
+    `md_flag` is tri-state (`app/handlers/ingest.py`): TRUE is a medical
+    device, FALSE is BC DECLASSIFYING an item (a positive statement), NULL is a
+    blank class column (a gap, not an answer). `[mfr-bind-empty-class]` (Denis
+    2026-08-27) turns on telling the last two apart, so the one discriminator
+    lives here and `gate._handle_mfr_binding`, `gate._retarget_task` and
+    `repair_mfr_task_reason` all read it."""
+    codes: list[str]
+    md: int
+    declassified: int
+
+    @property
+    def blank(self) -> bool:
+        """BC has said nothing either way: no TRUE and no FALSE item. True for
+        a manufacturer with no catalogue codes at all, which is what GATE
+        decides on; a caller that must tell "no codes" apart checks `codes`."""
+        return not self.md and not self.declassified
+
+
+def device_class(conn, name: str | None) -> DeviceClass:
+    """`DeviceClass` for `name`, over every BC code `item_codes_for` finds."""
+    codes = item_codes_for(conn, name) if name else []
+    if not codes:
+        return DeviceClass([], 0, 0)
+    row = conn.execute(
+        "SELECT count(*) FILTER (WHERE md_flag IS TRUE)  AS md, "
+        "       count(*) FILTER (WHERE md_flag IS FALSE) AS declassified "
+        "FROM item_mirror WHERE manufacturer_raw = ANY(%s)", (codes,)).fetchone()
+    return DeviceClass(codes, row["md"], row["declassified"])

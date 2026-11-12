@@ -233,6 +233,13 @@ run in parallel:
      evidence) keeps its column and evidence (`reviewer_edits_kept`,
      invariant 2); and the row lock above stops a decision committing
      between the status read and the write from being overwritten.
+   - **A scope a person set** (2026-11-12, `gate._route_held`): when
+     `coverage_scope` carries T3 evidence (retype, or an edit), GATE decides
+     before either route, right after the stale-rev no-op and the row lock.
+     Disposition `route-held`: a published, superseded, rejected or filed
+     document is kept with no link at all; a staged one takes the reading's
+     unheld fields and evidence and its task moves to the held scope's panel,
+     with nothing published, linked or re-routed.
 
 **8. Visible on a product.** A `production` document is now servable:
 `/item/{item_ref}?k=` (the BC hyperlink target, `docs/runbook.md`'s Web UI

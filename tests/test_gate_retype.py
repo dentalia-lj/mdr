@@ -288,7 +288,10 @@ def test_latest_retype_prevails(conn):
     assert len(_audit(conn, doc_id, "retype")) == 2
 
 
-@pytest.mark.parametrize("md, reason", [(None, "md-class-unknown"), (True, None)])
+@pytest.mark.parametrize("md, reason", [(None, "md-class-unknown"), (True, None),
+                                       # BC declassified every item: a statement,
+                                       # not a blank, so the usual sentence holds
+                                       (False, None)])
 def test_whole_range_task_reason_follows_the_catalogue(conn, md, reason):
     doc_id = _doc(conn, "rsn", "DoC", "MDR", "group")
     _item(conn, "M1", md=md)
@@ -299,6 +302,18 @@ def test_whole_range_task_reason_follows_the_catalogue(conn, md, reason):
     (task,) = _tasks(conn, doc_id)
     assert task["payload"].get("reason") == reason
     assert task["payload"]["manufacturer"] == MFR
+
+
+def test_the_tasks_retyped_time_is_the_audit_rows_time(conn):
+    """Both from the transaction's clock, so the task and the trail agree."""
+    from datetime import datetime
+
+    doc_id = _doc(conn, "when", "ISO", "MDR", "manufacturer")
+    _apply(conn, doc_id, ("DoC", "MDR", "group"))
+
+    (task,) = _tasks(conn, doc_id)
+    (a,) = _audit(conn, doc_id, "retype")
+    assert datetime.fromisoformat(task["payload"]["retyped"]["at"]) == a["at"]
 
 
 def test_unknown_manufacturer_to_whole_range_sets_route_without_manufacturer(conn):

@@ -31,7 +31,6 @@ is a followup for when RESOLVE/FETCH make the chain live.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 
 from psycopg.types.json import Json
 
@@ -1272,11 +1271,8 @@ def _handle_mfr_binding(conn, job) -> dict:
             out["flags"] = flags
         return _note_held(out, prev, fields, held)
 
-    codes = manufacturers.item_codes_for(conn, bound)
-    n_items = conn.execute(
-        "SELECT count(*) c FROM item_mirror WHERE md_flag IS TRUE AND manufacturer_raw = ANY(%s)",
-        (codes,),
-    ).fetchone()["c"] if codes else 0
+    device_class = manufacturers.device_class(conn, bound)
+    n_items = device_class.md
 
     # [mfr-bind-empty-class], Denis 2026-08-27: "an empty BC class column means
     # UNKNOWN, not 'not a device'." No MD item is therefore two different
@@ -1300,10 +1296,9 @@ def _handle_mfr_binding(conn, job) -> dict:
     # written: it is empty-string on exactly the 11.693 NULL rows and holds a
     # class on exactly the 4.265 TRUE ones, never disagreeing with md_flag, so
     # it carries no third state to read.
-    declassified = conn.execute(
-        "SELECT count(*) c FROM item_mirror WHERE md_flag IS FALSE AND manufacturer_raw = ANY(%s)",
-        (codes,),
-    ).fetchone()["c"] if codes else 0
+    #
+    # The test is `manufacturers.device_class`, shared with `_retarget_task`
+    # and `repair_mfr_task_reason`, so the three cannot drift.
 
     # 053: every branch below reached a RESOLVED manufacturer -- that is what
     # separates them from the `bound is None` branch above, which records
@@ -1312,7 +1307,7 @@ def _handle_mfr_binding(conn, job) -> dict:
     # and this is what makes them queryable under a manufacturer at all.
     storable = _bindable_manufacturer(conn, bound)
 
-    if not n_items and not declassified:
+    if device_class.blank:
         if _keeps(prev_status, False):
             out = {"disposition": "mfr-binding", "doc_id": prev["doc_id"],
                    "manufacturer": bound, "reason": "md-class-unknown"}
@@ -1395,8 +1390,91 @@ def _candidate_result(disposition, doc_id, score, payload, flags) -> dict:
     return out
 
 
+#: Statuses a reading over a held scope is kept from outright (spec
+#: 2026-11-12 §9): everything but `staged`, where the person is still deciding.
+_ROUTE_HELD_KEPT = ("production", "superseded", "rejected", "filed")
+
+
+def _latest_retype(conn, doc_id) -> dict | None:
+    """`{by, at}` of the document's latest `retype` audit row, or None."""
+    row = conn.execute("SELECT decided_by, at FROM audit_log WHERE doc_id=%s "
+                       "AND event='retype' ORDER BY id DESC LIMIT 1", (doc_id,)).fetchone()
+    return {"by": row["decided_by"], "at": row["at"].isoformat()} if row else None
+
+
+def _route_held(conn, job: dict) -> dict | None:
+    """A reading of a document whose scope a person set, or None when no
+    person set it (spec 2026-11-12 §9; ruled by Denis 2026-11-12, "build it,
+    at every status").
+
+    VALIDATE never reads T3: it routes by the reading, and GATE picks the
+    whole-range path off its `route`. So a re-read of a declaration a person
+    said covers items can arrive as `mfr-binding` and link every MD item of the
+    manufacturer -- on a published document silently, with no audit row -- and
+    a re-read of a certificate a person said covers a whole range can arrive
+    with item links. A held `coverage_scope` (`_reviewer_held`, T3 from
+    retype or an edit) stops both, before either route runs, so the two cannot
+    drift. A held scope that agrees with the route stops it too: a document a
+    person retyped waits for that person.
+
+    Order: the superseded-reading no-op, then the row lock, then the hold.
+
+    * `production`, `superseded`, `rejected`, `filed`: kept (`_kept`). No link
+      at all, not even the staged proposals a kept published document gets
+      (R1); a person adds items with add-items. No task.
+    * `staged`: the reading's values land where nothing is held, with their
+      evidence; a certificate answers the declarations citing it; the task
+      points at the held scope's panel (`_retarget_task`, shared with
+      retype). None of the reading's `supersedes`, `related_doc_id`,
+      `cert_doc_id` or manufacturer, none of its flags, no link written or
+      retracted, no task resolved. Returning here also pre-empts the
+      auto-supersede fast path and the chain-identity check."""
+    p = job["payload"]
+    if not _is_current_rev(conn, p["content_hash"], p["extract_rev"]):
+        return {"skipped": "superseded-rev", "content_hash": p["content_hash"],
+                "extract_rev": p["extract_rev"]}
+    prev = conn.execute(
+        "SELECT * FROM document WHERE content_hash=%s FOR UPDATE", (p["content_hash"],)
+    ).fetchone()
+    if prev is None:
+        return None
+    held = _reviewer_held(conn, prev["doc_id"])
+    if "coverage_scope" not in held:
+        return None
+
+    fields = _read_ext(conn, p["content_hash"], p["extract_rev"])
+    if fields is None:
+        raise LookupError(f"gate.candidate: no extraction {p['content_hash']}:{p['extract_rev']}")
+    out = {"disposition": "route-held", "doc_id": prev["doc_id"],
+           "held_scope": prev["coverage_scope"]}
+    if prev["status"] in _ROUTE_HELD_KEPT:
+        return _kept(conn, prev, fields, out)
+    if prev["status"] != "staged":
+        raise ValueError(f"gate.candidate: doc {prev['doc_id']} has status "
+                         f"{prev['status']!r}, which route-held does not know")
+
+    # The usual reading checks. Their flags are dropped with the reading's own:
+    # they describe a reading the person's scope has overruled.
+    _require_complete_evidence(fields)
+    archive_url = _archive_url(conn, p, p["content_hash"])
+    cfg = load_config()
+    doc_id = _upsert_document(conn, fields, p["content_hash"], archive_url, "staged",
+                              held=held)
+    _insert_evidence(conn, doc_id, p["extract_rev"], fields, archive_url,
+                     calib_map=getattr(cfg, "calibration", {}) or {},
+                     agreement_min=cfg.gate.agreement_min, held=held)
+    _backresolve_here(conn, doc_id)
+    _retarget_task(conn, doc_id, prev["coverage_scope"], _latest_retype(conn, doc_id),
+                   group_id=p.get("group_id"))
+    return _note_held(out, prev, fields, held)
+
+
 def _gate_candidate(conn, job: dict) -> dict:
     p = job["payload"]
+    # Before the route dispatch, so a person's scope stops both routes alike.
+    held_out = _route_held(conn, job)
+    if held_out is not None:
+        return held_out
     if p.get("route") == "mfr-binding":
         return _handle_mfr_binding(conn, job)
 
@@ -2104,19 +2182,23 @@ def _write_items(conn, doc_id, manufacturer, refs, decided_by, job, via) -> None
         _audit(conn, "production-write", doc_id, decided_by, job, item_ref=ref)
 
 
-def _retarget_task(conn, doc_id: int, scope: str, retyped: dict | None) -> None:
+def _retarget_task(conn, doc_id: int, scope: str, retyped: dict | None, *,
+                   group_id: int | None = None) -> None:
     """Point the document's open `gate-manual` task at the panel for `scope`
     (spec 2026-11-12 §6 write 6), or open one with that payload.
 
     Only that kind: any other open task on the document is someone else's
     question. `manufacturer` scope sets `route = 'mfr-binding'` and the
     manufacturer (the document's binding, else the task's own), and `reason =
-    'md-class-unknown'` when that manufacturer holds no MD item; `group` scope
+    'md-class-unknown'` when BC has classified none of that manufacturer's
+    items either way (`manufacturers.device_class`, the test
+    `_handle_mfr_binding` raises the reason on); `group` scope
     removes `route` and `reason`. Either way `flags` go (they came from a
     reading that no longer describes the document and would mislead "Why it
     needs you" and the board chips), and `retyped = {by, at}` is set, or
     removed when `retyped` is None (Task 5's route-held path on a document no
-    person retyped). A new task takes the `group_id` of the document's latest
+    person retyped). A new task takes `group_id` (the candidate's own, on the
+    route-held path), else the `group_id` of the document's latest
     `gate-manual` task, so a later Reject can still re-run discovery."""
     canonical = conn.execute("SELECT canonical_manufacturer FROM document WHERE doc_id=%s",
                              (doc_id,)).fetchone()["canonical_manufacturer"]
@@ -2130,12 +2212,7 @@ def _retarget_task(conn, doc_id: int, scope: str, retyped: dict | None) -> None:
             out.pop("reason", None)
             if name:
                 out["manufacturer"] = name
-                codes = manufacturers.item_codes_for(conn, name)
-                md_items = conn.execute(
-                    "SELECT count(*) c FROM item_mirror "
-                    "WHERE md_flag IS TRUE AND manufacturer_raw = ANY(%s)",
-                    (codes,)).fetchone()["c"] if codes else 0
-                if not md_items:
+                if manufacturers.device_class(conn, name).blank:
                     out["reason"] = "md-class-unknown"
         else:
             out.pop("route", None)
@@ -2154,10 +2231,10 @@ def _retarget_task(conn, doc_id: int, scope: str, retyped: dict | None) -> None:
     if not tasks:
         conn.execute(
             "INSERT INTO manual_task (kind, doc_id, group_id, payload) "
-            "VALUES ('gate-manual', %s, "
+            "VALUES ('gate-manual', %s, COALESCE(%s::bigint, "
             "        (SELECT group_id FROM manual_task WHERE kind='gate-manual' "
-            "          AND doc_id=%s ORDER BY id DESC LIMIT 1), %s)",
-            (doc_id, doc_id, Json(rewrite({}))))
+            "          AND doc_id=%s ORDER BY id DESC LIMIT 1)), %s)",
+            (doc_id, group_id, doc_id, Json(rewrite({}))))
 
 
 def _apply_retype(conn, job) -> dict:
@@ -2224,8 +2301,11 @@ def _apply_retype(conn, job) -> dict:
                      "WHERE doc_id=%s AND cert_doc_id IS NOT NULL", (doc_id,))
 
     # 6. The task follows the new scope, so the panel and the reason match.
+    # `at` is the transaction's time, the one the audit row below takes, so
+    # the task and the trail agree.
+    now = conn.execute("SELECT now() AS t").fetchone()["t"]
     _retarget_task(conn, doc_id, after["coverage_scope"],
-                   {"by": decided_by, "at": datetime.now(timezone.utc).isoformat()})
+                   {"by": decided_by, "at": now.isoformat()})
 
     # 7. The decision's own row.
     _audit(conn, "retype", doc_id, decided_by, job, detail={

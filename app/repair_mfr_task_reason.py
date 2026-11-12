@@ -54,22 +54,12 @@ UNKNOWN_CLASS = "md-class-unknown"
 
 def _class_is_blank(conn, manufacturer: str | None) -> bool:
     """True when BC has recorded no device class either way for this
-    manufacturer's items.
-
-    Mirrors `gate._handle_mfr_binding`: `md_flag` is tri-state, `FALSE` means BC
-    DECLASSIFIED the item (a positive statement) and `NULL` means the column is
-    blank (a gap). Only the all-NULL case gets the amended sentence.
+    manufacturer's items (`manufacturers.device_class`, the discriminator
+    `gate._handle_mfr_binding` uses). A manufacturer with no BC codes is left
+    alone: there are no items whose class could be blank.
     """
-    codes = manufacturers.item_codes_for(conn, manufacturer) if manufacturer else []
-    if not codes:
-        return False
-    row = conn.execute(
-        "SELECT count(*) FILTER (WHERE md_flag IS TRUE)  AS md, "
-        "       count(*) FILTER (WHERE md_flag IS FALSE) AS declassified "
-        "FROM item_mirror WHERE manufacturer_raw = ANY(%s)",
-        (codes,),
-    ).fetchone()
-    return not row["md"] and not row["declassified"]
+    c = manufacturers.device_class(conn, manufacturer)
+    return bool(c.codes) and c.blank
 
 
 def plan(conn) -> list[dict]:
