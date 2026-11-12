@@ -125,7 +125,7 @@ to make.
 | `staged` | proposed, not published. Either the document is not trusted yet, or the link's own basis is capped (§4) and needs a person |
 | `production` | live coverage. Consumers require BOTH this and `document.status = 'production'` |
 | `rejected` | a named person refused this link. **Sticky against machines** (C17): no candidate may rewrite it, and only a named person takes it back to `staged`: `gate.apply reopen-link`, or the `reopen` list of `approve` / `add-items` |
-| `retracted` | the current extraction no longer supports it — machine-withdrawn, distinct from a human `rejected`, and deliberately NOT sticky: a later extraction that claims the link again revives it, and no human decision targets it |
+| `retracted` | nothing now claims it: the current extraction no longer supports it, or a person's Change type made the document cover a whole range (`retype`, 2026-11-12). Distinct from a human `rejected` (no item was refused), and deliberately NOT sticky: a later extraction or a whole-range approval that claims the link again revives it |
 
 Nothing is ever deleted: supersession is append-only with a 10-year retention
 (invariant 4).

@@ -762,10 +762,10 @@ def _retract_unsupported_links(conn, doc_id, links, job, group_id=None) -> int:
 #: registry must never move in. `gate.apply reopen-link` and the `reopen` list
 #: of `approve` / `add-items` are the only ways out, and both need a named human.
 #:
-#: `retracted` is deliberately ABSENT. It is a machine state meaning "the
-#: current extraction stopped claiming this link" (`_retract_unsupported_links`),
-#: not a decision — so a later extraction that claims it again SHOULD revive it,
-#: and no human decision targets it either.
+#: `retracted` is deliberately ABSENT. It means "nothing now claims this link"
+#: (`_retract_unsupported_links`, or a retype to the whole range), not a refusal
+#: of the item, so a later extraction or a whole-range approval that claims it
+#: again SHOULD revive it.
 STICKY_LINK_STATUSES = ("production", "rejected")
 
 
