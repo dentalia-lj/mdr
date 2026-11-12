@@ -2363,6 +2363,15 @@ def handle_gate_apply(conn, job: dict) -> dict:
     reopened = 0
 
     if decision == "approve":
+        # Change type spec 2026-11-12 §7: what a document IS changes only
+        # through `retype`, which shows every consequence first and rewrites
+        # links, citations and the task to match. An old form or a hand-built
+        # payload must not do it on the way to publishing.
+        retyping = {"type", "coverage_scope"} & set(p.get("edits") or {})
+        if retyping:
+            raise ValueError(
+                f"gate.apply approve: document {doc_id}: {', '.join(sorted(retyping))} "
+                f"is set with change type (decision 'retype'), not as an approve edit")
         _apply_edits(conn, doc_id, p.get("edits"))
         _require_issue_date(conn, doc_id, decision)
         _promote(conn, doc_id)

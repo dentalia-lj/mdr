@@ -15,7 +15,16 @@
   <form hx-post="{{ confirm_url }}" hx-target="#{{ confirm_target }}" hx-swap="innerHTML">
     {% for key, value in confirm_fields.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">
     {% endfor %}<input type="hidden" name="confirm" value="1">
-    <button type="submit">{{ confirm_label }}</button>
+    {# Optional second confirmation (Change type, spec 2026-11-12 §5): a
+       required box the person ticks to say she has read the document. The
+       button stays greyed until it is ticked; the route refuses a Yes
+       without it whatever the browser does. #}
+    {% if confirm_tick is defined %}
+    <label class="tick"><input type="checkbox" name="tick" value="1" required
+           onchange="this.form.querySelector('button[type=submit]').disabled = !this.checked;">
+      {{ confirm_tick }}</label>
+    {% endif %}
+    <button type="submit"{% if confirm_tick is defined %} disabled{% endif %}>{{ confirm_label }}</button>
     <button type="button" onclick="document.getElementById('{{ confirm_target }}').innerHTML=''">Cancel</button>
   </form>
 </div>

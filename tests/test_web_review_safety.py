@@ -514,9 +514,9 @@ def test_enter_in_a_correction_field_cannot_post_a_decision(client, conn, which)
         assert not any(_is_submit_button(c) for c in corrections["controls"])
         assert corrections["attrs"].get("onsubmit") == "return false;"
         return
+    # No `edit_type` since 2026-11-12: a type changes only through Change type.
     assert {c["name"] for _, c in edits} == {
-        "edit_type", "edit_regulation", "edit_validity_from",
-        "edit_validity_to", "edit_cert_number"}
+        "edit_regulation", "edit_validity_from", "edit_validity_to", "edit_cert_number"}
     home = {id(f) for f, _ in edits}
     assert len(home) == 1
     corrections = edits[0][0]
@@ -544,6 +544,63 @@ def test_an_approval_still_carries_a_correction(client, conn):
 
     rows = _jobs(conn, f"apply:{doc_id}:approve")
     assert rows[0]["payload"]["edits"] == {"validity_to": "2029-03-14"}
+
+
+CHANGE_TYPE_FIRST = "Change the type with Change type first. Nothing was changed."
+_BASELINE = json.dumps({
+    "type": "DoC", "regulation": "MDR", "validity_from": "2024-01-01",
+    "validity_to": "2028-01-01", "cert_number": "CERT-STAGED-1"})
+
+
+def test_approve_with_a_changed_edit_type_is_refused_and_enqueues_nothing(client, conn):
+    """Review Focus 3: a tab opened before the deploy still has the Type field.
+    Refused, never silently dropped: dropping it would publish under the type
+    she tried to change."""
+    doc_id = _demo(conn)["staged_doc"]
+    before = _gate_apply_count(conn)
+
+    r = client.post(f"/staging/{doc_id}/apply", data={
+        "decision": "approve", "edit_baseline": _BASELINE, "edit_type": "EC",
+        "edit_validity_to": "2029-03-14"})
+
+    assert r.status_code == 422
+    assert CHANGE_TYPE_FIRST in r.text
+    assert _gate_apply_count(conn) == before
+
+
+def test_approve_with_an_unchanged_edit_type_still_passes(client, conn):
+    """The same old tab, type left alone: the approval goes through."""
+    doc_id = _demo(conn)["staged_doc"]
+
+    r = client.post(f"/staging/{doc_id}/apply", data={
+        "decision": "approve", "edit_baseline": _BASELINE, "edit_type": "DoC",
+        "edit_validity_to": "2029-03-14"})
+
+    assert r.status_code == 200
+    assert _jobs(conn, f"apply:{doc_id}:approve")[0]["payload"]["edits"] == {
+        "validity_to": "2029-03-14"}
+
+
+@pytest.mark.parametrize("decision,edits,said", [
+    ("approve", {"type": "EC"}, CHANGE_TYPE_FIRST),
+    ("approve", {"coverage_scope": "manufacturer"},
+     "Change what it covers with Change type first. Nothing was changed."),
+    ("bind-manufacturer", {"type": "EC", "validity_from": "2024-01-01"}, CHANGE_TYPE_FIRST),
+])
+def test_raw_edits_with_type_or_coverage_scope_are_refused(client, conn, decision, edits, said):
+    """Review Focus 3, the hand-built form: the raw `edits` field cannot carry
+    what Change type decides either."""
+    doc_id = (_demo(conn)["staged_doc"] if decision == "approve"
+              else _seed_whole_range_candidate(conn))
+    before = _gate_apply_count(conn)
+
+    r = client.post(f"/staging/{doc_id}/apply", data={
+        "decision": decision, "edits": json.dumps(edits), "manufacturer": "RSAFE",
+        "confirm": "1"})
+
+    assert r.status_code == 422
+    assert said in r.text
+    assert _gate_apply_count(conn) == before
 
 
 def _seed_picker_candidate(conn) -> int:

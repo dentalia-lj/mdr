@@ -314,8 +314,14 @@ def test_back_resolution_follows_a_held_type(conn):
     ch = "t3-type"
     _seed(conn, ch, _ec_fields("EC-7", 0.85) | {"type": _ev("DoC", 0.85)})
     cert = gh.handle_gate_candidate(conn, _job(ch, ref_gate=True, flags=[], links=[]))["doc_id"]
+    assert _doc(conn, cert)["status"] == "staged"
+    # A type changes through Change type since 2026-11-12, never as an approve
+    # edit (GATE refuses that). The retype holds type and scope, so the re-read
+    # below takes the route-held branch, which back-resolves like the old path.
     gh.handle_gate_apply(conn, {"id": 2, "type": "gate.apply", "payload": {
-        "doc_id": cert, "decision": "approve", "decided_by": "nat", "edits": {"type": "EC"}}})
+        "doc_id": cert, "decision": "retype", "decided_by": "nat", "type": "EC",
+        "regulation": "MDR", "coverage_scope": "group",
+        "expected": {"type": "DoC", "regulation": "MDR", "coverage_scope": "group"}}})
     citer = _citing_doc(conn, "t3-type-citer", "EC-7")
     _seed(conn, ch, _ec_fields("EC-7", 0.97) | {"type": _ev("DoC")}, rev=2)
     gh.handle_gate_candidate(conn, _job(ch, rev=2, ref_gate=True, flags=[], links=[], jid=3))

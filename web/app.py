@@ -294,6 +294,11 @@ REGULATION_LABELS = {"MDR": "MDR", "MDD": "MDD", "n.a.": "no regulation"}
 # vocabularies, ordered for a human rather than by dict insertion accident.
 TYPE_CHOICES = [(v, DOC_TYPE_LABELS[v]) for v in ("DoC", "EC", "ISO", "IFU", "SPP", "other")]
 REGULATION_CHOICES = [(v, REGULATION_LABELS[v]) for v in ("MDR", "MDD", "n.a.")]
+# Change type on Review (spec 2026-11-12 §4): "What it covers", and what each
+# type covers unless she says otherwise. The browser applies the default
+# (static/retype.js reads it off each option); the server takes what is posted.
+SCOPE_CHOICES = [("group", "Specific items"), ("manufacturer", "The manufacturer's whole range")]
+RETYPE_DEFAULT_SCOPE = {v: retype.default_scope(v) for v, _ in TYPE_CHOICES}
 # `coverage_scope` is a closed vocabulary of TWO values. `item` was retired
 # 2026-08-12 and is unreachable on three levels: migration 022's CHECK forbids
 # it in the column, `derive_coverage_scope` never returns it ("`item` is never
@@ -511,6 +516,10 @@ DECISION_RECEIPTS = {
     "reopen": ("Reopened. It comes back to Review within a minute so it can be "
                "decided again."),
     "add-items": "Items recorded. They show this document within a minute.",
+    # `{panel}` is the panel its new scope belongs to (`words.RETYPE_SCOPE_WORDS`).
+    "retype": ("The type change for this document is recorded. It comes back on Review "
+               "in the {panel} panel within a minute, and you approve it there. Nothing "
+               "is published."),
 }
 
 #: The same, for a C17 link-level ruling: one item's link to one document.
@@ -745,8 +754,15 @@ def _doc_type_label(doc_type: str | None) -> str:
     return DOC_TYPE_LABELS.get(doc_type or "", doc_type or "Document")
 
 
+#: The specific-items panel's instruction after a person changed the type
+#: (spec 2026-11-12 §6 write 6): the retype dropped the old reading's flags,
+#: so there is no flag sentence to fall back on, and NO_TASK_REASON would say
+#: the document "was read without problems", which is not why it is here.
+RETYPED_GROUP_INSTRUCTION = "Choose the items this document covers, then approve."
+
+
 def _review_reason(flags: list[str] | None, *, is_mfr_binding: bool, has_task: bool,
-                   task_reason: str | None = None) -> str:
+                   task_reason: str | None = None, retyped: dict | None = None) -> str:
     """Why this document is waiting for a human, in one sentence.
 
     Unmapped flags are rendered as-is rather than dropped: a reviewer seeing a
@@ -756,11 +772,19 @@ def _review_reason(flags: list[str] | None, *, is_mfr_binding: bool, has_task: b
     `task_reason` is the task payload's own `reason`, and it only narrows the
     mfr-binding sentence — the route says WHAT this is, the reason says which
     kind. Defaults to None so every existing caller keeps the sentence it had.
+
+    `retyped` is the task payload's `{by, at}` from Change type (spec
+    2026-11-12 §6): "Type changed by <name> on <date>." and then the panel's
+    usual instruction. Its own branch, so a flagless group task does not read
+    the no-task sentence.
     """
+    head = words.retyped_head(retyped)
     if is_mfr_binding:
-        if task_reason == "md-class-unknown":
-            return MFR_BINDING_UNKNOWN_CLASS_REASON
-        return MFR_BINDING_REASON
+        tail = (MFR_BINDING_UNKNOWN_CLASS_REASON if task_reason == "md-class-unknown"
+                else MFR_BINDING_REASON)
+        return f"{head} {tail}" if head else tail
+    if head:
+        return f"{head} {RETYPED_GROUP_INSTRUCTION}"
     if not has_task or not flags:
         return NO_TASK_REASON
     return " ".join(FLAG_EXPLANATIONS.get(f, f"Flagged as {f}.") for f in flags)
@@ -1076,13 +1100,19 @@ rows AS (
            -- 2026-09-11 this query required a gate-manual task for both, so a
            -- task-less document of that shape read "could not prove which
            -- products" here while its panel offered the whole-range approval.
-           (COALESCE(t.kind = 'gate-manual' AND t.payload->>'route' = 'mfr-binding', false)
-            OR (d.coverage_scope = 'manufacturer'
-                AND COALESCE(lk.active_link_count, 0) = 0)) AS is_mfr_binding,
+           -- Both halves need manufacturer scope (2026-11-12): the whole-range
+           -- approval refuses a group document, so docs 592 and 594 (group
+           -- scope, route mfr-binding) would otherwise sit at a dead end.
+           (d.coverage_scope = 'manufacturer'
+            AND (COALESCE(t.kind = 'gate-manual'
+                          AND t.payload->>'route' = 'mfr-binding', false)
+                 OR COALESCE(lk.active_link_count, 0) = 0)) AS is_mfr_binding,
            -- The task's own `reason`, which narrows the mfr-binding
            -- sentence (`md-class-unknown` means binding would link zero
            -- items). Null on every task written before 2026-08-27.
            t.payload->>'reason' AS task_reason,
+           -- Who changed the type, and when (Change type, spec 2026-11-12 §6).
+           t.payload->'retyped' AS retyped,
            COALESCE(ARRAY(SELECT jsonb_array_elements_text(t.payload->'flags')),
                     '{{}}'::text[]) AS flags,
            (SELECT e.value FROM evidence e
@@ -1356,6 +1386,7 @@ def _decorate_review_row(r: dict) -> dict:
         is_mfr_binding=bool(r.get("is_mfr_binding")),
         has_task=r.get("task_id") is not None,
         task_reason=r.get("task_reason"),
+        retyped=r.get("retyped"),
     )
     return r
 
@@ -1676,11 +1707,15 @@ def _staged_doc_detail(conn, doc_id: int) -> dict | None:
     # the server-side action is unchanged and still guarded: `gate.apply`
     # bind-manufacturer refuses a name resolving to no BC code, and only
     # entities holding an MD item are offered.
+    #
+    # Manufacturer scope on both halves (2026-11-12, the board query too): the
+    # whole-range approval refuses a group document, so a group document gets
+    # the specific-items panel whatever its task route says (docs 592, 594).
     is_mfr_binding = bool(
-        (task and task["kind"] == "gate-manual"
-         and payload.get("route") == "mfr-binding")
-        or (doc["coverage_scope"] == "manufacturer"
-            and not any(lk["status"] != "rejected" for lk in links))
+        doc["coverage_scope"] == "manufacturer"
+        and ((task and task["kind"] == "gate-manual"
+              and payload.get("route") == "mfr-binding")
+             or not any(lk["status"] != "rejected" for lk in links))
     )
     row = {
         "doc": doc, "evidence": evidence, "links": links,
@@ -1692,6 +1727,7 @@ def _staged_doc_detail(conn, doc_id: int) -> dict | None:
         # Same field the board query reads, so the detail page and the row it
         # expands from cannot disagree about why this is here.
         "task_reason": payload.get("reason"),
+        "retyped": payload.get("retyped"),
         # mfr-binding candidates carry no item links, so the manufacturer can
         # only come from the task payload — which is null on every open one
         # today ([mfr-binding-null-manufacturer] in tasks/followups.md). Left
@@ -5392,6 +5428,7 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             request, "_staging_doc_detail.html",
             {"request": request, "row": row,
              "type_choices": TYPE_CHOICES, "regulation_choices": REGULATION_CHOICES,
+             "scope_choices": SCOPE_CHOICES, "default_scope": RETYPE_DEFAULT_SCOPE,
              "reject_reasons": REJECT_REASONS, "reject_note_max": REJECT_NOTE_MAX,
              "items_shown": REVIEW_ITEMS_SHOWN, "picked": None,
              "today": datetime.now(timezone.utc).date()},
@@ -5698,6 +5735,21 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             # the explicit, deliberate form and predates this one.
             payload["edits"] = {**structured, **payload.get("edits", {})}
 
+        # Change type spec 2026-11-12 §7: a type and a scope change only through
+        # Change type, which shows every consequence first. `edit_type` left
+        # alone (a page loaded before the field went) is not in `structured`
+        # and passes; a changed one, or either key in the raw `edits`, is
+        # refused rather than dropped: dropping it would publish under the type
+        # she tried to change. GATE refuses the same on approve.
+        if decision in ("approve", "bind-manufacturer"):
+            asked = payload.get("edits") or {}
+            if "type" in asked or "coverage_scope" in asked:
+                ctx["error"] = ("Change the type with Change type first. Nothing was changed."
+                                if "type" in asked else
+                                "Change what it covers with Change type first. "
+                                "Nothing was changed.")
+                return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
+
         if decision == "reject" and group_id.strip():
             if not group_id.strip().isdigit():
                 ctx["error"] = f"group_id must be an integer, got {group_id!r}"
@@ -5870,6 +5922,96 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             # `_staging_docs.html` renders; Cancel never reaches the server.
             response.headers["HX-Retarget"] = f"#doc-{doc_id}"
             response.headers["HX-Reswap"] = "outerHTML"
+        return response
+
+    @app.post("/staging/{doc_id}/retype", response_class=HTMLResponse)
+    def staging_retype(
+        request: Request,
+        doc_id: int,
+        type: str = Form(""),
+        regulation: str = Form(""),
+        coverage_scope: str = Form(""),
+        # The before-values step 1 read and showed; only the confirm sends them.
+        expected_type: str = Form(""),
+        expected_regulation: str = Form(""),
+        expected_coverage_scope: str = Form(""),
+        note: str = Form(""),
+        confirm: str = Form(""),
+        tick: str = Form(""),
+    ):
+        """Change type on Review (spec 2026-11-12 §5), two steps like the
+        whole-range approval in `staging_apply`.
+
+        Step 1 (no `confirm`) writes nothing: it runs `app.retype.problems`
+        and answers into the panel's slot with every consequence, read from
+        the registry now, a required tick box and "Yes, change the type". Its
+        form posts back the values and the `expected_*` it was computed from,
+        so what is confirmed is what was shown. Step 2 repeats the checks and
+        enqueues one `gate.apply` decision `retype`; GATE checks again under a
+        row lock and is the only writer."""
+        ctx = {"request": request}
+        after = {"type": type.strip(), "regulation": regulation.strip(),
+                 "coverage_scope": coverage_scope.strip()}
+
+        def refuse(sentence: str):
+            ctx["error"] = sentence
+            return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
+
+        if confirm and not tick:
+            return refuse(f"{words.RETYPE_TICK_REQUIRED} Nothing was changed.")
+        note = note.strip()
+        if len(note) > REJECT_NOTE_MAX:
+            return refuse(f"The note is longer than {REJECT_NOTE_MAX} characters. "
+                          "Shorten it and try again. Nothing was changed.")
+        expected = ({"type": expected_type.strip(), "regulation": expected_regulation.strip(),
+                     "coverage_scope": expected_coverage_scope.strip()} if confirm else None)
+        with _conn() as conn:
+            found = retype.problems(conn, doc_id, after, expected)
+            # A second "Yes" while the first retype is still queued: the
+            # enqueue below dedupes and says so, rather than a refusal that
+            # reads as if the first press had failed (Review Focus 2).
+            if confirm and retype.retype_active(conn, doc_id):
+                found = [c for c in found if c != "in-flight"]
+            if found:
+                return refuse(words.retype_refusal(found))
+            if not confirm:
+                plan = retype.plan(conn, doc_id, after)
+                ctx.update(
+                    confirm_needed=words.retype_lines(plan),
+                    confirm_url=f"/staging/{doc_id}/retype",
+                    # An int-built literal id, never user text: it is
+                    # interpolated into the Cancel control's JS string.
+                    confirm_target=f"retype-confirm-{doc_id}",
+                    confirm_fields={
+                        **after,
+                        **{f"expected_{f}": v for f, v in plan.before.items()},
+                        **({"note": note} if note else {}),
+                    },
+                    confirm_tick=words.retype_tick(after["type"], after["coverage_scope"]),
+                    confirm_label=words.RETYPE_CONFIRM_LABEL,
+                )
+                return templates.TemplateResponse(request, "_result.html", ctx)
+
+            # Same identity rule as `staging_apply`, minus the form field: the
+            # panel has none, so the proxy user or the placeholder.
+            decided_by = _authenticated_user(request) or DEFAULT_DECIDED_BY
+            payload = {"doc_id": doc_id, "decision": "retype", "decided_by": decided_by,
+                       **after, "expected": expected}
+            if note:
+                payload["note"] = note
+            dedupe_key = f"apply:{doc_id}:retype"
+            jid = queue.enqueue(conn, "gate.apply", payload, dedupe_key, priority="interactive")
+            conn.commit()
+
+        ctx["job_id"] = jid
+        ctx["dedupe_key"] = dedupe_key
+        panel = words.RETYPE_SCOPE_WORDS[after["coverage_scope"]]
+        ctx["receipt"] = words.receipt(DECISION_RECEIPTS["retype"].format(panel=panel), jid)
+        response = templates.TemplateResponse(request, "_result.html", ctx)
+        # The receipt replaces the whole row, as the whole-range approval's
+        # does, so no Approve or Reject drawn for the old type stays live.
+        response.headers["HX-Retarget"] = f"#doc-{doc_id}"
+        response.headers["HX-Reswap"] = "outerHTML"
         return response
 
     #: C17 link-level decisions the UI may submit. Kept as a literal beside the

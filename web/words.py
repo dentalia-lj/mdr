@@ -30,7 +30,7 @@ call it and neither has to know about the other.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 # --------------------------------------------------------------------------- #
 # the word list (spec § 9)
@@ -403,3 +403,129 @@ def receipt(sentence: str, job_id: int | None) -> str:
     `queue.enqueue`'s dedupe answer and never an error.
     """
     return sentence if job_id is not None else ALREADY_IN_PROGRESS
+
+
+# --------------------------------------------------------------------------- #
+# Change type on Review (spec 2026-11-12 §5, §6)
+# --------------------------------------------------------------------------- #
+#: What a document covers, as the confirm and the panel name it.
+RETYPE_SCOPE_WORDS: dict[str, str] = {
+    "group": "specific items",
+    "manufacturer": "whole range",
+}
+#: The same, inside the tick sentence, where it reads after "for".
+RETYPE_SCOPE_TICK: dict[str, str] = {
+    "group": "specific items",
+    "manufacturer": "the manufacturer's whole range",
+}
+#: How many staged links line 2 names before it counts the rest.
+RETYPE_LINKS_NAMED = 10
+
+#: Why a retype is refused, per `app.retype.problems` code. The route appends
+#: "Nothing was changed." to the one it shows. `not-found` and `not-staged`
+#: read the same: either way the row on screen is out of date.
+RETYPE_REFUSALS: dict[str, str] = {
+    "not-found": "This document is no longer on Review. Reload the page to see where it stands.",
+    "not-staged": "This document is no longer on Review. Reload the page to see where it stands.",
+    "stale": "This document changed after you checked it. Reload the page and check again.",
+    "bad-type": "That type is not on the list. Choose one of the listed types.",
+    "bad-regulation": "Those rules are not on the list. Choose MDR, MDD or n.a.",
+    "bad-scope": "Choose specific items or the manufacturer's whole range.",
+    "unchanged": "Nothing to change.",
+    "in-flight": ("A reading of this document is in progress, or another decision on it "
+                  "is waiting to apply. Try again later."),
+    "production-link": ("This document already counts for an item, so its type cannot be "
+                        "changed here. Ask the person who looks after the system."),
+    "in-chain": ("This document is part of a chain of versions, so its type cannot be "
+                 "changed here."),
+}
+#: The one refusal shown when several apply. `stale` comes before the value
+#: checks: a confirm pressed after its own change has run is out of date, and
+#: "Nothing to change" would hide why.
+RETYPE_REFUSAL_ORDER = ("not-found", "not-staged", "stale", "bad-type", "bad-regulation",
+                        "bad-scope", "unchanged", "in-flight", "production-link", "in-chain")
+RETYPE_TICK_REQUIRED = "Tick the box to confirm."
+RETYPE_CONFIRM_LABEL = "Yes, change the type"
+
+
+def _was_now(label: str, before, after, said=lambda v: v) -> str:
+    if before == after:
+        return f"{label}: {said(after)} (unchanged)."
+    return f"{label}: {said(before)} → {said(after)}."
+
+
+def _n(count: int, one: str, many: str) -> str:
+    return f"{num(count)} {one if count == 1 else many}"
+
+
+def retype_lines(plan) -> list[str]:
+    """Step one of a type change: every consequence, read from the registry
+    now (spec §5 lines 1 to 6). `plan` is `app.retype.Plan`; only the lines
+    that apply are said."""
+    b, a = plan.before, plan.after
+    scope = lambda s: RETYPE_SCOPE_WORDS.get(s, s)  # noqa: E731
+    lines = [" ".join((
+        _was_now("Type", b["type"], a["type"]),
+        _was_now("Regulation", b["regulation"], a["regulation"]),
+        _was_now("Covers", b["coverage_scope"], a["coverage_scope"], scope)))]
+    if plan.links_off:
+        named = plan.links_off[:RETYPE_LINKS_NAMED]
+        rest = len(plan.links_off) - len(named)
+        lines.append(f"{_n(len(plan.links_off), 'item', 'items')} now linked will be taken off: "
+                     f"{', '.join(named)}{f', and {num(rest)} more' if rest else ''}.")
+    if plan.citations_cleared:
+        n = len(plan.citations_cleared)
+        ids = ", ".join(str(i) for i in plan.citations_cleared)
+        lines.append(f"{_n(n, 'declaration cites this as its', 'declarations cite this as their')} "
+                     f"certificate and will no longer: {ids}.")
+    cert_types = ("EC", "ISO")
+    if a["type"] in cert_types and b["type"] not in cert_types:
+        if plan.cert_number:
+            n = len(plan.citations_set)
+            lines.append(f"{_n(n, 'declaration', 'declarations')} citing certificate "
+                         f"{plan.cert_number} will point to it." if n else
+                         f"No declaration on file cites certificate {plan.cert_number} yet.")
+        else:
+            lines.append("No declaration can point to it until a certificate number is entered.")
+    if plan.number_moves:
+        said = []
+        if plan.cert_number:
+            meaning = {"DoC": "the certificate this declaration cites",
+                       "EC": "this certificate's own number",
+                       "ISO": "this certificate's own number"}.get(a["type"])
+            said.append(f"Certificate number {plan.cert_number} will be read as {meaning}."
+                        if meaning else f"Certificate number {plan.cert_number} stays.")
+        if plan.validity_to is not None:
+            said.append(f"Expiry {day_text(plan.validity_to)} stays.")
+        them = "them" if len(said) > 1 else "it"
+        lines.append(" ".join(said) + f" Correct {them} under Correct a fact first when you "
+                     f"approve if {'they are' if len(said) > 1 else 'it is'} wrong.")
+    lines.append("It stays on Review. Nothing is published. You approve it next, in the "
+                 f"{scope(plan.panel)} panel.")
+    return lines
+
+
+def retype_tick(doc_type: str, scope: str) -> str:
+    """The tick box's sentence: what she confirms she has read on the page."""
+    subject = doc_type_subject(doc_type)
+    article = "an" if subject[:1].lower() in "aeiou" else "a"
+    return (f"I have checked the document: it is {article} {subject}, "
+            f"for {RETYPE_SCOPE_TICK.get(scope, scope)}.")
+
+
+def retype_refusal(codes: list[str]) -> str:
+    """The one sentence for a refused retype, ending as every refusal does."""
+    code = next(c for c in RETYPE_REFUSAL_ORDER if c in codes)
+    return f"{RETYPE_REFUSALS[code]} Nothing was changed."
+
+
+def retyped_head(retyped) -> str | None:
+    """"Type changed by <name> on <date>." from a task's `retyped = {by, at}`,
+    or None when the task carries none (or a shape this cannot read)."""
+    if not isinstance(retyped, dict) or not retyped.get("by"):
+        return None
+    try:
+        when = day_text(datetime.fromisoformat(str(retyped.get("at"))).date())
+    except ValueError:
+        return f"Type changed by {retyped['by']}."
+    return f"Type changed by {retyped['by']} on {when}."

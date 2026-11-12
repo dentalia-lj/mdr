@@ -1309,6 +1309,23 @@ button[disabled]:hover, .btn[disabled]:hover {
   margin: 6px 0 0;
   font-size: var(--fs-body);
 }
+/* Change type (spec 2026-11-12 §3, approved mockup): its own line under "Why
+   it needs you", apart from the decision bar, and a small boxed form below it. */
+.retype-line { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0 0; }
+.retype-line .hint { margin: 0; }
+.retype-form {
+  margin: 10px 0 0;
+  border: 1px solid var(--dentalia-border);
+  border-radius: var(--radius-md);
+  background: var(--dentalia-surface);
+  padding: var(--pad-card);
+  font-size: var(--fs-body);
+}
+.retype-form[hidden] { display: none; }
+.retype-form h3 { margin: 0 0 6px; font-size: var(--fs-body); }
+/* The confirm's tick box: what she says she has checked, before Yes. */
+.result .tick { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0; font-weight: 600; }
+.result .tick input { margin-top: 3px; }
 .review-facts { grid-template-columns: max-content 1fr; }
 .review-facts dd .hint { display: block; }
 .approve-scope { margin: 12px 0 0; font-size: var(--fs-body); }

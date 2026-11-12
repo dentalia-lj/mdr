@@ -291,6 +291,31 @@ def test_approve_rejects_unknown_edit_field(conn):
     assert _status(conn, doc_id) == "staged"   # nothing changed
 
 
+def _t3_rows(conn, doc_id):
+    return conn.execute("SELECT count(*) AS n FROM evidence WHERE doc_id=%s AND tier='T3'",
+                        (doc_id,)).fetchone()["n"]
+
+
+def test_approve_refuses_a_type_edit(conn):
+    """Change type spec 2026-11-12 §7: a type changes only through `retype`,
+    which shows its consequences first; an old form or a hand-built payload
+    must not publish under a type nobody confirmed."""
+    doc_id = _seed_staged_doc(conn, "ga-type")
+    with pytest.raises(ValueError, match="change type"):
+        gh.handle_gate_apply(conn, _apply(doc_id, "approve", edits={"type": "EC"}))
+    assert _status(conn, doc_id) == "staged"
+    assert _t3_rows(conn, doc_id) == 0
+
+
+def test_approve_refuses_a_coverage_scope_edit(conn):
+    doc_id = _seed_staged_doc(conn, "ga-scope")
+    with pytest.raises(ValueError, match="change type"):
+        gh.handle_gate_apply(conn, _apply(doc_id, "approve", edits={
+            "coverage_scope": "manufacturer", "validity_to": "2030-01-01"}))
+    assert _status(conn, doc_id) == "staged"
+    assert _t3_rows(conn, doc_id) == 0
+
+
 # ---------------------------------------------------------------------------
 # C17 — link-level human decisions (confirm-link / reject-link / reopen-link)
 #

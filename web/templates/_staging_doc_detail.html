@@ -53,6 +53,61 @@
 
     <p class="why"><strong>Why it needs you:</strong> {{ row.reason }}</p>
 
+    {# Change type (spec 2026-11-12 §3, §4; approved mockup): a quiet outlined
+       button on its own line, apart from the decision bar, on every staged
+       document in both panels (this panel renders for `staged` only). It
+       opens a small form of its own, pre-filled with what the document is
+       now; "Check what changes" asks the server, which writes nothing and
+       answers under the form with every consequence and a tick box. A form of
+       its own, outside the decision form: a form cannot nest in a form, and
+       its submit must never be the one Enter reaches from a correction. #}
+    <div class="retype-line">
+      <button type="button" class="btn-secondary"
+              onclick="var f = this.parentNode.nextElementSibling; f.hidden = !f.hidden;">Change type...</button>
+      <span class="hint">Use this if the document is filed as the wrong type, for example a declaration read as a certificate.</span>
+    </div>
+    <form class="retype-form" hidden hx-post="/staging/{{ doc_id }}/retype"
+          hx-target="#retype-confirm-{{ doc_id }}" hx-swap="innerHTML">
+      <h3>Change type</h3>
+      <div class="field-grid">
+        <div class="field">
+          <label for="retype-type-{{ doc_id }}">Type</label>
+          {# Each option carries the scope its type usually covers; static/retype.js
+             moves "What it covers" to it when Type changes. She can still override. #}
+          <select id="retype-type-{{ doc_id }}" name="type" data-retype-type>
+            {% for value, label in type_choices %}
+            <option value="{{ value }}" data-default-scope="{{ default_scope[value] }}" {{ "selected" if row.doc.type == value }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="retype-regulation-{{ doc_id }}">Rules</label>
+          <select id="retype-regulation-{{ doc_id }}" name="regulation">
+            {% for value, label in regulation_choices %}
+            <option value="{{ value }}" {{ "selected" if row.doc.regulation == value }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="retype-scope-{{ doc_id }}">What it covers</label>
+          <select id="retype-scope-{{ doc_id }}" name="coverage_scope">
+            {% for value, label in scope_choices %}
+            <option value="{{ value }}" {{ "selected" if row.doc.coverage_scope == value }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <p class="hint">When you change Type, "What it covers" moves to what that type usually covers: declarations, instructions and similar cover specific items; certificates (EC, ISO) cover the whole range. You can still change it.</p>
+      <div class="form-actions">
+        <button type="submit">Check what changes</button>
+        <button type="button" class="btn-clear"
+                onclick="this.form.reset(); this.form.hidden = true; this.form.nextElementSibling.innerHTML = '';">Cancel</button>
+      </div>
+    </form>
+    {# The answer to "Check what changes": the consequences and the tick box, or
+       a refusal. `confirm_target` in `staging_retype` names this id. #}
+    <div class="retype-confirm" id="retype-confirm-{{ doc_id }}"></div>
+
     {# Above the buttons: what approving makes the document count for. Only
        what an approval actually publishes is promised (`row.approve_links`);
        a link it leaves staged is listed apart, with what happens to it. #}
@@ -97,7 +152,7 @@
       }|tojson }}'>
       {% else %}
       <input type="hidden" name="edit_baseline" value='{{ {
-        "type": row.doc.type, "regulation": row.doc.regulation,
+        "regulation": row.doc.regulation,
         "validity_from": row.doc.validity_from|string if row.doc.validity_from else "",
         "validity_to": row.doc.validity_to|string if row.doc.validity_to else "",
         "cert_number": row.doc.cert_number or ""
@@ -176,15 +231,9 @@
           when you approve; anything you leave alone stays as it was read.</p>
         <div class="field-grid">
           {% set owner = "corrections-" ~ doc_id %}
+          {# No "Document type" here since 2026-11-12: a type changes only
+             through Change type above, which shows what it will do first. #}
           {% if not row.is_mfr_binding %}
-          <div class="field">
-            <label>Document type</label>
-            <select name="edit_type" form="{{ owner }}">
-              {% for value, label in type_choices %}
-              <option value="{{ value }}" {{ "selected" if row.doc.type == value }}>{{ label }}</option>
-              {% endfor %}
-            </select>
-          </div>
           <div class="field">
             <label>Rules</label>
             <select name="edit_regulation" form="{{ owner }}">
