@@ -2114,9 +2114,12 @@ def handle_gate_apply(conn, job: dict) -> dict:
     prev_status = _doc_status(conn, doc_id)
 
     # Picker spec §5: the reviewer's ticks, checked before anything is written.
-    if decision == "add-items" and prev_status != "production":
+    # A `filed` document joined 2026-11-12: read correctly but covering nothing BC
+    # had, it has no other way to take items, and adding them publishes it.
+    if decision == "add-items" and prev_status not in ("production", "filed"):
         raise ValueError(f"gate.apply add-items: document {doc_id} is {prev_status!r}, "
-                         f"not 'production' -- items are added to a published document")
+                         f"not 'production' or 'filed' -- items are added to a published "
+                         f"or filed document")
     picked = _picked_items(conn, doc_id, p) if decision in ("approve", "add-items") else None
     if decision == "add-items" and picked is None:
         raise ValueError("gate.apply add-items: items is required")
@@ -2216,10 +2219,17 @@ def handle_gate_apply(conn, job: dict) -> dict:
         _derive_mfr_scope_links(conn, doc_id, p.get("manufacturer"))
     elif decision == "add-items":
         # Picker spec §3.1: the approve link steps on a published document,
-        # without the promote. Ticks were checked above.
+        # without the promote. Ticks were checked above. On a filed document
+        # (2026-11-12) the person's items are what publishes it, so it takes the
+        # promote and the issue date every publication needs (ruled 2026-10-02).
+        if prev_status == "filed":
+            _require_issue_date(conn, doc_id, decision)
+            _promote(conn, doc_id)
         _reopen_links(conn, doc_id, picked[2], decided_by, job, via="add-items")
         _write_items(conn, doc_id, *picked[:2], decided_by, job, via="add-items")
         items_detail = {"items": len(picked[1]), "manufacturer": picked[0]}
+        if prev_status == "filed":
+            items_detail["from"] = "filed"
     else:
         raise ValueError(f"gate.apply: unknown decision '{decision}'")
 
@@ -2240,7 +2250,8 @@ def handle_gate_apply(conn, job: dict) -> dict:
     # §9: every production write is audited — the human promote paths log it
     # alongside the decision, once per staged->production transition (same
     # prev_status guard as gate.candidate, idempotent under re-delivery).
-    if decision in ("approve", "bind-manufacturer") and prev_status != "production":
+    if (decision in ("approve", "bind-manufacturer") and prev_status != "production") \
+            or (decision == "add-items" and prev_status == "filed"):
         _audit(conn, "production-write", doc_id, decided_by, job)
     return {"decision": decision, "doc_id": doc_id, **(removal or {}),
             **({"cards_reopened": reopened} if reopened else {})}

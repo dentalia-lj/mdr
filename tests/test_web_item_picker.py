@@ -283,6 +283,34 @@ def test_add_items_refuses_a_document_on_review(client, conn):
     assert r.status_code == 422 and _jobs(conn) == []
 
 
+def test_add_items_accepts_a_filed_document(client, conn):
+    _mfr(conn)
+    _item(conn, "A1", "VARIOBASE A")
+    doc_id = _doc(conn, "addfiled", status="filed")
+    conn.commit()
+    r = client.post(f"/documents/{doc_id}/items", data={"items": ["A1"]})
+    assert r.status_code == 200
+    assert [j["payload"]["decision"] for j in _jobs(conn)] == ["add-items"]
+
+
+def test_add_items_refuses_a_filed_document_with_no_issue_date(client, conn):
+    _mfr(conn)
+    _item(conn, "A1", "VARIOBASE A")
+    doc_id = _doc(conn, "addfiled-nodate", status="filed", issued=None)
+    conn.commit()
+    r = client.post(f"/documents/{doc_id}/items", data={"items": ["A1"]})
+    assert r.status_code == 422 and "no issue date" in _text(r.text) and _jobs(conn) == []
+
+
+def test_a_filed_document_offers_add_items(client, conn):
+    _mfr(conn)
+    doc_id = _doc(conn, "page-filed", status="filed")
+    conn.commit()
+    page = client.get(f"/documents/{doc_id}").text
+    assert "Add items this document covers" in _text(page)
+    assert "Add these 0 items" in _text(client.get(f"/picker/{doc_id}").text)
+
+
 # --- taking an item off on Review (spec 2026-11-09 §5.1) ------------------------
 
 def _linked(conn, doc_id, ref, status="staged", basis="ref-list", name=None):

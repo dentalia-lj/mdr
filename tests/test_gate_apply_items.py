@@ -222,6 +222,40 @@ def test_add_items_refuses_a_document_that_is_not_published(conn):
         gh.handle_gate_apply(conn, _job(doc_id, decision="add-items", items=["A1"]))
 
 
+def test_add_items_publishes_a_filed_document(conn):
+    """2026-11-12: a filed document (read correctly, covering nothing BC had)
+    takes items from a person, and that publishes it, audited like an approval."""
+    doc_id = _doc(conn, "filed", status="filed")
+    _item(conn, "A1")
+    gh.handle_gate_apply(conn, _job(doc_id, decision="add-items", items=["A1"]))
+    assert _doc_status(conn, doc_id) == "production"
+    assert dict(_link(conn, doc_id, "A1")) == {"status": "production", "match_basis": "manual", "udi": None}
+    assert _trail(conn, doc_id) == [
+        ("link-confirmed", "A1"), ("production-write", "A1"),
+        ("add-items", None), ("production-write", None)]
+    assert _detail(conn, doc_id, "add-items") == {"items": 1, "manufacturer": MFR, "from": "filed"}
+
+
+def test_add_items_on_a_filed_document_is_quiet_when_redelivered(conn):
+    doc_id = _doc(conn, "filed-again", status="filed")
+    _item(conn, "A1")
+    gh.handle_gate_apply(conn, _job(doc_id, decision="add-items", items=["A1"]))
+    gh.handle_gate_apply(conn, _job(doc_id, decision="add-items", items=["A1"]))
+    assert [e for e in _trail(conn, doc_id) if e[0] == "production-write" and e[1] is None] == [
+        ("production-write", None)]
+
+
+def test_add_items_refuses_a_filed_document_with_no_issue_date(conn):
+    # Every publication needs an issue date (ruled 2026-10-02).
+    doc_id = _doc(conn, "filed-nodate", status="filed")
+    conn.execute("UPDATE document SET validity_from=NULL WHERE doc_id=%s", (doc_id,))
+    _item(conn, "A1")
+    with pytest.raises(ValueError, match="no issue date"):
+        gh.handle_gate_apply(conn, _job(doc_id, decision="add-items", items=["A1"]))
+    assert _doc_status(conn, doc_id) == "filed"
+    assert _link(conn, doc_id, "A1") is None
+
+
 def test_add_items_without_items_raises(conn):
     doc_id = _doc(conn, "empty", status="production")
     with pytest.raises(ValueError, match="items is required"):

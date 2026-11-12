@@ -1582,13 +1582,14 @@ def _mfr_binding_suggestion(
 
 def _picker_doc(conn, doc_id: int) -> dict | None:
     """The document the item picker works on (picker spec §3): one covering
-    specific items, on Review (`staged`) or published (`production`). None for
-    anything else, so a whole-range document never gets a picker."""
+    specific items, on Review (`staged`), published (`production`) or on file
+    (`filed`, 2026-11-12). None for anything else, so a whole-range document
+    never gets a picker."""
     doc = conn.execute(
         "SELECT doc_id, type, regulation, validity_from, status, coverage_scope, "
         "canonical_manufacturer, content_hash, archive_url, source_url "
         "FROM document WHERE doc_id = %s", (doc_id,)).fetchone()
-    if doc is None or doc["coverage_scope"] != "group" or doc["status"] not in ("staged", "production"):
+    if doc is None or doc["coverage_scope"] != "group" or doc["status"] not in ("staged", "production", "filed"):
         return None
     doc["file_name"] = _file_name(doc["source_url"], doc["archive_url"], doc["content_hash"])
     return doc
@@ -3541,16 +3542,22 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
     def document_add_items(request: Request, doc_id: int,
                            items: list[str] = Form([]), manufacturer: str = Form(""),
                            reopen: list[str] = Form([])):
-        """Picker spec §3.1: add ticked items to a published document."""
+        """Picker spec §3.1: add ticked items to a published document, or to a
+        filed one, which they publish (2026-11-12)."""
         ctx = {"request": request}
         picked = sorted({i.strip() for i in items if i.strip()})
         reopened = sorted({i.strip() for i in reopen} & set(picked))
         with _conn() as conn:
             doc = _picker_doc(conn, doc_id)
             refusal = mfr = None
-            if doc is None or doc["status"] != "production":
-                refusal = ("Items can be added only to a published document that covers "
-                           "specific items.")
+            if doc is None or doc["status"] not in ("production", "filed"):
+                refusal = ("Items can be added only to a published or filed document that "
+                           "covers specific items.")
+            elif doc["status"] == "filed" and doc["validity_from"] is None:
+                # GATE refuses it too (`_require_issue_date`); 8 such documents on
+                # 2026-11-12, and this page has no date field (docs/dev/limits.md).
+                refusal = ("This document states no issue date, and a document needs one "
+                           "to be published. Tell a developer which date it carries.")
             elif not picked:
                 refusal = "Tick at least one item."
             else:
@@ -3687,8 +3694,10 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             request, "document_detail.html",
             {"doc": doc, "items": items_covered,
              # Picker spec §3.1: items can be added to a published document
-             # that covers specific items.
-             "offer_picker": doc["status"] == "production" and doc["coverage_scope"] == "group",
+             # that covers specific items, and since 2026-11-12 to a filed one,
+             # which they publish.
+             "offer_picker": doc["status"] in ("production", "filed")
+                             and doc["coverage_scope"] == "group",
              # Spec 2026-11-09 §5.2: the same two conditions as adding items.
              "can_remove": doc["status"] in ("production", "superseded")
                            and doc["coverage_scope"] == "group",
