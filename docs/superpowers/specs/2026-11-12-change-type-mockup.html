@@ -1,0 +1,171 @@
+<title>Change Type Mockup</title>
+<style>
+:root{color-scheme:light;
+  --primary:#89c8ac;--primary-strong:#56b088;--surface:#f3f9f7;--surface-2:#e9f5f0;
+  --ink:#33312b;--muted:#464646;--border:#d8ddda;--action:#2F7A58;--action-strong:#255F45;
+  --danger:#d64545;--danger-ink:#B3261E;--disabled-bg:#e6eae8;--disabled-ink:#5a6763;--amber:#ffb354;}
+*{box-sizing:border-box}
+body{margin:0;background:#ffffff;color:var(--ink);font:13px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1100px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:20px;margin:0 0 6px}
+h2{font-size:15px;margin:0}
+.intro{color:var(--muted);max-width:75ch;margin:0 0 6px}
+.cap{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin:32px 0 8px}
+.cap .n{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--action);font-weight:700}
+.cap p{margin:0;color:var(--muted);flex-basis:100%}
+.frame{border:1px solid var(--border);border-radius:8px;overflow-x:auto;background:#fff}
+.frame-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:6px 12px;font-size:12px;color:var(--muted)}
+.frame-in{min-width:720px;padding:0}
+/* the app's row */
+.row-sum{display:grid;grid-template-columns:.9rem 1fr;gap:2px 10px;padding:8px 10px;background:var(--surface-2);border-bottom:1px solid var(--border)}
+.row-sum .t{font-weight:600}
+.row-sum .s,.row-sum .r{grid-column:2;font-size:12px;color:var(--muted)}
+.row-sum .caret{color:var(--muted)}
+.review-panel{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px 20px;align-items:start;margin:8px 10px 14px}
+.pdf{border:1px solid var(--border);border-radius:4px;background:#f6f6f4;min-height:300px;display:flex;align-items:center;justify-content:center;color:var(--muted);text-align:center;padding:12px;font-size:12px}
+.links{display:flex;gap:12px;margin:6px 0 0}
+a,.lnk{color:var(--action);text-decoration:underline}
+.facts{display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;margin:0 0 12px}
+.facts dt{color:var(--muted);font-size:11px;text-transform:uppercase;font-weight:600}
+.facts dd{margin:0}
+.hint{font-size:11px;color:var(--muted);margin:2px 0 0}
+.why{background:var(--surface-2);border-left:3px solid var(--primary-strong);border-radius:4px;padding:10px 12px}
+.why p,.approve-scope p{margin:0}
+.approve-scope{margin:12px 0 0}
+.approve-scope p{margin:0 0 6px}
+.approve-line{font-weight:600}
+.approve-items{margin:0 0 6px;padding-left:18px}
+button,.btn{display:inline-block;background:var(--action);color:#fff;border:none;border-radius:999px;padding:4px 10px;font:600 13px system-ui,sans-serif;cursor:default}
+.btn-reject{background:#fff;color:var(--danger-ink);border:1px solid var(--danger-ink)}
+.btn-secondary,.btn-find{background:#fff;color:var(--action);border:1px solid var(--action)}
+button[disabled]{background:var(--disabled-bg);color:var(--disabled-ink);border:none}
+.btn-cancel{background:none;color:var(--muted);text-decoration:underline;padding:4px 4px;font-weight:400}
+.panel-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+.decide{display:flex;gap:6px;margin-left:auto}
+details.corrections{border-top:1px solid var(--border);margin-top:12px;padding-top:10px}
+details.corrections summary{font-weight:600;color:var(--muted);cursor:pointer}
+.field-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0 12px;margin-top:8px}
+.field{margin-bottom:10px}
+label{display:block;font-size:12px;font-weight:600;margin-bottom:2px}
+.sel,.inp{width:100%;padding:4px 10px;border:1px solid var(--border);border-radius:4px;background:#fff;font-size:13px;color:var(--ink);min-height:28px}
+.sel:after{content:"";}
+.sel{display:flex;justify-content:space-between}
+.sel i{font-style:normal;color:var(--muted)}
+/* the new control: apart from the decision bar */
+.retype-line{margin:12px 0 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.retype-line .hint{margin:0}
+.retype-form{margin:10px 0 0;border:1px solid var(--border);border-radius:6px;background:var(--surface);padding:10px 12px}
+.retype-form h3{margin:0 0 6px;font-size:13px}
+.result{margin-top:12px;border-radius:6px;padding:10px 12px}
+.result.ok{background:var(--surface-2);border:1px solid var(--primary)}
+.result.q{background:#fff6e8;border:1px solid #f1d3a4}
+.result p{margin:0 0 6px}
+.tick{display:flex;gap:8px;align-items:flex-start;margin:8px 0;font-weight:600}
+.tick .box{flex:0 0 14px;height:14px;margin-top:2px;border:1.5px solid var(--ink);border-radius:2px;background:#fff}
+.btns{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.note{font-size:12px;color:var(--muted);border-left:3px solid var(--amber);padding:2px 8px;margin:10px 0 0}
+.lines{margin:0 0 8px;padding-left:20px}
+.lines li{margin:0 0 4px}
+.dec-note{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+@media (max-width:760px){.review-panel{grid-template-columns:1fr}}
+</style>
+<div class="wrap">
+<h1>Change type on Review</h1>
+<p class="intro">Mockup for approval. Draft wording and layout only; nothing here is wired. Real documents: 831 and 832, ZLATARNA CELJE d.o.o. Each frame scrolls sideways on a phone.</p>
+<p class="intro"><strong>Where the control sits:</strong> a quiet outlined button on its own line under "Why it needs you", above the approval text and the Approve / Reject bar. It is not in the bar, and it is the only control of its kind.</p>
+
+<div class="cap"><span class="n">1</span><h2>Doc 831 today, whole-range panel</h2><p>"Change type..." sits apart from Approve and Reject, on its own line with a one-line hint.</p></div>
+<div class="frame"><div class="frame-bar">Review · opened row</div><div class="frame-in">
+<div class="row-sum"><span class="caret">▾</span><span class="t">ZLATARNA CELJE d.o.o.</span><span class="s">Bazne plošče Izjava EU o skladnosti 2026 izdaja 4.pdf</span><span class="r">The document covers a manufacturer's whole range. Check which manufacturer it names.</span></div>
+<div class="review-panel">
+ <div><div class="pdf">PDF of the document, page 1</div><p class="links"><a class="lnk">Open full size ↗</a><a class="lnk">Full record</a></p></div>
+ <div>
+  <dl class="facts"><dt>Manufacturer</dt><dd>ZLATARNA CELJE d.o.o. <span class="hint">as printed on the document</span></dd>
+   <dt>Rules</dt><dd>MDR</dd><dt>Issued</dt><dd>19.01.2026</dd><dt>Valid until</dt><dd>Not stated</dd>
+   <dt>Basic UDI-DI</dt><dd>Not stated</dd></dl>
+  <p class="why"><strong>Why it needs you:</strong> This reads as a certificate for the manufacturer's whole range. Check that before approving.</p>
+  <div class="retype-line"><button type="button" class="btn-secondary">Change type...</button><span class="hint">Use this if the document is filed as the wrong type, for example a declaration read as a certificate.</span></div>
+  <section class="approve-scope"><p class="approve-line">Approving makes it count for all ZLATARNA CELJE d.o.o. items (1,204 items)</p><p class="hint">Every item Business Central marks as a medical device.</p></section>
+  <details class="corrections"><summary>Correct a fact first</summary></details>
+  <div class="panel-actions"><div class="decide"><button type="button">Approve for all ZLATARNA CELJE d.o.o. items (1,204 items)</button><button type="button" class="btn-reject">Reject…</button></div></div>
+ </div></div></div></div>
+
+<div class="cap"><span class="n">2</span><h2>The form is open (831)</h2><p>Pre-filled with what the document is now. Changing Type moves "What it covers" to its default; she can still override it.</p></div>
+<div class="frame"><div class="frame-bar">Review · opened row, below "Why it needs you"</div><div class="frame-in" style="padding:10px">
+<div class="retype-line"><button type="button" class="btn-secondary">Change type...</button></div>
+<div class="retype-form">
+ <h3>Change type</h3>
+ <div class="field-grid">
+  <div class="field"><label>Type</label><div class="sel">ISO <i>▾</i></div><p class="hint">DoC, EC, ISO, IFU, SPP, other</p></div>
+  <div class="field"><label>Rules</label><div class="sel">MDR <i>▾</i></div><p class="hint">MDR, MDD, n.a.</p></div>
+  <div class="field"><label>What it covers</label><div class="sel">The manufacturer's whole range <i>▾</i></div><p class="hint">Specific items, The manufacturer's whole range</p></div>
+ </div>
+ <p class="hint">When you change Type, "What it covers" moves to what that type usually covers: declarations, instructions and similar cover specific items; certificates (EC, ISO) cover the whole range. You can still change it.</p>
+ <div class="btns"><button type="button">Check what changes</button><button type="button" class="btn-cancel">Cancel</button></div>
+</div></div></div>
+
+<div class="cap"><span class="n">3</span><h2>Step 1 for 831: DoC, specific items</h2><p>Nothing is written yet. The "Yes" button stays greyed until the box is ticked (shown here unticked). Lines 1 and 6.</p></div>
+<div class="frame"><div class="frame-bar">Review · answer under the form</div><div class="frame-in" style="padding:10px">
+<div class="result q">
+ <ol class="lines">
+  <li>Type: ISO → DoC. Regulation: MDR (unchanged). Covers: whole range → specific items.</li>
+  <li>It stays on Review. Nothing is published. You approve it next, in the specific items panel.</li>
+ </ol>
+ <label class="tick"><span class="box"></span><span>I have checked the document: it is a declaration of conformity, for specific items.</span></label>
+ <div class="btns"><button type="button" disabled>Yes, change the type</button><button type="button" class="btn-cancel">Cancel</button></div>
+</div>
+<p class="note">Design note: the real list is bulleted without numbers; numbers here only match the spec's line numbers (1 and 6).</p>
+</div></div>
+
+<div class="cap"><span class="n">4</span><h2>Step 1 for 832: certificate number and expiry set</h2><p>832 (Izjava EU o skladnosti 2025 Auropal S izdaja 4.pdf) carries certificate number 028/MDR and expiry 25.05.2027, so line 5 appears. Lines 1, 5, 6.</p></div>
+<div class="frame"><div class="frame-bar">Review · answer under the form</div><div class="frame-in" style="padding:10px">
+<div class="result q">
+ <ol class="lines" style="list-style:none;padding-left:0">
+  <li>Type: ISO → DoC. Regulation: MDR (unchanged). Covers: whole range → specific items.</li>
+  <li>Certificate number 028/MDR will be read as the certificate this declaration cites. Expiry 25.05.2027 stays. Correct them under Correct a fact first when you approve if they are wrong.</li>
+  <li>It stays on Review. Nothing is published. You approve it next, in the specific items panel.</li>
+ </ol>
+ <label class="tick"><span class="box" style="background:var(--action);border-color:var(--action)"></span><span>I have checked the document: it is a declaration of conformity, for specific items.</span></label>
+ <div class="btns"><button type="button">Yes, change the type</button><button type="button" class="btn-cancel">Cancel</button></div>
+</div>
+<p class="note">Shown ticked, so the button is live.</p>
+</div></div>
+
+<div class="cap"><span class="n">5</span><h2>Receipt after "Yes, change the type"</h2><p>One sentence. It replaces the whole row, so no old Approve or Reject stays on screen.</p></div>
+<div class="frame"><div class="frame-bar">Review · list</div><div class="frame-in" style="padding:10px">
+<div class="result ok" style="margin-top:0">The type change for this document is recorded. It comes back on Review in the specific items panel within a minute, and you approve it there. Nothing is published.</div>
+<p class="hint" style="margin-top:6px">▸ Technical details (job number), collapsed, as on every receipt.</p>
+</div></div>
+
+<div class="cap"><span class="n">6</span><h2>831 afterwards, in the specific items panel</h2><p>The reason line names who changed it. Approve has no items yet; the picker is how she chooses them. Candidates the picker will offer: 6050541, 60505415Z, 6050541Z.</p></div>
+<div class="frame"><div class="frame-bar">Review · opened row</div><div class="frame-in">
+<div class="row-sum"><span class="caret">▾</span><span class="t">ZLATARNA CELJE d.o.o.</span><span class="s">Bazne plošče Izjava EU o skladnosti 2026 izdaja 4.pdf</span><span class="r">Type changed by Nataša on 12.11.2026. Choose the items this document covers, then approve.</span></div>
+<div class="review-panel">
+ <div><div class="pdf">PDF of the document, page 1</div><p class="links"><a class="lnk">Open full size ↗</a><a class="lnk">Full record</a></p></div>
+ <div>
+  <dl class="facts"><dt>Manufacturer</dt><dd>ZLATARNA CELJE d.o.o. <span class="hint">as printed on the document</span></dd>
+   <dt>Rules</dt><dd>MDR</dd><dt>Issued</dt><dd>19.01.2026</dd><dt>Valid until</dt><dd>Not stated</dd></dl>
+  <p class="why"><strong>Why it needs you:</strong> Type changed by Nataša on 12.11.2026. Choose the items this document covers, then approve.</p>
+  <div class="retype-line"><button type="button" class="btn-secondary">Change type...</button></div>
+  <section class="approve-scope"><p class="approve-line">Nothing links it to an item yet, so approving it makes it count for no items.</p>
+   <button type="button" class="btn-find">Find items this document covers…</button>
+   <p class="hint">Search ZLATARNA CELJE d.o.o. items and tick the ones it covers. Nothing is linked until you approve.</p></section>
+  <details class="corrections"><summary>Correct a fact first</summary></details>
+  <div class="panel-actions"><div class="decide"><button type="button">Approve</button><button type="button" class="btn-reject">Reject…</button></div></div>
+ </div></div></div></div>
+<p class="note">Change type stays available here, so a wrong change can be undone the same way.</p>
+
+<div class="cap"><span class="n">7</span><h2>The specific items panel: "Correct a fact first" opened</h2><p>No Document type field any more. Type is changed only through Change type, which shows what it will do first.</p></div>
+<div class="frame"><div class="frame-bar">Review · opened row, lower part</div><div class="frame-in" style="padding:10px">
+<details class="corrections" open style="border-top:none;margin-top:0;padding-top:0"><summary>Correct a fact first</summary>
+ <p class="hint">Change only what is wrong on the document. Your corrections are saved when you approve; anything you leave alone stays as it was read.</p>
+ <div class="field-grid">
+  <div class="field"><label>Rules</label><div class="sel">MDR <i>▾</i></div></div>
+  <div class="field"><label>Issued</label><div class="inp">19.01.2026</div></div>
+  <div class="field"><label>Valid until</label><div class="inp">&nbsp;</div></div>
+  <div class="field"><label>Certificate no.</label><div class="inp">&nbsp;</div></div>
+ </div>
+</details>
+<div class="panel-actions"><div class="decide"><button type="button">Approve</button><button type="button" class="btn-reject">Reject…</button></div></div>
+</div></div>
+</div>
