@@ -93,7 +93,9 @@ to browse everything.
    document covers…** opens the same picker as on [Review](review.md): find and
    tick the items, then **Add these N items**. Each becomes a confirmed link
    under your name within a minute. Use it when a new item arrives that an
-   existing document covers.
+   existing document covers. It is also on a document **on file**, which named
+   no item we hold when it was read: adding items there publishes it. A
+   document on file with no issue date is refused; tell a developer the date.
 10. On the same kind of document, **Remove** next to an item in **Covered items**
     takes it off. It asks first, and says so if the item would have no document
     of that type left. Business Central keeps its old value until its next

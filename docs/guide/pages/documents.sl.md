@@ -92,7 +92,10 @@ prazno, če želite brskati po vsem.
    document covers…** odpre isti izbirnik kot na [Review](review.sl.md):
    poiščite in označite artikle, nato pritisnite **Add these N items**. Vsak
    postane potrjena povezava pod vašim imenom v minuti. Uporabite ga, ko pride
-   nov artikel, ki ga obstoječi dokument pokriva.
+   nov artikel, ki ga obstoječi dokument pokriva. Gumb je tudi na
+   dokumentu s stanjem **On file**, ki ob branju ni navedel nobenega našega
+   artikla: dodajanje artiklov ga objavi. Dokument On file brez datuma izdaje
+   se zavrne; razvijalcu povejte datum.
 10. Na takem dokumentu **Remove** ob artiklu v **Covered items** artikel odstrani.
     Najprej vpraša in pove, če artikel ne bo imel več nobenega dokumenta te
     vrste. Business Central obdrži staro vrednost do naslednje posodobitve. Za
