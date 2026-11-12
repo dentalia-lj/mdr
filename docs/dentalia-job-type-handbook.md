@@ -942,7 +942,7 @@ Its result: `{"decision": "retype", "doc_id": 831, "links_off": 0, "citations_cl
 A later machine reading of a document whose scope a person holds lands on the disposition `route-held` instead of routing by the reading (PRD §7). On a published document the result is a kept document with no links and no task:
 
 ```json
-{ "disposition": "route-held", "doc_id": 831, "status": "production", "links": 0 }
+{ "disposition": "route-held", "doc_id": 831, "held_scope": "group" }
 ```
 
 ```python
