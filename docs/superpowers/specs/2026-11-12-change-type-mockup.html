@@ -31,6 +31,7 @@ a,.lnk{color:var(--action);text-decoration:underline}
 .hint{font-size:11px;color:var(--muted);margin:2px 0 0}
 .why{background:var(--surface-2);border-left:3px solid var(--primary-strong);border-radius:4px;padding:10px 12px}
 .why p,.approve-scope p{margin:0}
+.mfr-bind{margin:12px 0 0;background:var(--surface-2);border-left:3px solid var(--primary-strong);border-radius:4px;padding:8px 12px}
 .approve-scope{margin:12px 0 0}
 .approve-scope p{margin:0 0 6px}
 .approve-line{font-weight:600}
@@ -74,20 +75,23 @@ label{display:block;font-size:12px;font-weight:600;margin-bottom:2px}
 <p class="intro">Mockup for approval. Draft wording and layout only; nothing here is wired. Real documents: 831 and 832, ZLATARNA CELJE d.o.o. Each frame scrolls sideways on a phone.</p>
 <p class="intro"><strong>Where the control sits:</strong> a quiet outlined button on its own line under "Why it needs you", above the approval text and the Approve / Reject bar. It is not in the bar, and it is the only control of its kind.</p>
 
-<div class="cap"><span class="n">1</span><h2>Doc 831 today, whole-range panel</h2><p>"Change type..." sits apart from Approve and Reject, on its own line with a one-line hint.</p></div>
+<div class="cap"><span class="n">1</span><h2>Doc 831 today, whole-range panel</h2><p>Reason md-class-unknown: Business Central has a blank device class for all 43 ZLATARNA items. The reason line, the manufacturer box and the button are what the app renders for that case. "Change type..." sits apart from Approve and Reject.</p></div>
 <div class="frame"><div class="frame-bar">Review · opened row</div><div class="frame-in">
-<div class="row-sum"><span class="caret">▾</span><span class="t">ZLATARNA CELJE d.o.o.</span><span class="s">Bazne plošče Izjava EU o skladnosti 2026 izdaja 4.pdf</span><span class="r">The document covers a manufacturer's whole range. Check which manufacturer it names.</span></div>
+<div class="row-sum"><span class="caret">▾</span><span class="t">ZLATARNA CELJE d.o.o.</span><span class="s">Bazne plošče Izjava EU o skladnosti 2026 izdaja 4.pdf</span><span class="r">This covers a manufacturer's whole range, but every item we hold from them has a blank device class in Business Central — so there is nothing to link yet. Approving still records the manufacturer; the item links follow once that class is filled in.</span></div>
 <div class="review-panel">
  <div><div class="pdf">PDF of the document, page 1</div><p class="links"><a class="lnk">Open full size ↗</a><a class="lnk">Full record</a></p></div>
  <div>
   <dl class="facts"><dt>Manufacturer</dt><dd>ZLATARNA CELJE d.o.o. <span class="hint">as printed on the document</span></dd>
    <dt>Rules</dt><dd>MDR</dd><dt>Issued</dt><dd>19.01.2026</dd><dt>Valid until</dt><dd>Not stated</dd>
    <dt>Basic UDI-DI</dt><dd>Not stated</dd></dl>
-  <p class="why"><strong>Why it needs you:</strong> This reads as a certificate for the manufacturer's whole range. Check that before approving.</p>
+  <p class="why"><strong>Why it needs you:</strong> This covers a manufacturer's whole range, but every item we hold from them has a blank device class in Business Central — so there is nothing to link yet. Approving still records the manufacturer; the item links follow once that class is filled in.</p>
   <div class="retype-line"><button type="button" class="btn-secondary">Change type...</button><span class="hint">Use this if the document is filed as the wrong type, for example a declaration read as a certificate.</span></div>
-  <section class="approve-scope"><p class="approve-line">Approving makes it count for all ZLATARNA CELJE d.o.o. items (1,204 items)</p><p class="hint">Every item Business Central marks as a medical device.</p></section>
+  <div class="mfr-bind"><label>Which manufacturer does this cover?</label>
+   <p class="hint">The document names <strong>ZLATARNA CELJE d.o.o.</strong> as its manufacturer, which is the catalogue entity preselected below. Check it against the document before approving.</p>
+   <div class="sel">ZLATARNA CELJE d.o.o. (0 medical-device items) <i>▾</i></div>
+   <p class="hint">Approving links this document to every medical-device item of the manufacturer you choose, and records the manufacturer either way. A count of nought means Business Central has no device class on record for anything we hold from them (md_class_blank): the binding is still kept, and the item links follow once that class is filled in.</p></div>
   <details class="corrections"><summary>Correct a fact first</summary></details>
-  <div class="panel-actions"><div class="decide"><button type="button">Approve for all ZLATARNA CELJE d.o.o. items (1,204 items)</button><button type="button" class="btn-reject">Reject…</button></div></div>
+  <div class="panel-actions"><div class="decide"><button type="button">Approve for all ZLATARNA CELJE d.o.o. items (0 items)</button><button type="button" class="btn-reject">Reject…</button></div></div>
  </div></div></div></div>
 
 <div class="cap"><span class="n">2</span><h2>The form is open (831)</h2><p>Pre-filled with what the document is now. Changing Type moves "What it covers" to its default; she can still override it.</p></div>
