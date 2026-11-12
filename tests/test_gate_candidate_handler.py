@@ -105,6 +105,24 @@ def test_a_badly_shaped_date_cannot_kill_the_write(conn, bad_value):
     assert row["validity_to"] is not None                 # the parseable one is untouched
 
 
+@pytest.mark.parametrize("printed, stored", [("2020-04-31", "2020-04-30"),
+                                             ("2024-02-30", "2024-02-29")])
+def test_a_day_past_the_month_end_is_stored_as_the_last_day(conn, printed, stored):
+    # Doc 1502 (Denis, 2026-11-12). The evidence row keeps what was read; the
+    # column takes the month's last day, the same reading VALIDATE made.
+    ch = f"gc-monthend-{printed}"
+    _seed_ext(conn, ch, _fields(conf=0.97, validity_from=_ev(printed)))
+
+    gh.handle_gate_candidate(conn, _job(ch, ref_gate=True, flags=[], links=[]))
+
+    row = conn.execute("SELECT doc_id, validity_from FROM document WHERE content_hash=%s",
+                       (ch,)).fetchone()
+    assert row["validity_from"].isoformat() == stored
+    ev = conn.execute("SELECT value FROM evidence WHERE doc_id=%s AND field='validity_from'",
+                      (row["doc_id"],)).fetchone()
+    assert ev["value"] == printed
+
+
 def test_a_good_date_still_reaches_the_column(conn):
     # The mutation guard: returning None unconditionally would pass the test
     # above and silently empty every validity date in the registry.

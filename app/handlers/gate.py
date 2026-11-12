@@ -30,13 +30,13 @@ is a followup for when RESOLVE/FETCH make the chain live.
 
 from __future__ import annotations
 
-import datetime
 import json
 
 from psycopg.types.json import Json
 
 from app import item_picks, manufacturers, queue
 from app.config import GateThresholds, load_config
+from app.dates import parse_date
 from app.extract import tiers
 from app.handlers import register
 
@@ -494,15 +494,11 @@ def _date_or_none(v):
 
     Dropping to NULL loses nothing. Every value keeps its own evidence row with
     the verbatim the model quoted, so a reviewer sees exactly what it read and
-    why it was refused; the column simply declines to hold a non-date."""
-    if v is None:
-        return None
-    if isinstance(v, str):
-        try:
-            return datetime.date.fromisoformat(v)
-        except ValueError:
-            return None
-    return v
+    why it was refused; the column simply declines to hold a non-date.
+
+    `app.dates.parse_date`, VALIDATE's reading too: a day past the month's end
+    is stored as the last day (2026-11-12)."""
+    return parse_date(v)
 
 
 def _bindable_manufacturer(conn, name: str | None) -> str | None:

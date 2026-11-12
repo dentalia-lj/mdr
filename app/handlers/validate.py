@@ -149,6 +149,7 @@ import re
 from app import manufacturers
 from app import playbooks as playbooks_mod
 from app import queue
+from app.dates import parse_date
 from app.config import load_config
 from app.extract import tiers
 from app.handlers import register
@@ -192,15 +193,9 @@ def _val(fields: dict, name: str):
 
 def _to_date(v):
     """Normalize a date-ish value to `datetime.date` (extraction fields carry
-    ISO strings; rows read back from `document` carry real `date` objects)."""
-    if v is None:
-        return None
-    if isinstance(v, str):
-        try:
-            return datetime.date.fromisoformat(v)
-        except ValueError:
-            return None
-    return v  # already a date/datetime
+    ISO strings; rows read back from `document` carry real `date` objects).
+    `app.dates.parse_date`, the reading GATE writes the column with."""
+    return parse_date(v)
 
 
 # --- group resolution -------------------------------------------------------

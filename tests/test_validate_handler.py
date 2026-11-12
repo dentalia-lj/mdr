@@ -950,6 +950,38 @@ def test_date_sanity_unparseable_value_flags(conn, bad_value):
     assert "date-insane" in p["flags"]
 
 
+@pytest.mark.parametrize("month_end", ["2020-04-31", "2021-02-29"])
+def test_date_sanity_a_day_past_the_month_end_is_not_insane(conn, month_end):
+    # Doc 1502, Sirona: "Valid from manufacturing date: 2020-04-31" and "April
+    # 31st, 2020" by the signature. The day moves to the month's last day
+    # (Denis, 2026-11-12), so the reviewer is not asked for a date the page
+    # states, and the browser's date field, which cannot hold 31.04, is not in
+    # the way.
+    group_id = _seed_group(conn)
+    _seed_member(conn, group_id, "IT-1", mfr_ref="196.644.050")
+    _seed(conn, "vh-monthend", _fields(validity_from=_ev(month_end)))
+
+    res = vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": "vh-monthend", "extract_rev": 1, "group_id": group_id}})
+
+    assert res["emitted"] is True
+    assert "date-insane" not in _payload(conn, "vh-monthend")["flags"]
+
+
+@pytest.mark.parametrize("not_a_month_end", ["2020-04-32", "2020-13-01"])
+def test_date_sanity_an_impossible_day_or_month_is_still_insane(conn, not_a_month_end):
+    # The mutation guard for the test above: only a day past the month's end
+    # moves. Day 32 or month 13 is a misread and stays with a person.
+    group_id = _seed_group(conn)
+    _seed_member(conn, group_id, "IT-1", mfr_ref="196.644.050")
+    _seed(conn, "vh-notmonthend", _fields(validity_from=_ev(not_a_month_end)))
+
+    vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": "vh-notmonthend", "extract_rev": 1, "group_id": group_id}})
+
+    assert "date-insane" in _payload(conn, "vh-notmonthend")["flags"]
+
+
 def test_date_sanity_absent_date_is_not_insane(conn):
     # The other side of the same coin, and the reason the check tests the RAW
     # value rather than the parsed one: a document that simply states no date is
