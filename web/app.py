@@ -119,7 +119,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 # footing on which this module already imports `app.queue` and `web/registry.py`
 # imports `app.playbooks`. It is emphatically not `app.handlers` — the review
 # UI resolves a name to offer a choice; only GATE acts on the choice.
-from app import db, heartbeat, item_picks, manufacturers, playbooks, queue, unmatched_names
+from app import db, heartbeat, item_picks, manufacturers, playbooks, queue, retype, unmatched_names
 from app.currency import DOC_STATUS_FOR_ITEM
 # Export file types /import accepts. Mirrors the adapter's own set exactly, so
 # the form can never reject a file the worker would have read.
@@ -1043,6 +1043,10 @@ _REVIEW_ROWS = """
 WITH links AS (
     SELECT l.doc_id,
            count(*) AS link_count,
+           -- Links a person has not refused. `link_count` and `manufacturers`
+           -- stay as they were: `group_name` reads a reopened document's
+           -- rejected links, and the panel rule below must not.
+           count(*) FILTER (WHERE l.status <> 'rejected') AS active_link_count,
            array_agg(DISTINCT COALESCE(a.canonical_name, m.manufacturer_raw))
              FILTER (WHERE m.item_ref IS NOT NULL) AS manufacturers
       FROM item_document l
@@ -1073,7 +1077,8 @@ rows AS (
            -- task-less document of that shape read "could not prove which
            -- products" here while its panel offered the whole-range approval.
            (COALESCE(t.kind = 'gate-manual' AND t.payload->>'route' = 'mfr-binding', false)
-            OR (d.coverage_scope = 'manufacturer' AND lk.doc_id IS NULL)) AS is_mfr_binding,
+            OR (d.coverage_scope = 'manufacturer'
+                AND COALESCE(lk.active_link_count, 0) = 0)) AS is_mfr_binding,
            -- The task's own `reason`, which narrows the mfr-binding
            -- sentence (`md-class-unknown` means binding would link zero
            -- items). Null on every task written before 2026-08-27.
@@ -1674,7 +1679,8 @@ def _staged_doc_detail(conn, doc_id: int) -> dict | None:
     is_mfr_binding = bool(
         (task and task["kind"] == "gate-manual"
          and payload.get("route") == "mfr-binding")
-        or (doc["coverage_scope"] == "manufacturer" and not links)
+        or (doc["coverage_scope"] == "manufacturer"
+            and not any(lk["status"] != "rejected" for lk in links))
     )
     row = {
         "doc": doc, "evidence": evidence, "links": links,
@@ -5590,6 +5596,9 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         remove: list[str] = Form([]),
         # Spec 2026-11-09 §4.4: the ticked items ticked despite an earlier refusal.
         reopen: list[str] = Form([]),
+        # Change type spec 2026-11-12 §7: the scope this screen was drawn with.
+        # GATE refuses when the row has moved on since (a retype in between).
+        expected_scope: str = Form(""),
     ):
         # Decisions per docs/dentalia-s0.3-ui-proposal.md (the real
         # handle_gate_apply contract) — "edit" is not a standalone decision;
@@ -5603,6 +5612,28 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         if decision not in ("approve", "reject", "bind-manufacturer", "reopen"):
             ctx["error"] = f"unknown decision {decision!r}"
             return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
+        # A retype for this document is queued: Approve, Reject and the
+        # whole-range approval were confirmed from a screen it is about to move
+        # (spec §7). Reopen stays: it acts on a rejected or superseded document,
+        # which a retype never touches.
+        if decision != "reopen":
+            with _conn() as conn:
+                pending = retype.retype_active(conn, doc_id)
+                scope_row = conn.execute(
+                    "SELECT coverage_scope FROM document WHERE doc_id=%s",
+                    (doc_id,)).fetchone()
+            if pending:
+                ctx["error"] = ("A change of type is waiting for this document. Wait for "
+                                "it to apply, then decide. Nothing was changed.")
+                return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
+            # The whole-range approval links every device item of a manufacturer;
+            # on a document that names specific items it is the wrong decision.
+            if (decision == "bind-manufacturer" and scope_row is not None
+                    and scope_row["coverage_scope"] != "manufacturer"):
+                ctx["error"] = ("This document names specific items, so it cannot be approved "
+                                "for a whole manufacturer. Reload the page to see where it "
+                                "stands. Nothing was changed.")
+                return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
         # Reject asks why. Checked before anything else about the request so a
         # reason-less reject is refused whatever else it carries; the panel's
         # radios are `required`, so this is the backstop for any other client.
@@ -5640,6 +5671,11 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         decided_by = auth_user or decided_by.strip() or DEFAULT_DECIDED_BY
 
         payload = {"doc_id": doc_id, "decision": decision, "decided_by": decided_by}
+        # Additive: absent from a form that predates it, and GATE accepts that.
+        expected_scope = expected_scope.strip()
+        if decision in ("approve", "bind-manufacturer") and expected_scope in ("group",
+                                                                              "manufacturer"):
+            payload["expected_scope"] = expected_scope
 
         if edits.strip():
             try:
@@ -5742,6 +5778,8 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                     confirm_target=f"bind-confirm-{doc_id}",
                     confirm_fields={
                         "decision": decision, "manufacturer": manufacturer,
+                        **({"expected_scope": expected_scope}
+                           if "expected_scope" in payload else {}),
                         **{k: v for k, v in sent.items() if v},
                     },
                     confirm_label=(f"Yes, approve for {words.num(n)} "

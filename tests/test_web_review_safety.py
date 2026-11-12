@@ -833,3 +833,73 @@ def test_a_reopen_carries_no_note(client, conn):
     rows = _jobs(conn, f"apply:{doc_id}:reopen")
     assert len(rows) == 1
     assert "note" not in rows[0]["payload"]
+
+
+# --------------------------------------------------------------------------- #
+# Change type, spec 2026-11-12 §7: scope the screen showed, retype pending
+# --------------------------------------------------------------------------- #
+def _group_candidate(conn, key: str = "scope") -> int:
+    from tests.fixtures import seed_ui
+
+    doc_id = seed_ui.seed_document(
+        conn, content_hash=f"h-rsafe-{key}", archive_url=f"/archive/h-rsafe-{key}.pdf",
+        doc_type="DoC", regulation="MDR", coverage_scope="group", validity_to=None)
+    conn.commit()
+    return doc_id
+
+
+def test_whole_range_approval_on_a_group_document_is_refused(client, conn):
+    doc_id = _group_candidate(conn, "refuse")
+    data = {"decision": "bind-manufacturer", "manufacturer": "RSAFE"}
+
+    first = client.post(f"/staging/{doc_id}/apply", data=data)
+    confirmed = client.post(f"/staging/{doc_id}/apply", data={**data, "confirm": "1"})
+
+    for resp in (first, confirmed):
+        assert resp.status_code == 422
+        assert "names specific items" in resp.text
+    assert _gate_apply_count(conn) == 0
+
+
+def test_approve_and_bind_send_the_scope_the_screen_showed(client, conn):
+    group = _group_candidate(conn, "send-group")
+    client.post(f"/staging/{group}/apply",
+                data={"decision": "approve", "expected_scope": "group"})
+    assert _jobs(conn, f"apply:{group}:approve")[0]["payload"]["expected_scope"] == "group"
+
+    whole = _seed_whole_range_candidate(conn)
+    data = {"decision": "bind-manufacturer", "manufacturer": "RSAFE",
+            "expected_scope": "manufacturer"}
+    step_one = client.post(f"/staging/{whole}/apply", data=data)
+    # the confirm posts back what the screen showed, or the guard is lost
+    assert ('<input type="hidden" name="expected_scope" value="manufacturer">'
+            in step_one.text)
+    client.post(f"/staging/{whole}/apply", data={**data, "confirm": "1"})
+    assert (_jobs(conn, f"apply:{whole}:bind-manufacturer")[0]["payload"]["expected_scope"]
+            == "manufacturer")
+
+
+def test_the_detail_form_carries_the_scope_it_was_drawn_with(client, conn):
+    doc_id = _group_candidate(conn, "hidden")
+    assert ('<input type="hidden" name="expected_scope" value="group">'
+            in client.get(f"/staging/{doc_id}/detail").text)
+
+
+def test_approve_reject_and_bind_are_refused_while_a_retype_is_pending(client, conn):
+    from app import queue, retype
+
+    whole = _seed_whole_range_candidate(conn)
+    queue.enqueue(conn, "gate.apply",
+                  {"doc_id": whole, "decision": "retype", "decided_by": "user:marta"},
+                  f"apply:{whole}:retype", priority="interactive")
+    conn.commit()
+    assert retype.retype_active(conn, whole)
+    before = _gate_apply_count(conn)
+
+    for data in ({"decision": "approve"},
+                 {"decision": "reject", "reason": "Other"},
+                 {"decision": "bind-manufacturer", "manufacturer": "RSAFE", "confirm": "1"}):
+        resp = client.post(f"/staging/{whole}/apply", data=data)
+        assert resp.status_code == 422, data
+        assert "change of type is waiting" in resp.text
+    assert _gate_apply_count(conn) == before

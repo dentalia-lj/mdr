@@ -84,6 +84,9 @@
     <form hx-post="/staging/{{ doc_id }}/apply"
           hx-target="closest .stage-row" hx-swap="outerHTML"
           {%- if offer_corrections %} hx-include="#corrections-{{ doc_id }}"{% endif %}>
+      {# The scope this screen was drawn with; GATE refuses Approve and the
+         whole-range approval if a retype has moved it since. #}
+      <input type="hidden" name="expected_scope" value="{{ row.coverage_scope }}">
       {% if offer_corrections %}
       {# Baseline of what this form was rendered with. The route compares against
          it and sends only genuinely changed fields, so approving without touching

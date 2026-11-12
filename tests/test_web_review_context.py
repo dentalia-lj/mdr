@@ -859,3 +859,50 @@ def test_a_row_with_no_manufacturer_names_the_type_as_a_label(client, conn):
 
     assert _summary(client.get("/staging/docs").text, bare).startswith(
         "Instructions for use (MDD)")
+
+
+# --------------------------------------------------------------------------- #
+# Change type, spec 2026-11-12 §7: the panel rule ignores refused links
+# --------------------------------------------------------------------------- #
+def test_whole_range_document_with_only_rejected_links_opens_the_whole_range_panel(client, conn):
+    """A document retyped to a whole range keeps the links a person refused. They
+    are no coverage: the board row and the detail page must both offer the
+    whole-range approval, not the picker."""
+    from web.app import MFR_BINDING_REASON
+
+    _manufacturer(conn, "REJ")
+    _item(conn, "rej-1", raw="REJ")
+    doc_id = _doc(conn, "range-rejected", scope="manufacturer", validity_to=None,
+                  canonical="REJ")
+    _link(conn, "rej-1", doc_id, status="rejected")
+    conn.commit()
+
+    board = client.get("/staging/docs", params={"reason": "range"}).text
+    assert doc_id in _ids(board)
+    assert MFR_BINDING_REASON in _text(_row(board, doc_id))
+    assert 'value="bind-manufacturer"' in client.get(f"/staging/{doc_id}/detail").text
+
+
+def test_a_whole_range_document_with_a_live_link_is_not_a_binding_panel(client, conn):
+    _manufacturer(conn, "LIVE")
+    _item(conn, "live-1", raw="LIVE")
+    doc_id = _doc(conn, "range-live", scope="manufacturer", validity_to=None, canonical="LIVE")
+    _link(conn, "live-1", doc_id, status="staged")
+    conn.commit()
+
+    assert doc_id not in _ids(client.get("/staging/docs", params={"reason": "range"}).text)
+    assert 'value="bind-manufacturer"' not in client.get(f"/staging/{doc_id}/detail").text
+
+
+def test_a_reopened_group_document_still_groups_under_its_items_manufacturer(client, conn):
+    """The board's `group_name` reads every link not retracted, rejected ones
+    included: a reopened document's links are all `rejected`."""
+    _manufacturer(conn, "REOPENED")
+    _item(conn, "reopened-1", raw="REOPENED")
+    doc_id = _doc(conn, "reopened", scope="group")
+    _link(conn, "reopened-1", doc_id, status="rejected")
+    conn.commit()
+
+    seen = _text(client.get("/staging/docs").text)
+    assert "REOPENED 1 document" in seen
+    assert "Manufacturer not known" not in seen
