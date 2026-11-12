@@ -1916,7 +1916,7 @@ tbody tr:last-child td{border-bottom:0}
 </tr>
 <tr>
 <td><strong>Correct a fact first</strong></td>
-<td>Opens the fields for the document type, the rules, the dates and the certificate number. Change only what is wrong on the document; your corrections are saved when you approve. A document that states no issue date reads "Not stated. Enter it before approving." and cannot be approved until you enter the date here. On a whole-range document it offers the issue date only</td>
+<td>Opens the fields for the document type, the rules, the dates and the certificate number. Change only what is wrong on the document; your corrections are saved when you approve. A document that states no issue date reads "Not stated. Enter it before approving." and cannot be approved until you enter the date here. A date the calendar has not got, such as 31.04, is refused before anything is sent: <em>The Issued date is not a real date (31.04 is not).</em> Correct it and approve again. On a whole-range document it offers the issue date only</td>
 </tr>
 <tr>
 <td><strong>Approve for all N items</strong></td>
@@ -2096,7 +2096,7 @@ tbody tr:last-child td{border-bottom:0}
 <tr>
 <td><em>The dates on this document do not look right.</em></td>
 <td>A date is impossible, or wildly out of range</td>
-<td>Usually a badly scanned page. Do not approve without reading it</td>
+<td>Usually a badly scanned page. Do not approve without reading it. A printed day past the end of its month (<em>April 31st, 2020</em>) is not flagged: it is recorded as the month's last day, 30 April 2020, and the evidence keeps what was printed</td>
 </tr>
 </tbody></table></div>
 <hr>

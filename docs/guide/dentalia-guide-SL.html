@@ -1918,7 +1918,7 @@ tbody tr:last-child td{border-bottom:0}
 </tr>
 <tr>
 <td><strong>Correct a fact first</strong></td>
-<td>Odpre polja za vrsto dokumenta, pravila, datume in številko certifikata. Spremenite le tisto, kar je na dokumentu napačno; popravki se shranijo, ko odobrite. Dokument brez datuma izdaje kaže "Not stated. Enter it before approving." in ga ni mogoče odobriti, dokler datuma ne vnesete tukaj. Pri dokumentu za celoten program ponuja samo datum izdaje</td>
+<td>Odpre polja za vrsto dokumenta, pravila, datume in številko certifikata. Spremenite le tisto, kar je na dokumentu napačno; popravki se shranijo, ko odobrite. Dokument brez datuma izdaje kaže "Not stated. Enter it before approving." in ga ni mogoče odobriti, dokler datuma ne vnesete tukaj. Datum, ki ga v koledarju ni, na primer 31.04, se zavrne, preden se karkoli pošlje: <em>The Issued date is not a real date (31.04 is not).</em> Popravite ga in znova odobrite. Pri dokumentu za celoten program ponuja samo datum izdaje</td>
 </tr>
 <tr>
 <td><strong>Approve for all N items</strong></td>
@@ -2098,7 +2098,7 @@ tbody tr:last-child td{border-bottom:0}
 <tr>
 <td><em>The dates on this document do not look right.</em></td>
 <td>Datum je nemogoč ali močno izven razumnega razpona</td>
-<td>Običajno slabo skeniran dokument. Ne odobrite brez branja</td>
+<td>Običajno slabo skeniran dokument. Ne odobrite brez branja. Natisnjen dan, ki presega konec meseca (<em>April 31st, 2020</em>), se ne označi: zabeleži se zadnji dan meseca, 30. april 2020, dokaz pa ohrani natisnjeno</td>
 </tr>
 </tbody></table></div>
 <hr>

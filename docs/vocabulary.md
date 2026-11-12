@@ -184,7 +184,7 @@ a *defect*.
 | `same-date-revision` | the same `validity_from` as the current document of an article it names; no ordering exists, so a person picks the current one (ruled 2026-09-04) |
 | `no-item-identifier` | no REF list and no UDI: nothing can link it to the catalogue |
 | `evidence-page-missing` | a T1/T2 value with no page cite — invariant 2 |
-| `date-insane` | dates that cannot both be true, or a year outside the sane range |
+| `date-insane` | dates that cannot both be true, or a year outside the sane range (a day past the month's end is not one: it is read as the last day) |
 | `manufacturer-unresolved` | the extracted manufacturer matches no `item_group` |
 
 ### Capping — hold at `staged`, a reviewer settles it
