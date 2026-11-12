@@ -169,9 +169,15 @@ Writes, one transaction:
    new meaning (section 5, line 5) and she corrects them under "Correct a fact
    first" at approval if they are wrong.
 2. Scope after the retype is `manufacturer` (changed or not): every `staged`
-   link -> `rejected`, one `link-rejected` audit row each with `detail.via =
-   'retype'`, and confirm line 2 lists them. Scope `group` touches no link: she
-   picks items at approval. (my call)
+   link -> `retracted`, one `link-retracted` audit row each with `detail =
+   {match_basis_before, link_status_before: 'staged', via: 'retype'}`, and
+   confirm line 2 lists them. Scope `group` touches no link: she picks items at
+   approval. (my call) *(Amended 2026-11-12 after final review: the first
+   version set `rejected` / `link-rejected`. `rejected` records a person
+   refusing an item and is sticky in `_upsert_link`, so the whole-range
+   approval that follows skipped exactly the items the reading had matched.
+   `retracted` is revived by that approval and is already left out of both
+   panel queries.)*
 3. Old type EC/ISO, new type not: `UPDATE document SET cert_doc_id = NULL WHERE
    cert_doc_id = <doc_id>`. The cleared ids go into the audit detail.
 4. New type EC/ISO, old type not: `_backresolve_here`. The ids it set go into

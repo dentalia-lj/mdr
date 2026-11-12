@@ -115,15 +115,15 @@ def _apply(conn, doc_id, after, **kw):
 # and the task's route afterwards.
 TABLE = [
     # id,                    before,                       after,                         T3 fields,                            link after,  route after
-    ("ISO->EC type only",    ("ISO", "MDR", "manufacturer"), ("EC", "MDR", "manufacturer"), ["coverage_scope", "type"],             "rejected", "mfr-binding"),
+    ("ISO->EC type only",    ("ISO", "MDR", "manufacturer"), ("EC", "MDR", "manufacturer"), ["coverage_scope", "type"],             "retracted", "mfr-binding"),
     ("ISO/mfr->DoC/group",   ("ISO", "MDR", "manufacturer"), ("DoC", "MDR", "group"),       ["coverage_scope", "type"],             "staged",   None),
-    ("DoC/group->EC/mfr",    ("DoC", "MDR", "group"),        ("EC", "MDR", "manufacturer"), ["coverage_scope", "type"],             "rejected", "mfr-binding"),
+    ("DoC/group->EC/mfr",    ("DoC", "MDR", "group"),        ("EC", "MDR", "manufacturer"), ["coverage_scope", "type"],             "retracted", "mfr-binding"),
     ("EC/mfr->DoC/group",    ("EC", "MDD", "manufacturer"),  ("DoC", "MDD", "group"),       ["coverage_scope", "type"],             "staged",   None),
     ("DoC->IFU",             ("DoC", "MDR", "group"),        ("IFU", "MDR", "group"),       ["coverage_scope", "type"],             "staged",   None),
     ("regulation only grp",  ("DoC", "MDR", "group"),        ("DoC", "MDD", "group"),       ["coverage_scope", "regulation", "type"], "staged", None),
-    ("regulation only mfr",  ("ISO", "MDR", "manufacturer"), ("ISO", "n.a.", "manufacturer"), ["coverage_scope", "regulation", "type"], "rejected", "mfr-binding"),
+    ("regulation only mfr",  ("ISO", "MDR", "manufacturer"), ("ISO", "n.a.", "manufacturer"), ["coverage_scope", "regulation", "type"], "retracted", "mfr-binding"),
     ("ISO->EC group (394)",  ("ISO", "MDR", "manufacturer"), ("EC", "MDR", "group"),        ["coverage_scope", "type"],             "staged",   None),
-    ("DoC->DoC whole range", ("DoC", "MDR", "group"),        ("DoC", "MDR", "manufacturer"), ["coverage_scope", "type"],            "rejected", "mfr-binding"),
+    ("DoC->DoC whole range", ("DoC", "MDR", "group"),        ("DoC", "MDR", "manufacturer"), ["coverage_scope", "type"],            "retracted", "mfr-binding"),
 ]
 
 
@@ -146,7 +146,7 @@ def test_retype_table(conn, case, before, after, t3_fields, link_after, route_af
         assert r["page"] is None and float(r["confidence"]) == 1.0
         assert r["value"] == dict(zip(retype.FIELDS, after))[r["field"]]
     assert _links(conn, doc_id) == {"L1": link_after}
-    assert out["links_off"] == (1 if link_after == "rejected" else 0)
+    assert out["links_off"] == (1 if link_after == "retracted" else 0)
     (task,) = _tasks(conn, doc_id)
     assert task["status"] == "open"
     assert task["payload"].get("route") == route_after
@@ -206,8 +206,9 @@ def test_declaration_to_whole_range_certificate_takes_links_off_and_answers_cita
 
     out = _apply(conn, doc_id, ("EC", "MDR", "manufacturer"))
 
-    assert _links(conn, doc_id) == {"A1": "rejected", "A2": "rejected"}
-    rej = _audit(conn, doc_id, "link-rejected")
+    assert _links(conn, doc_id) == {"A1": "retracted", "A2": "retracted"}
+    assert not _audit(conn, doc_id, "link-rejected")
+    rej = _audit(conn, doc_id, "link-retracted")
     assert [r["item_ref"] for r in rej] == ["A1", "A2"]
     assert all(r["detail"]["via"] == "retype" and r["detail"]["link_status_before"] == "staged"
                and r["detail"]["match_basis_before"] == "ref-list" for r in rej)
@@ -219,6 +220,34 @@ def test_declaration_to_whole_range_certificate_takes_links_off_and_answers_cita
     assert _row(conn, doc_id)["cert_doc_id"] is None
     assert out["links_off"] == 2 and out["citations_set"] == [citing]
     assert _audit(conn, doc_id, "retype")[0]["detail"]["citations_set"] == [citing]
+
+
+def test_retype_to_whole_range_then_bind_links_every_md_item(conn):
+    """The links write 2 takes off are `retracted`, not `rejected` (amended
+    2026-11-12 after final review): a person refused none of those items, and
+    `rejected` is sticky in `_upsert_link`, so the whole-range approval would
+    have skipped exactly the items the reading had matched."""
+    for ref in ("B1", "B2", "B3"):
+        _item(conn, ref, md=True)
+    _item(conn, "N1", md=False)
+    doc_id = _doc(conn, "bind", "DoC", "MDR", "group")
+    _link(conn, doc_id, "B1")
+    _link(conn, doc_id, "B2")
+    _task(conn, doc_id, {})
+
+    _apply(conn, doc_id, ("EC", "MDR", "manufacturer"))
+    assert _links(conn, doc_id) == {"B1": "retracted", "B2": "retracted"}
+
+    gh.handle_gate_apply(conn, {"type": "gate.apply", "payload": {
+        "doc_id": doc_id, "decision": "bind-manufacturer", "decided_by": "user:natasa",
+        "manufacturer": MFR, "expected_scope": "manufacturer"}})
+
+    rows = conn.execute("SELECT item_ref, status, match_basis FROM item_document "
+                        "WHERE doc_id=%s ORDER BY item_ref", (doc_id,)).fetchall()
+    assert [(r["item_ref"], r["status"], r["match_basis"]) for r in rows] == [
+        ("B1", "production", "mfr-scope"), ("B2", "production", "mfr-scope"),
+        ("B3", "production", "mfr-scope")]
+    assert _row(conn, doc_id)["status"] == "production"
 
 
 def test_certificate_to_declaration_clears_citing_docs(conn):
@@ -376,6 +405,7 @@ def test_group_scope_after_touches_no_link(conn):
     _apply(conn, doc_id, ("DoC", "MDR", "group"))
     assert _links(conn, doc_id) == {"G1": "staged"}
     assert not _audit(conn, doc_id, "link-rejected")
+    assert not _audit(conn, doc_id, "link-retracted")
 
 
 def test_only_staged_links_go_off(conn):
@@ -383,8 +413,9 @@ def test_only_staged_links_go_off(conn):
     _link(conn, doc_id, "S1")
     _link(conn, doc_id, "X1", "rejected")
     _apply(conn, doc_id, ("EC", "MDR", "manufacturer"))
-    assert _links(conn, doc_id) == {"S1": "rejected", "X1": "rejected"}
-    assert [r["item_ref"] for r in _audit(conn, doc_id, "link-rejected")] == ["S1"]
+    assert _links(conn, doc_id) == {"S1": "retracted", "X1": "rejected"}
+    assert [r["item_ref"] for r in _audit(conn, doc_id, "link-retracted")] == ["S1"]
+    assert not _audit(conn, doc_id, "link-rejected")
 
 
 def test_reject_then_reopen_keeps_the_retype_held(conn):

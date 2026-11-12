@@ -2271,14 +2271,18 @@ def _apply_retype(conn, job) -> dict:
     _apply_edits(conn, doc_id, edits)
 
     # 2. A whole-range document holds no proposed item links, changed or not.
+    # `retracted`, not `rejected` (amended 2026-11-12 after final review): a
+    # person refused no item here, and `rejected` is sticky in `_upsert_link`,
+    # so the whole-range approval would have skipped exactly the items the
+    # reading had matched. `retracted` is revived by that approval.
     links_off = 0
     if after["coverage_scope"] == "manufacturer":
         off = conn.execute(
-            "UPDATE item_document SET status='rejected' "
+            "UPDATE item_document SET status='retracted' "
             "WHERE doc_id=%s AND status='staged' RETURNING item_ref, match_basis",
             (doc_id,)).fetchall()
         for r in sorted(off, key=lambda r: r["item_ref"]):
-            _audit(conn, "link-rejected", doc_id, decided_by, job, item_ref=r["item_ref"],
+            _audit(conn, "link-retracted", doc_id, decided_by, job, item_ref=r["item_ref"],
                    detail={"match_basis_before": r["match_basis"],
                            "link_status_before": "staged", "via": "retype"})
         links_off = len(off)
