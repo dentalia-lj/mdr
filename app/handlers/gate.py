@@ -1455,7 +1455,7 @@ def _route_held(conn, job: dict) -> dict | None:
 
     # The usual reading checks. Their flags are dropped with the reading's own:
     # they describe a reading the person's scope has overruled.
-    _require_complete_evidence(fields)
+    evidence_flags = _require_complete_evidence(fields)
     archive_url = _archive_url(conn, p, p["content_hash"])
     cfg = load_config()
     doc_id = _upsert_document(conn, fields, p["content_hash"], archive_url, "staged",
@@ -1464,8 +1464,12 @@ def _route_held(conn, job: dict) -> dict | None:
                      calib_map=getattr(cfg, "calibration", {}) or {},
                      agreement_min=cfg.gate.agreement_min, held=held)
     _backresolve_here(conn, doc_id)
-    _retarget_task(conn, doc_id, prev["coverage_scope"], _latest_retype(conn, doc_id),
-                   group_id=p.get("group_id"))
+    task_flags = _retarget_task(conn, doc_id, prev["coverage_scope"],
+                                _latest_retype(conn, doc_id), group_id=p.get("group_id"))
+    # Counted, never silent: the reading's flags and GATE's own evidence
+    # findings, plus any the open task still carried from an earlier reading.
+    out["flags_dropped"] = sorted(set(p.get("flags") or []) | set(evidence_flags)
+                                  | set(task_flags))
     return _note_held(out, prev, fields, held)
 
 
@@ -2183,7 +2187,7 @@ def _write_items(conn, doc_id, manufacturer, refs, decided_by, job, via) -> None
 
 
 def _retarget_task(conn, doc_id: int, scope: str, retyped: dict | None, *,
-                   group_id: int | None = None) -> None:
+                   group_id: int | None = None) -> list[str]:
     """Point the document's open `gate-manual` task at the panel for `scope`
     (spec 2026-11-12 §6 write 6), or open one with that payload.
 
@@ -2199,7 +2203,10 @@ def _retarget_task(conn, doc_id: int, scope: str, retyped: dict | None, *,
     removed when `retyped` is None (Task 5's route-held path on a document no
     person retyped). A new task takes `group_id` (the candidate's own, on the
     route-held path), else the `group_id` of the document's latest
-    `gate-manual` task, so a later Reject can still re-run discovery."""
+    `gate-manual` task, so a later Reject can still re-run discovery.
+
+    Returns the flags it took off the open task(s), sorted and distinct, so
+    the caller reports them (`flags_dropped`) rather than losing them silently."""
     canonical = conn.execute("SELECT canonical_manufacturer FROM document WHERE doc_id=%s",
                              (doc_id,)).fetchone()["canonical_manufacturer"]
 
@@ -2225,7 +2232,9 @@ def _retarget_task(conn, doc_id: int, scope: str, retyped: dict | None, *,
         "SELECT id, payload FROM manual_task "
         "WHERE kind='gate-manual' AND doc_id=%s AND status='open' ORDER BY id",
         (doc_id,)).fetchall()
+    dropped: set[str] = set()
     for t in tasks:
+        dropped.update((t["payload"] or {}).get("flags") or [])
         conn.execute("UPDATE manual_task SET payload=%s WHERE id=%s",
                      (Json(rewrite(t["payload"])), t["id"]))
     if not tasks:
@@ -2235,6 +2244,7 @@ def _retarget_task(conn, doc_id: int, scope: str, retyped: dict | None, *,
             "        (SELECT group_id FROM manual_task WHERE kind='gate-manual' "
             "          AND doc_id=%s ORDER BY id DESC LIMIT 1)), %s)",
             (doc_id, group_id, doc_id, Json(rewrite({}))))
+    return sorted(dropped)
 
 
 def _apply_retype(conn, job) -> dict:
@@ -2308,16 +2318,17 @@ def _apply_retype(conn, job) -> dict:
     # `at` is the transaction's time, the one the audit row below takes, so
     # the task and the trail agree.
     now = conn.execute("SELECT now() AS t").fetchone()["t"]
-    _retarget_task(conn, doc_id, after["coverage_scope"],
-                   {"by": decided_by, "at": now.isoformat()})
+    flags_dropped = _retarget_task(conn, doc_id, after["coverage_scope"],
+                                   {"by": decided_by, "at": now.isoformat()})
 
     # 7. The decision's own row.
     _audit(conn, "retype", doc_id, decided_by, job, detail={
         "before": plan.before, "after": after, "links_off": links_off,
         "citations_cleared": cleared, "citations_set": set_ids,
-        **(_note_detail(p) or {})})
+        "flags_dropped": flags_dropped, **(_note_detail(p) or {})})
     return {"decision": "retype", "doc_id": doc_id, "links_off": links_off,
-            "citations_cleared": cleared, "citations_set": set_ids}
+            "citations_cleared": cleared, "citations_set": set_ids,
+            "flags_dropped": flags_dropped}
 
 
 def handle_gate_apply(conn, job: dict) -> dict:

@@ -200,7 +200,9 @@ Writes, one transaction:
      back to the no-task sentence. (my call)
    If the document has no open task, one is opened with the same payload.
 7. Audit row `retype`: `detail = {before, after, links_off, citations_cleared,
-   citations_set, note}`.
+   citations_set, flags_dropped, note}`. *(Amended 2026-11-12 after final
+   review: `flags_dropped`, the flags write 6 took off the open task, also in
+   the job result, so dropped flags are counted, never silent.)*
 
 Never: a status change, a promote, a `production-write`, a link made production,
 or any job enqueued. `_resolve_manual_tasks` is not called (the document is

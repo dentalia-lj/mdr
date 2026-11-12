@@ -937,9 +937,9 @@ decision's audit row gains `{"items": N, "manufacturer": ...}`. The decision
   "expected": {"type": "ISO", "regulation": "MDR", "coverage_scope": "manufacturer"} }
 ```
 
-Its result: `{"decision": "retype", "doc_id": 831, "links_off": 0, "citations_cleared": [], "citations_set": []}`.
+Its result: `{"decision": "retype", "doc_id": 831, "links_off": 0, "citations_cleared": [], "citations_set": [], "flags_dropped": ["device-enumeration"]}`; `flags_dropped` lists the flags taken off the open review task.
 
-A later machine reading of a document whose scope a person holds lands on the disposition `route-held` instead of routing by the reading (PRD §7). On a published document the result is a kept document with no links and no task:
+A later machine reading of a document whose scope a person holds lands on the disposition `route-held` instead of routing by the reading (PRD §7). On a published document the result is a kept document with no links and no task (on a staged one it also carries `flags_dropped`, every flag the reading and the open task brought that the held scope overrules):
 
 ```json
 { "disposition": "route-held", "doc_id": 831, "held_scope": "group" }

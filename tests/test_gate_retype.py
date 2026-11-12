@@ -190,11 +190,13 @@ def test_doc_831_iso_whole_range_to_declaration_for_items(conn):
     assert a["detail"] == {
         "before": {"type": "ISO", "regulation": "MDR", "coverage_scope": "manufacturer"},
         "after": {"type": "DoC", "regulation": "MDR", "coverage_scope": "group"},
-        "links_off": 0, "citations_cleared": [], "citations_set": [], "note": "read as ISO"}
+        "links_off": 0, "citations_cleared": [], "citations_set": [],
+        "flags_dropped": ["device-enumeration"], "note": "read as ISO"}
     assert not _audit(conn, doc_id, "production-write")
     assert _count(conn, "job") == jobs_before
     assert out == {"decision": "retype", "doc_id": doc_id, "links_off": 0,
-                   "citations_cleared": [], "citations_set": []}
+                   "citations_cleared": [], "citations_set": [],
+                   "flags_dropped": ["device-enumeration"]}
 
 
 def test_declaration_to_whole_range_certificate_takes_links_off_and_answers_citations(conn):

@@ -164,6 +164,7 @@ def test_held_group_stops_a_confident_binding(conn):
     r = _bind_reading(conn, ch)
 
     assert r == {"disposition": "route-held", "doc_id": doc_id, "held_scope": "group",
+                 "flags_dropped": [],
                  "reviewer_edits_kept": ["coverage_scope", "type"],
                  "counts": {"reviewer_edits_kept": 2}}
     row = _row(conn, doc_id)
@@ -408,3 +409,28 @@ def test_an_edited_scope_without_a_retype_row_writes_no_retyped_and_review_reads
     assert m, "the document should be listed under Covers a whole range"
     text = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", m.group(0))))
     assert MFR_BINDING_REASON in text
+
+
+def test_held_staged_reports_every_flag_it_drops(conn):
+    """Counted, never silent (ruling 2026-11-12): the reading's own flags,
+    GATE's evidence findings, and those the open task still carried."""
+    _catalogue(conn)
+    ch = "rh-flags"
+    doc_id = _staged(conn, ch, ("ISO", "manufacturer"), ("DoC", "group"))
+    conn.execute("INSERT INTO manual_task (kind, doc_id, payload) VALUES "
+                 "('gate-manual', %s, '{\"flags\": [\"mfr-unresolved\", \"no-ref-overlap\"]}')",
+                 (doc_id,))
+    fields = _fields("ISO", "manufacturer")
+    fields["regulation"] = {**fields["regulation"], "page": None}   # a pageless T1 value
+    _read(conn, ch, fields)
+
+    r = gh.handle_gate_candidate(conn, _job(ch, route="mfr-binding",
+                                            flags=["no-ref-overlap", "device-enumeration"]))
+
+    assert r["disposition"] == "route-held"
+    evidence = gh._require_complete_evidence(fields)
+    assert evidence, "the seed must carry an evidence finding"
+    assert r["flags_dropped"] == sorted({"no-ref-overlap", "device-enumeration",
+                                         "mfr-unresolved", *evidence})
+    (task,) = _tasks(conn, doc_id)
+    assert "flags" not in task["payload"]
