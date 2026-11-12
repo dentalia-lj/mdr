@@ -67,7 +67,7 @@
       <span class="hint">Use this if the document is filed as the wrong type, for example a declaration read as a certificate.</span>
     </div>
     <form class="retype-form" hidden hx-post="/staging/{{ doc_id }}/retype"
-          hx-target="#retype-confirm-{{ doc_id }}" hx-swap="innerHTML">
+          hx-target="next .retype-confirm" hx-swap="innerHTML">
       <h3>Change type</h3>
       <div class="field-grid">
         <div class="field">
@@ -105,7 +105,10 @@
       </div>
     </form>
     {# The answer to "Check what changes": the consequences and the tick box, or
-       a refusal. `confirm_target` in `staging_retype` names this id. #}
+       a refusal. The form above reaches it as `next .retype-confirm` (an id
+       selector built from a value fails tests/test_htmx_targets.py); the
+       confirm's own buttons reach it by id, `confirm_target` in
+       `staging_retype`. #}
     <div class="retype-confirm" id="retype-confirm-{{ doc_id }}"></div>
 
     {# Above the buttons: what approving makes the document count for. Only

@@ -428,6 +428,13 @@ def test_the_control_appears_on_a_staged_document_in_both_panels(client, conn, w
         < text.index('id="approve-scope-') < text.index('class="panel-actions"')
     assert f'id="retype-confirm-{doc_id}"' in text
     assert "hidden" in form.split(">", 1)[0]
+    # "Check what changes" lands in the confirm div: `next .retype-confirm`
+    # from the form is the first element of that class after it, the div whose
+    # id the confirm's own buttons target.
+    assert 'hx-target="next .retype-confirm"' in form.split(">", 1)[0]
+    after = text[text.index(form) + len(form):]
+    first = re.search(r'<[a-z]+[^>]*class="retype-confirm"[^>]*>', after).group(0)
+    assert f'id="retype-confirm-{doc_id}"' in first
 
 
 def test_the_form_is_prefilled_with_the_document_s_values(client, conn):
