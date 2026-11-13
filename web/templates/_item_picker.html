@@ -1,5 +1,6 @@
 {# The item picker's body (spec §3, mockup 2), loaded into the panel's <dialog>.
    Server-rendered; static/item_picker.js keeps the tick set and the tray. #}
+{% import "_filed_match.html" as fm %}
 <div class="m-head">
   <h3>Items this document covers</h3>
   <p class="hint">{{ doc.type | doc_type }} · {{ doc.file_name or ("document #" ~ doc.doc_id) }} ·
@@ -55,6 +56,37 @@
   {% endif %}
 </div>
 <div class="m-body">
+  {#- A filed document's closest items (mockup "Item picker: these first, not
+      ticked"): one group like the others, so Tick all and the tray work. -#}
+  {% if close %}
+  <div class="grp match-grp match-grp-{{ close[0][0].kind }}" data-picker-group>
+    <div class="grp-head">
+      <span class="g-label">Close to a number this document prints</span>
+      <span class="hint">{{ close | length | num }} {{ "item" if close | length == 1 else "items" }}</span>
+      <button type="button" class="linkbtn" data-picker-tick-all>Tick all {{ close | length | num }}</button>
+    </div>
+    <div class="table-wrap">
+    <table class="picker-table">
+      <thead><tr><th></th><th>Match</th><th>Printed</th><th>Item</th><th>Name</th><th>Documents now</th></tr></thead>
+      <tbody>
+      {% for m, r in close %}
+      <tr class="{{ 'refused' if r.refused }}">
+        <td><input type="checkbox" data-pick="{{ r.item_ref }}" data-name="{{ r.name }}"
+                   aria-label="Tick {{ r.item_ref }}"
+                   {{- " data-refused" if r.refused }}{{ " disabled" if r.linked }}{{ " checked" if r.linked }}></td>
+        <td>{{ fm.chip(m.kind) }}</td>
+        <td>{{ fm.number(m.printed_head, m.printed_match) }}</td>
+        <td class="ref"><a href="/items/{{ r.item_ref }}" target="_blank" rel="noopener">
+          {%- if m.via_maker %}{{ fm.number(r.item_ref, "") }}{% else %}{{ fm.number(m.bc_head, m.bc_match) }}{% endif %}</a></td>
+        <td>{{ r.name }}{% if m.via_maker %} <span class="hint-inline">maker's number {{ fm.number(m.bc_head, m.bc_match) }}</span>{% endif %}</td>
+        <td><span class="dchips">{% for t in doc_types %}<span class="dchip{{ ' on' if r.has[t] }}">{{ type_short[t] }}</span>{% endfor %}</span></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {% endif %}
   <div class="picker-results" id="picker-results-{{ doc.doc_id }}">{% include "_item_picker_results.html" %}</div>
   {% if proposed.shown %}
   <h4>Linked only by a name match</h4>
@@ -76,9 +108,11 @@
   <form class="foot-actions" hx-post="/documents/{{ doc.doc_id }}/items"
         hx-target="next .picker-result" hx-swap="innerHTML">
     <div class="picker-add-items" hidden></div>
-    <p class="hint">Nothing is ticked for you. Each item you add becomes a confirmed link under your name.</p>
+    {% if undated %}{{ fm.undated_note() }}
+    {% else %}<p class="hint">Nothing is ticked for you. Each item you add becomes a confirmed link under your name.</p>{% endif %}
     <button type="button" class="btn-clear" data-picker-cancel>Cancel</button>
-    <button type="submit" class="btn-approve" data-picker-add disabled>Add these 0 items</button>
+    {#- `data-blocked`: item_picker.js keeps it disabled whatever is ticked. -#}
+    <button type="submit" class="btn-approve" data-picker-add disabled{{ " data-blocked" if undated }}>Add these 0 items</button>
   </form>
   <div class="picker-result"></div>
   {% endif %}

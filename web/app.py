@@ -3055,6 +3055,9 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
     # D7: every template that labels an expiring figure reads the two windows
     # from here, including the menu fragment, which has no route context.
     templates.env.globals["EXPIRING_WINDOW_DAYS"] = EXPIRING_WINDOW_DAYS
+    # The three match kinds' words, for Today's filed card, the document page
+    # and the item picker (`_filed_match.html`).
+    templates.env.globals["filed_words"] = filed_matches.WORDS
     templates.env.globals["EXPIRED_LOOKBACK_DAYS"] = EXPIRED_LOOKBACK_DAYS
 
     def _error_response(request: Request, status: int, detail, headers=None):
@@ -3767,6 +3770,8 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                 "ORDER BY reference NULLS LAST, udi_di",
                 (doc["basic_udi_di"],),
             ).fetchall() if doc["basic_udi_di"] else []
+            filed_match = (filed_matches.for_document(conn, doc_id)
+                           if doc["status"] == "filed" else None)
         return templates.TemplateResponse(
             request, "document_detail.html",
             {"doc": doc, "items": items_covered,
@@ -3775,6 +3780,9 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
              # which they publish.
              "offer_picker": doc["status"] in ("production", "filed")
                              and doc["coverage_scope"] == "group",
+             # A filed document whose printed numbers come close to BC numbers
+             # of its manufacturer (2026-11-13, web/filed_matches.py).
+             "filed_match": filed_match,
              # Spec 2026-11-09 §5.2: the same two conditions as adding items.
              "can_remove": doc["status"] in ("production", "superseded")
                            and doc["coverage_scope"] == "group",
@@ -4757,7 +4765,6 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                 "coverage": coverage_headline(conn),
                 "links": link_checks.check(conn),
                 "filed": filed_matches.find(conn),
-                "filed_words": filed_matches.WORDS,
                 "weeks": _recent_weeks(),
             }
         return templates.TemplateResponse(request, "today.html", ctx)
@@ -5497,6 +5504,19 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                 ctx.update(suggestions=sugg, first_word=first,
                            result=item_picker.search(conn, doc, mfr, first),
                            proposed=item_picker.proposed(conn, doc, mfr))
+                # A filed document's items closest to the numbers it prints,
+                # listed first and never ticked (2026-11-13, filed_matches).
+                close = (filed_matches.for_document(conn, doc_id)
+                         if doc["status"] == "filed" else None)
+                if close and close.manufacturer == mfr:
+                    rows = {r.item_ref: r for r in item_picker.selected(
+                        conn, doc, mfr, [m.item_ref for m in close.matches])}
+                    ctx["close"] = [(m, rows[m.item_ref]) for m in close.matches
+                                    if m.item_ref in rows]
+            # Adding items publishes a filed document, which needs an issue
+            # date (gate `_require_issue_date`): say so before anything is
+            # ticked, not after Add.
+            ctx["undated"] = doc["status"] == "filed" and doc["validity_from"] is None
         return templates.TemplateResponse(request, "_item_picker.html", ctx)
 
     @app.get("/picker/{doc_id:int}/results", response_class=HTMLResponse)

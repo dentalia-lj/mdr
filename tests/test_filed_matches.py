@@ -217,3 +217,46 @@ def test_explain_shows_which_part_matched(printed, item_ref, mfr_ref, want):
     m = filed_matches.explain(printed, item_ref, mfr_ref, "NAME")
     assert (m.kind, m.printed_head, m.printed_match, m.bc_head, m.bc_match, m.via_maker) == want
     assert m.item_ref == item_ref and m.item_name == "NAME"
+
+
+def test_for_document_gives_one_documents_row(conn):
+    _maker(conn, "ACMECO", "901")
+    for ref in ("UP-9331", "UP-9332"):
+        _item(conn, ref, "901")
+    doc = _doc(conn, "ACMECO")
+    _refs(conn, doc, ["9331", "9332"])
+    other = _doc(conn, "ACMECO")
+    _refs(conn, other, ["nothing"])
+
+    row = filed_matches.for_document(conn, doc)
+    assert [(m.item_ref, m.printed, m.bc_head, m.bc_match) for m in row.matches] == [
+        ("UP-9331", "9331", "UP-", "9331"), ("UP-9332", "9332", "UP-", "9332")]
+    assert filed_matches.for_document(conn, other) is None
+    published = _doc(conn, "ACMECO", status="production")
+    _refs(conn, published, ["9331"])
+    assert filed_matches.for_document(conn, published) is None
+
+
+def test_a_document_without_an_issue_date_is_marked(conn):
+    _maker(conn, "ACMECO", "901")
+    _item(conn, "541440", "901")
+    dated = _doc(conn, "ACMECO")
+    conn.execute("UPDATE document SET validity_from='2024-01-01' WHERE doc_id=%s", (dated,))
+    undated = _doc(conn, "ACMECO")
+    for d in (dated, undated):
+        _refs(conn, d, ["541440"])
+
+    by_id = {r.doc_id: r for r in filed_matches.find(conn).rows}
+    assert (by_id[dated].undated, by_id[undated].undated) == (False, True)
+
+
+def test_a_whole_range_document_is_left_out(conn):
+    # Items are added only to a document that covers specific items: the
+    # picker is not offered on a whole-range one.
+    _maker(conn, "ACMECO", "901")
+    _item(conn, "541440", "901")
+    doc = _doc(conn, "ACMECO")
+    conn.execute("UPDATE document SET coverage_scope='manufacturer' WHERE doc_id=%s", (doc,))
+    _refs(conn, doc, ["541440"])
+
+    assert filed_matches.find(conn).rows == []

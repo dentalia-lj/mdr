@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "_ui.html" as ui %}
 {% import "_link_decide.html" as link_decide %}
+{% import "_filed_match.html" as fm %}
 {% block title %}Document #{{ doc.doc_id }} — Dentalia Compliance Registry{% endblock %}
 {% block content %}
 {# Rule 1: the document is named before it is numbered. `doc_display_name`
@@ -279,6 +280,7 @@
   {% else %}
   <p class="hint">No item links (manufacturer-scope document, or not yet grouped).</p>
   {% endif %}
+{% if offer_picker and filed_match %}{{ fm.box(filed_match) }}{% endif %}
 {% if offer_picker %}
 <button type="button" class="btn-find" data-picker-open="picker-{{ doc.doc_id }}"
         data-picker-url="/picker/{{ doc.doc_id }}">Add items this document covers…</button>

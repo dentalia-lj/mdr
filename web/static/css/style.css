@@ -452,6 +452,24 @@ main {
 .match-num strong { color: var(--dentalia-ink); font-weight: 700; }
 .match-name { color: var(--dentalia-muted); }
 .filed-match-table td.today-go { text-align: right; }
+/* The same match on a filed document's page (the box above "Add items this
+   document covers…") and at the top of its item picker: a white panel edged
+   in the colour of the document's strongest kind. */
+.match-box { background: #fff; border: 1px solid var(--dentalia-border); border-radius: var(--radius-md);
+             padding: 10px 12px; margin: 8px 0 10px; }
+.match-box-exact { border-color: #a9d3bd; }
+.match-box-prefix { border-color: #f1d3a4; }
+.match-box-zeros { border-color: #b9cdea; }
+.match-box-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 4px; }
+.match-box-table { margin: 6px 0; }
+.match-box-table th:first-child { width: 120px; }
+.match-box-table th:nth-child(2) { width: 120px; }
+.match-undated { color: var(--dentalia-danger-ink); font-size: var(--fs-micro); margin: 4px 0 0; }
+.match-grp { border: 1px solid var(--dentalia-border); border-radius: var(--radius-md);
+             padding: 6px 8px; margin-bottom: 10px; }
+.match-grp-exact { background: #f7fcf9; border-color: #a9d3bd; }
+.match-grp-prefix { background: #fffbf4; border-color: #f1d3a4; }
+.match-grp-zeros { background: #f6f9fd; border-color: #b9cdea; }
 .filed-more { margin: 6px 0 4px; }
 .filed-more > summary { cursor: pointer; font-weight: 600; color: var(--dentalia-action); }
 .filed-more .table-wrap { margin-top: 6px; }

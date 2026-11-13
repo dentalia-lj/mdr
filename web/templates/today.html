@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_ui.html" as ui %}
+{% import "_filed_match.html" as fm %}
 {% block title %}Today — Dentalia Compliance Registry{% endblock %}
 {% block content %}
 {#- Today (office UI redesign spec § 4): the office's first screen. Four lists
@@ -160,13 +161,7 @@
     person opens the document and adds the item there. Shown only when there
     is something to look at. The first 12 rows show; the rest fold open in
     place rather than on a page of their own. -#}
-{% set fm = filed %}
-{% if fm.total %}
-{#- A number with the part that matched in bold: the shared tail of both
-    numbers (web/filed_matches.py `explain`). -#}
-{% macro match_number(head, matched) -%}
-<span class="match-num">{{ head }}<strong>{{ matched }}</strong></span>
-{%- endmacro %}
+{% if filed.total %}
 {% macro filed_rows(rows) -%}
   <table class="filed-match-table">
     <colgroup><col class="c-kind"><col class="c-doc"><col class="c-mfr"><col class="c-printed"><col><col class="c-go"></colgroup>
@@ -174,15 +169,14 @@
     <tbody>
     {% for r in rows %}{% set m = r.match %}
     <tr>
-      <td><span class="match-chip match-{{ r.kind }}">{{ filed_words[r.kind][1] }}</span></td>
+      <td>{{ fm.chip(r.kind) }}</td>
       {#- 970 of 1,045 filed documents are declarations: the type is named only
           when it is something else, so the row stays one line. -#}
-      <td>Doc {{ r.doc_id }}{% if r.doc_type != "DoC" %} <span class="hint-inline">{{ r.doc_type | doc_type }}</span>{% endif %}</td>
+      <td>Doc {{ r.doc_id }}{% if r.doc_type != "DoC" %} <span class="hint-inline">{{ r.doc_type | doc_type }}</span>{% endif %}
+        {%- if r.undated %} <span class="hint-inline">no issue date</span>{% endif %}</td>
       <td>{{ r.manufacturer }}</td>
-      <td>{{ match_number(m.printed_head, m.printed_match) }}</td>
-      <td>{% if m.via_maker %}{{ match_number(m.item_ref, "") }}{% else %}{{ match_number(m.bc_head, m.bc_match) }}{% endif %}
-        <span class="match-name">{{ m.item_name or "" }}</span>
-        {%- if m.via_maker %} <span class="hint-inline">maker's number {{ match_number(m.bc_head, m.bc_match) }}</span>{% endif %}
+      <td>{{ fm.number(m.printed_head, m.printed_match) }}</td>
+      <td>{{ fm.bc_item(m) }}
         {%- if r.more %} <span class="hint-inline">+{{ r.more | num }} more</span>{% endif %}</td>
       <td class="today-go"><a href="/documents/{{ r.doc_id }}">Open</a></td>
     </tr>
@@ -191,20 +185,20 @@
   </table>
 {%- endmacro %}
 <section class="card today-list" id="today-filed">
-  <h2>Filed, but maybe ours <span class="today-n">{{ fm.total | num }}</span></h2>
+  <h2>Filed, but maybe ours <span class="today-n">{{ filed.total | num }}</span></h2>
   <p>Documents the system filed because no Business Central item number matched what
     they print. These print a number that is the same as, or close to, a number of the
     same manufacturer. Open one, check, and add the item if it is ours.</p>
   <p class="match-key">
-    {% for kind, words in filed_words.items() if fm.counts[kind] %}
-    <span class="match-chip match-{{ kind }}">{{ words[0] }} · {{ fm.counts[kind] | num }}</span>
+    {% for kind, words in filed_words.items() if filed.counts[kind] %}
+    <span class="match-chip match-{{ kind }}">{{ words[0] }} · {{ filed.counts[kind] | num }}</span>
     {% endfor %}
   </p>
-  <div class="table-wrap">{{ filed_rows(fm.rows[:12]) }}</div>
-  {% if fm.total > 12 %}
+  <div class="table-wrap">{{ filed_rows(filed.rows[:12]) }}</div>
+  {% if filed.total > 12 %}
   <details class="filed-more">
-    <summary>See all {{ fm.total | num }}</summary>
-    <div class="table-wrap">{{ filed_rows(fm.rows[12:]) }}</div>
+    <summary>See all {{ filed.total | num }}</summary>
+    <div class="table-wrap">{{ filed_rows(filed.rows[12:]) }}</div>
   </details>
   {% endif %}
   <p class="hint">A document leaves this list once it has an item,

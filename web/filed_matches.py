@@ -50,13 +50,18 @@ _MIN_PRINTED = 4     # printed side, when it is the shorter one of a prefix pair
 _MIN_BC = 5          # BC side, when it is the shorter one
 
 _FILED = """
-SELECT d.doc_id, d.type, d.canonical_manufacturer AS manufacturer, ev.value
+SELECT d.doc_id, d.type, d.canonical_manufacturer AS manufacturer,
+       d.validity_from IS NULL AS undated, ev.value
   FROM document d
   JOIN LATERAL (SELECT value FROM evidence e
                  WHERE e.doc_id = d.doc_id AND e.field = 'ref_list'
                  ORDER BY e.extract_rev DESC, e.id DESC LIMIT 1) ev ON true
  WHERE d.status = 'filed' AND d.canonical_manufacturer IS NOT NULL
+   -- items are added only to a document covering specific items: the picker
+   -- is not offered on a whole-range one (document page, `offer_picker`)
+   AND d.coverage_scope = 'group'
    AND NOT EXISTS (SELECT 1 FROM item_document l WHERE l.doc_id = d.doc_id)
+   AND (%(doc_id)s::bigint IS NULL OR d.doc_id = %(doc_id)s)
 """
 
 # The keys are `_key` in SQL (one pass in Postgres instead of 25k regex calls
@@ -160,6 +165,7 @@ class Row:
     item_name: str | None
     more: int           # other items matched by the same kind
     matches: list[Match]    # every item matched, strongest kind first; [0] is the row's
+    undated: bool = False   # no issue date: items cannot be added until one is set
 
     @property
     def match(self) -> Match:
@@ -237,8 +243,16 @@ def _refs(value: str) -> list[str]:
     return [r for r in refs if isinstance(r, str)] if isinstance(refs, list) else []
 
 
-def find(conn) -> Found:
-    docs = [(r, _refs(r["value"])) for r in conn.execute(_FILED).fetchall()]
+def for_document(conn, doc_id: int) -> Row | None:
+    """The one document's row (its page and its picker), or None when it is
+    not a filed document with no item whose numbers come close."""
+    rows = find(conn, doc_id).rows
+    return rows[0] if rows else None
+
+
+def find(conn, doc_id: int | None = None) -> Found:
+    docs = [(r, _refs(r["value"]))
+            for r in conn.execute(_FILED, {"doc_id": doc_id}).fetchall()]
     docs = [(r, refs) for r, refs in docs if refs]
     codes_for = manufacturers.item_codes_resolver(conn)
     codes = {m: set(codes_for(m)) for m in {r["manufacturer"] for r, _ in docs}}
@@ -275,7 +289,7 @@ def find(conn) -> Found:
                         manufacturer=d["manufacturer"], kind=kind,
                         printed=best_of[same[0]][1], item_ref=same[0],
                         item_name=idx.names[same[0]], more=len(same) - 1,
-                        matches=matches))
+                        matches=matches, undated=d["undated"]))
     # Listed in the card's order (WORDS: same number, prefix, leading zeros,
     # the approved mockup), which is not `_ORDER`: that one only decides which
     # kind a document falls under when it matches several ways.

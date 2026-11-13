@@ -113,9 +113,11 @@ Each row says what was printed, the Business Central item it is close to (with
 | **Leading zeros** (blue) | The numbers differ only by zeros in front: `000529397` and `529397` | Probably ours. A short number such as `017` matches many items: check carefully |
 
 The first 12 rows show, in the order of the labels above; **See all N** opens the rest in place.
-Press **Open**, check the document, and use **Add items this document covers…**
-on its page (see [Documents](documents.md)). Adding an item publishes the
-document, and it leaves the card. Rejecting it also takes it off.
+Press **Open**: the document's page lists the same items above **Add items
+this document covers…**, and the picker shows them first, unticked (see
+[Documents](documents.md)). Adding an item publishes the document, and it leaves
+the card. Rejecting it also takes it off. A row marked **no issue date** cannot
+take items yet: a developer has to set the date first.
 
 ### The declarations sentence
 

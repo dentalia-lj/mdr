@@ -94,8 +94,16 @@ prazno, če želite brskati po vsem.
    postane potrjena povezava pod vašim imenom v minuti. Uporabite ga, ko pride
    nov artikel, ki ga obstoječi dokument pokriva. Gumb je tudi na
    dokumentu s stanjem **On file**, ki ob branju ni navedel nobenega našega
-   artikla: dodajanje artiklov ga objavi. Dokument On file brez datuma izdaje
-   se zavrne; razvijalcu povejte datum.
+   artikla: dodajanje artiklov ga objavi. Dokumentu On file brez datuma izdaje
+   ni mogoče dodati artiklov: okvir in izbirnik to povesta in **Add** ostane
+   izklopljen; razvijalcu povejte datum.
+   Kadar tak dokument natisne številke, podobne številkam njegovega
+   proizvajalca v Business Centralu, okvir **Close to a Business Central
+   number** nad gumbom navede vsako: barvno oznako (glejte [Today](today.sl.md)),
+   natisnjeno številko in artikel, z ujemajočim se delom v **krepkem**. Izbirnik
+   iste artikle navede prve, pod **Close to a number this document prints**.
+   Nič ni označeno namesto vas: preverite imena, označite, kar dokument
+   pokriva, in dodajte.
 10. Na takem dokumentu **Remove** ob artiklu v **Covered items** artikel odstrani.
     Najprej vpraša in pove, če artikel ne bo imel več nobenega dokumenta te
     vrste. Business Central obdrži staro vrednost do naslednje posodobitve. Za

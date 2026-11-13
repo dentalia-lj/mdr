@@ -690,3 +690,68 @@ def test_remove_link_counts_an_older_document_as_left(client, conn):
                  "VALUES ('A1', %s, 'manual', 'production')", (older,))
     conn.commit()
     assert "will have no IFU left" not in _text(_ask(client, doc_id).text)
+
+
+# --- a filed document close to BC numbers (2026-11-13, web/filed_matches.py) ---
+
+def _prints(conn, doc_id, refs):
+    import json
+    conn.execute(
+        "INSERT INTO evidence (doc_id, field, value, archive_url, page, verbatim, tier, "
+        "  confidence, extracted_at) VALUES (%s,'ref_list',%s,'/a.pdf',1,'refs','T1',0.9,now())",
+        (doc_id, json.dumps(refs)))
+
+
+def _close_doc(conn, key, **kw):
+    _mfr(conn)
+    _item(conn, "UP-9331", "CORD BLACK")
+    _item(conn, "UP-9332", "CORD YELLOW")
+    _item(conn, "X-1", "UNRELATED")
+    doc_id = _doc(conn, key, status="filed", **kw)
+    _prints(conn, doc_id, ["9331", "9332"])
+    conn.commit()
+    return doc_id
+
+
+def test_a_filed_documents_page_shows_the_close_items(client, conn):
+    doc_id = _close_doc(conn, "close-page")
+    page = client.get(f"/documents/{doc_id}").text
+    box = re.search(r'<div class="match-box[^"]*" id="filed-match">.*?(?=<button)', page, re.S)
+    assert box, "no close-items box on the page"
+    text = _text(box.group(0))
+    assert "Close to a Business Central number" in text and "Number differs by a prefix" in text
+    assert "UP- 9331 CORD BLACK" in text and "UP- 9332 CORD YELLOW" in text
+    assert "UNRELATED" not in text
+    assert "The picker below lists these 2 first. Nothing is ticked for you." in text
+    # above the way in, not below it
+    assert page.index('id="filed-match"') < page.index("Add items this document covers")
+
+
+def test_a_published_documents_page_has_no_close_items_box(client, conn):
+    _mfr(conn)
+    doc_id = _doc(conn, "close-published", status="production")
+    _item(conn, "UP-9331", "CORD BLACK")
+    _prints(conn, doc_id, ["9331"])
+    conn.commit()
+    assert 'id="filed-match"' not in client.get(f"/documents/{doc_id}").text
+
+
+def test_the_picker_lists_the_close_items_first_and_unticked(client, conn):
+    doc_id = _close_doc(conn, "close-picker")
+    body = client.get(f"/picker/{doc_id}").text
+    head = body.index("Close to a number this document prints")
+    assert head < body.index('id="picker-results-')
+    section = body[head:body.index('id="picker-results-')]
+    assert re.findall(r'data-pick="([^"]+)"', section) == ["UP-9331", "UP-9332"]
+    assert " checked" not in section
+    assert "Tick all 2" in _text(section)
+    assert "data-blocked" not in body
+
+
+def test_the_picker_blocks_add_on_a_filed_document_with_no_issue_date(client, conn):
+    doc_id = _close_doc(conn, "close-undated", issued=None)
+    body = client.get(f"/picker/{doc_id}").text
+    assert re.search(r"<button[^>]*data-picker-add[^>]*data-blocked", body)
+    assert "This document states no issue date" in _text(body)
+    page = _text(client.get(f"/documents/{doc_id}").text)
+    assert "This document states no issue date" in page

@@ -1,0 +1,52 @@
+{#- "Close to a Business Central number" (2026-11-13, web/filed_matches.py):
+    the pieces Today's card, the document page and the item picker share, so
+    a match reads the same on all three. `filed_words` is a Jinja global. -#}
+
+{#- A number with the part that matched in bold: the shared tail of both
+    numbers (`filed_matches.explain`). -#}
+{% macro number(head, matched) -%}
+<span class="match-num">{{ head }}<strong>{{ matched }}</strong></span>
+{%- endmacro %}
+
+{% macro chip(kind, long=false) -%}
+<span class="match-chip match-{{ kind }}">{{ filed_words[kind][0 if long else 1] }}</span>
+{%- endmacro %}
+
+{#- The Business Central side of one match: the number (bold where it
+    matched), the name, and the maker's number when that is what matched. -#}
+{% macro bc_item(m) -%}
+{% if m.via_maker %}{{ number(m.item_ref, "") }}{% else %}{{ number(m.bc_head, m.bc_match) }}{% endif %}
+<span class="match-name">{{ m.item_name or "" }}</span>
+{%- if m.via_maker %} <span class="hint-inline">maker's number {{ number(m.bc_head, m.bc_match) }}</span>{% endif %}
+{%- endmacro %}
+
+{#- What the box and the picker say about a document with no issue date: the
+    items cannot be added until it has one (gate `_require_issue_date`). -#}
+{% macro undated_note() -%}
+<p class="match-undated">This document states no issue date, and items can be added only to a
+  dated document. Ask a developer to set the date first.</p>
+{%- endmacro %}
+
+{#- The document page's box (mockup "Document page: close to a BC number"):
+    above "Add items this document covers…" on a filed document with no item. -#}
+{% macro box(row) -%}
+<div class="match-box match-box-{{ row.kind }}" id="filed-match">
+  <p class="match-box-head"><strong>Close to a Business Central number</strong> {{ chip(row.kind, true) }}</p>
+  <p class="hint">This document prints {{ "a number" if row.matches | length == 1 else "numbers" }} that
+    {{ row.manufacturer }} items carry in Business Central
+    {%- if row.kind == "exact" %} once spaces, dots and dashes are dropped{% elif row.kind == "prefix" %} with something in front, or the other way round{% else %} with zeros in front, or the other way round{% endif %}.
+    Check the names; if they are the products this document is about, add them.</p>
+  <div class="table-wrap">
+  <table class="match-box-table">
+    <thead><tr><th>Match</th><th>Printed</th><th>Business Central item</th></tr></thead>
+    <tbody>
+    {% for m in row.matches %}
+    <tr><td>{{ chip(m.kind) }}</td><td>{{ number(m.printed_head, m.printed_match) }}</td><td>{{ bc_item(m) }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if row.undated %}{{ undated_note() }}
+  {% else %}<p class="hint">The picker below lists {{ "it" if row.matches | length == 1 else "these " ~ (row.matches | length | num) }} first. Nothing is ticked for you.</p>{% endif %}
+</div>
+{%- endmacro %}

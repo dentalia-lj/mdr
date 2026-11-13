@@ -114,9 +114,11 @@ barvo:
 | **Leading zeros** (modra) | Številki se razlikujeta le po ničlah spredaj: `000529397` in `529397` | Verjetno naš. Kratka številka, na primer `017`, se ujema z mnogimi artikli: preverite natančno |
 
 Prikaže se prvih 12 vrstic, v vrstnem redu oznak zgoraj; **See all N** odpre ostale na
-mestu. Pritisnite **Open**, preverite dokument in na njegovi strani uporabite
-**Add items this document covers…** (glejte [Documents](documents.sl.md)).
-Dodan artikel dokument objavi in ta izgine s kartice. Tudi zavrnitev ga odstrani.
+mestu. Pritisnite **Open**: stran dokumenta navede iste artikle nad **Add items
+this document covers…**, izbirnik pa jih pokaže prve, neoznačene (glejte
+[Documents](documents.sl.md)). Dodan artikel dokument objavi in ta izgine s
+kartice. Tudi zavrnitev ga odstrani. Vrstici z oznako **no issue date** artiklov
+še ni mogoče dodati: razvijalec mora najprej nastaviti datum.
 
 ### Stavek o izjavah
 

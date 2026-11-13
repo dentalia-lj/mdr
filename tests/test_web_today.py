@@ -976,10 +976,11 @@ def test_link_checks_ignore_what_is_not_published(client, conn):
 # Filed, but maybe ours (2026-11-13, web/filed_matches.py)
 # --------------------------------------------------------------------------- #
 
-def _filed(conn, canonical: str, refs: list[str], doc_type: str = "DoC") -> int:
+def _filed(conn, canonical: str, refs: list[str], doc_type: str = "DoC",
+           issued: str | None = "2024-01-01") -> int:
     doc_id = _doc(conn, status="filed", doc_type=doc_type)
-    conn.execute("UPDATE document SET canonical_manufacturer=%s WHERE doc_id=%s",
-                 (canonical, doc_id))
+    conn.execute("UPDATE document SET canonical_manufacturer=%s, validity_from=%s "
+                 "WHERE doc_id=%s", (canonical, issued, doc_id))
     conn.execute(
         "INSERT INTO evidence (doc_id, field, value, archive_url, page, verbatim, tier, "
         "  confidence, extracted_at) VALUES (%s,'ref_list',%s,'/a.pdf',1,'refs','T1',0.9,now())",
@@ -1045,3 +1046,16 @@ def test_the_filed_card_folds_the_rows_after_twelve(client, conn):
     assert shown.count('href="/documents/') == 12
     assert folded.count('href="/documents/') == 2
     assert "See all 14" in _text(folded)
+
+
+def test_the_filed_card_says_when_a_document_has_no_issue_date(client, conn):
+    _maker(conn, "ACMECO", "901")
+    _item(conn, "742011", manufacturer="901")
+    _item(conn, "742012", manufacturer="901")
+    undated = _filed(conn, "ACMECO", ["742011"], issued=None)
+    dated = _filed(conn, "ACMECO", ["742012"])
+    conn.commit()
+
+    card = _text(_section(client.get("/").text, "today-filed"))
+    assert f"Doc {undated} no issue date" in card
+    assert f"Doc {dated} no issue date" not in card
