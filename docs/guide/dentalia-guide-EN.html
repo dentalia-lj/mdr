@@ -524,6 +524,31 @@ tbody tr:last-child td{border-bottom:0}
 </tr>
 </tbody></table></div>
 <p>It cannot see a document from the right brand but the wrong maker, such as a contract maker's certificate counted for the brand's whole range. That needs Business Central's maker field, which the system does not read yet.</p>
+<h3 id="pages/today--filed-but-maybe-ours">Filed, but maybe ours</h3>
+<p>A document is <strong>On file</strong> when none of the article numbers it prints is a Business Central number of its manufacturer. It stays in the registry but counts for no item, and no other screen lists it. This card looks again, more loosely, and lists the documents On file that print a number the same as, or close to, a number of the same manufacturer. It only suggests: nothing changes until you add an item. When there is nothing to suggest, the card does not show.</p>
+<p>Each row says what was printed, the Business Central item it is close to (with <strong>+N more</strong> when several items match the same way), and how close, in colour:</p>
+<div class="tw"><table><thead><tr>
+<th>Label</th>
+<th>What it means</th>
+<th>How sure</th>
+</tr></thead><tbody>
+<tr>
+<td><strong>Same number</strong> (green)</td>
+<td>The same number once spaces, dots and dashes are dropped: <code>606.20.110</code> and <code>60620110</code></td>
+<td>Very likely ours. A number that is a word, such as <code>S-tip</code>, can match by chance</td>
+</tr>
+<tr>
+<td><strong>Prefix</strong> (amber)</td>
+<td>One number is the other with something in front: <code>0541</code> and <code>6050541</code>, <code>9331</code> and <code>UP-9331</code></td>
+<td>Probably ours: check the item name</td>
+</tr>
+<tr>
+<td><strong>Leading zeros</strong> (blue)</td>
+<td>The numbers differ only by zeros in front: <code>000529397</code> and <code>529397</code></td>
+<td>Probably ours. A short number such as <code>017</code> matches many items: check carefully</td>
+</tr>
+</tbody></table></div>
+<p>The first 12 rows show, strongest first; <strong>See all N</strong> opens the rest in place. Press <strong>Open</strong>, check the document, and use <strong>Add items this document covers…</strong> on its page (see <a href="#pages/documents">Documents</a>). Adding an item publishes the document, and it leaves the card. Rejecting it also takes it off.</p>
 <h3 id="pages/today--the-declarations-sentence">The declarations sentence</h3>
 <p><strong>Declarations on file for X of Y medical-device items (Z%)</strong> is the figure to quote to Dentalia, and the line under it says exactly what it counts: items Business Central marks as medical devices, and, where there are any, how many items BC has not classified at all and so are not counted. The link opens <a href="#pages/coverage">Coverage gaps</a>, where the <strong>No Declaration of Conformity</strong> count is always the same number.</p>
 <h3 id="pages/today--the-weeks-report">The week's report</h3>
@@ -592,6 +617,10 @@ tbody tr:last-child td{border-bottom:0}
 <tr>
 <td><strong>Failed tasks</strong></td>
 <td>Work the system tried several times and gave up on. See <a href="#pages/failed">Failed tasks</a></td>
+</tr>
+<tr>
+<td><strong>Filed, but maybe ours</strong></td>
+<td>Documents On file, counting for no item, that print a number close to one of their manufacturer's Business Central numbers</td>
 </tr>
 <tr>
 <td><strong>Declarations on file</strong></td>

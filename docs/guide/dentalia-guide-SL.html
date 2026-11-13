@@ -527,6 +527,31 @@ tbody tr:last-child td{border-bottom:0}
 </tr>
 </tbody></table></div>
 <p>Ne vidi dokumenta prave blagovne znamke, a napačnega izdelovalca, na primer certifikata podizvajalca, ki šteje za celoten program blagovne znamke. Za to je potrebno polje izdelovalca v Business Centralu, ki ga sistem še ne bere.</p>
+<h3 id="pages/today--filed-but-maybe-ours">Filed, but maybe ours</h3>
+<p>Dokument dobi stanje <strong>On file</strong>, kadar nobena od kataloških številk, ki jih natisne, ni številka njegovega proizvajalca v Business Centralu. Ostane v registru, a ne šteje za noben artikel, in noben drug zaslon ga ne navaja. Ta kartica pogleda znova, ohlapneje, in navede dokumente On file, ki natisnejo številko, enako ali podobno številki istega proizvajalca. Samo predlaga: nič se ne spremeni, dokler ne dodate artikla. Kadar ni ničesar za predlagati, se kartica ne prikaže.</p>
+<p>Vsaka vrstica pove, kaj je natisnjeno, kateremu artiklu v Business Centralu je podobno (z <strong>+N more</strong>, kadar se enako ujema več artiklov) in kako podobno, z barvo:</p>
+<div class="tw"><table><thead><tr>
+<th>Oznaka</th>
+<th>Kaj pomeni</th>
+<th>Kako zanesljivo</th>
+</tr></thead><tbody>
+<tr>
+<td><strong>Same number</strong> (zelena)</td>
+<td>Ista številka, ko odstranimo presledke, pike in pomišljaje: <code>606.20.110</code> in <code>60620110</code></td>
+<td>Zelo verjetno naš. Številka, ki je beseda, na primer <code>S-tip</code>, se lahko ujame po naključju</td>
+</tr>
+<tr>
+<td><strong>Prefix</strong> (oranžna)</td>
+<td>Ena številka je druga z nečim spredaj: <code>0541</code> in <code>6050541</code>, <code>9331</code> in <code>UP-9331</code></td>
+<td>Verjetno naš: preverite ime artikla</td>
+</tr>
+<tr>
+<td><strong>Leading zeros</strong> (modra)</td>
+<td>Številki se razlikujeta le po ničlah spredaj: <code>000529397</code> in <code>529397</code></td>
+<td>Verjetno naš. Kratka številka, na primer <code>017</code>, se ujema z mnogimi artikli: preverite natančno</td>
+</tr>
+</tbody></table></div>
+<p>Prikaže se prvih 12 vrstic, najmočnejše najprej; <strong>See all N</strong> odpre ostale na mestu. Pritisnite <strong>Open</strong>, preverite dokument in na njegovi strani uporabite <strong>Add items this document covers…</strong> (glejte <a href="#pages/documents">Documents</a>). Dodan artikel dokument objavi in ta izgine s kartice. Tudi zavrnitev ga odstrani.</p>
 <h3 id="pages/today--stavek-o-izjavah">Stavek o izjavah</h3>
 <p><strong>Declarations on file for X of Y medical-device items (Z%)</strong> je številka za navedbo Dentalii, vrstica pod njo pa pove točno, kaj šteje: artikle, ki jih Business Central označi kot medicinske pripomočke, in, če takšni so, koliko artiklov BC sploh ni razvrstil, zato niso šteti. Povezava odpre <a href="#pages/coverage">Coverage gaps</a>, kjer je število <strong>No Declaration of Conformity</strong> vedno isto.</p>
 <h3 id="pages/today--tedensko-poročilo">Tedensko poročilo</h3>
@@ -595,6 +620,10 @@ tbody tr:last-child td{border-bottom:0}
 <tr>
 <td><strong>Failed tasks</strong></td>
 <td>Delo, ki ga je sistem večkrat poskusil in obupal. Glejte <a href="#pages/failed">Failed tasks</a></td>
+</tr>
+<tr>
+<td><strong>Filed, but maybe ours</strong></td>
+<td>Dokumenti s stanjem On file, ki ne štejejo za noben artikel in natisnejo številko, podobno številki njihovega proizvajalca v Business Centralu</td>
 </tr>
 <tr>
 <td><strong>Declarations on file</strong></td>

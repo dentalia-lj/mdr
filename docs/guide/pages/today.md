@@ -94,6 +94,29 @@ It cannot see a document from the right brand but the wrong maker, such as a
 contract maker's certificate counted for the brand's whole range. That needs
 Business Central's maker field, which the system does not read yet.
 
+### Filed, but maybe ours
+
+A document is **On file** when none of the article numbers it prints is a
+Business Central number of its manufacturer. It stays in the registry but counts
+for no item, and no other screen lists it. This card looks again, more loosely,
+and lists the documents On file that print a number the same as, or close to, a
+number of the same manufacturer. It only suggests: nothing changes until you add
+an item. When there is nothing to suggest, the card does not show.
+
+Each row says what was printed, the Business Central item it is close to (with
+**+N more** when several items match the same way), and how close, in colour:
+
+| Label | What it means | How sure |
+|---|---|---|
+| **Same number** (green) | The same number once spaces, dots and dashes are dropped: `606.20.110` and `60620110` | Very likely ours. A number that is a word, such as `S-tip`, can match by chance |
+| **Prefix** (amber) | One number is the other with something in front: `0541` and `6050541`, `9331` and `UP-9331` | Probably ours: check the item name |
+| **Leading zeros** (blue) | The numbers differ only by zeros in front: `000529397` and `529397` | Probably ours. A short number such as `017` matches many items: check carefully |
+
+The first 12 rows show, strongest first; **See all N** opens the rest in place.
+Press **Open**, check the document, and use **Add items this document covers…**
+on its page (see [Documents](documents.md)). Adding an item publishes the
+document, and it leaves the card. Rejecting it also takes it off.
+
 ### The declarations sentence
 
 **Declarations on file for X of Y medical-device items (Z%)** is the figure to
@@ -132,6 +155,7 @@ This is the only way into that screen from the menu.
 | **Expiring certificates** | Certificates lapsing or lapsed inside the two named windows. Same count as **Expiring** in the menu |
 | **Renewal emails to send** | Drafts nobody has marked *sent* or archived. Same count as **Renewal emails** in the menu |
 | **Failed tasks** | Work the system tried several times and gave up on. See [Failed tasks](failed.md) |
+| **Filed, but maybe ours** | Documents On file, counting for no item, that print a number close to one of their manufacturer's Business Central numbers |
 | **Declarations on file** | A published Declaration of Conformity, linked to the item itself. See [Coverage gaps](coverage.md) |
 
 ---
