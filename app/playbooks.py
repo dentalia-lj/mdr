@@ -310,6 +310,13 @@ class Playbook:
     # host, the same authoring-time guard `doc_sources[kind:"direct"]` gets,
     # so an operator cannot author the mistake.
     crawl: tuple[Crawl, ...] = ()
+    # Companies that make products sold under THIS brand (spec 2026-11-13
+    # subcontractors design § 4.1). Their printed legal names, or another
+    # playbook's `manufacturer` when the maker is a brand of its own
+    # (WOODPECKER, SHOFU, BECHT). Never an alias: a subcontractor's document
+    # must not be taken as the brand's, so `validate` refuses a listed name that
+    # is any playbook's name. Read through `app/subcontractors.py`.
+    subcontractors: tuple[str, ...] = ()
 
     def names(self) -> tuple[str, ...]:
         """Every string that should resolve to this playbook."""
@@ -702,10 +709,17 @@ def _parse(slug: str, data: dict) -> Playbook:
     contacts = _contacts_mod.validate_for_playbook(
         data.get("contacts", []), where=f"{slug!r} contacts")
 
+    subs = []
+    for entry in data.get("subcontractors", []):
+        if not isinstance(entry, str) or not entry.strip():
+            raise ValueError(f"{slug!r} subcontractors: {entry!r} is not a company name")
+        subs.append(entry.strip())
+
     return Playbook(
         slug=slug,
         manufacturer=manufacturer.strip(),
         contacts=tuple(contacts),
+        subcontractors=tuple(subs),
         bc_codes=tuple(codes),
         aliases=tuple(str(a) for a in data.get("aliases", [])),
         domains=tuple(_normalize_domain(str(d)) for d in data.get("domains", [])),
@@ -1142,6 +1156,35 @@ def brand_collision(
     return None
 
 
+def _validate_subcontractors(playbooks: tuple[Playbook, ...]) -> None:
+    """A listed subcontractor is never a brand's name (spec § 4.2).
+
+    Another playbook's `manufacturer` is allowed: it means "that manufacturer"
+    (Woodpecker is its own brand and makes for Komet). Anything else that folds
+    equal to a name some playbook owns would make the subcontractor resolve to
+    that brand -- exactly the alias the list replaces."""
+    from app.manufacturers import normalize
+
+    owner: dict[str, str] = {}
+    for pb in playbooks:
+        for name in pb.names():
+            owner.setdefault(normalize(name), pb.slug)
+    canonicals = {normalize(pb.manufacturer): pb.slug for pb in playbooks}
+    for pb in playbooks:
+        for entry in pb.subcontractors:
+            key = normalize(entry)
+            if canonicals.get(key) == pb.slug:
+                raise PlaybookConflict(
+                    f"{pb.slug!r} lists its own name {entry!r} as a subcontractor")
+            if key in canonicals:
+                continue
+            if key in owner:
+                raise PlaybookConflict(
+                    f"{pb.slug!r} lists {entry!r} as a subcontractor, but it is a name "
+                    f"of {owner[key]!r}: list that playbook's manufacturer instead, "
+                    f"or drop the name there")
+
+
 def validate(playbooks: tuple[Playbook, ...], *, refused: frozenset[str] | None = None,
              brands: dict[str, frozenset[str]] | None = None) -> None:
     """Raise on cross-file conflicts and on a fetch target we may not fetch.
@@ -1158,6 +1201,7 @@ def validate(playbooks: tuple[Playbook, ...], *, refused: frozenset[str] | None 
     """
     if refused is None:
         refused = load_robots_refused()
+    _validate_subcontractors(playbooks)
     seen_codes: dict[tuple[str, str], str] = {}
     seen_names: dict[str, str] = {}
 

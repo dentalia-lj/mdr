@@ -902,3 +902,53 @@ def test_the_whole_default_ladder_is_accepted_verbatim(tmp_path):
                                     source_priority=ladder))
     (pb,) = playbooks.load_playbooks(tmp_path)
     assert list(pb.source_priority) == ladder
+
+
+# --------------------------------------------------------------------------- #
+# subcontractors (spec 2026-11-13-subcontractors-design.md § 4.1-4.2)
+# --------------------------------------------------------------------------- #
+def _pbx(slug, manufacturer, aliases=(), subcontractors=()):
+    return playbooks.Playbook(slug=slug, manufacturer=manufacturer,
+                              aliases=tuple(aliases), subcontractors=tuple(subcontractors))
+
+
+def test_subcontractors_parse():
+    pb = playbooks._parse("komet", {"manufacturer": "KOMET",
+                                    "subcontractors": ["Sure Dent Corporation"]})
+    assert pb.subcontractors == ("Sure Dent Corporation",)
+
+
+def test_subcontractors_default_empty():
+    assert playbooks._parse("x", {"manufacturer": "X"}).subcontractors == ()
+
+
+def test_subcontractors_entry_must_be_a_nonempty_string():
+    with pytest.raises(ValueError):
+        playbooks._parse("komet", {"manufacturer": "KOMET", "subcontractors": [""]})
+    with pytest.raises(ValueError):
+        playbooks._parse("komet", {"manufacturer": "KOMET", "subcontractors": [7]})
+
+
+def test_subcontractor_that_is_an_alias_is_refused():
+    loaded = (_pbx("komet", "KOMET", subcontractors=["guilin woodpecker medical instrument co.,ltd"]),
+              _pbx("woodpecker", "WOODPECKER",
+                   aliases=["Guilin Woodpecker Medical Instrument Co.,Ltd"]))
+    with pytest.raises(playbooks.PlaybookConflict, match="subcontractor"):
+        playbooks.validate(loaded, refused=frozenset())
+
+
+def test_subcontractor_that_is_own_name_is_refused():
+    loaded = (_pbx("komet", "KOMET", aliases=["Gebr. Brasseler GmbH & Co. KG"],
+                   subcontractors=["Gebr. Brasseler GmbH & Co. KG"]),)
+    with pytest.raises(playbooks.PlaybookConflict, match="subcontractor"):
+        playbooks.validate(loaded, refused=frozenset())
+    with pytest.raises(playbooks.PlaybookConflict, match="subcontractor"):
+        playbooks.validate((_pbx("komet", "KOMET", subcontractors=["KOMET"]),),
+                           refused=frozenset())
+
+
+def test_another_playbooks_canonical_is_allowed():
+    loaded = (_pbx("komet", "KOMET", subcontractors=["WOODPECKER", "Sure Dent Corporation"]),
+              _pbx("woodpecker", "WOODPECKER",
+                   aliases=["Guilin Woodpecker Medical Instrument Co.,Ltd"]))
+    playbooks.validate(loaded, refused=frozenset())
