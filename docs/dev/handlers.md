@@ -31,8 +31,8 @@ never clobber a real handler.
 | `upload.ingest` | `handlers/upload.py:34` | `extract.doc` or `validate.doc` | `test_upload_handler.py` |
 | `vendor.import` | `handlers/vendor_import.py:40` | nothing, deliberately | `test_vendor_import_handler.py` |
 | `email.poll` | `handlers/email_poll.py:361` | `extract.doc` | `test_email_poll_handler.py` |
-| `email.request` | `handlers/email_request.py:862` | `email.reminder` | `test_email_request_handler.py` |
-| `email.reminder` | `handlers/email_request.py:1029` | nothing; defers its own job to the next rung | `test_email_request_handler.py` |
+| `email.request` | `handlers/email_request.py:869` | `email.reminder` | `test_email_request_handler.py` |
+| `email.reminder` | `handlers/email_request.py:1036` | nothing; defers its own job to the next rung | `test_email_request_handler.py` |
 | `eudamed.sync` | `handlers/eudamed.py:226` | nothing | `test_eudamed_handler.py` |
 | `eudamed.certregister` | `handlers/eudamed.py:424` | nothing | `test_eudamed_handler.py` |
 

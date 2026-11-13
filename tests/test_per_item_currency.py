@@ -131,3 +131,91 @@ def test_a_future_dated_document_ranks_as_undated(conn):
     a = seed_doc(conn, [item], validity_from=_future())
     b = seed_doc(conn, [item], validity_from=None)
     assert _current(conn, item) == {a, b}
+
+
+# --- the ranking runs once per query, never once per row (2026-11-12) ---------
+#
+# `item_document_production` ranks every production link with a window
+# partitioned by item. A `doc_id` filter cannot be applied below that window,
+# so any correlated subquery over it re-ranks the whole registry per outer row.
+# On the server that was 1,959 re-rankings of 12.5k links: the sidebar's
+# expiring count took 28 s and /expiry 35 s. The guard is structural, not
+# timed: no WindowAgg may sit under a SubPlan, whichever subplan strategy the
+# planner picks on this database's statistics.
+
+class _Recorder:
+    """Delegates to a real connection and keeps every (sql, params) executed."""
+
+    def __init__(self, conn):
+        self._conn = conn
+        self.calls = []
+
+    def execute(self, sql, params=None):
+        self.calls.append((sql, params))
+        return self._conn.execute(sql, params)
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
+def _windows_under_subplans(node, under_subplan=False):
+    under_subplan = under_subplan or node.get("Parent Relationship") == "SubPlan"
+    hits = 1 if under_subplan and node["Node Type"] == "WindowAgg" else 0
+    return hits + sum(_windows_under_subplans(child, under_subplan)
+                      for child in node.get("Plans", []))
+
+
+def _assert_ranked_once(conn, sql, params=None):
+    plan = conn.execute("EXPLAIN (FORMAT JSON) " + sql, params).fetchone()
+    root = next(iter(plan.values()))[0]["Plan"]
+    assert _windows_under_subplans(root) == 0
+
+
+def test_the_menu_expiring_count_ranks_once(conn):
+    from web.app import _expiring_counts
+    rec = _Recorder(conn)
+    _expiring_counts(rec)
+    (sql, params), = rec.calls
+    _assert_ranked_once(conn, sql, params)
+
+
+def test_the_expiry_board_ranks_once(conn):
+    from web.app import _EXPIRY_BOARD_SQL
+    _assert_ranked_once(conn, _EXPIRY_BOARD_SQL)
+
+
+def test_the_renewal_letter_ranks_once(conn):
+    from datetime import date
+    from app.handlers.email_request import lapsing_for_manufacturer
+    rec = _Recorder(conn)
+    lapsing_for_manufacturer(rec, "ACME", horizon_days=30, today=date.today())
+    (sql, params), = rec.calls
+    _assert_ranked_once(conn, sql, params)
+
+
+#: 072's definition, verbatim. The view was rewritten for its plan (074); the
+#: set it returns must not move.
+_DOCUMENT_CURRENT_072 = """
+  SELECT d.doc_id
+    FROM document d
+   WHERE EXISTS (SELECT 1 FROM item_document_production p WHERE p.doc_id = d.doc_id)
+      OR (d.status = 'production'
+          AND NOT EXISTS (SELECT 1 FROM item_document l
+                           WHERE l.doc_id = d.doc_id AND l.status = 'production'))
+"""
+
+
+def test_document_current_returns_what_072_returned(conn):
+    a, b = _ref("eq-a"), _ref("eq-b")
+    seed_doc(conn, [a, b], validity_from="2020-01-01")
+    seed_doc(conn, [a], validity_from="2024-01-01")
+    seed_doc(conn, [a], validity_from="2019-01-01")
+    seed_doc(conn, [], validity_from="2020-01-01")
+    seed_doc(conn, [], status="superseded")
+    staged_links_only = seed_doc(conn, [a], link_status="staged")
+    staged_doc = seed_doc(conn, [b], status="staged")
+    current = {r["doc_id"] for r in conn.execute("SELECT doc_id FROM document_current")}
+    before = {r["doc_id"] for r in conn.execute(_DOCUMENT_CURRENT_072)}
+    assert current == before
+    assert staged_links_only in current      # production, no production link
+    assert staged_doc not in current         # not published

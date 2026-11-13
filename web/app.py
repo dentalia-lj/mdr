@@ -620,9 +620,11 @@ EXPIRED_LOOKBACK_DAYS = 180
 #: live window), which without `manufacturer` in the key silently merges two
 #: manufacturers into one row and under-counts.
 #:
-#: Cost, measured 2026-09-03 on the dev database: 39ms for the counter against
-#: ~13ms for the other four together. Paid deliberately -- a compliance count
-#: that is cheap and wrong is not a saving.
+#: Cost, measured 2026-11-12 on the server: 65ms for the counter. It was 28 s
+#: until migration 074, when `document_current` re-ranked every production link
+#: once per document; tests/test_per_item_currency.py guards the plan shape.
+#: Paid deliberately -- a compliance count that is cheap and wrong is not a
+#: saving.
 _LAPSING_CTE = """
                 WITH lapsing AS (
                   SELECT d.doc_id, d.type, d.regulation, d.cert_number,
@@ -649,6 +651,39 @@ _LAPSING_CTE = """
 #: One row per lapsing THING, not per document. Changing this changes both
 #: the board and the counter, which is the point.
 _LAPSING_GROUP_BY = "l.manufacturer, l.type, l.regulation, l.cert_number, l.expires"
+
+#: The /expiry board: one row per lapsing thing. A module constant so the plan
+#: guard in tests/test_per_item_currency.py can EXPLAIN the text the route runs.
+#:
+#: `current_link` is MATERIALIZED on purpose, and the keyword is load-bearing:
+#: the per-row `items_affected` subquery filters current links by `doc_id`,
+#: which cannot be applied below the rank window, so inlined it re-ranked every
+#: production link once per board row (406 times on the server, 35 s -> 0.56 s).
+_EXPIRY_BOARD_SQL = _LAPSING_CTE.rstrip() + """,
+                current_link AS MATERIALIZED (
+                  SELECT item_ref, doc_id FROM item_document_production
+                )
+                SELECT l.manufacturer, l.type, l.regulation, l.cert_number, l.expires,
+                       bool_or(l.inherited)              AS inherited,
+                       bool_or(l.basis = 'staleness')    AS staleness,
+                       count(*)                          AS documents,
+                       (array_agg(l.doc_id ORDER BY l.doc_id))[1] AS sample_doc_id,
+                       (l.expires - current_date)::int   AS days_left,
+                       -- items that lose coverage: the items any of the
+                       -- documents in this group is CURRENT for (per-item
+                       -- currency, ruling 10, 2026-10-02; an item a newer
+                       -- document of its type answers for loses nothing),
+                       -- counted DISTINCT because one item can hold several
+                       (SELECT count(DISTINCT il.item_ref)
+                          FROM current_link il
+                         WHERE il.doc_id IN (SELECT doc_id FROM lapsing l2
+                                              WHERE l2.manufacturer = l.manufacturer
+                                                AND l2.cert_number IS NOT DISTINCT FROM l.cert_number
+                                                AND l2.expires = l.expires)) AS items_affected
+                FROM lapsing l
+                GROUP BY """ + _LAPSING_GROUP_BY + """
+                ORDER BY l.expires, l.manufacturer
+                """
 
 _HERE = pathlib.Path(__file__).resolve().parent
 
@@ -4206,30 +4241,7 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         catalogue items lose coverage when it lapses, and how many days are
         left."""
         with _conn() as conn:
-            rows = conn.execute(
-                _LAPSING_CTE + """
-                SELECT l.manufacturer, l.type, l.regulation, l.cert_number, l.expires,
-                       bool_or(l.inherited)              AS inherited,
-                       bool_or(l.basis = 'staleness')    AS staleness,
-                       count(*)                          AS documents,
-                       (array_agg(l.doc_id ORDER BY l.doc_id))[1] AS sample_doc_id,
-                       (l.expires - current_date)::int   AS days_left,
-                       -- items that lose coverage: the items any of the
-                       -- documents in this group is CURRENT for (per-item
-                       -- currency, ruling 10, 2026-10-02; an item a newer
-                       -- document of its type answers for loses nothing),
-                       -- counted DISTINCT because one item can hold several
-                       (SELECT count(DISTINCT il.item_ref)
-                          FROM item_document_production il
-                         WHERE il.doc_id IN (SELECT doc_id FROM lapsing l2
-                                              WHERE l2.manufacturer = l.manufacturer
-                                                AND l2.cert_number IS NOT DISTINCT FROM l.cert_number
-                                                AND l2.expires = l.expires)) AS items_affected
-                FROM lapsing l
-                GROUP BY """ + _LAPSING_GROUP_BY + """
-                ORDER BY l.expires, l.manufacturer
-                """,
-            ).fetchall()
+            rows = conn.execute(_EXPIRY_BOARD_SQL).fetchall()
             # Cross-link to the chase: a lapsing certificate whose manufacturer
             # already has a live renewal draft is work in progress, not work to
             # start. Keyed on manufacturer because that is the cadence unit
