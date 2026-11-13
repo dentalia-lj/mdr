@@ -1365,6 +1365,22 @@ def extract_manufacturer(text: str, playbooks) -> dict | None:
                 hits.append(pb.manufacturer)
                 matched_spans.append((at, at + len(folded)))
                 break
+    # A listed subcontractor is its own identity, never the brand's (spec
+    # 2026-11-13 § 4.3). Once its name left the brand's aliases, a Sure Dent
+    # document that also prints "Komet" would otherwise read as KOMET's at
+    # MFR_TRUSTED_CONF. Counting the subcontractor makes that two hits, so T0
+    # abstains and a tier that reads the issuer by role decides. An entry that
+    # is a playbook's own manufacturer (WOODPECKER) is already counted above.
+    canonicals = {pb.manufacturer for pb in playbooks or ()}
+    for pb in playbooks or ():
+        for entry in pb.subcontractors:
+            if entry in canonicals or len(entry) < _MIN_IDENTITY_LEN:
+                continue
+            folded = _fold(entry)
+            at = haystack.find(folded)
+            if at != -1:
+                hits.append(entry)
+                matched_spans.append((at, at + len(folded)))
     unique = sorted(set(hits))
     if len(unique) != 1:
         return None

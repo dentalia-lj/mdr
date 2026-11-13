@@ -2014,3 +2014,38 @@ def test_t0_takes_the_next_labelled_code_after_a_word():
 ])
 def test_t0_still_reads_a_code_after_the_label(text, value):
     assert t0.extract_basic_udi(text)["value"] == value
+
+
+# --------------------------------------------------------------------------- #
+# Listed subcontractors are their own identity (spec 2026-11-13 § 4.3)
+# --------------------------------------------------------------------------- #
+def _komet_with_subs():
+    from app.playbooks import Playbook
+    return (Playbook(slug="komet", manufacturer="KOMET",
+                     aliases=("Gebr. Brasseler GmbH & Co. KG",),
+                     subcontractors=("Sure Dent Corporation", "WOODPECKER")),
+            Playbook(slug="woodpecker", manufacturer="WOODPECKER",
+                     aliases=("Guilin Woodpecker Medical Instrument Co.,Ltd",)))
+
+
+def test_t0_identity_subcontractor_alone():
+    ev = t0.extract_manufacturer(
+        "EU Certificate\nManufacturer: Sure Dent Corporation #809, Seongnam", _komet_with_subs())
+    assert ev["value"] == "Sure Dent Corporation"
+
+
+def test_t0_identity_brand_and_subcontractor_abstains():
+    text = "Manufacturer: Sure Dent Corporation. Distributed by KOMET, Gebr. Brasseler GmbH & Co. KG"
+    assert t0.extract_manufacturer(text, _komet_with_subs()) is None
+
+
+def test_t0_identity_listed_canonical_not_double_counted():
+    ev = t0.extract_manufacturer(
+        "Manufacturer: Guilin Woodpecker Medical Instrument Co.,Ltd", _komet_with_subs())
+    assert ev["value"] == "WOODPECKER"
+
+
+def test_t0_identity_brand_alone_unchanged():
+    ev = t0.extract_manufacturer("Hersteller: Gebr. Brasseler GmbH & Co. KG", _komet_with_subs())
+    assert ev["value"] == "KOMET"
+    assert ev["conf"] == t0.MFR_TRUSTED_CONF
