@@ -970,3 +970,71 @@ def test_link_checks_ignore_what_is_not_published(client, conn):
     card = _text(_section(client.get("/").text, "today-links"))
     assert "to look at" not in card
     assert "No published links yet" in card
+
+
+# --------------------------------------------------------------------------- #
+# Filed, but maybe ours (2026-11-13, web/filed_matches.py)
+# --------------------------------------------------------------------------- #
+
+def _filed(conn, canonical: str, refs: list[str], doc_type: str = "DoC") -> int:
+    doc_id = _doc(conn, status="filed", doc_type=doc_type)
+    conn.execute("UPDATE document SET canonical_manufacturer=%s WHERE doc_id=%s",
+                 (canonical, doc_id))
+    conn.execute(
+        "INSERT INTO evidence (doc_id, field, value, archive_url, page, verbatim, tier, "
+        "  confidence, extracted_at) VALUES (%s,'ref_list',%s,'/a.pdf',1,'refs','T1',0.9,now())",
+        (doc_id, __import__("json").dumps(refs)))
+    return doc_id
+
+
+def test_the_filed_card_is_not_shown_when_nothing_matches(client, conn):
+    _maker(conn, "ACMECO", "901")
+    _item(conn, "FM-1", manufacturer="901")
+    _filed(conn, "ACMECO", ["NOTHING-LIKE-IT"])
+    conn.commit()
+
+    assert 'id="today-filed"' not in client.get("/").text
+
+
+def test_the_filed_card_names_each_document_its_label_and_the_item(client, conn):
+    _maker(conn, "ACMECO", "901")
+    _item(conn, "6050541", manufacturer="901")
+    _item(conn, "60620110", manufacturer="901")
+    _item(conn, "529397", manufacturer="901")
+    prefix = _filed(conn, "ACMECO", ["0541"])
+    exact = _filed(conn, "ACMECO", ["606.20.110"], doc_type="EC")
+    zeros = _filed(conn, "ACMECO", ["000529397"])
+    conn.commit()
+
+    page = client.get("/").text
+    section = _section(page, "today-filed")
+    card = _text(section)
+    assert "Filed, but maybe ours 3" in card
+    assert "Same number in Business Central · 1" in card
+    assert "Number differs by a prefix · 1" in card
+    assert "Number differs by leading zeros · 1" in card
+    # strongest first, each row naming its kind, what is printed and the item
+    order = [card.index(f"Doc {d} ") for d in (exact, zeros, prefix)]
+    assert order == sorted(order)
+    assert f"Same number Doc {exact} · EC certificate ACMECO 606.20.110 60620110 widget 60620110" in card
+    assert f"Prefix Doc {prefix} · Declaration of Conformity ACMECO 0541 6050541" in card
+    assert 'class="match-chip match-zeros"' in section
+    for d in (exact, zeros, prefix):
+        assert f'href="/documents/{d}"' in section
+    assert "See all" not in card
+    # the card sits after Link checks and before the coverage figure
+    assert page.index('id="today-links"') < page.index('id="today-filed"') < page.index('id="today-coverage"')
+
+
+def test_the_filed_card_folds_the_rows_after_twelve(client, conn):
+    _maker(conn, "ACMECO", "901")
+    for n in range(14):
+        _item(conn, f"7420{n:02d}", manufacturer="901")
+        _filed(conn, "ACMECO", [f"7420{n:02d}"])
+    conn.commit()
+
+    section = _section(client.get("/").text, "today-filed")
+    shown, folded = section.split("<details", 1)
+    assert shown.count('href="/documents/') == 12
+    assert folded.count('href="/documents/') == 2
+    assert "See all 14" in _text(folded)

@@ -139,7 +139,7 @@ from app.compliance import EXPIRY_HORIZON_DAYS
 
 log = logging.getLogger("dentalia.web")
 from web import access, bc_push_view, catalogue, failures, item_link, item_picker, missing, onboarding, registry, scheduler_view, words
-from web import link_checks, uploads
+from web import filed_matches, link_checks, uploads
 from web.item_docs import item_documents
 # Re-exported: the Today page and the menu counts read the Missing documents
 # list through this name (office UI redesign spec § 4 and § 7).
@@ -4736,6 +4736,9 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         `/status`, where the operator group of the menu names it "System
         status". Link checks (2026-11-12) set every published link against the
         manufacturer Business Central gives its item (`web/link_checks.py`).
+        "Filed, but maybe ours" (2026-11-13) lists filed documents whose
+        printed numbers loosely match a BC item of their manufacturer
+        (`web/filed_matches.py`).
 
         Every figure is the page's own figure, read through the helper that
         page reads it through -- `coverage_headline` (D4), `_expiring_counts`
@@ -4753,6 +4756,8 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                 "failed": failures.failed_counts(conn),
                 "coverage": coverage_headline(conn),
                 "links": link_checks.check(conn),
+                "filed": filed_matches.find(conn),
+                "filed_words": filed_matches.WORDS,
                 "weeks": _recent_weeks(),
             }
         return templates.TemplateResponse(request, "today.html", ctx)

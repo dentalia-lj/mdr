@@ -719,3 +719,12 @@ def test_no_registry_template_carries_a_retired_word(retired):
     assert bad == [], (
         f"a registry template still writes {retired!r} where a reader sees it: "
         + "; ".join(bad))
+
+
+@pytest.mark.parametrize("selector", [".match-exact", ".match-prefix", ".match-zeros"])
+def test_the_filed_match_labels_are_readable(selector):
+    """Today's "Filed, but maybe ours" labels: each ink on its own chip."""
+    rule = _rule(STYLE.read_text(), selector)
+    bg = re.search(r"background:\s*(#[0-9a-fA-F]{6})", rule).group(1)
+    fg = re.search(r"[^-]color:\s*(#[0-9a-fA-F]{6})", rule).group(1)
+    assert contrast(fg, bg) >= 4.5, f"{selector}: {fg} on {bg}"

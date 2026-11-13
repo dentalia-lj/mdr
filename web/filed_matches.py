@@ -38,6 +38,13 @@ from dataclasses import dataclass
 from app import manufacturers
 
 EXACT, ZEROS, PREFIX = "exact", "zeros", "prefix"
+#: What the card calls each kind: the full name (the key above the table and
+#: the legend) and the short one (the label on a row). Order is the card's.
+WORDS = {
+    EXACT: ("Same number in Business Central", "Same number"),
+    PREFIX: ("Number differs by a prefix", "Prefix"),
+    ZEROS: ("Number differs by leading zeros", "Leading zeros"),
+}
 _ORDER = {EXACT: 0, ZEROS: 1, PREFIX: 2}
 _MIN_PRINTED = 4     # printed side, when it is the shorter one of a prefix pair
 _MIN_BC = 5          # BC side, when it is the shorter one
