@@ -113,7 +113,7 @@ barvo:
 | **Prefix** (oranžna) | Ena številka je druga z nečim spredaj: `0541` in `6050541`, `9331` in `UP-9331` | Verjetno naš: preverite ime artikla |
 | **Leading zeros** (modra) | Številki se razlikujeta le po ničlah spredaj: `000529397` in `529397` | Verjetno naš. Kratka številka, na primer `017`, se ujema z mnogimi artikli: preverite natančno |
 
-Prikaže se prvih 12 vrstic, najmočnejše najprej; **See all N** odpre ostale na
+Prikaže se prvih 12 vrstic, v vrstnem redu oznak zgoraj; **See all N** odpre ostale na
 mestu. Pritisnite **Open**, preverite dokument in na njegovi strani uporabite
 **Add items this document covers…** (glejte [Documents](documents.sl.md)).
 Dodan artikel dokument objavi in ta izgine s kartice. Tudi zavrnitev ga odstrani.

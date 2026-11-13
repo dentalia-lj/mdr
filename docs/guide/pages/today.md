@@ -112,7 +112,7 @@ Each row says what was printed, the Business Central item it is close to (with
 | **Prefix** (amber) | One number is the other with something in front: `0541` and `6050541`, `9331` and `UP-9331` | Probably ours: check the item name |
 | **Leading zeros** (blue) | The numbers differ only by zeros in front: `000529397` and `529397` | Probably ours. A short number such as `017` matches many items: check carefully |
 
-The first 12 rows show, strongest first; **See all N** opens the rest in place.
+The first 12 rows show, in the order of the labels above; **See all N** opens the rest in place.
 Press **Open**, check the document, and use **Add items this document covers…**
 on its page (see [Documents](documents.md)). Adding an item publishes the
 document, and it leaves the card. Rejecting it also takes it off.

@@ -161,7 +161,7 @@ def test_rows_are_ordered_by_kind_then_manufacturer(conn):
     _refs(conn, exact_a, ["742012"])
 
     found = filed_matches.find(conn)
-    assert [r.doc_id for r in found.rows] == [exact_a, exact_b, zeros, prefix]
+    assert [r.doc_id for r in found.rows] == [exact_a, exact_b, prefix, zeros]
     assert found.counts == {EXACT: 2, PREFIX: 1, ZEROS: 1}
     assert found.total == 4
 

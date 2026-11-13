@@ -1013,8 +1013,9 @@ def test_the_filed_card_names_each_document_its_label_and_the_item(client, conn)
     assert "Same number in Business Central · 1" in card
     assert "Number differs by a prefix · 1" in card
     assert "Number differs by leading zeros · 1" in card
-    # strongest first, each row naming its kind, what is printed and the item
-    order = [card.index(f"Doc {d} ") for d in (exact, zeros, prefix)]
+    # in the key's order (same number, prefix, leading zeros), each row naming
+    # its kind, what is printed and the item
+    order = [card.index(f"Doc {d} ") for d in (exact, prefix, zeros)]
     assert order == sorted(order)
     assert f"Same number Doc {exact} · EC certificate ACMECO 606.20.110 60620110 widget 60620110" in card
     assert f"Prefix Doc {prefix} · Declaration of Conformity ACMECO 0541 6050541" in card

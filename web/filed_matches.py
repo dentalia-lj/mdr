@@ -214,6 +214,10 @@ def find(conn) -> Found:
                         manufacturer=d["manufacturer"], kind=kind,
                         printed=best_of[same[0]][1], item_ref=same[0],
                         item_name=idx.names[same[0]], more=len(same) - 1))
-    rows.sort(key=lambda r: (_ORDER[r.kind], r.manufacturer, r.doc_id))
+    # Listed in the card's order (WORDS: same number, prefix, leading zeros,
+    # the approved mockup), which is not `_ORDER`: that one only decides which
+    # kind a document falls under when it matches several ways.
+    shown = {k: i for i, k in enumerate(WORDS)}
+    rows.sort(key=lambda r: (shown[r.kind], r.manufacturer, r.doc_id))
     counts = {k: sum(1 for r in rows if r.kind == k) for k in (EXACT, PREFIX, ZEROS)}
     return Found(rows=rows, counts=counts)
