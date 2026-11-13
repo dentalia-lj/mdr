@@ -440,11 +440,17 @@ main {
 .match-zeros  { background: #e8f0fb; color: #1f4f8a; border-color: #b9cdea; }
 .filed-match-table { table-layout: fixed; background: #fff; }
 .filed-match-table .c-kind { width: 120px; }
-.filed-match-table .c-doc { width: 170px; }
-.filed-match-table .c-mfr { width: 150px; }
+.filed-match-table .c-doc { width: 110px; }
+.filed-match-table .c-mfr { width: 170px; }
 .filed-match-table .c-printed { width: 120px; }
 .filed-match-table .c-go { width: 70px; }
 .filed-match-table td { overflow-wrap: anywhere; }
+/* The numbers in a fixed-width face so the two can be read against each other,
+   the part that matched in bold, the rest of the number and the name quieter. */
+.match-num { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+             font-size: var(--fs-body); color: #6b6b6b; white-space: nowrap; }  /* 5.3:1 on white */
+.match-num strong { color: var(--dentalia-ink); font-weight: 700; }
+.match-name { color: var(--dentalia-muted); }
 .filed-match-table td.today-go { text-align: right; }
 .filed-more { margin: 6px 0 4px; }
 .filed-more > summary { cursor: pointer; font-weight: 600; color: var(--dentalia-action); }

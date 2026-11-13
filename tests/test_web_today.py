@@ -1017,8 +1017,14 @@ def test_the_filed_card_names_each_document_its_label_and_the_item(client, conn)
     # its kind, what is printed and the item
     order = [card.index(f"Doc {d} ") for d in (exact, prefix, zeros)]
     assert order == sorted(order)
-    assert f"Same number Doc {exact} · EC certificate ACMECO 606.20.110 60620110 widget 60620110" in card
-    assert f"Prefix Doc {prefix} · Declaration of Conformity ACMECO 0541 6050541" in card
+    assert f"Same number Doc {exact} EC certificate ACMECO 606.20.110 60620110 widget 60620110" in card
+    # a declaration is not named: nearly every filed document is one
+    # (the reader's text puts a space where the bold part starts: 605|0541)
+    assert f"Prefix Doc {prefix} ACMECO 0541 605 0541 widget 6050541" in card
+    # the part of each number that matched, in bold
+    assert '<span class="match-num"><strong>606.20.110</strong></span>' in section
+    assert '<span class="match-num">605<strong>0541</strong></span>' in section
+    assert '<span class="match-num">000<strong>529397</strong></span>' in section
     assert 'class="match-chip match-zeros"' in section
     for d in (exact, zeros, prefix):
         assert f'href="/documents/{d}"' in section

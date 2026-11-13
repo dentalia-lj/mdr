@@ -185,7 +185,8 @@ def test_the_index_agrees_with_classify():
                "02T151SS", "151SS", "11101", "60111101", "1101", "000529397",
                "529397", "017", "17", "0", "0000", "606.20.110", "60620110",
                "S-tip", "STIP", "A12345", "12345"]
-    items = [{"item_ref": n, "name": None, "k_item": filed_matches._key(n), "k_mfr": ""}
+    items = [{"item_ref": n, "mfr_ref": None, "name": None,
+              "k_item": filed_matches._key(n), "k_mfr": ""}
              for n in numbers]
     keys = {filed_matches._key(n) for n in numbers}
     for idx in (filed_matches._Index(items), filed_matches._Index(items, keys)):
@@ -200,3 +201,19 @@ def test_the_sql_key_is_key(conn, raw):
     row = conn.execute("SELECT upper(regexp_replace(%s, '[^0-9A-Za-z]', '', 'g')) AS k",
                        (raw,)).fetchone()
     assert row["k"] == filed_matches._key(raw)
+
+
+@pytest.mark.parametrize("printed, item_ref, mfr_ref, want", [
+    # (kind, printed head, printed match, BC head, BC match, matched on the maker's number)
+    ("606.20.110", "60620110", None, (EXACT, "", "606.20.110", "", "60620110", False)),
+    ("10003274", "003274", None, (PREFIX, "10", "003274", "", "003274", False)),
+    ("0541", "6050541", None, (PREFIX, "", "0541", "605", "0541", False)),
+    ("000529397", "529397", None, (ZEROS, "000", "529397", "", "529397", False)),
+    ("12792", "012792", None, (ZEROS, "", "12792", "0", "12792", False)),
+    ("1101-", "UP-1101", "1101", (EXACT, "", "1101-", "", "1101", True)),
+    ("9331", "UP-9331", None, (PREFIX, "", "9331", "UP-", "9331", False)),
+])
+def test_explain_shows_which_part_matched(printed, item_ref, mfr_ref, want):
+    m = filed_matches.explain(printed, item_ref, mfr_ref, "NAME")
+    assert (m.kind, m.printed_head, m.printed_match, m.bc_head, m.bc_match, m.via_maker) == want
+    assert m.item_ref == item_ref and m.item_name == "NAME"

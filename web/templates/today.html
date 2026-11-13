@@ -162,18 +162,28 @@
     place rather than on a page of their own. -#}
 {% set fm = filed %}
 {% if fm.total %}
+{#- A number with the part that matched in bold: the shared tail of both
+    numbers (web/filed_matches.py `explain`). -#}
+{% macro match_number(head, matched) -%}
+<span class="match-num">{{ head }}<strong>{{ matched }}</strong></span>
+{%- endmacro %}
 {% macro filed_rows(rows) -%}
   <table class="filed-match-table">
     <colgroup><col class="c-kind"><col class="c-doc"><col class="c-mfr"><col class="c-printed"><col><col class="c-go"></colgroup>
     <thead><tr><th>Match</th><th>Document</th><th>Manufacturer</th><th>Printed</th><th>Business Central item</th><th></th></tr></thead>
     <tbody>
-    {% for r in rows %}
+    {% for r in rows %}{% set m = r.match %}
     <tr>
       <td><span class="match-chip match-{{ r.kind }}">{{ filed_words[r.kind][1] }}</span></td>
-      <td>Doc {{ r.doc_id }} · {{ r.doc_type | doc_type }}</td>
+      {#- 970 of 1,045 filed documents are declarations: the type is named only
+          when it is something else, so the row stays one line. -#}
+      <td>Doc {{ r.doc_id }}{% if r.doc_type != "DoC" %} <span class="hint-inline">{{ r.doc_type | doc_type }}</span>{% endif %}</td>
       <td>{{ r.manufacturer }}</td>
-      <td>{{ r.printed }}</td>
-      <td>{{ r.item_ref }} {{ r.item_name or "" }}{% if r.more %} <span class="hint-inline">+{{ r.more | num }} more</span>{% endif %}</td>
+      <td>{{ match_number(m.printed_head, m.printed_match) }}</td>
+      <td>{% if m.via_maker %}{{ match_number(m.item_ref, "") }}{% else %}{{ match_number(m.bc_head, m.bc_match) }}{% endif %}
+        <span class="match-name">{{ m.item_name or "" }}</span>
+        {%- if m.via_maker %} <span class="hint-inline">maker's number {{ match_number(m.bc_head, m.bc_match) }}</span>{% endif %}
+        {%- if r.more %} <span class="hint-inline">+{{ r.more | num }} more</span>{% endif %}</td>
       <td class="today-go"><a href="/documents/{{ r.doc_id }}">Open</a></td>
     </tr>
     {% endfor %}

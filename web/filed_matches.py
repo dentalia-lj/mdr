@@ -62,7 +62,7 @@ SELECT d.doc_id, d.type, d.canonical_manufacturer AS manufacturer, ev.value
 # The keys are `_key` in SQL (one pass in Postgres instead of 25k regex calls
 # in Python); `test_the_sql_key_is_key` holds the two to the same fold.
 _ITEMS = """
-SELECT item_ref, name, manufacturer_raw AS code,
+SELECT item_ref, mfr_ref, name, manufacturer_raw AS code,
        upper(regexp_replace(item_ref, '[^0-9A-Za-z]', '', 'g')) AS k_item,
        upper(regexp_replace(coalesce(mfr_ref, ''), '[^0-9A-Za-z]', '', 'g')) AS k_mfr
   FROM item_mirror WHERE manufacturer_raw = ANY(%s)
@@ -97,6 +97,58 @@ def classify(printed: str, item_ref: str, mfr_ref: str | None = None) -> str | N
     return min(kinds, key=_ORDER.get) if kinds else None
 
 
+def _split(raw: str, n: int) -> tuple[str, str]:
+    """`raw` cut so the second part holds its last `n` letters and digits (and
+    whatever separators sit between them): the part that matched."""
+    if n <= 0:
+        return raw, ""
+    seen = 0
+    for i in range(len(raw) - 1, -1, -1):
+        if raw[i].isascii() and raw[i].isalnum():
+            seen += 1
+            if seen == n:
+                return raw[:i], raw[i:]
+    return "", raw
+
+
+@dataclass
+class Match:
+    """One BC item a printed number matches, and which part of each matched:
+    the shared part is always a tail of both (equal, equal once zeros go, or
+    one ends with the other), shown in bold on the card."""
+    item_ref: str
+    item_name: str | None
+    kind: str
+    printed: str
+    printed_head: str
+    printed_match: str
+    bc: str                 # the BC number that matched: the item's own, or its maker's
+    bc_head: str
+    bc_match: str
+    via_maker: bool         # matched the manufacturer's number (mfr_ref), not the item's
+
+
+def explain(printed: str, item_ref: str, mfr_ref: str | None,
+            name: str | None) -> Match | None:
+    p = _key(printed)
+    best = None
+    for bc, via_maker in ((item_ref, False), (mfr_ref, True)):
+        b = _key(bc)
+        kind = _kind(p, b)
+        if kind and (best is None or _ORDER[kind] < _ORDER[best[0]]):
+            best = (kind, bc, b, via_maker)
+    if best is None:
+        return None
+    kind, bc, b, via_maker = best
+    n = (len(p) if kind == EXACT else len(p.lstrip("0")) if kind == ZEROS
+         else min(len(p), len(b)))
+    ph, pm = _split(printed, n)
+    bh, bm = _split(bc, n)
+    return Match(item_ref=item_ref, item_name=name, kind=kind, printed=printed,
+                 printed_head=ph, printed_match=pm, bc=bc, bc_head=bh, bc_match=bm,
+                 via_maker=via_maker)
+
+
 @dataclass
 class Row:
     doc_id: int
@@ -107,6 +159,11 @@ class Row:
     item_ref: str
     item_name: str | None
     more: int           # other items matched by the same kind
+    matches: list[Match]    # every item matched, strongest kind first; [0] is the row's
+
+    @property
+    def match(self) -> Match:
+        return self.matches[0]
 
 
 @dataclass
@@ -131,12 +188,14 @@ class _Index:
         which halves the build (77 -> 37 ms over the server's 12,391 items,
         2026-11-13); None keeps every tail."""
         self.names: dict[str, str | None] = {}
+        self.makers: dict[str, str | None] = {}
         self.exact: dict[str, set[str]] = defaultdict(set)
         self.zeros: dict[str, set[str]] = defaultdict(set)
         self.suffix: dict[str, set[str]] = defaultdict(set)
         for it in items:
             ref = it["item_ref"]
             self.names[ref] = it["name"]
+            self.makers[ref] = it["mfr_ref"]
             for b in (it["k_item"], it["k_mfr"]):
                 if not b:
                     continue
@@ -210,10 +269,13 @@ def find(conn) -> Found:
         top = min(o for o, _ in best_of.values())
         same = sorted(i for i, (o, _) in best_of.items() if o == top)
         kind = next(k for k, o in _ORDER.items() if o == top)
+        matches = [explain(best_of[i][1], i, idx.makers[i], idx.names[i])
+                   for i in sorted(best_of, key=lambda i: (best_of[i][0], i))]
         rows.append(Row(doc_id=d["doc_id"], doc_type=d["type"],
                         manufacturer=d["manufacturer"], kind=kind,
                         printed=best_of[same[0]][1], item_ref=same[0],
-                        item_name=idx.names[same[0]], more=len(same) - 1))
+                        item_name=idx.names[same[0]], more=len(same) - 1,
+                        matches=matches))
     # Listed in the card's order (WORDS: same number, prefix, leading zeros,
     # the approved mockup), which is not `_ORDER`: that one only decides which
     # kind a document falls under when it matches several ways.
