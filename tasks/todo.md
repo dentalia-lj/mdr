@@ -1,3 +1,68 @@
+# Thursday 2026-11-12: Nataša's six Review cases (analysis, nothing built)
+
+Production read 2026-11-12 (server on b7668de). Doc ids: 831 Zlatarna, 1102 label,
+1502 Sirona, 311 GC Silver Mix, 385 Woodpecker EC, 390 Meta Biomed DoC.
+
+- [x] 1a (ea4af9d, deployed; 831-837 re-read 2026-11-12, six filed, 836 pending) T0 marker: "Izjava EU o skladnosti" missed, "iso 13485" in the standards list
+      wins at conf 1.0 (doc 831). Fix, measure on the corpus, `reextract` 831 on approval.
+      831 is still staged, task 389 open: her reject never reached GATE
+- [x] 1b (deployed 2026-11-13, f908136; rulings 15/16 confirmed by Denis) Change type, waiting-on-Review documents only (published: Reject, Reopen, then
+      this). `gate.apply` decision `retype` (PRD change): T3 type, scope, regulation;
+      staged links off when the scope becomes whole range; citing DoCs' cert_doc_id
+      cleared or back-resolved; task reason refreshed; audit before/after; refused while a
+      job for the document is in flight. Never publishes, no re-read, no VALIDATE.
+      Two-step confirm with a tick box. Mockup first. Estimate 15 h human / 5.5 h CC
+- [ ] 2 `other` approved without an issue date (Denis, 2026-11-12): route + GATE
+      `_require_issue_date` + decisions row + guide EN/SL. Then 1102 can be approved
+- [x] 3 (built 2026-11-12, not committed or deployed; then revalidate 1502 on the server) A day past the month's end (2020-04-31) is moved to the last day by VALIDATE
+      (Denis, 2026-11-12), verbatim kept; the form checks `validity.badInput` and names
+      the bad date. Only 1502 has one in production today
+- [ ] 4 No playbook change for D.V.: Nataša approves 311 via the picker under GC
+      EUROPE N.V. Ask her: 900548 is NI MP in BC, the DoC says MDR device
+- [ ] 5 Woodpecker: on hold, Denis waits for Nataša's answer. Without BC: Change type
+      (1b) to specific items, then tick WACENDO3/WAPEXVBL. Alias "Co., Ltd." still needed
+- [ ] Doc 389 (CMS Dental obturators, Komet folder 533208): the picker's box filters manufacturers, she typed f360; no BC item for 044445K1-044453K1 / 9996.000.0xx found. Ask her which item
+- [ ] 6 Subcontractor rule in the brand's playbook (Nataša agreed 2026-11-12): names,
+      SRN, explicit article list; certificates capped to that list, never the brand's
+      whole range. Replaces the "Sure Dent Corporation" alias. Reviewed: options A/B/C in
+      tasks/2026-11-12-subcontractor-rule-draft.md, Denis to choose. Change type handed off:
+      tasks/handoff-2026-11-12-change-type.md
+- [ ] Repair: doc 165 (Sure Dent QMS certificate, via the "Sure Dent Corporation" ->
+      KOMET alias) is bound to all 262 Komet MD items since 2026-10-15. Not pushed to
+      BC. Before any BC bulk push. `repair-mfr-overbind` exists
+- [x] Link checks card on Today (built 2026-11-12, not committed): every published link vs BC manufacturer code; 0 problems on the server today
+- [ ] Missed numbers (scan 2026-11-12, read-only, stored text vs BC item numbers of the document's
+      manufacturer, group scope): 102 documents print unlinked BC numbers (40 published, 60 filed,
+      2 superseded), 723 numbers, 471 of them MD items. Two causes seen: the reading missed rows of
+      the article table (Straumann docs 1, 13), and BC changed the item after the last check
+      (Ivoclar docs 45, 50, 583: items updated 10-06 / 11-06, documents last checked 09-28).
+      Next: re-check filed documents after every BC sync; suggestions from the scan in the picker
+- [ ] Add items on filed documents: built on branch add-items-filed (worktree), not merged
+- [x] 1502 re-checked on the server (job 29463): 2020-04-30, now filed (article 6571272 not in BC), task 875 closed by GATE
+- [ ] Defect: the whole-range "links follow once that class is filled in" sentence has
+      no code behind it. `_derive_mfr_scope_links` runs only at bind time
+
+# Tuesday 2026-11-10: multi-file and drag-and-drop on /upload (Nataša)
+
+Agreed 2026-11-09, budget 2 h including tests and docs. One POST per file to the
+unchanged `/upload` route, so each file keeps its own `upload_inbox` row and
+`upload.ingest` job. Native browser drop and `multiple`, no library. Both entry
+paths get it: the plain menu page, and the page opened from a card (Missing
+documents, Manual), where a line says every file goes to that item.
+
+- [x] Approve the layout, then build: `web/static/upload.js`, `upload.html`, CSS
+- [x] Drop or pick only fills a list; files are removable; "Upload N files" sends,
+      one at a time, one result per row, Try again on network or server failure
+- [x] Catch drops anywhere on the page; warn on leaving mid-batch; folder refused;
+      duplicates by name and size dropped; cap 50 files per batch
+- [x] Browser size check, plus cap the server read in `upload_submit` (it reads
+      the whole body before the 25 MB check)
+- [x] Tests for the route and markup; guide `upload.md` + `.sl.md`, rebuild bundles
+- [ ] Try both paths in dev on 2026-11-10: menu page and from a Missing documents card
+- [x] Recent uploads list on `/upload` and card closing at GATE, reopen on reject (built 2026-11-10)
+- [x] Denis tried it on localhost, spinner added; committed 2026-11-10 (88c2fef, f9b18d8, b7668de)
+- [ ] Deploy to the server when Denis asks
+
 # Monday 2026-11-09: Nataša's review feedback, continued
 
 Done 2026-11-06 and deployed (server on `1cc1274`): doc 16 back in production
@@ -14,7 +79,7 @@ never grouped (`5a108af`); BC sync run by hand, manufacturers then items (job
       `docs/superpowers/specs/2026-10-05-bc-weekly-sync-design.md` § 4, not built.
 - [ ] Reply to Nataša, task 9: one Word document for her issues? IFUs in search
       (auto-search stays off).
-- [ ] Remove linked items in the picker, Nataša's must-fix
+- [x] **Built and deployed 2026-11-09 (`c5c0c9f`, read on the server).** Remove linked items in the picker, Nataša's must-fix
       (`[review-remove-linked-items]`): spec first. Needs a new `remove-link`
       decision (PRD change), an explicit removal list, a warning when an item
       would be left with no current document, a BC push flag, and re-ticking a
@@ -25,7 +90,7 @@ never grouped (`5a108af`); BC sync run by hand, manufacturers then items (job
       list; "Decla ration" and "Izjava EU o skladnosti" DoC markers, measured on
       the corpus first) and a manufacturer correction on Review (spec).
 - [ ] Denis to decide: should a whole-range bind link non-MD items; when to turn on
-      `SCHEDULER_BC_PUSH_DRIFT_ENABLED` (after her review); MIYO/JENSEN device
+      `SCHEDULER_BC_PUSH_DRIFT_ENABLED` (after her review, and not before `[item-currency-next]`); MIYO/JENSEN device
       class in BC (doc 16 links 0 items until it is set).
 
 # Backup: registry, archive, imports, config (offer 2026092301, 2026-09-28)
@@ -54,9 +119,9 @@ script. The process and every restore command: `docs/dev/backup.md`.
       Postgres (counts identical); archive `cp -an` (identical SHA-256).
 - [x] Docs: `docs/dev/backup.md` rewritten for the standard design; pointers,
       decisions, troubleshooting, code-map, README, `.env.example`.
-- [ ] Tests: `tests/test_backup_script.py` updated for the simplified script;
+- [x] Tests: `tests/test_backup_script.py` updated for the simplified script;
       full suite once before commit.
-- [ ] Commit (commit-units).
+- [x] Commit (commit-units). `8438443`, 2026-09-29.
 
 ## Server, L0 (needs Denis on the server; nothing from Dentalia)
 
@@ -95,6 +160,6 @@ script. The process and every restore command: `docs/dev/backup.md`.
       set `BACKUP_HEARTBEAT_URL`. Belongs in followups `[backup-heartbeat-watcher]`;
       not written there yet because another session has followups.md emptied
       in its working tree (2026-09-30).
-- [ ] Handover: **full Slovene translation** of `docs/dev/backup.md`, kept in
+- [x] Done 2026-09-30 (`9fba6f8`, `docs/dev/backup.sl.md`). Handover: **full Slovene translation** of `docs/dev/backup.md`, kept in
       step with the English one. After the restore test, so the restore sections
       are translated once, as they ran.
