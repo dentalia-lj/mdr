@@ -515,3 +515,33 @@ def test_re_pointing_a_code_reports_orphaned_groups(conn):
     stats = cli.sync_aliases(conn, (), vendor_rows=_vendor(("001", "IVOCLAR VIVADENT")))
 
     assert stats["orphaned_groups"] == 1
+
+
+# --------------------------------------------------------------------------- #
+# subcontractors (spec 2026-11-13 § 4.1): a name that left `aliases` for a
+# `subcontractors` list is removed -- nothing else ever deletes an alias row.
+# --------------------------------------------------------------------------- #
+def test_sync_removes_an_alias_moved_to_subcontractors(conn, tmp_path):
+    conn.execute("INSERT INTO manufacturer_alias (raw_name, canonical_name, source) "
+                 "VALUES ('Sure Dent Corporation', 'KOMET', 'playbook')")
+    _write(tmp_path, "komet.json", {"manufacturer": "KOMET",
+                                    "aliases": ["Gebr. Brasseler GmbH & Co. KG"],
+                                    "subcontractors": ["Sure Dent Corporation"]})
+    stats = cli.sync_aliases(conn, playbooks.load_playbooks(tmp_path))
+
+    assert conn.execute("SELECT 1 FROM manufacturer_alias WHERE raw_name='Sure Dent Corporation'"
+                        ).fetchone() is None
+    assert stats["removed"] == 1
+    assert stats["removed_detail"] == ["Sure Dent Corporation"]
+
+
+def test_sync_keeps_aliases_not_listed(conn, tmp_path):
+    _write(tmp_path, "komet.json", {"manufacturer": "KOMET",
+                                    "aliases": ["Gebr. Brasseler GmbH & Co. KG"],
+                                    "subcontractors": ["Sure Dent Corporation"]})
+    stats = cli.sync_aliases(conn, playbooks.load_playbooks(tmp_path))
+
+    assert conn.execute("SELECT canonical_name FROM manufacturer_alias "
+                        "WHERE raw_name='Gebr. Brasseler GmbH & Co. KG'").fetchone()[
+        "canonical_name"] == "KOMET"
+    assert stats["removed"] == 0

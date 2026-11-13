@@ -626,3 +626,28 @@ def test_the_alias_warning_is_silent_once_the_projection_exists(conn):
 
     assert "manufacturer_alias is EMPTY" not in "\n".join(
         manufacturer_seed.render(stats))
+
+
+# --------------------------------------------------------------------------- #
+# subcontractors (spec 2026-11-13 § 4.1)
+# --------------------------------------------------------------------------- #
+def test_seed_removes_a_name_moved_to_subcontractors(conn):
+    _vendor(conn, [("077", "KOMET")])
+    _seed(conn, [_pb("komet", "KOMET", ["077"], ["Sure Dent Corporation"])])
+    assert conn.execute("SELECT 1 FROM manufacturer_name WHERE name_folded=%s",
+                        ("sure dent corporation",)).fetchone() is not None
+
+    moved = Playbook(slug="komet", manufacturer="KOMET", bc_codes=(BcCode(code="077"),),
+                     subcontractors=("Sure Dent Corporation",))
+    stats = _seed(conn, [moved])
+
+    assert conn.execute("SELECT 1 FROM manufacturer_name WHERE name_folded=%s",
+                        ("sure dent corporation",)).fetchone() is None
+    assert stats.names_removed == 1
+
+
+def test_seed_without_subcontractors_removes_nothing(conn):
+    _vendor(conn, [("077", "KOMET")])
+    _seed(conn, [_pb("komet", "KOMET", ["077"], ["Gebr. Brasseler GmbH & Co. KG"])])
+    stats = _seed(conn, [_pb("komet", "KOMET", ["077"], ["Gebr. Brasseler GmbH & Co. KG"])])
+    assert stats.names_removed == 0

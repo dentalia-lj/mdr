@@ -95,6 +95,10 @@ class SeedStats:
     bodies_inserted: int = 0
     bodies_unchanged: int = 0
 
+    #: `manufacturer_name` alias rows deleted because the name moved to a
+    #: `subcontractors` list (spec 2026-11-13 § 4.1). Nothing else deletes one.
+    names_removed: int = 0
+
     #: Rows the seed refused to touch because an existing row says something
     #: different. Never silently resolved. (subject, existing, intended)
     conflicts: list[tuple[str, str, str]] = field(default_factory=list)
@@ -234,6 +238,26 @@ def _link_name(conn, stats, name: str, mfr_id: int, kind: str) -> None:
              f"manufacturer_id={mfr_id}")
         )
     stats.names_unchanged += 1
+
+
+def _remove_moved_names(conn, stats, loaded) -> None:
+    """Delete the alias rows of names that left `aliases` for `subcontractors`.
+
+    A subcontractor's name must stop resolving to the brand, and an import only
+    ever inserts, so a moved name would otherwise keep making the
+    subcontractor's documents the brand's (spec 2026-11-13 F4)."""
+    from app.manufacturers import normalize
+    from app.subcontractors import moved_names
+
+    moved = moved_names(loaded)
+    if not moved:
+        return
+    for r in conn.execute(
+            "SELECT name_folded, name FROM manufacturer_name WHERE kind='alias'").fetchall():
+        if normalize(r["name"]) in moved:
+            conn.execute("DELETE FROM manufacturer_name WHERE name_folded=%s",
+                         (r["name_folded"],))
+            stats.names_removed += 1
 
 
 def _orphan_groups(conn) -> list[tuple[str, int]]:
@@ -493,6 +517,7 @@ def seed(conn, *, loaded=None, raw=None, dir_path=None,
 
     by_slug = {pb.slug: pb for pb in loaded}
     stats = SeedStats(entities=len(entities))
+    _remove_moved_names(conn, stats, loaded)
 
     for e in entities:
         if not e.canonical:                      # None, or the empty string
@@ -535,7 +560,9 @@ def render(stats: SeedStats, *, dry_run: bool = False) -> list[str]:
         f"{stats.manufacturers_updated} slug attached / "
         f"{stats.manufacturers_unchanged} unchanged",
         f"{head}: bc_code {stats.codes_inserted} new / {stats.codes_claimed} claimed by a playbook / {stats.codes_unchanged} unchanged",
-        f"{head}: name {stats.names_inserted} new / {stats.names_unchanged} unchanged",
+        f"{head}: name {stats.names_inserted} new / {stats.names_unchanged} unchanged"
+        + (f" / {stats.names_removed} removed (moved to subcontractors)"
+           if stats.names_removed else ""),
         f"{head}: body {stats.bodies_inserted} new / "
         f"{stats.bodies_unchanged} unchanged",
         f"{head}: contacts {stats.contacts_seeded} seeded / "

@@ -15,7 +15,7 @@ import sys
 from psycopg.errors import InvalidTextRepresentation
 
 from app import (
-    db, komet_coverage, manufacturer_seed, mine_contacts, mine_srn, playbooks,
+    db, komet_coverage, manufacturer_seed, manufacturers, mine_contacts, mine_srn, playbooks,
     queue, reconcile,
     regroup,
     repair_archive_urls, repair_document_manufacturer, repair_label_dates,
@@ -169,7 +169,22 @@ def sync_aliases(conn, loaded, *, vendor_rows=()) -> dict:
     intended, skipped = reconcile.derive_aliases(vendor_rows, loaded)
 
     stats = {"inserted": 0, "updated": 0, "unchanged": 0, "skipped": len(skipped),
-             "skipped_detail": skipped, "orphaned_groups": 0}
+             "skipped_detail": skipped, "orphaned_groups": 0,
+             "removed": 0, "removed_detail": []}
+
+    # A name that left `aliases` for a `subcontractors` list (spec 2026-11-13
+    # § 4.1). Nothing else deletes an alias row, so without this the
+    # subcontractor's documents would keep resolving to the brand.
+    from app.subcontractors import moved_names
+    moved = moved_names(loaded)
+    if moved:
+        for r in conn.execute("SELECT raw_name FROM manufacturer_alias").fetchall():
+            if manufacturers.normalize(r["raw_name"]) in moved:
+                conn.execute("DELETE FROM manufacturer_alias WHERE raw_name=%s",
+                             (r["raw_name"],))
+                stats["removed"] += 1
+                stats["removed_detail"].append(r["raw_name"])
+        stats["removed_detail"].sort()
     # Values an item_group.canonical_manufacturer might still carry that this
     # sync has just moved an alias away from: the raw code (insert / self-seed
     # case) or the alias's prior canonical_name (re-point to a different real
@@ -497,6 +512,9 @@ def cmd_playbooks(args: argparse.Namespace) -> int:
     )
     for code, reason in stats["skipped_detail"]:
         print(f"  SKIPPED {code}: {reason}")
+    if stats["removed"]:
+        print(f"removed: {stats['removed']} alias row(s) moved to subcontractors: "
+              + ", ".join(stats["removed_detail"]))
     if stats["orphaned_groups"]:
         print(
             f"WARNING: {stats['orphaned_groups']} item_group row(s) still carry a "
