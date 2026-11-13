@@ -6010,6 +6010,7 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                     },
                     confirm_tick=words.retype_tick(after["type"], after["coverage_scope"]),
                     confirm_label=words.RETYPE_CONFIRM_LABEL,
+                    confirm_tone="confirm",
                 )
                 return templates.TemplateResponse(request, "_result.html", ctx)
 

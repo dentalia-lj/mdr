@@ -9,8 +9,10 @@
    button text, so every two-step action reuses this branch instead of
    hard-wiring its own fields the way this used to be Rename-only. Cancel
    clears the target client-side -- it must never issue a request, or a
-   "no" would still write nothing but would round-trip for it. #}
-<div class="result error">
+   "no" would still write nothing but would round-trip for it.
+   `confirm_tone` (optional, default "error"): Change type passes "confirm",
+   the amber question box of its approved mockup (2026-11-13). #}
+<div class="result {{ confirm_tone | default('error') }}">
   {% for line in confirm_needed %}<p>{{ line }}</p>{% endfor %}
   <form hx-post="{{ confirm_url }}" hx-target="#{{ confirm_target }}" hx-swap="innerHTML">
     {% for key, value in confirm_fields.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">

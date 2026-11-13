@@ -907,6 +907,15 @@ button[disabled]:hover, .btn[disabled]:hover {
   border-radius: var(--radius-md);
   padding: var(--pad-card);
 }
+/* A question with consequences, not a failure (Change type confirm, mockup
+   approved 2026-11-12): amber, ink text. */
+.result.confirm {
+  background: #fff6e8;
+  border: 1px solid #f1d3a4;
+  color: var(--dentalia-ink);
+  border-radius: var(--radius-md);
+  padding: var(--pad-card);
+}
 .result.error {
   background: #fdecea;
   border: 1px solid var(--dentalia-danger);

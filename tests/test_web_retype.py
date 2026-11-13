@@ -92,7 +92,7 @@ def _confirm(doc_id, *, type, regulation, coverage_scope, expected, tick=True, *
 
 def _lines(html: str) -> list[str]:
     """The confirm's consequence lines, in order."""
-    block = re.search(r'<div class="result error">(.*?)<form', html, re.S)
+    block = re.search(r'<div class="result confirm">(.*?)<form', html, re.S)
     assert block, html
     return [re.sub(r"\s+", " ", p).strip()
             for p in re.findall(r"<p>(.*?)</p>", block.group(1), re.S)]
@@ -127,6 +127,16 @@ def test_step_1_for_831_is_lines_1_and_6_and_enqueues_nothing(client, conn):
         "expected_coverage_scope": "manufacturer", "confirm": "1"}
     assert f'hx-post="/staging/{doc_id}/retype"' in r.text
     assert 'name="tick"' in r.text and "required" in r.text
+
+
+def test_the_type_change_confirm_is_a_question_not_an_error(client, conn):
+    """Amber, as in the approved mockup (Denis, 2026-11-13): the confirm is a
+    question about consequences, and the red error look read as a failure.
+    Refusals stay red."""
+    doc_id = _seed_831(conn)
+    r = _step1(client, doc_id, type="DoC", regulation="MDR", coverage_scope="group")
+    assert '<div class="result confirm">' in r.text
+    assert '<div class="result error">' not in r.text
 
 
 def test_step_1_for_832_names_the_number_and_the_expiry(client, conn):
