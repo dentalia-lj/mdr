@@ -61,7 +61,7 @@ The brand's playbook gets a body key `subcontractors`: the printed names of comp
 
 ```json
 "subcontractors": ["Sure Dent Corporation", "Meta Biomed Co., Ltd.",
-                   "Guilin Woodpecker Medical Instrument Co.,Ltd", "SHOFU INC.", "Alfred Becht GmbH",
+                   "WOODPECKER", "SHOFU", "BECHT",
                    "CMS Dental A/S", "HANS KOREA CO., LTD.", "SAVUNA GmbH",
                    "Stoddard Manufacturing Company Limited", "P. L. Superior Dental Materials GmbH"]
 ```
@@ -82,7 +82,7 @@ The lists, from Komet's SPECIFIKACIJA, the makers' own documents, and Denis and 
 
 ### 4.2 Matching a name to the list
 
-- The list holds the **printed legal names** as documents print them: "Guilin Woodpecker Medical Instrument Co.,Ltd", "SHOFU INC.", "Alfred Becht GmbH", "ANGELUS INDÚSTRIA DE PRODUTOS ODONTOLÓGICOS S/A".
+- The list holds the **printed legal names** as documents print them ("Sure Dent Corporation", "ANGELUS INDÚSTRIA DE PRODUTOS ODONTOLÓGICOS S/A", both Chirana spellings "CHIRANA T. Injecta a.s." and "CHIRANA T. Injecta, a.s."). A subcontractor that has its own playbook is listed by its **canonical name** (WOODPECKER, SHOFU, BECHT), because its legal names already belong to that playbook.
 - A printed name matches when it equals a listed name after `normalize`, or when it resolves (through `manufacturer_alias`) to a canonical name that is listed. That second route covers WOODPECKER, SHOFU and BECHT and their own aliases.
 - **Validation:** a listed name may not be an alias or canonical name of **any** brand, except a canonical that is listed deliberately as "this manufacturer" (WOODPECKER, SHOFU, BECHT).
 
