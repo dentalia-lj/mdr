@@ -94,8 +94,16 @@ prazno, če želite brskati po vsem.
    postane potrjena povezava pod vašim imenom v minuti. Uporabite ga, ko pride
    nov artikel, ki ga obstoječi dokument pokriva. Gumb je tudi na
    dokumentu s stanjem **On file**, ki ob branju ni navedel nobenega našega
-   artikla: dodajanje artiklov ga objavi. Dokument On file brez datuma izdaje
-   se zavrne; razvijalcu povejte datum.
+   artikla: dodajanje artiklov ga objavi. Dokumentu On file brez datuma izdaje
+   ni mogoče dodati artiklov: okvir in izbirnik to povesta in **Add** ostane
+   izklopljen; razvijalcu povejte datum.
+   Kadar tak dokument natisne številke, podobne številkam njegovega
+   proizvajalca v Business Centralu, okvir **Close to a Business Central
+   number** nad gumbom navede vsako: barvno oznako (glejte [Today](today.sl.md)),
+   natisnjeno številko in artikel, z ujemajočim se delom v **krepkem**. Izbirnik
+   iste artikle navede prve, pod **Close to a number this document prints**.
+   Nič ni označeno namesto vas: preverite imena, označite, kar dokument
+   pokriva, in dodajte.
 10. Na takem dokumentu **Remove** ob artiklu v **Covered items** artikel odstrani.
     Najprej vpraša in pove, če artikel ne bo imel več nobenega dokumenta te
     vrste. Business Central obdrži staro vrednost do naslednje posodobitve. Za
@@ -107,6 +115,12 @@ prazno, če želite brskati po vsem.
 - **Look up in EUDAMED** teče v ozadju. Sporočilo potrdi, da je bilo vloženo v
   vrsto, ali da je bilo že danes preverjeno. Rezultat se pojavi kot nova
   tabela na isti strani, ko je gotovo — osvežite, da ga vidite.
+- **EUDAMED trenutno ne odgovarja na ta poizvedovanja.** Od novembra 2026
+  zavrača samodejne zahteve, zato poizvedba ne uspe in tabela se ne pojavi. Z
+  dokumentom ni nič narobe; razvijalec poizvedbo prenaša na uradni kanal
+  EUDAMED.
+- Če EUDAMED sredi velike skupine naprav neha odgovarjati, tabela pokaže
+  naprave, ki so prišle, preden se je ustavil. Morda ni cela skupina.
 - Vse drugo na tej strani je le za branje. Nič, kar tu kliknete, ne spremeni
   statusa dokumenta.
 

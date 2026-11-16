@@ -290,18 +290,28 @@ def test_an_empty_page_that_contradicts_its_envelope_stops_the_walk_loudly(conn)
 
     So the walk still stops -- the anti-infinite-paging intent is intact, and
     `test_a_server_that_never_says_last_raises_instead_of_looping_forever`
-    covers the with-content case -- but it stops by raising, which fails the
-    job, backs it off, and leaves the manufacturer on the due list. A partial
-    result kept quietly is the outcome this must never produce again."""
+    covers the with-content case. A partial result kept QUIETLY is the outcome
+    this must never produce again. Since 2026-11-12 the pages already read are
+    kept, loudly: `incomplete` is counted and a note names the page. On the
+    first page there is nothing to keep, so that one still raises (below)."""
     fetcher = FakeFetcher(
         _page([_device("D1", reference="1")], total=99, last=False),
         _page([], total=99, last=False),
     )
 
-    with pytest.raises(RuntimeError, match="contradicts its own envelope"):
-        handle_eudamed_sync(conn, _job(), fetcher=fetcher)
+    out = handle_eudamed_sync(conn, _job(), fetcher=fetcher)
 
     assert len(fetcher.calls) == 2
+    assert [r["udi_di"] for r in _mirror(conn)] == ["D1"]
+    assert out["counts"]["incomplete"] == 1
+    assert any("contradicts its own envelope" in n for n in out["notes"])
+
+
+def test_a_contradicting_empty_first_page_still_raises(conn):
+    fetcher = FakeFetcher(_page([], total=99, last=False))
+
+    with pytest.raises(RuntimeError, match="contradicts its own envelope"):
+        handle_eudamed_sync(conn, _job(), fetcher=fetcher)
 
 
 def test_a_server_that_never_says_last_raises_instead_of_looping_forever(conn):
@@ -481,6 +491,70 @@ def test_a_body_that_is_not_json_raises(conn):
         final_url="https://ec.europa.eu/x"))
 
     with pytest.raises(Exception):
+        handle_eudamed_sync(conn, _job(), fetcher=fetcher)
+
+
+def _refused(status=429):
+    return FetchResult(status=status, body=None, etag=None, last_modified=None,
+                       content_type="application/json",
+                       final_url="https://ec.europa.eu/x")
+
+
+def test_pages_already_read_are_kept_when_a_later_page_is_refused(conn):
+    """Production job 29512 (2026-11-12): every page was held in memory and
+    written only after the last one, so a 429 part-way through discarded the
+    pages EUDAMED had already answered. Each page is stored as it arrives; a
+    refusal after that ends the walk, keeps what came, and says so."""
+    fetcher = FakeFetcher(
+        _page([_device("D1", reference="1"), _device("D2", reference="2")],
+              total=3, last=False),
+        _refused(429),
+    )
+
+    out = handle_eudamed_sync(conn, _job(), fetcher=fetcher)
+
+    assert [r["udi_di"] for r in _mirror(conn)] == ["D1", "D2"]
+    assert out["counts"]["devices"] == 2
+    assert out["counts"]["incomplete"] == 1
+    assert any("429" in n and "page 1" in n for n in out["notes"])
+
+
+def test_a_refusal_on_the_first_page_still_fails_the_job(conn):
+    """Nothing came back, so there is nothing to keep: the job fails and the
+    dead-jobs board shows it, rather than reporting an empty group."""
+    fetcher = FakeFetcher(_refused(429))
+
+    with pytest.raises(RuntimeError, match="returned 429"):
+        handle_eudamed_sync(conn, _job(), fetcher=fetcher)
+
+    assert _mirror(conn) == []
+
+
+def test_a_later_page_that_is_not_json_keeps_the_earlier_pages(conn):
+    fetcher = FakeFetcher(
+        _page([_device("D1", reference="1")], total=2, last=False),
+        FetchResult(status=200, body=b"<html>Network Error</html>", etag=None,
+                    last_modified=None, content_type="text/html",
+                    final_url="https://ec.europa.eu/x"),
+    )
+
+    out = handle_eudamed_sync(conn, _job(), fetcher=fetcher)
+
+    assert [r["udi_di"] for r in _mirror(conn)] == ["D1"]
+    assert out["counts"]["incomplete"] == 1
+
+
+def test_a_foreign_record_on_a_later_page_still_raises(conn):
+    """Refusals keep what came; integrity failures do not. A record from
+    another group means the filter stopped, so nothing in this walk can be
+    trusted and the job must raise (the runner then rolls the pages back)."""
+    fetcher = FakeFetcher(
+        _page([_device("D1", reference="1")], total=2, last=False),
+        _page([{**_device("D2", reference="2"), "basicUdi": "SOMETHING-ELSE"}],
+              total=2, last=True),
+    )
+
+    with pytest.raises(RuntimeError, match="stopped filtering"):
         handle_eudamed_sync(conn, _job(), fetcher=fetcher)
 
 

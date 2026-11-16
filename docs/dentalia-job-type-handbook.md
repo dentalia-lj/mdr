@@ -928,6 +928,9 @@ production link exactly as `confirm-link` records one (`link-confirmed` with
 `via`, then `production-write`); a link already in production is left alone. The
 decision's audit row gains `{"items": N, "manufacturer": ...}`. The decision
 `add-items` does the same on a `production` document, without the promote.
+On a `filed` document it promotes too; one that states no issue date may take
+`issue_date` + `issue_date_source` with the items (2026-11-16), written as T3
+before the issue-date check and refused on a document that already has a date.
 
 `retype` (2026-11-12) changes what a `staged` document is. `expected` is what the confirm screen showed; GATE refuses if the row differs. Writes type and scope as held T3 evidence, takes staged links off when the scope becomes the whole range, publishes nothing and enqueues nothing:
 

@@ -527,6 +527,31 @@ tbody tr:last-child td{border-bottom:0}
 </tr>
 </tbody></table></div>
 <p>Ne vidi dokumenta prave blagovne znamke, a napačnega izdelovalca, na primer certifikata podizvajalca, ki šteje za celoten program blagovne znamke. Za to je potrebno polje izdelovalca v Business Centralu, ki ga sistem še ne bere.</p>
+<h3 id="pages/today--filed-but-maybe-ours">Filed, but maybe ours</h3>
+<p>Dokument dobi stanje <strong>On file</strong>, kadar nobena od kataloških številk, ki jih natisne, ni številka njegovega proizvajalca v Business Centralu. Ostane v registru, a ne šteje za noben artikel, in noben drug zaslon ga ne navaja. Ta kartica pogleda znova, ohlapneje, in navede dokumente On file, ki natisnejo številko, enako ali podobno številki istega proizvajalca. Samo predlaga: nič se ne spremeni, dokler ne dodate artikla. Kadar ni ničesar za predlagati, se kartica ne prikaže.</p>
+<p>Vsaka vrstica pove, kaj je natisnjeno, kateremu artiklu v Business Centralu je podobno (z <strong>+N more</strong>, kadar se enako ujema več artiklov) in kako podobno, z barvo:</p>
+<div class="tw"><table><thead><tr>
+<th>Oznaka</th>
+<th>Kaj pomeni</th>
+<th>Kako zanesljivo</th>
+</tr></thead><tbody>
+<tr>
+<td><strong>Same number</strong> (zelena)</td>
+<td>Ista številka, ko odstranimo presledke, pike in pomišljaje: <code>606.20.110</code> in <code>60620110</code></td>
+<td>Zelo verjetno naš. Številka, ki je beseda, na primer <code>S-tip</code>, se lahko ujame po naključju</td>
+</tr>
+<tr>
+<td><strong>Prefix</strong> (oranžna)</td>
+<td>Ena številka je druga z nečim spredaj: <code>0541</code> in <code>6050541</code>, <code>9331</code> in <code>UP-9331</code></td>
+<td>Verjetno naš: preverite ime artikla</td>
+</tr>
+<tr>
+<td><strong>Leading zeros</strong> (modra)</td>
+<td>Številki se razlikujeta le po ničlah spredaj: <code>000529397</code> in <code>529397</code></td>
+<td>Verjetno naš. Kratka številka, na primer <code>017</code>, se ujema z mnogimi artikli: preverite natančno</td>
+</tr>
+</tbody></table></div>
+<p>Prikaže se prvih 12 vrstic, v vrstnem redu oznak zgoraj; <strong>See all N</strong> odpre ostale na mestu. Pritisnite <strong>Open</strong>: stran dokumenta navede iste artikle nad <strong>Add items this document covers…</strong>, izbirnik pa jih pokaže prve, neoznačene (glejte <a href="#pages/documents">Documents</a>). Dodan artikel dokument objavi in ta izgine s kartice. Tudi zavrnitev ga odstrani. Vrstici z oznako <strong>no issue date</strong> artiklov še ni mogoče dodati: razvijalec mora najprej nastaviti datum.</p>
 <h3 id="pages/today--stavek-o-izjavah">Stavek o izjavah</h3>
 <p><strong>Declarations on file for X of Y medical-device items (Z%)</strong> je številka za navedbo Dentalii, vrstica pod njo pa pove točno, kaj šteje: artikle, ki jih Business Central označi kot medicinske pripomočke, in, če takšni so, koliko artiklov BC sploh ni razvrstil, zato niso šteti. Povezava odpre <a href="#pages/coverage">Coverage gaps</a>, kjer je število <strong>No Declaration of Conformity</strong> vedno isto.</p>
 <h3 id="pages/today--tedensko-poročilo">Tedensko poročilo</h3>
@@ -595,6 +620,10 @@ tbody tr:last-child td{border-bottom:0}
 <tr>
 <td><strong>Failed tasks</strong></td>
 <td>Delo, ki ga je sistem večkrat poskusil in obupal. Glejte <a href="#pages/failed">Failed tasks</a></td>
+</tr>
+<tr>
+<td><strong>Filed, but maybe ours</strong></td>
+<td>Dokumenti s stanjem On file, ki ne štejejo za noben artikel in natisnejo številko, podobno številki njihovega proizvajalca v Business Centralu</td>
 </tr>
 <tr>
 <td><strong>Declarations on file</strong></td>
@@ -918,13 +947,15 @@ tbody tr:last-child td{border-bottom:0}
 <li>Poglejte <strong>Covered items</strong> za to, katere izdelke pokriva, in odprite <strong>Technical details</strong> pod <em>Where every value came from</em> za vsako dejstvo, ki ga je sistem izluščil, s točno stranjo in besedilom, od koder izvira.</li>
 <li>Če dokument še čaka na odločitev, kliknite <strong>review this document</strong>, da greste neposredno nanjo na <a href="#pages/review">Review</a>.</li>
 <li>Če dokument navaja Basic UDI-DI in želite hiter navzkrižni pregled, pritisnite <strong>Look up in EUDAMED</strong>.</li>
-<li>Na objavljenem dokumentu, ki pokriva določene artikle, <strong>Add items this document covers…</strong> odpre isti izbirnik kot na <a href="#pages/review">Review</a>: poiščite in označite artikle, nato pritisnite <strong>Add these N items</strong>. Vsak postane potrjena povezava pod vašim imenom v minuti. Uporabite ga, ko pride nov artikel, ki ga obstoječi dokument pokriva. Gumb je tudi na dokumentu s stanjem <strong>On file</strong>, ki ob branju ni navedel nobenega našega artikla: dodajanje artiklov ga objavi. Dokument On file brez datuma izdaje se zavrne; razvijalcu povejte datum.</li>
+<li>Na objavljenem dokumentu, ki pokriva določene artikle, <strong>Add items this document covers…</strong> odpre isti izbirnik kot na <a href="#pages/review">Review</a>: poiščite in označite artikle, nato pritisnite <strong>Add these N items</strong>. Vsak postane potrjena povezava pod vašim imenom v minuti. Uporabite ga, ko pride nov artikel, ki ga obstoječi dokument pokriva. Gumb je tudi na dokumentu s stanjem <strong>On file</strong>, ki ob branju ni navedel nobenega našega artikla: dodajanje artiklov ga objavi. Dokumentu On file brez datuma izdaje ni mogoče dodati artiklov: okvir in izbirnik to povesta in <strong>Add</strong> ostane izklopljen; razvijalcu povejte datum. Kadar tak dokument natisne številke, podobne številkam njegovega proizvajalca v Business Centralu, okvir <strong>Close to a Business Central number</strong> nad gumbom navede vsako: barvno oznako (glejte <a href="#pages/today">Today</a>), natisnjeno številko in artikel, z ujemajočim se delom v <strong>krepkem</strong>. Izbirnik iste artikle navede prve, pod <strong>Close to a number this document prints</strong>. Nič ni označeno namesto vas: preverite imena, označite, kar dokument pokriva, in dodajte.</li>
 <li>Na takem dokumentu <strong>Remove</strong> ob artiklu v <strong>Covered items</strong> artikel odstrani. Najprej vpraša in pove, če artikel ne bo imel več nobenega dokumenta te vrste. Business Central obdrži staro vrednost do naslednje posodobitve. Za razveljavitev pritisnite <strong>Re-open</strong>, nato <strong>Covers this item</strong>.</li>
 </ol>
 <hr>
 <h2 id="pages/documents--kaj-se-zgodi-nato">Kaj se zgodi nato</h2>
 <ul>
 <li><strong>Look up in EUDAMED</strong> teče v ozadju. Sporočilo potrdi, da je bilo vloženo v vrsto, ali da je bilo že danes preverjeno. Rezultat se pojavi kot nova tabela na isti strani, ko je gotovo — osvežite, da ga vidite.</li>
+<li><strong>EUDAMED trenutno ne odgovarja na ta poizvedovanja.</strong> Od novembra 2026 zavrača samodejne zahteve, zato poizvedba ne uspe in tabela se ne pojavi. Z dokumentom ni nič narobe; razvijalec poizvedbo prenaša na uradni kanal EUDAMED.</li>
+<li>Če EUDAMED sredi velike skupine naprav neha odgovarjati, tabela pokaže naprave, ki so prišle, preden se je ustavil. Morda ni cela skupina.</li>
 <li>Vse drugo na tej strani je le za branje. Nič, kar tu kliknete, ne spremeni statusa dokumenta.</li>
 </ul>
 <hr>

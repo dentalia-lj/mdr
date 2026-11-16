@@ -73,7 +73,9 @@
     }
     var add = d.querySelector("[data-picker-add]");
     if (add) {
-      add.disabled = t.size === 0;
+      // data-blocked: a filed document with no issue date cannot take items
+      // (the reason is printed beside the button), whatever is ticked.
+      add.disabled = t.size === 0 || add.hasAttribute("data-blocked");
       add.textContent = t.size === 1 ? "Add this item" : "Add these " + t.size + " items";
     }
   }

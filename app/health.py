@@ -47,9 +47,16 @@ def conditions(conn, *, now: dt.datetime,
     from "broken again" without re-reading the world.
     """
     out: list[dict] = []
+    # The freshest instance per service, the same reading `heartbeat.read`
+    # gives the header chip. Every container recreate leaves its old row behind
+    # under the old hostname until `PRUNE_AFTER_S`; judged per row, each deploy
+    # paged an hour later about a container that no longer exists (production,
+    # 2026-11-12). A service is down when its newest beat is old, not when any
+    # beat is.
     for r in conn.execute(
-        "SELECT service, instance, EXTRACT(EPOCH FROM (%s - last_seen)) AS age_s "
-        "  FROM service_heartbeat ORDER BY service, instance",
+        "SELECT DISTINCT ON (service) service, instance, "
+        "       EXTRACT(EPOCH FROM (%s - last_seen)) AS age_s "
+        "  FROM service_heartbeat ORDER BY service, last_seen DESC",
         (now,),
     ).fetchall():
         if r["age_s"] > stale_after_s:

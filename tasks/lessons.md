@@ -221,3 +221,8 @@ the whole table, not only the task that just changed.
 - **Rule:** Place Toggl entries on the clock where the work actually happened: merge the active spans into the day's real blocks (a short gap inside a block, such as a 40-minute pause between 11:28 and 12:11, stays inside it), round each block to 30 minutes. Do not pack the active total from the day's start with a lunch pause.
 - **Why:** I computed 267 active minutes and laid them out as 10:00-12:30 and 13:00-15:00. Denis corrected it to 10:00-14:00 and 15:30-16:30: the spans were 10:19-14:21 and 15:26-16:52, and the packed layout put the second block at a time he was not working.
 - **How to apply:** compute the active spans as before, then show them as clock blocks (start of first span to end of last span per block, gaps under ~45 min absorbed) and propose those times; let Denis adjust before or after creating.
+
+## 2026-11-13 · A UI change is not done until I have looked at it
+- **Rule:** Before reporting a screen change as done, render it (the branch's web app on the local database, plus a headless screenshot) and compare it with the approved mockup.
+- **Why:** I reported the "Filed, but maybe ours" card as done on green tests. Denis asked "verified?". The first screenshot showed rows in a different order from the mockup (leading zeros before prefix). The tests had pinned my order, not the mockup's.
+- **How to apply:** `docker compose run -d --rm --name <x>-preview -p 127.0.0.1:8099:8000 -v <worktree>:/preview -w /preview -e API_DATABASE_URL=...dentalia_api... -e WEB_REQUIRE_AUTHENTICATED_USER=false test python -m web.app`, then a Playwright screenshot of the section from inside that container. Check the order, labels and colours against the mockup before writing "done".

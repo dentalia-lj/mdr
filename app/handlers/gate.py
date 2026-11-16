@@ -31,6 +31,7 @@ is a followup for when RESOLVE/FETCH make the chain live.
 from __future__ import annotations
 
 import json
+from datetime import date as date_cls
 
 from psycopg.types.json import Json
 
@@ -2175,6 +2176,50 @@ def _remove_links(conn, doc_id, refs, decided_by, job) -> dict:
     return {"removed": removed, "remove_skipped": skipped}
 
 
+def _check_issue_date(p, prev_status, held) -> date_cls | None:
+    """The issue date a person sends with `add-items` (2026-11-16): for a filed
+    document that prints none, so the items can publish it (the 2026-10-02 rule
+    needs a date). Allowed ONLY on a filed document with no date at all, so a
+    date read off the page is never overwritten this way; a past ISO date, with
+    the person's note on where it came from. Raises, never skips."""
+    raw = p.get("issue_date")
+    if raw is None:
+        return None
+    if prev_status != "filed":
+        raise ValueError(f"gate.apply add-items: an issue date is accepted only on a filed "
+                         f"document, this one is {prev_status!r}")
+    if held is not None:
+        raise ValueError(f"gate.apply add-items: the document already has an issue date "
+                         f"({held}); it is not changed this way")
+    if not (p.get("issue_date_source") or "").strip():
+        raise ValueError("gate.apply add-items: issue_date_source is required with an issue "
+                         "date: where the date came from")
+    try:
+        day = date_cls.fromisoformat(str(raw))
+    except ValueError:
+        raise ValueError(f"gate.apply add-items: issue_date {raw!r} is not YYYY-MM-DD") from None
+    if day > date_cls.today():
+        raise ValueError(f"gate.apply add-items: issue_date {day} is in the future")
+    return day
+
+
+def _write_issue_date(conn, doc_id, day: date_cls, source: str) -> None:
+    """The person's issue date as T3 evidence whose verbatim is their note, so
+    the document page shows where an assumed date came from."""
+    archive_url = conn.execute("SELECT archive_url FROM document WHERE doc_id=%s",
+                               (doc_id,)).fetchone()["archive_url"]
+    rev = conn.execute(
+        "SELECT COALESCE(MAX(extract_rev), 0) + 1 AS rev FROM evidence WHERE doc_id=%s",
+        (doc_id,)).fetchone()["rev"]
+    conn.execute("UPDATE document SET validity_from=%s WHERE doc_id=%s", (day, doc_id))
+    conn.execute(
+        "INSERT INTO evidence (doc_id, field, value, archive_url, page, verbatim, "
+        "tier, model_id, confidence, extracted_at, extract_rev, "
+        "agreed_model_id, agreed_confidence) "
+        "VALUES (%s, 'validity_from', %s, %s, NULL, %s, 'T3', NULL, 1.0, now(), %s, NULL, NULL)",
+        (doc_id, day.isoformat(), archive_url, source.strip(), rev))
+
+
 def _require_issue_date(conn, doc_id, decision) -> None:
     """Every approval needs an issue date (ruled 2026-10-02, picker spec §7):
     the reviewer enters one for a document that states none. A person's rule,
@@ -2430,6 +2475,10 @@ def handle_gate_apply(conn, job: dict) -> dict:
         raise ValueError(f"gate.apply add-items: document {doc_id} is {prev_status!r}, "
                          f"not 'production' or 'filed' -- items are added to a published "
                          f"or filed document")
+    issue_day = (_check_issue_date(p, prev_status, conn.execute(
+                     "SELECT validity_from FROM document WHERE doc_id=%s",
+                     (doc_id,)).fetchone()["validity_from"])
+                 if decision == "add-items" and row is not None else None)
     picked = _picked_items(conn, doc_id, p) if decision in ("approve", "add-items") else None
     if decision == "add-items" and picked is None:
         raise ValueError("gate.apply add-items: items is required")
@@ -2548,6 +2597,8 @@ def handle_gate_apply(conn, job: dict) -> dict:
         # (2026-11-12) the person's items are what publishes it, so it takes the
         # promote and the issue date every publication needs (ruled 2026-10-02).
         if prev_status == "filed":
+            if issue_day is not None:
+                _write_issue_date(conn, doc_id, issue_day, p["issue_date_source"])
             _require_issue_date(conn, doc_id, decision)
             _promote(conn, doc_id)
         _reopen_links(conn, doc_id, picked[2], decided_by, job, via="add-items")
@@ -2555,6 +2606,9 @@ def handle_gate_apply(conn, job: dict) -> dict:
         items_detail = {"items": len(picked[1]), "manufacturer": picked[0]}
         if prev_status == "filed":
             items_detail["from"] = "filed"
+        if issue_day is not None:
+            items_detail.update(issue_date=issue_day.isoformat(),
+                                issue_date_source=p["issue_date_source"].strip())
     else:
         raise ValueError(f"gate.apply: unknown decision '{decision}'")
 

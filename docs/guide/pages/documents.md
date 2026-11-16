@@ -95,7 +95,15 @@ to browse everything.
    under your name within a minute. Use it when a new item arrives that an
    existing document covers. It is also on a document **on file**, which named
    no item we hold when it was read: adding items there publishes it. A
-   document on file with no issue date is refused; tell a developer the date.
+   document on file with no issue date cannot take items: the box and the
+   picker say so and **Add** stays off; tell a developer the date.
+   When such a document prints numbers close to its manufacturer's Business
+   Central numbers, a box **Close to a Business Central number** above the
+   button lists each one: the coloured label (see [Today](today.md)), the
+   number printed, and the item, with the part that matched in **bold**. The
+   picker lists the same items first, under **Close to a number this document
+   prints**. Nothing is ticked for you: check the names, tick what the document
+   covers, and add.
 10. On the same kind of document, **Remove** next to an item in **Covered items**
     takes it off. It asks first, and says so if the item would have no document
     of that type left. Business Central keeps its old value until its next
@@ -108,6 +116,13 @@ to browse everything.
 - **Look up in EUDAMED** runs in the background. A message confirms it was
   queued, or that it was already checked today. Its result appears as a new
   table on this same page once it is done — refresh to see it.
+- **EUDAMED is not answering these lookups at the moment.** Since November
+  2026 it turns away automated requests, so the lookup fails and no table
+  appears. Nothing is wrong with the document; a developer is moving the lookup
+  to EUDAMED's official channel.
+- If EUDAMED stops answering partway through a large device group, the table
+  shows the devices that came back before it stopped. It may not be the whole
+  group.
 - Everything else on this page is for reading only. Nothing you click here
   changes a document's status.
 

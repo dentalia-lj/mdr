@@ -185,12 +185,14 @@ def _is_last(payload, devices) -> bool:
     throttled page claims 11.366 elements across 38 pages and then hands over
     none of them. Raising here rather than returning False is deliberate: a
     retry of the same page is what the caller must NOT do unattended, because
-    hammering is what produced the throttle. The job fails, backs off, and the
-    empty-sweep guard downstream keeps the manufacturer on the due list.
+    hammering is what produced the throttle. It raises `_Refused`: the sweep
+    fails, backs off, and the empty-sweep guard downstream keeps the
+    manufacturer on the due list; `eudamed.sync` keeps the pages it already
+    stored and reports the walk `incomplete` (page 0 still fails the job).
     """
     if not devices:
         if isinstance(payload, dict) and _contradicts_empty(payload):
-            raise RuntimeError(
+            raise _Refused(
                 "EUDAMED returned an empty page that contradicts its own "
                 f"envelope (totalElements={payload.get('totalElements')!r}, "
                 f"totalPages={payload.get('totalPages')!r}, "
@@ -223,58 +225,29 @@ def _contradicts_empty(payload: dict) -> bool:
     return False
 
 
-def handle_eudamed_sync(conn, job, *, fetcher=None) -> dict:
-    payload = job.get("payload") or {}
-    basic_udi_di = (payload.get("basic_udi_di") or "").strip()
-    r = Result()
+class _Refused(RuntimeError):
+    """EUDAMED did not answer this page: a non-200 (429, 5xx), a body that is
+    not JSON, or an empty page that contradicts its own envelope. Distinct from
+    the integrity failures (`_assert_filtered`, the device cap, the page cap),
+    which mean the answer is wrong rather than missing. `eudamed.sync` keeps
+    the pages before a refusal and discards everything on an integrity
+    failure. A `RuntimeError`, so callers that do not tell them apart behave
+    exactly as before."""
 
-    # Most documents carry no Basic UDI-DI (301 of 769). The button is not
-    # offered for them; a hand-enqueued job must still not dead-letter.
-    if not basic_udi_di:
-        r.count("skipped_no_basic_udi_di")
-        r.note("no basic_udi_di on the payload — nothing to look up")
-        return r.as_dict()
 
-    if fetcher is None:
-        fetcher = make_fetcher()
+def _read_page(fetcher, url: str, basic_udi_di: str):
+    resp = fetcher.get(url)
+    if resp.status != 200:
+        raise _Refused(f"EUDAMED returned {resp.status} for {basic_udi_di}")
+    try:
+        return json.loads(resp.body or b"")
+    except (ValueError, TypeError) as exc:
+        raise _Refused(
+            f"EUDAMED returned a non-JSON body for {basic_udi_di}"
+        ) from exc
 
-    quoted = quote(basic_udi_di, safe="")
-    devices: list[dict] = []
-    for page in range(MAX_PAGES + 1):
-        if page == MAX_PAGES:
-            raise RuntimeError(
-                f"EUDAMED never reported a last page for {basic_udi_di} — "
-                f"stopped paging after {MAX_PAGES} pages"
-            )
-        if page:
-            _pause_between_pages()
-        resp = fetcher.get(EUDAMED_DEVICE_URL.format(
-            basic_udi=quoted, size=PAGE_SIZE, page=page,
-        ))
 
-        # Raise rather than report: the queue owns backoff and the dead-letter,
-        # and a swallowed 503 would report success for a group never read.
-        if resp.status != 200:
-            raise RuntimeError(f"EUDAMED returned {resp.status} for {basic_udi_di}")
-
-        try:
-            body = json.loads(resp.body or b"")
-        except (ValueError, TypeError) as exc:
-            raise RuntimeError(
-                f"EUDAMED returned a non-JSON body for {basic_udi_di}"
-            ) from exc
-
-        got = _devices(body)
-        _assert_filtered(got, basic_udi_di)
-        devices.extend(got)
-        if len(devices) > MAX_DEVICES:
-            raise RuntimeError(
-                f"EUDAMED returned {len(devices)} devices for {basic_udi_di} — "
-                "past the plausible group size, so the query stopped filtering"
-            )
-        if _is_last(body, got):
-            break
-
+def _store_devices(conn, r, devices, basic_udi_di: str) -> None:
     for d in devices:
         udi_di = (d.get("primaryDi") or "").strip()
         if not udi_di:
@@ -298,7 +271,67 @@ def handle_eudamed_sync(conn, job, *, fetcher=None) -> dict:
         r.count("devices")
         r.sample("devices", {"udi_di": udi_di, "reference": reference})
 
-    if not devices:
+
+def handle_eudamed_sync(conn, job, *, fetcher=None) -> dict:
+    payload = job.get("payload") or {}
+    basic_udi_di = (payload.get("basic_udi_di") or "").strip()
+    r = Result()
+
+    # Most documents carry no Basic UDI-DI (301 of 769). The button is not
+    # offered for them; a hand-enqueued job must still not dead-letter.
+    if not basic_udi_di:
+        r.count("skipped_no_basic_udi_di")
+        r.note("no basic_udi_di on the payload — nothing to look up")
+        return r.as_dict()
+
+    if fetcher is None:
+        fetcher = make_fetcher()
+
+    quoted = quote(basic_udi_di, safe="")
+    seen = 0
+    for page in range(MAX_PAGES + 1):
+        if page == MAX_PAGES:
+            raise RuntimeError(
+                f"EUDAMED never reported a last page for {basic_udi_di} — "
+                f"stopped paging after {MAX_PAGES} pages"
+            )
+        if page:
+            _pause_between_pages()
+        try:
+            body = _read_page(fetcher, EUDAMED_DEVICE_URL.format(
+                basic_udi=quoted, size=PAGE_SIZE, page=page,
+            ), basic_udi_di)
+            got = _devices(body)
+            last = _is_last(body, got)
+        except _Refused as exc:
+            # Each page is stored as it arrives (below), so a refusal after
+            # the first page ends the walk and keeps what EUDAMED already
+            # answered -- counted and noted, never quiet. Until 2026-11-12 the
+            # pages sat in memory until the last one and a 429 on any page
+            # discarded all of them (production job 29512). On the first page
+            # there is nothing to keep, so the job fails and the queue owns
+            # backoff and the dead-letter, exactly as before.
+            if page == 0:
+                raise
+            r.count("incomplete")
+            r.note(f"stopped at page {page} after {seen} devices: {exc}")
+            break
+
+        # Integrity guards still raise and take the whole walk with them: a
+        # record from another group means the filter stopped, so no page of
+        # this walk can be trusted (the runner rolls the stored pages back).
+        _assert_filtered(got, basic_udi_di)
+        seen += len(got)
+        if seen > MAX_DEVICES:
+            raise RuntimeError(
+                f"EUDAMED returned {seen} devices for {basic_udi_di} — "
+                "past the plausible group size, so the query stopped filtering"
+            )
+        _store_devices(conn, r, got, basic_udi_di)
+        if last:
+            break
+
+    if not seen:
         # 52,3% of our Basic UDI-DIs resolve to nothing (measured 2026-08-20).
         # The common case, not a failure.
         r.note(f"EUDAMED holds no device for {basic_udi_di}")

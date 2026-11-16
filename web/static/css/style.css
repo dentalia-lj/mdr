@@ -418,6 +418,62 @@ main {
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
+/* Filed, but maybe ours (2026-11-13). Three kinds of match, one colour each,
+   strongest first: green (same number), amber (a prefix), blue (leading
+   zeros). The three also differ in lightness of their ink, not hue alone,
+   and every ink clears AA on its own chip: #1f5c40 on #dcefe5 6.6:1,
+   #7a4a00 on #fff6e8 7.0:1, #1f4f8a on #e8f0fb 7.2:1. The two tables (the
+   first 12 rows, and the rest under "See all") share fixed column widths so
+   they line up when the second one is open. */
+.match-key { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.match-chip {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.match-exact  { background: #dcefe5; color: #1f5c40; border-color: #a9d3bd; }
+.match-prefix { background: #fff6e8; color: #7a4a00; border-color: #f1d3a4; }
+.match-zeros  { background: #e8f0fb; color: #1f4f8a; border-color: #b9cdea; }
+.filed-match-table { table-layout: fixed; background: #fff; }
+.filed-match-table .c-kind { width: 120px; }
+.filed-match-table .c-doc { width: 110px; }
+.filed-match-table .c-mfr { width: 170px; }
+.filed-match-table .c-printed { width: 120px; }
+.filed-match-table .c-go { width: 70px; }
+.filed-match-table td { overflow-wrap: anywhere; }
+/* The numbers in a fixed-width face so the two can be read against each other,
+   the part that matched in bold, the rest of the number and the name quieter. */
+.match-num { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+             font-size: var(--fs-body); color: #6b6b6b; white-space: nowrap; }  /* 5.3:1 on white */
+.match-num strong { color: var(--dentalia-ink); font-weight: 700; }
+.match-name { color: var(--dentalia-muted); }
+.filed-match-table td.today-go { text-align: right; }
+/* The same match on a filed document's page (the box above "Add items this
+   document covers…") and at the top of its item picker: a white panel edged
+   in the colour of the document's strongest kind. */
+.match-box { background: #fff; border: 1px solid var(--dentalia-border); border-radius: var(--radius-md);
+             padding: 10px 12px; margin: 8px 0 10px; }
+.match-box-exact { border-color: #a9d3bd; }
+.match-box-prefix { border-color: #f1d3a4; }
+.match-box-zeros { border-color: #b9cdea; }
+.match-box-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 4px; }
+.match-box-table { margin: 6px 0; }
+.match-box-table th:first-child { width: 120px; }
+.match-box-table th:nth-child(2) { width: 120px; }
+.match-undated { color: var(--dentalia-danger-ink); font-size: var(--fs-micro); margin: 4px 0 0; }
+.match-grp { border: 1px solid var(--dentalia-border); border-radius: var(--radius-md);
+             padding: 6px 8px; margin-bottom: 10px; }
+.match-grp-exact { background: #f7fcf9; border-color: #a9d3bd; }
+.match-grp-prefix { background: #fffbf4; border-color: #f1d3a4; }
+.match-grp-zeros { background: #f6f9fd; border-color: #b9cdea; }
+.filed-more { margin: 6px 0 4px; }
+.filed-more > summary { cursor: pointer; font-weight: 600; color: var(--dentalia-action); }
+.filed-more .table-wrap { margin-top: 6px; }
+
 #today-coverage .metric { margin: 0 0 4px; font-size: var(--fs-section); }
 #today-failed p { margin: 0 0 6px; }
 #today-failed form { margin-bottom: 12px; }

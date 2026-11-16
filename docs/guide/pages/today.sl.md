@@ -93,6 +93,33 @@ Ne vidi dokumenta prave blagovne znamke, a napačnega izdelovalca, na primer
 certifikata podizvajalca, ki šteje za celoten program blagovne znamke. Za to je
 potrebno polje izdelovalca v Business Centralu, ki ga sistem še ne bere.
 
+### Filed, but maybe ours
+
+Dokument dobi stanje **On file**, kadar nobena od kataloških številk, ki jih
+natisne, ni številka njegovega proizvajalca v Business Centralu. Ostane v
+registru, a ne šteje za noben artikel, in noben drug zaslon ga ne navaja. Ta
+kartica pogleda znova, ohlapneje, in navede dokumente On file, ki natisnejo
+številko, enako ali podobno številki istega proizvajalca. Samo predlaga: nič se
+ne spremeni, dokler ne dodate artikla. Kadar ni ničesar za predlagati, se kartica
+ne prikaže.
+
+Vsaka vrstica pove, kaj je natisnjeno, kateremu artiklu v Business Centralu je
+podobno (z **+N more**, kadar se enako ujema več artiklov) in kako podobno, z
+barvo:
+
+| Oznaka | Kaj pomeni | Kako zanesljivo |
+|---|---|---|
+| **Same number** (zelena) | Ista številka, ko odstranimo presledke, pike in pomišljaje: `606.20.110` in `60620110` | Zelo verjetno naš. Številka, ki je beseda, na primer `S-tip`, se lahko ujame po naključju |
+| **Prefix** (oranžna) | Ena številka je druga z nečim spredaj: `0541` in `6050541`, `9331` in `UP-9331` | Verjetno naš: preverite ime artikla |
+| **Leading zeros** (modra) | Številki se razlikujeta le po ničlah spredaj: `000529397` in `529397` | Verjetno naš. Kratka številka, na primer `017`, se ujema z mnogimi artikli: preverite natančno |
+
+Prikaže se prvih 12 vrstic, v vrstnem redu oznak zgoraj; **See all N** odpre ostale na
+mestu. Pritisnite **Open**: stran dokumenta navede iste artikle nad **Add items
+this document covers…**, izbirnik pa jih pokaže prve, neoznačene (glejte
+[Documents](documents.sl.md)). Dodan artikel dokument objavi in ta izgine s
+kartice. Tudi zavrnitev ga odstrani. Vrstici z oznako **no issue date** artiklov
+še ni mogoče dodati: razvijalec mora najprej nastaviti datum.
+
 ### Stavek o izjavah
 
 **Declarations on file for X of Y medical-device items (Z%)** je številka za
@@ -131,6 +158,7 @@ za vsa ostala. To je edina pot do tega zaslona iz menija.
 | **Expiring certificates** | Certifikati, ki potekajo ali so potekli znotraj obeh navedenih oken. Isto število kot **Expiring** v meniju |
 | **Renewal emails to send** | Osnutki, ki jih nihče ni označil kot *sent* ali arhiviral. Isto število kot **Renewal emails** v meniju |
 | **Failed tasks** | Delo, ki ga je sistem večkrat poskusil in obupal. Glejte [Failed tasks](failed.sl.md) |
+| **Filed, but maybe ours** | Dokumenti s stanjem On file, ki ne štejejo za noben artikel in natisnejo številko, podobno številki njihovega proizvajalca v Business Centralu |
 | **Declarations on file** | Objavljena izjava o skladnosti, povezana s samim artiklom. Glejte [Coverage gaps](coverage.sl.md) |
 
 ---
