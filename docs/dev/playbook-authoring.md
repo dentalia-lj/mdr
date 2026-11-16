@@ -188,6 +188,13 @@ schema:
 | A code BC never issued | `manufacturer_bc_code` FK → `vendor_master` | No equivalent existed before 049 |
 | Duplicate name (canonical or alias) across playbooks | `manufacturer_name`, PK `name_folded` (casefolded) | One name, one manufacturer — case-insensitively, matching `for_manufacturer`'s own comparison |
 
+**Subcontractors (2026-11-13, spec `docs/superpowers/specs/2026-11-13-subcontractors-design.md`).** A body key, `subcontractors`: the companies that make products sold under this brand, as their documents print them ("Sure Dent Corporation"), or another playbook's `manufacturer` when the maker is a brand of its own (WOODPECKER, SHOFU, BECHT). Read only through `app/subcontractors.py`. A listed company is **never an alias**: `validate()` refuses an entry that folds equal to any playbook's name, other than another playbook's `manufacturer`. Matching is `normalize` equality (commas count, so list both spellings when documents differ: "CHIRANA T. Injecta a.s." and "CHIRANA T. Injecta, a.s."), or the entry being a canonical the printed name resolves to. Moving a name from `aliases` to `subcontractors` makes seed and sync **delete** it from `manufacturer_name` and `manufacturer_alias`, which nothing else ever does. To ship such a change on the server:
+1. back up `manufacturer_name` and `manufacturer_alias`;
+2. `manufacturers seed` (dry run), read the `removed` count;
+3. `manufacturers seed --apply --adopt <slug> ...` for every edited playbook;
+4. `playbooks sync`, read its `removed:` line;
+5. check that `manufacturer_alias` holds none of the moved names.
+
 `manufacturer.slug` is the playbook's own name for itself — `UNIQUE`,
 nullable (most `manufacturer` rows have no playbook; `slug IS NULL` is
 exactly what `/manufacturers?no_playbook=1` lists). Migration 050
