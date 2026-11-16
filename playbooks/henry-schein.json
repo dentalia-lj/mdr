@@ -1,7 +1,10 @@
 {
   "manufacturer": "HENRY SCHEIN",
+  "rev": 1,
+  "subcontractors": [
+    "ANGELUS INDÚSTRIA DE PRODUTOS ODONTOLÓGICOS S/A"
+  ],
   "aliases": [
-    "ANGELUS INDÚSTRIA DE PRODUTOS ODONTOLÓGICOS S/A",
     "HENRY SCHEIN INC."
   ],
   "bc_codes": [{"catalogue": "LJ", "code": "004"}],

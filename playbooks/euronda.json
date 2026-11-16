@@ -1,5 +1,10 @@
 {
   "manufacturer": "EURONDA",
+  "rev": 1,
+  "subcontractors": [
+    "ALLE S.R.L.",
+    "ADRANOX SRL"
+  ],
   "bc_codes": [
     {
       "code": "052"
@@ -8,7 +13,6 @@
   "aliases": [
     "Euronda S.p.A.",
     "Euronda S.p.A",
-    "ALLE S.R.L.",
     "EURONDA SPA"
   ],
   "domains": [

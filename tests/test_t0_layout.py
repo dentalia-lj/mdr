@@ -582,6 +582,10 @@ def test_template_json_files_are_engine_agnostic():
         # engine-agnostic by construction -- it is label text, not a coordinate
         # or a PyMuPDF call.
         "date_labels",
+        # subcontractors (2026-11-13): companies that make products for this
+        # brand. Owned by app/playbooks.py and read through app/subcontractors.py
+        # -- an identity key like aliases, not a parsing key.
+        "subcontractors",
         # rev: which revision of the authored rules shaped a read, recorded on
         # extraction_attempt (migration 031). Provenance, not a parsing key.
         "rev",

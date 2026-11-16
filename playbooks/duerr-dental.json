@@ -1,9 +1,12 @@
 {
   "manufacturer": "DUERR DENTAL",
+  "rev": 1,
+  "subcontractors": [
+    "VATECH Co., Ltd."
+  ],
   "aliases": [
     "DÜRR DENTAL SE",
-    "Duerr Dental SE",
-    "VATECH Co., Ltd."
+    "Duerr Dental SE"
   ],
   "bc_codes": [
     {

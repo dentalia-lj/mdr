@@ -1,8 +1,19 @@
 {
   "manufacturer": "KOMET",
+  "subcontractors": [
+    "Sure Dent Corporation",
+    "Meta Biomed Co., Ltd.",
+    "WOODPECKER",
+    "SHOFU",
+    "BECHT",
+    "CMS Dental A/S",
+    "HANS KOREA CO., LTD.",
+    "SAVUNA GmbH",
+    "Stoddard Manufacturing Company Limited",
+    "P. L. Superior Dental Materials GmbH"
+  ],
   "aliases": [
-    "Gebr. Brasseler GmbH & Co. KG",
-    "Sure Dent Corporation"
+    "Gebr. Brasseler GmbH & Co. KG"
   ],
   "bc_codes": [
     {
@@ -89,5 +100,5 @@
       ]
     }
   },
-  "rev": 1
+  "rev": 2
 }
