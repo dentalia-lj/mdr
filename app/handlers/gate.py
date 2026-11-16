@@ -34,7 +34,7 @@ import json
 
 from psycopg.types.json import Json
 
-from app import item_picks, manufacturers, queue, retype
+from app import item_picks, manufacturers, queue, retype, subcontractors
 from app.config import GateThresholds, load_config
 from app.dates import parse_date
 from app.extract import tiers
@@ -93,9 +93,22 @@ BLOCKING_FLAGS = ("older-than-current", "same-date-revision", "no-item-identifie
 #: declaration whose REF list overlapped the catalogue reached production on an
 #: article-level basis. Capping rather than blocking for the same reason the
 #: mfr path refuses rather than rejects: a person can say what the tuple cannot.
+#: `subcontractor` (spec 2026-11-13 § 4.4): the printed issuer is on a brand's
+#: `subcontractors` list. Nothing from a subcontractor publishes by itself: its
+#: links ride along as staged pre-ticks and a person approves the right ones.
+#: `issuer-not-brand` (§ 4.5): a whole-range document printed by another known
+#: company than the brand it would bind. Raised by GATE on the binding route
+#: only; classified so it holds at staged anywhere else too.
 CAPPING_FLAGS = ("downgrade-uncomparable", "expiry-on-certless-doc",
                  "ref-catalogue", "ref-unscoped", "multi-manufacturer-ref",
-                 "device-enumeration", "not-a-device-document")
+                 "device-enumeration", "not-a-device-document",
+                 "subcontractor", "issuer-not-brand")
+
+#: Document types that never bind a manufacturer's whole range by machine
+#: (spec 2026-11-13 § 4.5 item 1): a manual, a pack statement or an
+#: unclassified paper speaks about specific products. Declarations keep the
+#: 2026-08-17 C16 ruling; SPP added on 2026-11-16 (31 such documents).
+NEVER_WHOLE_RANGE_TYPES = ("IFU", "other", "SPP")
 
 #: Flags that describe CONTEXT, not a defect. Recorded on the candidate and
 #: shown in the UI, but they do not gate the disposition.
@@ -1155,6 +1168,47 @@ def _is_md_document(fields: dict) -> bool:
     return _val(fields, "type") in QMS_TYPES_WITHOUT_REGULATION
 
 
+def _issuer_not_brand(conn, printed: str | None, brand: str) -> bool:
+    """True when the printed issuer is another known company than `brand`.
+
+    Known means: it resolves through `manufacturer_alias` to canonicals none of
+    which shares a BC code with `brand` (code overlap, not string equality, so
+    IVOCLAR's 001/005/275 and legal-name aliases pass), or it is a listed
+    subcontractor of a brand other than `brand`. A name that resolves to
+    nothing is NOT a conflict: unaliased legal names are common, and holding
+    them all would flood Review (spec 2026-11-13 § 4.5 item 2)."""
+    if not printed or not brand:
+        return False
+    listed_by = subcontractors.listing_brands(conn, printed)
+    if listed_by and brand not in listed_by:
+        return True
+    canonicals = manufacturers.resolve_canonicals(conn, printed)
+    if not canonicals:
+        return False
+    theirs = set(manufacturers.item_codes_for(conn, brand))
+    return not any(set(manufacturers.item_codes_for(conn, c)) & theirs
+                   or c == brand for c in canonicals)
+
+
+def subcontractor_bind_refusal(conn, doc_id: int, manufacturer: str | None) -> str | None:
+    """Why a person may not bind this document to `manufacturer`'s whole range,
+    or None. Any printed manufacturer on the document that `manufacturer` lists
+    as a subcontractor refuses it (spec 2026-11-13 § 4.5 item 3). The web route
+    asks the same question before enqueueing."""
+    if not manufacturer:
+        return None
+    canonicals = manufacturers.resolve_canonicals(conn, manufacturer) or [manufacturer]
+    for r in conn.execute("SELECT DISTINCT value FROM evidence WHERE doc_id=%s "
+                          "AND field='manufacturer'", (doc_id,)).fetchall():
+        listed_by = subcontractors.listing_brands(conn, r["value"])
+        for brand in canonicals:
+            if brand in listed_by:
+                return (f"{r['value']} is a known subcontractor of {brand}: its certificate "
+                        f"cannot cover all of {brand}. Change type to specific items, then "
+                        f"tick the items {r['value']} makes.")
+    return None
+
+
 def _handle_mfr_binding(conn, job) -> dict:
     """§7b: a manufacturer-scope document (ISO 13485, EC certificate, brand-wide
     DoC) names no item by construction, so it is bound to a MANUFACTURER rather
@@ -1238,6 +1292,19 @@ def _handle_mfr_binding(conn, job) -> dict:
     bound = (canonicals[0] if len(canonicals) == 1 and confident
              and scope_stated and not enumerated
              and _is_md_document(fields) else None)
+    # Spec 2026-11-13 § 4.5: a subcontractor's document, a manual or a pack
+    # statement, or a document another known company printed never binds a
+    # whole range by machine. Each falls to Review with its reason.
+    if bound is not None and ("subcontractor" in flags
+                              or _val(fields, "type") in NEVER_WHOLE_RANGE_TYPES):
+        bound = None
+    elif bound is not None and _issuer_not_brand(conn, _val(fields, "manufacturer"), bound):
+        flags.append("issuer-not-brand")
+        bound = None
+    # The brand a staged subcontractor document waits under (§ 4.4): only when
+    # exactly one brand lists the issuer. Review names them all otherwise.
+    sub_of = p.get("subcontractor_of") or []
+    waits_under = _bindable_manufacturer(conn, sub_of[0]) if len(sub_of) == 1 else None
 
     # Read before any branch, and LOCKED (R4.4): every outcome below that is not
     # production leaves a published or superseded document exactly as it is
@@ -1257,7 +1324,7 @@ def _handle_mfr_binding(conn, job) -> dict:
                 out["flags"] = flags
             return _kept(conn, prev, fields, out)
         doc_id = _upsert_document(conn, fields, p["content_hash"], archive_url, "staged",
-                                  held=held)
+                                  canonical_manufacturer=waits_under, held=held)
         _insert_evidence(conn, doc_id, p["extract_rev"], fields, archive_url, **ev_kw)
         _backresolve_here(conn, doc_id)
         task = {"route": "mfr-binding", "manufacturer": name}
@@ -1631,6 +1698,11 @@ def _gate_candidate(conn, job: dict) -> dict:
     _canonicals = manufacturers.resolve_canonicals(conn, _printed) if _printed else []
     _bound_here = (_bindable_manufacturer(conn, _canonicals[0])
                    if len(_canonicals) == 1 else None)
+    # A listed subcontractor's document waits under the one brand that lists it
+    # (spec 2026-11-13 § 4.4): its own printed name resolves to nothing.
+    _sub_of = p.get("subcontractor_of") or []
+    if _bound_here is None and len(_sub_of) == 1:
+        _bound_here = _bindable_manufacturer(conn, _sub_of[0])
 
     doc_id = _upsert_document(conn, fields, p["content_hash"], archive_url, doc_status,
                               supersedes=p.get("supersedes"), related_doc_id=p.get("related_doc_id"),
@@ -2470,6 +2542,9 @@ def handle_gate_apply(conn, job: dict) -> dict:
         if set(edits) - {"validity_from"}:
             raise ValueError("gate.apply bind-manufacturer: only the issue date may be "
                              "corrected on a whole-range approval")
+        refusal = subcontractor_bind_refusal(conn, doc_id, p.get("manufacturer"))
+        if refusal:
+            raise ValueError(f"gate.apply bind-manufacturer: {refusal}")
         _apply_edits(conn, doc_id, edits or None)
         _require_issue_date(conn, doc_id, decision)
         bound = _bindable_manufacturer(conn, p.get("manufacturer"))

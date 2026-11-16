@@ -877,3 +877,42 @@ def test_every_document_decision_locks_the_row(conn, connect_test):
             gh.handle_gate_apply(conn, _apply(doc_id, decision, **extra))
     conn.rollback()
     holder.rollback()
+
+
+# --------------------------------------------------------------------------- #
+# A person cannot bind a listed subcontractor's certificate to its brand's
+# whole range (spec 2026-11-13 § 4.5 item 3)
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def subs(monkeypatch):
+    from app import subcontractors
+    from app.playbooks import Playbook
+    pbs = (Playbook(slug="komet", manufacturer="KOMET", subcontractors=("Sure Dent Corporation",)),)
+    monkeypatch.setattr(subcontractors, "_loaded", lambda playbooks: pbs)
+
+
+def _printed(conn, doc_id, name):
+    conn.execute(
+        "INSERT INTO evidence (doc_id, field, value, archive_url, page, verbatim, tier, "
+        "model_id, confidence, extracted_at, extract_rev) "
+        "VALUES (%s,'manufacturer',%s,'file:///a.pdf',1,%s,'T1','m',0.95,now(),1)",
+        (doc_id, name, name))
+
+
+def test_bind_manufacturer_refused_for_listed_subcontractor(conn, subs):
+    doc_id = _seed_staged_doc(conn, "ga-sub-bind", scope="manufacturer")
+    _printed(conn, doc_id, "Sure Dent Corporation")
+    _seed_item(conn, "K-1", "KOMET", md_flag=True)
+    with pytest.raises(ValueError, match="known subcontractor of KOMET"):
+        gh.handle_gate_apply(conn, _apply(doc_id, "bind-manufacturer", manufacturer="KOMET"))
+    assert _status(conn, doc_id) == "staged"
+    assert conn.execute("SELECT count(*) AS n FROM item_document WHERE doc_id=%s",
+                        (doc_id,)).fetchone()["n"] == 0
+
+
+def test_bind_manufacturer_brand_own_doc_unchanged(conn, subs):
+    doc_id = _seed_staged_doc(conn, "ga-own-bind", scope="manufacturer")
+    _printed(conn, doc_id, "Gebr. Brasseler GmbH & Co. KG")
+    _seed_item(conn, "K-2", "KOMET", md_flag=True)
+    gh.handle_gate_apply(conn, _apply(doc_id, "bind-manufacturer", manufacturer="KOMET"))
+    assert _status(conn, doc_id) == "production"

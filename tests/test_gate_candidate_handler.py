@@ -2513,3 +2513,133 @@ def test_only_a_missing_documents_card_is_closed(conn):
     gh.handle_gate_candidate(
         conn, _job(ch, ref_gate=True, flags=[], links=[], manual_task_id=tid))
     assert _card_row(conn, tid)["status"] == "open"
+
+
+# --------------------------------------------------------------------------- #
+# Subcontractors and the whole-range guards (spec 2026-11-13 § 4.4-4.5)
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def subs(monkeypatch):
+    from app import subcontractors
+    from app.playbooks import Playbook
+    pbs = (Playbook(slug="komet", manufacturer="KOMET", subcontractors=("Sure Dent Corporation",)),)
+    monkeypatch.setattr(subcontractors, "_loaded", lambda playbooks: pbs)
+
+
+def _entity(conn, name):
+    conn.execute("INSERT INTO manufacturer (canonical_name) VALUES (%s) "
+                 "ON CONFLICT (canonical_name) DO NOTHING", (name,))
+
+
+def _komet(conn):
+    _entity(conn, "KOMET")
+    _seed_alias(conn, "077", "KOMET")
+    _seed_md_item(conn, "K-1", "077")
+
+
+def _canonical(conn, ch):
+    return conn.execute("SELECT canonical_manufacturer FROM document WHERE content_hash=%s",
+                        (ch,)).fetchone()["canonical_manufacturer"]
+
+
+def _task_flags(conn, doc_id):
+    row = conn.execute("SELECT payload FROM manual_task WHERE doc_id=%s AND kind='gate-manual' "
+                       "AND status='open'", (doc_id,)).fetchone()
+    return (row["payload"] or {}).get("flags", []) if row else None
+
+
+def test_mfr_binding_subcontractor_stages_with_brand_stored(conn, subs):
+    _komet(conn)
+    ch = "gc-sub-1"
+    _seed_ext(conn, ch, _mfr_fields("Sure Dent Corporation"))
+    r = gh.handle_gate_candidate(conn, _job(ch, route="mfr-binding", manufacturer="KOMET",
+                                            flags=["subcontractor"], subcontractor_of=["KOMET"]))
+    assert _doc_status(conn, ch) == "staged"
+    assert _canonical(conn, ch) == "KOMET"
+    assert _links(conn, r["doc_id"]) == set()
+    assert "subcontractor" in _task_flags(conn, r["doc_id"])
+
+
+def test_mfr_binding_subcontractor_two_brands_stores_none(conn, subs):
+    _komet(conn)
+    _entity(conn, "AAA")
+    ch = "gc-sub-2"
+    _seed_ext(conn, ch, _mfr_fields("Sure Dent Corporation"))
+    gh.handle_gate_candidate(conn, _job(ch, route="mfr-binding", flags=["subcontractor"],
+                                        subcontractor_of=["AAA", "KOMET"]))
+    assert _doc_status(conn, ch) == "staged"
+    assert _canonical(conn, ch) is None
+
+
+@pytest.mark.parametrize("doc_type", ["IFU", "other", "SPP"])
+def test_mfr_binding_type_never_binds_a_whole_range(conn, subs, doc_type):
+    _entity(conn, "ULTRADENT")
+    _seed_alias(conn, "168", "ULTRADENT")
+    _seed_alias(conn, "Ultradent Products Inc.", "ULTRADENT")
+    _seed_md_item(conn, "U-1", "168")
+    ch = f"gc-type-{doc_type}"
+    fields = _mfr_fields("Ultradent Products Inc.")
+    fields["type"] = _ev(doc_type)
+    _seed_ext(conn, ch, fields)
+    r = gh.handle_gate_candidate(conn, _job(ch, route="mfr-binding"))
+    assert _doc_status(conn, ch) == "staged"
+    assert _links(conn, r["doc_id"]) == set()
+
+
+def test_mfr_binding_issuer_not_brand(conn, subs):
+    _komet(conn)
+    _seed_alias(conn, "001", "IVOCLAR")
+    _seed_alias(conn, "Ivoclar Vivadent AG", "IVOCLAR")
+    _seed_md_item(conn, "I-1", "001")
+    ch = "gc-issuer-1"
+    _seed_ext(conn, ch, _mfr_fields("Ivoclar Vivadent AG"))
+    r = gh.handle_gate_candidate(conn, _job(ch, route="mfr-binding", manufacturer="KOMET"))
+    assert _doc_status(conn, ch) == "staged"
+    assert _links(conn, r["doc_id"]) == set()
+    assert "issuer-not-brand" in _task_flags(conn, r["doc_id"])
+
+
+def test_mfr_binding_listed_subcontractor_of_another_brand(conn, subs):
+    _entity(conn, "ACME")
+    _seed_alias(conn, "900", "ACME")
+    _seed_md_item(conn, "A-1", "900")
+    ch = "gc-issuer-2"
+    _seed_ext(conn, ch, _mfr_fields("Sure Dent Corporation"))
+    r = gh.handle_gate_candidate(conn, _job(ch, route="mfr-binding", manufacturer="ACME"))
+    assert _doc_status(conn, ch) == "staged"
+    assert "issuer-not-brand" in _task_flags(conn, r["doc_id"])
+
+
+def test_mfr_binding_unresolved_legal_name_binds_as_today(conn, subs):
+    _komet(conn)
+    ch = "gc-issuer-3"
+    _seed_ext(conn, ch, _mfr_fields("Unknown Legal Name GmbH"))
+    r = gh.handle_gate_candidate(conn, _job(ch, route="mfr-binding", manufacturer="KOMET"))
+    assert _doc_status(conn, ch) == "production"
+    assert _links(conn, r["doc_id"]) == {("K-1", "mfr-scope", "production")}
+
+
+def test_mfr_binding_multicode_brand_through_its_group_binds(conn, subs):
+    _entity(conn, "IVOCLAR")
+    _seed_alias(conn, "001", "IVOCLAR")
+    _seed_alias(conn, "275", "IVOCLAR")
+    _seed_alias(conn, "Ivoclar Vivadent AG", "IVOCLAR")
+    _seed_md_item(conn, "I-1", "001")
+    _seed_md_item(conn, "I-2", "275")
+    ch = "gc-issuer-4"
+    _seed_ext(conn, ch, _mfr_fields("Ivoclar Vivadent AG"))
+    gh.handle_gate_candidate(conn, _job(ch, route="mfr-binding", manufacturer="IVOCLAR"))
+    assert _doc_status(conn, ch) == "production"
+
+
+@pytest.mark.parametrize("basis", ["ref-item", "map-supplier"])
+def test_ref_route_subcontractor_links_staged_brand_stored(conn, subs, basis):
+    _komet(conn)
+    ch = f"gc-sub-ref-{basis}"
+    _seed_ext(conn, ch, _fields(manufacturer=_ev("Sure Dent Corporation")))
+    r = gh.handle_gate_candidate(conn, _job(
+        ch, ref_gate=True, flags=["subcontractor"], subcontractor_of=["KOMET"],
+        links=[{"item_ref": "K-1", "match_basis": basis}]))
+    assert _doc_status(conn, ch) == "staged"
+    assert _links(conn, r["doc_id"]) == {("K-1", basis, "staged")}
+    assert _canonical(conn, ch) == "KOMET"
