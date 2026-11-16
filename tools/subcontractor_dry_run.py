@@ -12,7 +12,8 @@ Writes nothing. Run inside the worker container:
 
 Decisions per document, in the order the rules apply:
   type-not-whole-range  IFU / other / SPP never machine-bind a whole range
-  subcontractor         the printed issuer is listed by the document's brand
+  subcontractor         the printed issuer is listed by the document's brand (or, with
+                        no brand, is no maker in its own right)
   issuer-not-brand      another known company printed it
   t0-only               the only manufacturer evidence is T0's "playbook identity",
                         which a re-read would replace: cannot tell from stored data
@@ -57,6 +58,20 @@ class _Lists:
                       if any(manufacturers.normalize(e) in (key,) or manufacturers.normalize(e) in resolved
                              for e in es))
 
+    def own_makers(self, conn, printed):
+        """Mirrors subcontractors.own_makers."""
+        listed = set(self.listing_brands(conn, printed))
+        return sorted({c for c in manufacturers.resolve_canonicals(conn, printed) if c not in listed})
+
+    def subcontracted_for(self, conn, printed, brand):
+        """Mirrors subcontractors.subcontracted_for."""
+        listed = self.listing_brands(conn, printed)
+        if not listed:
+            return []
+        if brand is not None:
+            return listed if brand in listed else []
+        return [] if self.own_makers(conn, printed) else listed
+
 
 LISTS = None
 
@@ -84,21 +99,27 @@ def _issuer_not_brand(conn, printed, brand):
     """Same rule as gate._issuer_not_brand, without importing GATE's PDF stack."""
     if not printed or not brand:
         return False
+    theirs = set(manufacturers.item_codes_for(conn, brand))
+
+    def same(c):
+        return c == brand or bool(set(manufacturers.item_codes_for(conn, c)) & theirs)
+
+    if any(same(c) for c in LISTS.own_makers(conn, printed)):
+        return False
     listed_by = LISTS.listing_brands(conn, printed)
     if listed_by and brand not in listed_by:
         return True
     canonicals = manufacturers.resolve_canonicals(conn, printed)
     if not canonicals:
         return False
-    theirs = set(manufacturers.item_codes_for(conn, brand))
-    return not any(set(manufacturers.item_codes_for(conn, c)) & theirs or c == brand
-                   for c in canonicals)
+    return not any(same(c) for c in canonicals)
 
 
 def _printed(conn, doc_id):
     """(printed name, only-T0) from the stored evidence: a paid tier's reading first."""
     rows = conn.execute("SELECT value, tier, verbatim FROM evidence WHERE doc_id=%s "
-                        "AND field='manufacturer' AND value IS NOT NULL", (doc_id,)).fetchall()
+                        "AND field='manufacturer' AND value IS NOT NULL "
+                        "ORDER BY extract_rev DESC, confidence DESC NULLS LAST", (doc_id,)).fetchall()
     read = [r["value"] for r in rows
             if not (r["tier"] == "T0" and (r["verbatim"] or "").startswith("playbook identity"))]
     if read:
@@ -111,8 +132,7 @@ def decide(conn, doc) -> tuple[str, str | None]:
     if doc["type"] in NEVER_WHOLE_RANGE_TYPES:
         return "type-not-whole-range", printed
     brand = doc["canonical_manufacturer"]
-    listed_by = LISTS.listing_brands(conn, printed)
-    if listed_by and (brand is None or brand in listed_by):
+    if LISTS.subcontracted_for(conn, printed, brand):
         return "subcontractor", printed
     if brand and _issuer_not_brand(conn, printed, brand):
         return "issuer-not-brand", printed

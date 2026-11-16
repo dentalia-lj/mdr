@@ -813,13 +813,16 @@ SUBCONTRACTOR_DECL_REASON = ("{maker} is a known subcontractor of {brand}. "
 
 
 def _subcontractor_reason(conn, printed: str | None, canonical: str | None,
-                          doc_type: str | None) -> str | None:
-    """The sentence above when `printed` is on some brand's subcontractors list."""
-    listed = subcontractors.listing_brands(conn, printed)
+                          whole_range: bool) -> str | None:
+    """The sentence above when this is a subcontractor's document relative to the
+    brand it is stored under (`subcontracted_for`): Shofu's own certificate
+    stored under SHOFU gets none, although KOMET lists SHOFU. `whole_range`
+    picks the certificate sentence, which matches the hidden whole-range button."""
+    listed = subcontractors.subcontracted_for(conn, printed, canonical)
     if not listed:
         return None
     brand = canonical if canonical in listed else ", ".join(listed)
-    tmpl = SUBCONTRACTOR_CERT_REASON if doc_type in ("EC", "ISO") else SUBCONTRACTOR_DECL_REASON
+    tmpl = SUBCONTRACTOR_CERT_REASON if whole_range else SUBCONTRACTOR_DECL_REASON
     return tmpl.format(maker=printed, brand=brand)
 
 
@@ -1830,9 +1833,14 @@ def _staged_doc_detail(conn, doc_id: int) -> dict | None:
                                                    doc["regulation"] or "Not stated")
     _decorate_review_row(row)
     row["subcontractor_reason"] = _subcontractor_reason(
-        conn, row["printed_manufacturer"], doc["canonical_manufacturer"], doc["type"])
+        conn, row["printed_manufacturer"], doc["canonical_manufacturer"],
+        doc["coverage_scope"] == "manufacturer")
     if row["subcontractor_reason"]:
-        row["reason"] = row["subcontractor_reason"]
+        # Leads, and keeps any other reason the document waits for (final
+        # review I1): a date or supersession flag still needs its answer.
+        rest = (row.get("reason") or "").replace(FLAG_EXPLANATIONS["subcontractor"], "").strip()
+        row["reason"] = (f"{row['subcontractor_reason']} Also: {rest}" if rest
+                         else row["subcontractor_reason"])
     # Binding candidates only, and every one of them: the queue exists to
     # decide which manufacturer a manufacturer-scope certificate covers, and
     # until now the panel could not express that decision. 14 of the 52

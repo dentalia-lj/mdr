@@ -1179,15 +1179,22 @@ def _issuer_not_brand(conn, printed: str | None, brand: str) -> bool:
     them all would flood Review (spec 2026-11-13 § 4.5 item 2)."""
     if not printed or not brand:
         return False
+    theirs = set(manufacturers.item_codes_for(conn, brand))
+
+    def same(c):
+        return c == brand or bool(set(manufacturers.item_codes_for(conn, c)) & theirs)
+
+    # The maker's own document first: Shofu's certificate bound to SHOFU is
+    # Shofu's, although KOMET lists SHOFU (final review 2026-11-16, C1).
+    if any(same(c) for c in subcontractors.own_makers(conn, printed)):
+        return False
     listed_by = subcontractors.listing_brands(conn, printed)
     if listed_by and brand not in listed_by:
         return True
     canonicals = manufacturers.resolve_canonicals(conn, printed)
     if not canonicals:
         return False
-    theirs = set(manufacturers.item_codes_for(conn, brand))
-    return not any(set(manufacturers.item_codes_for(conn, c)) & theirs
-                   or c == brand for c in canonicals)
+    return not any(same(c) for c in canonicals)
 
 
 def _handle_mfr_binding(conn, job) -> dict:

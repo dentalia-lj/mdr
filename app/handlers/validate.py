@@ -891,14 +891,14 @@ def handle_validate_doc(conn, job: dict) -> dict:
         # A listed subcontractor's certificate is never its brand's (spec
         # 2026-11-13 § 4.4). Relative to the brand it reached: through one of
         # that brand's groups, or with no group at all. Shofu's own certificate
-        # through a Shofu group is Shofu's, although Komet lists SHOFU.
-        sub_of = subcontractors.listing_brands(conn, _val(fields, "manufacturer"))
-        if sub_of and (group_id is None or manufacturer in sub_of):
+        # is Shofu's, through a Shofu group or with none, although Komet lists
+        # SHOFU (`subcontracted_for`).
+        sub_of = subcontractors.subcontracted_for(
+            conn, _val(fields, "manufacturer"), manufacturer if group_id is not None else None)
+        if sub_of:
             flags.append("subcontractor")
             if group_id is None:
                 manufacturer = sub_of[0] if len(sub_of) == 1 else None
-        else:
-            sub_of = []
         candidate = {"content_hash": content_hash, "extract_rev": extract_rev,
                      "group_id": group_id, "route": "mfr-binding"}
         if sub_of:
@@ -980,6 +980,10 @@ def handle_validate_doc(conn, job: dict) -> dict:
             if links:
                 ref_gate = True
                 resolved_group_id = primary
+                # The old alias may still resolve a subcontractor's name to
+                # its brand (seed and sync not yet run): held all the same.
+                sub_of = subcontractors.subcontracted_for(
+                    conn, ext_manufacturer, canonical_manufacturer)
                 if match_count > 1:
                     # More than one scoped group genuinely passes C1 — resolving
                     # to the lowest group_id is deterministic but a doc that
@@ -988,11 +992,13 @@ def handle_validate_doc(conn, job: dict) -> dict:
                     # staging via gate.py's existing flag-cap logic.
                     flags.append("multi-group-match")
                     multi_group_matches = match_count
-            elif groups_found == 0 and listed_by:
-                # A listed subcontractor's declaration: its name resolves to no
-                # group of its own, so scope it by the brands that list it. The
-                # links ride the `subcontractor` flag, which GATE caps at staged.
-                sub_of = listed_by
+            elif listed_by:
+                # A listed subcontractor's declaration, scoped by the brands
+                # that list it. The links ride the `subcontractor` flag, which
+                # GATE caps at staged. A maker with groups of its own
+                # (Woodpecker's declaration for Komet's ENFILL) is held only
+                # when a listing brand's items match; otherwise it is its own
+                # document that covers nothing we stock, as before.
                 for brand in listed_by:
                     b_links, b_count, _, b_primary = _links_for_manufacturer(
                         conn, brand, ref_list, basic_udi_di, basis_override)
@@ -1004,7 +1010,10 @@ def handle_validate_doc(conn, job: dict) -> dict:
                         multi_group_matches = max(multi_group_matches, b_count)
                 if links:
                     ref_gate = True
+                    sub_of = listed_by
                 else:
+                    if not subcontractors.own_makers(conn, ext_manufacturer):
+                        sub_of = listed_by
                     flags.append("no-ref-overlap")
             elif groups_found == 0:
                 # Canonicalization (alias hit, or the raw-string fallback on a

@@ -2643,3 +2643,54 @@ def test_ref_route_subcontractor_links_staged_brand_stored(conn, subs, basis):
     assert _doc_status(conn, ch) == "staged"
     assert _links(conn, r["doc_id"]) == {("K-1", basis, "staged")}
     assert _canonical(conn, ch) == "KOMET"
+
+
+@pytest.fixture
+def subs_shofu(monkeypatch):
+    """KOMET lists the own-brand maker SHOFU by its canonical (final review C1)."""
+    from app import subcontractors
+    from app.playbooks import Playbook
+    pbs = (Playbook(slug="komet", manufacturer="KOMET",
+                    subcontractors=("Sure Dent Corporation", "SHOFU")),
+           Playbook(slug="shofu", manufacturer="SHOFU"))
+    monkeypatch.setattr(subcontractors, "_loaded", lambda playbooks: pbs)
+
+
+def _shofu(conn):
+    _entity(conn, "SHOFU")
+    _seed_alias(conn, "175", "SHOFU")
+    _seed_alias(conn, "SHOFU INC.", "SHOFU")
+    _seed_md_item(conn, "S-1", "175")
+
+
+def test_mfr_binding_listed_own_brand_maker_binds_its_own_range(conn, subs_shofu):
+    _komet(conn)
+    _shofu(conn)
+    ch = "gc-shofu-1"
+    _seed_ext(conn, ch, _mfr_fields("SHOFU INC."))
+    r = gh.handle_gate_candidate(conn, _job(ch, route="mfr-binding", manufacturer="SHOFU"))
+    assert _doc_status(conn, ch) == "production"
+    assert _links(conn, r["doc_id"]) == {("S-1", "mfr-scope", "production")}
+
+
+def test_mfr_binding_listed_own_brand_maker_never_binds_the_listing_brand(conn, subs_shofu):
+    _komet(conn)
+    _shofu(conn)
+    ch = "gc-shofu-2"
+    _seed_ext(conn, ch, _mfr_fields("SHOFU INC."))
+    r = gh.handle_gate_candidate(conn, _job(ch, route="mfr-binding", manufacturer="KOMET"))
+    assert _doc_status(conn, ch) == "staged"
+    assert _links(conn, r["doc_id"]) == set()
+    assert "issuer-not-brand" in _task_flags(conn, r["doc_id"])
+
+
+def test_mfr_binding_listed_own_brand_maker_for_a_third_brand(conn, subs_shofu):
+    _shofu(conn)
+    _entity(conn, "ACME")
+    _seed_alias(conn, "900", "ACME")
+    _seed_md_item(conn, "A-1", "900")
+    ch = "gc-shofu-3"
+    _seed_ext(conn, ch, _mfr_fields("SHOFU INC."))
+    r = gh.handle_gate_candidate(conn, _job(ch, route="mfr-binding", manufacturer="ACME"))
+    assert _doc_status(conn, ch) == "staged"
+    assert "issuer-not-brand" in _task_flags(conn, r["doc_id"])

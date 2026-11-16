@@ -85,3 +85,45 @@ def test_moved_names():
         normalize("CHIRANA T. Injecta a.s."),
         normalize("CHIRANA T. Injecta, a.s."),
     }
+
+
+# --------------------------------------------------------------------------- #
+# Relative to the brand a document reached (final review C1-C3): a maker with a
+# canonical of its own (WOODPECKER) is a subcontractor only for a brand that
+# lists it; a pure subcontractor name (Sure Dent) is one wherever it lands.
+# --------------------------------------------------------------------------- #
+GUILIN = "Guilin Woodpecker Medical Instrument Co.,Ltd"
+
+
+def test_own_makers(conn):
+    _seed(conn)
+    assert subcontractors.own_makers(conn, GUILIN, PBS) == ["WOODPECKER"]
+    assert subcontractors.own_makers(conn, "WOODPECKER", PBS) == ["WOODPECKER"]
+    assert subcontractors.own_makers(conn, "Sure Dent Corporation", PBS) == []
+
+
+def test_own_makers_ignores_a_kept_alias_to_the_listing_brand(conn):
+    """Code deployed before seed and sync: Sure Dent still resolves to KOMET."""
+    _seed(conn)
+    _alias(conn, "Sure Dent Corporation", "KOMET")
+    assert subcontractors.own_makers(conn, "Sure Dent Corporation", PBS) == []
+
+
+def test_subcontracted_for_a_pure_subcontractor_name(conn):
+    _seed(conn)
+    assert subcontractors.subcontracted_for(conn, "Sure Dent Corporation", "KOMET", PBS) == ["KOMET"]
+    assert subcontractors.subcontracted_for(conn, "Sure Dent Corporation", None, PBS) == ["KOMET"]
+    assert subcontractors.subcontracted_for(conn, "Sure Dent Corporation", "ULTRADENT", PBS) == []
+
+
+def test_subcontracted_for_a_maker_in_its_own_right(conn):
+    _seed(conn)
+    assert subcontractors.subcontracted_for(conn, GUILIN, "KOMET", PBS) == ["KOMET"]
+    assert subcontractors.subcontracted_for(conn, GUILIN, "WOODPECKER", PBS) == []
+    assert subcontractors.subcontracted_for(conn, GUILIN, None, PBS) == []
+
+
+def test_subcontracted_for_unlisted_name(conn):
+    _seed(conn)
+    assert subcontractors.subcontracted_for(conn, "Ivoclar Vivadent AG", None, PBS) == []
+    assert subcontractors.subcontracted_for(conn, None, "KOMET", PBS) == []

@@ -1371,10 +1371,10 @@ def extract_manufacturer(text: str, playbooks) -> dict | None:
     # MFR_TRUSTED_CONF. Counting the subcontractor makes that two hits, so T0
     # abstains and a tier that reads the issuer by role decides. An entry that
     # is a playbook's own manufacturer (WOODPECKER) is already counted above.
-    canonicals = {pb.manufacturer for pb in playbooks or ()}
+    canonicals = {_fold(pb.manufacturer) for pb in playbooks or ()}
     for pb in playbooks or ():
         for entry in pb.subcontractors:
-            if entry in canonicals or len(entry) < _MIN_IDENTITY_LEN:
+            if _fold(entry) in canonicals or len(entry) < _MIN_IDENTITY_LEN:
                 continue
             folded = _fold(entry)
             at = haystack.find(folded)

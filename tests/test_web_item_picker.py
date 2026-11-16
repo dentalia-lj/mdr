@@ -775,3 +775,41 @@ def test_subcontractor_flag_explanations():
         "bound to that brand's whole range")
     assert REASON_CODE_CHIP["subcontractor"] == "manufacturer"
     assert REASON_CODE_CHIP["issuer-not-brand"] == "manufacturer"
+
+
+def test_review_own_brand_maker_under_its_own_name_has_no_subcontractor_reason(
+        client, conn, monkeypatch):
+    """Final review C3: KOMETW lists SHOFUW, but a Shofu document stored under
+    SHOFUW is Shofu's own; its whole-range button is not hidden."""
+    from app import subcontractors
+    from app.playbooks import Playbook
+    monkeypatch.setattr(subcontractors, "_loaded", lambda playbooks: (
+        Playbook(slug="kometw", manufacturer="KOMETW", subcontractors=("SHOFUW",)),
+        Playbook(slug="shofuw", manufacturer="SHOFUW")))
+    _mfr(conn, "KOMETW", "977W")
+    _mfr(conn, "SHOFUW", "175W")
+    _mfr(conn, "SHOFUW", "SHOFU INC.")
+    doc_id = _doc(conn, "shofu-own", scope="manufacturer", canonical="SHOFUW")
+    conn.execute("UPDATE document SET type='EC' WHERE doc_id=%s", (doc_id,))
+    conn.execute(
+        "INSERT INTO evidence (doc_id, field, value, archive_url, page, verbatim, tier, "
+        "model_id, confidence, extracted_at, extract_rev) VALUES "
+        "(%s,'manufacturer','SHOFU INC.','file:///a.pdf',1,'SHOFU INC.','T1','m',0.95,now(),1)",
+        (doc_id,))
+    conn.commit()
+    text = _text(client.get(f"/staging/{doc_id}/detail").text)
+    assert "known subcontractor" not in text
+    assert "Not for the whole range" not in text
+
+
+def test_review_subcontractor_reason_keeps_the_other_reason(client, conn, kometw):
+    """Final review I1: the subcontractor sentence leads, another reason stays."""
+    from web.app import FLAG_EXPLANATIONS
+    doc_id = _sub_doc(conn, "sub-older", scope="group", doc_type="DoC")
+    conn.execute("INSERT INTO manual_task (kind, doc_id, status, payload) VALUES "
+                 "('gate-manual', %s, 'open', %s)",
+                 (doc_id, '{"flags": ["subcontractor", "older-than-current"]}'))
+    conn.commit()
+    text = _text(client.get(f"/staging/{doc_id}/detail").text)
+    assert DECL_SENTENCE in text
+    assert FLAG_EXPLANATIONS["older-than-current"] in text

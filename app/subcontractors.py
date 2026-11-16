@@ -41,6 +41,39 @@ def listing_brands(conn, printed: str | None, playbooks=None) -> list[str]:
     return sorted(out)
 
 
+def own_makers(conn, printed: str | None, playbooks=None) -> list[str]:
+    """The canonicals `printed` resolves to that do not list it: the company as a
+    maker in its own right ("SHOFU INC." -> SHOFU, although KOMET lists SHOFU).
+
+    Empty for a pure subcontractor name such as Sure Dent, including while its
+    old alias to KOMET still exists (code deployed before seed and sync): KOMET
+    lists it, so KOMET is not Sure Dent's own."""
+    listed = set(listing_brands(conn, printed, playbooks))
+    return sorted({c for c in manufacturers.resolve_canonicals(conn, printed)
+                   if c not in listed})
+
+
+def subcontracted_for(conn, printed: str | None, brand: str | None,
+                      playbooks=None) -> list[str]:
+    """The brands for which this is a subcontractor's document, relative to the
+    brand it reached (a group's manufacturer, or the stored one; None when it
+    reached none). The one rule VALIDATE, GATE and Review share (final review
+    2026-11-16, C1-C3):
+
+    * it reached a brand that lists the printed name: that brand's subcontractor
+      document, whoever else the name belongs to;
+    * it reached another brand: not a subcontractor document for it (GATE's
+      `issuer-not-brand` judges that case);
+    * it reached no brand: a subcontractor document only when the name is no
+      maker in its own right, so Shofu's own certificate stays Shofu's."""
+    listed = listing_brands(conn, printed, playbooks)
+    if not listed:
+        return []
+    if brand is not None:
+        return listed if brand in listed else []
+    return [] if own_makers(conn, printed, playbooks) else listed
+
+
 def brands_listing(manufacturer: str | None, playbooks=None) -> list[str]:
     """The brands that list `manufacturer` itself (a canonical) as a subcontractor."""
     key = manufacturers.normalize(manufacturer)

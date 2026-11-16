@@ -2316,3 +2316,70 @@ def test_declaration_unlisted_unknown_name_unchanged(conn, subs_playbooks):
     p = _payload(conn, "vh-sub-6")
     assert "manufacturer-unresolved" in p["flags"]
     assert "subcontractor" not in p["flags"]
+
+
+def _shofu_alias(conn):
+    conn.execute("INSERT INTO manufacturer_alias (raw_name, canonical_name) "
+                 "VALUES ('Shofu Inc.', 'SHOFUCO')")
+
+
+def test_whole_range_own_brand_shofu_no_group(conn, subs_playbooks):
+    """Final review C2: a listed maker with a canonical of its own, no group, is
+    its own document, not BRANDCO's."""
+    _shofu_alias(conn)
+    _seed(conn, "vh-sub-7", _fields(coverage_scope=_ev("manufacturer"), ref_list=_ev([]),
+                                    manufacturer=_ev("Shofu Inc.")))
+    vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": "vh-sub-7", "extract_rev": 1, "group_id": None}})
+    p = _payload(conn, "vh-sub-7")
+    assert "subcontractor" not in (p.get("flags") or [])
+    assert "subcontractor_of" not in p
+    assert p["manufacturer"] == "Shofu Inc."
+
+
+def test_declaration_subcontractor_kept_alias_still_flagged(conn, subs_playbooks):
+    """Final review I2: before seed and sync remove the old alias, the name still
+    resolves to BRANDCO; the document must still be held."""
+    conn.execute("INSERT INTO manufacturer_alias (raw_name, canonical_name) "
+                 "VALUES ('Maker Corp', 'BRANDCO')")
+    group_id = _seed_group(conn, canonical_manufacturer="BRANDCO")
+    _seed_member(conn, group_id, "IT-SUB8", mfr_ref="REF-SUB8")
+    _seed(conn, "vh-sub-8", _fields(ref_list=_ev(["REF-SUB8"]), manufacturer=_ev("Maker Corp")))
+    vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": "vh-sub-8", "extract_rev": 1, "group_id": None}})
+    p = _payload(conn, "vh-sub-8")
+    assert p["links"] == [{"item_ref": "IT-SUB8", "match_basis": "ref-list"}]
+    assert "subcontractor" in p["flags"]
+    assert p["subcontractor_of"] == ["BRANDCO"]
+
+
+def test_declaration_own_brand_maker_naming_brand_items(conn, subs_playbooks):
+    """Final review I3: Woodpecker's declaration for Komet's ENFILL. The maker has
+    groups of its own, none matching; the listing brand's items are tried."""
+    _shofu_alias(conn)
+    own = _seed_group(conn, canonical_manufacturer="SHOFUCO")
+    _seed_member(conn, own, "IT-SH", mfr_ref="REF-SH")
+    brand = _seed_group(conn, canonical_manufacturer="BRANDCO")
+    _seed_member(conn, brand, "IT-BR", mfr_ref="REF-BR")
+    _seed(conn, "vh-sub-9", _fields(ref_list=_ev(["REF-BR"]), manufacturer=_ev("Shofu Inc.")))
+    vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": "vh-sub-9", "extract_rev": 1, "group_id": None}})
+    p = _payload(conn, "vh-sub-9")
+    assert p["links"] == [{"item_ref": "IT-BR", "match_basis": "ref-list"}]
+    assert "subcontractor" in p["flags"]
+    assert "no-ref-overlap" not in p["flags"]
+    assert p["subcontractor_of"] == ["BRANDCO"]
+
+
+def test_declaration_own_brand_maker_matching_nothing_is_not_held_as_subcontractor(
+        conn, subs_playbooks):
+    _shofu_alias(conn)
+    own = _seed_group(conn, canonical_manufacturer="SHOFUCO")
+    _seed_member(conn, own, "IT-SH2", mfr_ref="REF-SH2")
+    _seed(conn, "vh-sub-10", _fields(ref_list=_ev(["REF-NOPE"]), manufacturer=_ev("Shofu Inc.")))
+    vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": "vh-sub-10", "extract_rev": 1, "group_id": None}})
+    p = _payload(conn, "vh-sub-10")
+    assert "no-ref-overlap" in p["flags"]
+    assert "subcontractor" not in p["flags"]
+    assert "subcontractor_of" not in p

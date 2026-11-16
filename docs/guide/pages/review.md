@@ -240,6 +240,10 @@ brand's whole range. It waits here, and **Why it needs you** says what to do:
   it names by product name only, and press **Approve**: only the ticked items
   are published.
 
+Woodpecker, Shofu and Becht are also brands of their own. Their documents are
+treated as a subcontractor's only when they were found for Komet. A Shofu
+certificate found for Shofu covers Shofu's items as before.
+
 ### Showing one kind of reason at a time
 
 The buttons above the list show the documents waiting for one kind of reason.

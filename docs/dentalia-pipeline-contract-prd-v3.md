@@ -310,7 +310,7 @@ Three outcomes, and only the third involves a human:
 **Subcontractor guards (2026-11-13, spec `docs/superpowers/specs/2026-11-13-subcontractors-design.md`).** A brand's playbook may list `subcontractors`, the companies that make products sold under it. On top of the five conditions, the machine bind refuses, staging the document with one review task, when:
 - the candidate carries `subcontractor`: VALIDATE found the printed issuer on the list of the brand the document reached;
 - `type` is `IFU`, `other` or `SPP`;
-- the printed issuer is another known company than the brand being bound: it resolves to canonicals sharing no BC code with that brand, or it is a listed subcontractor of a different brand (flag `issuer-not-brand`). An issuer that resolves to nothing binds as before.
+- the printed issuer is another known company than the brand being bound: it resolves to canonicals sharing no BC code with that brand, or it is a listed subcontractor of a different brand (flag `issuer-not-brand`). An issuer that resolves to nothing binds as before, and so does a maker bound to its own range (SHOFU's certificate bound to SHOFU, although KOMET lists SHOFU).
 
 `gate.apply bind-manufacturer` refuses to bind a brand's range for a document whose printed manufacturer that brand lists. A subcontractor's declaration on the REF route links the listing brand's items at `staged` only (the flag caps every basis, `map-supplier` included), and GATE stores the listing brand as the document's manufacturer when exactly one brand lists it. Invariant 3's pair is (listing brand, article number): the brand is established through the playbook before any number is compared.
 

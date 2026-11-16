@@ -239,6 +239,10 @@ znamke. Počaka tukaj, **Why it needs you** pa pove, kaj storiti:
   označeni. Odznačite napačne, označite tiste, ki jih izjava navaja le z imenom
   izdelka, in pritisnite **Approve**: objavijo se samo označeni artikli.
 
+Woodpecker, Shofu in Becht so tudi samostojne znamke. Njihovi dokumenti veljajo
+za dokumente podizvajalca le, kadar so bili najdeni za Komet. Certifikat Shofu,
+najden za Shofu, pokrije artikle Shofu kot doslej.
+
 ### Prikaz ene vrste razloga naenkrat
 
 Gumbi nad seznamom pokažejo dokumente, ki čakajo zaradi ene vrste razloga.

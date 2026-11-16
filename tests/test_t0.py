@@ -2049,3 +2049,13 @@ def test_t0_identity_brand_alone_unchanged():
     ev = t0.extract_manufacturer("Hersteller: Gebr. Brasseler GmbH & Co. KG", _komet_with_subs())
     assert ev["value"] == "KOMET"
     assert ev["conf"] == t0.MFR_TRUSTED_CONF
+
+
+def test_t0_identity_listed_canonical_in_other_case_not_double_counted():
+    """Final review minor: playbook validation folds, so "Woodpecker" is a valid
+    entry for WOODPECKER; T0 must fold too, or it abstains on every Woodpecker text."""
+    from app.playbooks import Playbook
+    pbs = (Playbook(slug="komet", manufacturer="KOMET", subcontractors=("Woodpecker",)),
+           Playbook(slug="woodpecker", manufacturer="WOODPECKER"))
+    ev = t0.extract_manufacturer("Manufacturer: WOODPECKER, Guilin", pbs)
+    assert ev["value"] == "WOODPECKER"
