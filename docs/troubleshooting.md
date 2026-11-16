@@ -154,6 +154,11 @@ The frame is `/documents/{id}/file`, and a JSON `{"detail": "archived file is no
 **A DoC shows no expiry date.**
 Correct behaviour, not a bug. MDR Annex IV requires no expiry on a Declaration of Conformity itself — the real renewal date lives on the notified-body certificate it cites (Article 56's 5-year cap), inherited via `document.cert_doc_id` (Task 4: `app/handlers/validate.py` `_resolve_cited_certificate` + `app/handlers/gate.py` `_backresolve_citing_docs`). A Class I device has no notified-body certificate at all and legitimately never expires. Since 2026-08-19 every page that shows an expiry -- `/items`, `/items/{item_ref}`, `/documents`, `/documents/{doc_id}` and `/expiry` -- reads the one definition, the `document_effective_expiry` view (migration 027), and renders WHICH rule produced the date: `stated` (the document's own), `inherited` (the production or superseded certificate it cites -- a REJECTED one lends nothing, and the view enforces that on its join) or `staleness` (a DoC's five-year review horizon, Dentalia's rule, not an expiry the document claims). So a blank here now means all three produced nothing: no date of its own, no usable cited certificate, and no issue date to review from. Do not "fix" this by inventing an expiry on the declaration, and do not print a `staleness` date without saying it is one.
 
+## Playbooks
+
+**`manufacturers seed` lists `CONFLICTS` on a `bc_code` or a `name` and says `nothing written`.**
+The seed writes nothing while any conflict exists, so one conflict blocks every other change in the run, including an `--adopt`. The usual cause is a playbook started in the web editor that has no file: the database holds its codes and names, the seed works from `playbooks/*.json`, does not know them, and wants to give those codes to other manufacturers. `playbooks drift` names it as `DB-ONLY`. Fix: write the playbook as a file that matches the database (codes, aliases, body), commit and deploy, then run the seed dry run again; it should report the conflicts gone (2026-11-16, Dentaurum, codes 396 and 397).
+
 ## Tests
 
 **Corpus tests skip.**

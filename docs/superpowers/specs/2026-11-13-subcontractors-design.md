@@ -1,6 +1,6 @@
 # Subcontractors: design
 
-Date: 2026-11-13. Status: draft for Denis, not approved, not committed.
+Date: 2026-11-13. Status: approved by Denis 2026-11-13, built on branch `subcontractors`, deployed 2026-11-16 (8c737b4; `manufacturers seed --adopt` x5 and `playbooks sync` run the same day, undo script `backups/subcontractors-undo-20261116.sql` on the server).
 History: `tasks/2026-11-12-subcontractor-rule-draft.md` (options, BC finding, Nataša's answers). A full automated design (27 h Claude Code) was written and reviewed the same day, then rejected as out of proportion: subcontractors are an exception (about ten makers, about 60 items, nearly all Komet). It is summarised in § 9.
 
 ## 1. The problem
@@ -144,6 +144,10 @@ Revised after the second independent review (§ 10).
 | | **Total** | **27 h** | **10.25 h** |
 
 ## 6. Manual work for Nataša
+
+Done 2026-11-16: **doc 165** relinked to the 16 Procodile points only (8 GPPR, 8 PPPR incl. both `S1` assortments: BC maker code 077-A), per Nataša 2026-11-12 ("only the Procodile points") and Denis; the GPFQ/PPFQ points its declarations also list were left out. Reject, reopen, retype to specific items, approve, all as `gate.apply` under `denis`; 246 links rejected. Komet's 172 (newer) stays the current EC certificate on the 16.
+
+A production search of stored text (2026-11-16) found 22 more documents naming a listed maker: six staged Komet maker declarations (382 P.L. Superior, 389 CMS Dental, 393 Hans Korea, 402 SAVUNA, 433 and 454 Stoddard), one published with no links (386), six filed Adranox declarations (2180-2185), ALLE declaration 2160 (3 correct links), and Shofu/Becht documents under their own brand (no action). None carries a wrong published link.
 
 One-time (UI only, no code):
 
