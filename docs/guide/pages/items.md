@@ -146,6 +146,7 @@ search box empty to see every product.
 | **Published / Waiting for review / Replaced** | How many of this product's documents count, how many are still waiting for a decision, and how many have been replaced by a newer one |
 | **Covers this item** | Whether this particular document counts for this particular product. A document can be published and still be waiting on this product's own link |
 | The small coloured label next to a document (e.g. *Published*, *Waiting for review*) | See [document status](../glossary.md#document-status) |
+| **Made by** | Shown only when a company on the brand's list of subcontractors printed a published document for this product, for example Sure Dent for Komet's Procodile points. Business Central records the brand; this row names who actually makes it, and the documents that say so |
 | **Manufacturer's article no.** | The supplier's own article number for this product. See [REF, or product reference](../glossary.md#ref-or-product-reference) |
 | **Where we looked** | Which places the search tried — *The manufacturer's known pages*, *An address we had before*, *The web*, *EUDAMED* |
 | **Found something / Nothing found / Not tried** | Whether that place returned anything, returned nothing, or was never reached |

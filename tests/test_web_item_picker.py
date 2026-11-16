@@ -896,3 +896,41 @@ def test_the_picker_blocks_add_on_a_filed_document_with_no_issue_date(client, co
     assert "This document states no issue date" in _text(body)
     page = _text(client.get(f"/documents/{doc_id}").text)
     assert "This document states no issue date" in page
+
+
+# --------------------------------------------------------------------------- #
+# 2026-11-16: published items first on a document; "Made by" on an item
+# --------------------------------------------------------------------------- #
+def test_covered_items_lists_published_first_and_folds_the_rejected(client, conn):
+    _mfr(conn)
+    for ref in ("A-REJ", "B-PUB", "C-REJ", "D-PUB"):
+        _item(conn, ref, ref)
+    doc_id = _doc(conn, "fold", status="production")
+    for ref, status in (("A-REJ", "rejected"), ("B-PUB", "production"),
+                        ("C-REJ", "rejected"), ("D-PUB", "production")):
+        conn.execute("INSERT INTO item_document (item_ref, doc_id, match_basis, status) "
+                     "VALUES (%s,%s,'manual',%s)", (ref, doc_id, status))
+    conn.commit()
+    text = _text(client.get(f"/documents/{doc_id}").text)
+    assert "Covered items (2)" in text
+    assert text.index("B-PUB") < text.index("D-PUB") < text.index("2 rejected") < text.index("A-REJ")
+    assert text.index("A-REJ") < text.index("C-REJ")
+
+
+def test_item_page_says_who_makes_it(client, conn, kometw):
+    _mfr(conn, "KOMETW", "977W")
+    _item(conn, "000 GPPR06 025", "Procodile points", raw="977W")
+    doc_id = _sub_doc(conn, "made-by", scope="group", doc_type="DoC")
+    conn.execute("UPDATE document SET status='production' WHERE doc_id=%s", (doc_id,))
+    conn.execute("INSERT INTO item_document (item_ref, doc_id, match_basis, status) "
+                 "VALUES ('000 GPPR06 025',%s,'manual','production')", (doc_id,))
+    conn.commit()
+    text = _text(client.get("/items/000 GPPR06 025").text)
+    assert f"Made by Sure Dent Corporation · known subcontractor of KOMETW, from document #{doc_id}" in text
+
+
+def test_item_page_has_no_made_by_row_for_an_ordinary_item(client, conn):
+    _mfr(conn)
+    _item(conn, "ORD-1", "ordinary")
+    conn.commit()
+    assert "Made by" not in _text(client.get("/items/ORD-1").text)

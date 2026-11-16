@@ -254,29 +254,53 @@
      to 11.798px down the page. The rows stay (which items a certificate covers
      is a real question); they scroll in their own box. #}
   {% if items %}
-  <div class="table-wrap tall">
-  <table>
-    <thead><tr><th>Item no.</th><th>Name</th><th>Covers this item</th>{% if can_remove %}<th>Action</th>{% endif %}</tr></thead>
-    <tbody>
-      {% for it in items %}
+  {# Refused links last and folded (2026-11-16): doc 165 covers 16 items and
+     carries 246 rejected ones, which buried the 16. The query sorts them last. #}
+  {% set live = items | rejectattr("status", "eq", "rejected") | list %}
+  {% set refused = items | selectattr("status", "eq", "rejected") | list %}
+  {% macro rows(list, offset) %}
+      {% for it in list %}
       <tr>
         <td><a href="/items/{{ it.item_ref }}">{{ it.item_ref }}</a></td>
         <td>{{ it.name or "—" }}</td>
         <td><span class="badge badge-{{ it.status }}">{{ it.status | word }}</span></td>
         {% if can_remove %}
-        <td><div id="link-cell-{{ doc.doc_id }}-{{ loop.index }}">
-          {%- if it.status == "production" %}{{ link_decide.remove_button(doc.doc_id, it.item_ref, loop.index) }}
+        <td><div id="link-cell-{{ doc.doc_id }}-{{ (loop.index + offset) }}">
+          {%- if it.status == "production" %}{{ link_decide.remove_button(doc.doc_id, it.item_ref, (loop.index + offset)) }}
           {%- else %}{{ link_decide.buttons(doc.doc_id, it.item_ref, it.status, doc.status) }}{% endif -%}
         </div></td>
         {% endif %}
       </tr>
       {% if can_remove and it.status == "production" %}
-      <tr class="link-slot-row"><td colspan="4" id="link-slot-{{ doc.doc_id }}-{{ loop.index }}"></td></tr>
+      <tr class="link-slot-row"><td colspan="4" id="link-slot-{{ doc.doc_id }}-{{ (loop.index + offset) }}"></td></tr>
       {% endif %}
       {% endfor %}
+  {% endmacro %}
+  {% if live %}
+  <div class="table-wrap tall">
+  <table>
+    <thead><tr><th>Item no.</th><th>Name</th><th>Covers this item</th>{% if can_remove %}<th>Action</th>{% endif %}</tr></thead>
+    <tbody>
+{{ rows(live, 0) }}
     </tbody>
   </table>
   </div>
+  {% else %}
+  <p class="hint">It covers no item: every link it had was rejected.</p>
+  {% endif %}
+  {% if refused %}
+  <details class="more-items">
+    <summary>{{ refused | length | num }} rejected</summary>
+    <div class="table-wrap tall">
+    <table>
+      <thead><tr><th>Item no.</th><th>Name</th><th>Covers this item</th>{% if can_remove %}<th>Action</th>{% endif %}</tr></thead>
+      <tbody>
+{{ rows(refused, live | length) }}
+      </tbody>
+    </table>
+    </div>
+  </details>
+  {% endif %}
   {% else %}
   <p class="hint">No item links (manufacturer-scope document, or not yet grouped).</p>
   {% endif %}

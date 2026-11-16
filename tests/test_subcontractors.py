@@ -127,3 +127,49 @@ def test_subcontracted_for_unlisted_name(conn):
     _seed(conn)
     assert subcontractors.subcontracted_for(conn, "Ivoclar Vivadent AG", None, PBS) == []
     assert subcontractors.subcontracted_for(conn, None, "KOMET", PBS) == []
+
+
+# --------------------------------------------------------------------------- #
+# made_by: who makes an item, read off its published documents (2026-11-16)
+# --------------------------------------------------------------------------- #
+def _published(conn, key, printed, *, tier="T1", verbatim=None, doc_status="production",
+               link_status="production", item="000 GPPR06 025"):
+    doc_id = conn.execute(
+        "INSERT INTO document (type, regulation, coverage_scope, content_hash, archive_url, status) "
+        "VALUES ('DoC','MDR','group',%s,'/a.pdf',%s) RETURNING doc_id",
+        (f"mb-{key}", doc_status)).fetchone()["doc_id"]
+    conn.execute("INSERT INTO evidence (doc_id, field, value, archive_url, page, verbatim, tier, "
+                 "model_id, confidence, extracted_at) VALUES (%s,'manufacturer',%s,'/a.pdf',1,%s,%s,"
+                 "'m',0.9,now())", (doc_id, printed, verbatim or printed, tier))
+    conn.execute("INSERT INTO item_document (item_ref, doc_id, match_basis, status) "
+                 "VALUES (%s,%s,'manual',%s)", (item, doc_id, link_status))
+    return doc_id
+
+
+def test_made_by_names_the_listed_maker_and_its_documents(conn):
+    _seed(conn)
+    _item(conn, "000 GPPR06 025", "077")
+    a = _published(conn, "a", "Sure Dent Corporation")
+    b = _published(conn, "b", "SURE DENT CORPORATION")
+    assert subcontractors.made_by(conn, "000 GPPR06 025", "KOMET", PBS) == [
+        {"name": "Sure Dent Corporation", "doc_ids": [a, b]}]
+
+
+def test_made_by_ignores_t0_identity_unpublished_and_the_brand_itself(conn):
+    _seed(conn)
+    _item(conn, "000 GPPR06 025", "077")
+    _published(conn, "t0", "KOMET", tier="T0", verbatim="playbook identity: KOMET")
+    _published(conn, "own", "Gebr. Brasseler GmbH & Co. KG")
+    _published(conn, "staged", "Sure Dent Corporation", doc_status="staged")
+    _published(conn, "rejected-link", "Sure Dent Corporation", link_status="rejected")
+    assert subcontractors.made_by(conn, "000 GPPR06 025", "KOMET", PBS) == []
+    assert subcontractors.made_by(conn, "000 GPPR06 025", None, PBS) == []
+
+
+def test_made_by_a_maker_in_its_own_right_only_for_the_listing_brand(conn):
+    _seed(conn)
+    _item(conn, "000 ENFILL", "077")
+    d = _published(conn, "wp", "Guilin Woodpecker Medical Instrument Co.,Ltd", item="000 ENFILL")
+    assert subcontractors.made_by(conn, "000 ENFILL", "KOMET", PBS) == [
+        {"name": "Guilin Woodpecker Medical Instrument Co.,Ltd", "doc_ids": [d]}]
+    assert subcontractors.made_by(conn, "000 ENFILL", "WOODPECKER", PBS) == []

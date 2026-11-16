@@ -50,6 +50,15 @@
         <span class="hint">({{ item.manufacturer_raw }})</span>
         {% else %}{{ item.manufacturer_raw }}{% endif %}
       </td></tr>
+      {# Only when a listed subcontractor printed a published document on this
+         item (`subcontractors.made_by`); BC records the brand, not the maker. #}
+      {% for m in made_by %}
+      <tr><th>Made by</th><td>{{ m.name }}
+        <span class="hint">· known subcontractor of {{ item.manufacturer_name }}, from
+        document{{ "s" if m.doc_ids | length > 1 }}
+        {% for d in m.doc_ids %}<a href="/documents/{{ d }}">#{{ d }}</a>{{ ", " if not loop.last }}{% endfor %}</span>
+      </td></tr>
+      {% endfor %}
       <tr><th>{{ "mfr_ref" | word }}</th><td>{{ item.mfr_ref or "—" }}</td></tr>
       <tr><th>Medical device</th><td>
         {% if item.md_flag is none %}not stated{% elif item.md_flag %}yes{% else %}no{% endif %}

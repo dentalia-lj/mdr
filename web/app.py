@@ -3568,9 +3568,12 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             # screen read it. Shared with `/discovery` through `app.coverage`
             # so the two cannot drift.
             discovery = discovery_state(conn, item_ref)
+            # Who actually makes it, when a listed subcontractor printed one of
+            # its published documents (2026-11-16): BC records only the brand.
+            made_by = subcontractors.made_by(conn, item_ref, item["manufacturer_name"])
         return templates.TemplateResponse(
             request, "item_detail.html",
-            {"item": item, "docs": docs, "rediscover": rediscover,
+            {"item": item, "docs": docs, "rediscover": rediscover, "made_by": made_by,
              "bc_push": request.query_params.get("bc_push"),
              # Read per request, exactly as `web/bc_push_view.py` reads it, so
              # the two BC receipts can never disagree about whether sending is
@@ -3768,7 +3771,10 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             items_covered = conn.execute(
                 "SELECT id.item_ref, id.match_basis, id.status, m.name "
                 "FROM item_document id LEFT JOIN item_mirror m ON m.item_ref = id.item_ref "
-                "WHERE id.doc_id=%s AND id.status <> 'retracted' ORDER BY id.item_ref",
+                # Published and staged first, refused last: on doc 165 the 16
+                # items it covers sat among 246 rejected links (2026-11-16).
+                "WHERE id.doc_id=%s AND id.status <> 'retracted' "
+                "ORDER BY id.status = 'rejected', id.item_ref",
                 (doc_id,),
             ).fetchall()
             evidence = conn.execute(

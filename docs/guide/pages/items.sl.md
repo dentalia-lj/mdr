@@ -144,6 +144,7 @@ njih — pustite iskalno polje prazno, če želite videti vse izdelke.
 | **Published / Waiting for review / Replaced** | Koliko dokumentov tega izdelka šteje, koliko jih še čaka na odločitev in koliko jih je bilo nadomeščenih z novejšim |
 | **Covers this item** | Ali ta dokument šteje prav za ta izdelek. Dokument je lahko objavljen, povezava prav do tega izdelka pa še vedno čaka na odločitev |
 | The small coloured label next to a document (e.g. *Published*, *Waiting for review*) | Glejte [status dokumenta](../glossary.sl.md) |
+| **Made by** | Prikaže se le, kadar je objavljen dokument za ta izdelek izdalo podjetje s seznama podizvajalcev znamke, na primer Sure Dent za Kometove poene Procodile. Business Central vodi znamko; ta vrstica pove, kdo izdelek dejansko izdela, in navede dokumente, ki to povedo |
 | **Manufacturer's article no.** | Dobaviteljeva lastna številka artikla za ta izdelek. Glejte [REF oz. številka artikla](../glossary.sl.md) |
 | **Where we looked** | Kje je sistem iskal — *The manufacturer's known pages* (proizvajalčeve znane strani), *An address we had before* (naslov, ki smo ga že imeli), *The web* (splet), *EUDAMED* |
 | **Found something / Nothing found / Not tried** | Ali je to mesto kaj vrnilo, ni vrnilo ničesar ali ni bilo preizkušeno |

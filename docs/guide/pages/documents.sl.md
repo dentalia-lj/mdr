@@ -83,7 +83,9 @@ prazno, če želite brskati po vsem.
    da vidite točno to, kar je sistem prebral iz njega.
 6. Poglejte **Covered items** za to, katere izdelke pokriva, in odprite
    **Technical details** pod *Where every value came from* za vsako dejstvo, ki
-   ga je sistem izluščil, s točno stranjo in besedilom, od koder izvira.
+   ga je sistem izluščil, s točno stranjo in besedilom, od koder izvira. Artikli,
+   za katere dokument velja, so na vrhu; zavrnjene povezave so zložene pod
+   **N rejected** na koncu, kjer jih **Re-open** vrne.
 7. Če dokument še čaka na odločitev, kliknite **review this document**, da
    greste neposredno nanjo na [Review](review.sl.md).
 8. Če dokument navaja Basic UDI-DI in želite hiter navzkrižni pregled,

@@ -84,7 +84,9 @@ to browse everything.
    exactly what the system read out of it.
 6. Look at **Covered items** for which products it applies to, and open
    **Technical details** under *Where every value came from* for every fact the
-   system extracted, with the exact page and wording it came from.
+   system extracted, with the exact page and wording it came from. The items it
+   counts for come first; links that were rejected are folded under
+   **N rejected** at the end, where **Re-open** brings one back.
 7. If the document is still waiting for a decision, click
    **review this document** to go straight to it on [Review](review.md).
 8. If the document names a Basic UDI-DI and you want a quick cross-check, press

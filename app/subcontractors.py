@@ -74,6 +74,37 @@ def subcontracted_for(conn, printed: str | None, brand: str | None,
     return [] if own_makers(conn, printed, playbooks) else listed
 
 
+def made_by(conn, item_ref: str, brand: str | None, playbooks=None) -> list[dict]:
+    """Who makes `item_ref` for `brand`, read off its published documents
+    (2026-11-16): one entry per listed subcontractor that printed a published
+    document linked to the item, `{"name", "doc_ids"}`, in document order.
+    [] for an ordinary item, so the item page shows nothing new.
+
+    Only the documents' own readings count: T0's "playbook identity" names the
+    brand whose name appears anywhere in the text (doc 165 carries both "Sure
+    Dent Corporation" from T1 and "KOMET" from T0), so it would hide the maker.
+    The rule is relative to the brand, as everywhere (`subcontracted_for`)."""
+    if not brand:
+        return []
+    rows = conn.execute(
+        "SELECT DISTINCT e.doc_id, e.value FROM item_document l "
+        "JOIN document d ON d.doc_id = l.doc_id "
+        "JOIN evidence e ON e.doc_id = d.doc_id AND e.field = 'manufacturer' "
+        "WHERE l.item_ref = %s AND l.status = 'production' AND d.status = 'production' "
+        "AND e.value IS NOT NULL "
+        "AND NOT (e.tier = 'T0' AND coalesce(e.verbatim, '') LIKE 'playbook identity%%') "
+        "ORDER BY e.doc_id, e.value", (item_ref,)).fetchall()
+    makers: dict[str, dict] = {}
+    for r in rows:
+        if not subcontracted_for(conn, r["value"], brand, playbooks):
+            continue
+        m = makers.setdefault(manufacturers.normalize(r["value"]),
+                              {"name": r["value"], "doc_ids": []})
+        if r["doc_id"] not in m["doc_ids"]:
+            m["doc_ids"].append(r["doc_id"])
+    return list(makers.values())
+
+
 def brands_listing(manufacturer: str | None, playbooks=None) -> list[str]:
     """The brands that list `manufacturer` itself (a canonical) as a subcontractor."""
     key = manufacturers.normalize(manufacturer)
