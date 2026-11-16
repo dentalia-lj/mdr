@@ -1190,25 +1190,6 @@ def _issuer_not_brand(conn, printed: str | None, brand: str) -> bool:
                    or c == brand for c in canonicals)
 
 
-def subcontractor_bind_refusal(conn, doc_id: int, manufacturer: str | None) -> str | None:
-    """Why a person may not bind this document to `manufacturer`'s whole range,
-    or None. Any printed manufacturer on the document that `manufacturer` lists
-    as a subcontractor refuses it (spec 2026-11-13 § 4.5 item 3). The web route
-    asks the same question before enqueueing."""
-    if not manufacturer:
-        return None
-    canonicals = manufacturers.resolve_canonicals(conn, manufacturer) or [manufacturer]
-    for r in conn.execute("SELECT DISTINCT value FROM evidence WHERE doc_id=%s "
-                          "AND field='manufacturer'", (doc_id,)).fetchall():
-        listed_by = subcontractors.listing_brands(conn, r["value"])
-        for brand in canonicals:
-            if brand in listed_by:
-                return (f"{r['value']} is a known subcontractor of {brand}: its certificate "
-                        f"cannot cover all of {brand}. Change type to specific items, then "
-                        f"tick the items {r['value']} makes.")
-    return None
-
-
 def _handle_mfr_binding(conn, job) -> dict:
     """§7b: a manufacturer-scope document (ISO 13485, EC certificate, brand-wide
     DoC) names no item by construction, so it is bound to a MANUFACTURER rather
@@ -2542,7 +2523,7 @@ def handle_gate_apply(conn, job: dict) -> dict:
         if set(edits) - {"validity_from"}:
             raise ValueError("gate.apply bind-manufacturer: only the issue date may be "
                              "corrected on a whole-range approval")
-        refusal = subcontractor_bind_refusal(conn, doc_id, p.get("manufacturer"))
+        refusal = subcontractors.bind_refusal(conn, doc_id, p.get("manufacturer"))
         if refusal:
             raise ValueError(f"gate.apply bind-manufacturer: {refusal}")
         _apply_edits(conn, doc_id, edits or None)

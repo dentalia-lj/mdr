@@ -220,6 +220,26 @@ on Review. A published or replaced document has to leave first: reject it, then
 open it again from **Documents** with **Reopen this document**. It comes back to
 Review, and there you can change its type.
 
+### A document from a subcontractor
+
+Some products sold under a brand are made by another company, a
+*subcontractor*: Komet's Procodile points are made by Sure Dent, its ENFILL and
+ENPACK by Woodpecker. The brand's playbook lists them. A document a
+subcontractor printed is never published by itself and never covers the
+brand's whole range. It waits here, and **Why it needs you** says what to do:
+
+- **A certificate:** *"Sure Dent Corporation is a known subcontractor of KOMET.
+  A subcontractor's certificate cannot cover all of KOMET. Change type to
+  specific items, then tick the items Sure Dent Corporation makes."* The
+  **Approve for all ... items** button is not offered. Press **Change type...**,
+  set *What it covers* to *specific items*, confirm, then tick the items in the
+  picker (it opens on the brand) and press **Approve**.
+- **A declaration:** *"Sure Dent Corporation is a known subcontractor of KOMET.
+  Check the ticked items and approve."* The items whose article numbers the
+  declaration prints are already ticked. Untick any that are wrong, tick any
+  it names by product name only, and press **Approve**: only the ticked items
+  are published.
+
 ### Showing one kind of reason at a time
 
 The buttons above the list show the documents waiting for one kind of reason.
@@ -281,6 +301,8 @@ thirteen of them. They fall into three groups.
 | *The article numbers in the document do not match this group's items.* | The product numbers on the page belong to a different family | Do not approve without checking. It may have been filed against the wrong products |
 | *The document lists article numbers, but we could not tie them to your catalogue.* | Product numbers were found, none of them ours | Check whether these are products you actually stock |
 | *The article numbers belong to more than one manufacturer.* | The product numbers on the page span two suppliers | Unusual. Read the PDF before deciding |
+| *Made by a subcontractor of the brand, so nothing was published by itself* | The company printed on the document makes some of the brand's products, for example Sure Dent for Komet. Its document never counts as the brand's own | Follow the sentence under **Why it needs you** (see *A document from a subcontractor* above) |
+| *Printed by another company than the brand it was found for, so it was not bound to that brand's whole range* | The document was found for one brand, but another company we know issued it | Open the PDF. If it covers specific products, use **Change type...** and tick them; if it belongs to another brand, reject it as *Wrong manufacturer* |
 
 ### Usually reject
 

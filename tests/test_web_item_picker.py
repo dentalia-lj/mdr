@@ -706,3 +706,72 @@ def test_picker_search_offers_listing_brand_items(client, conn, monkeypatch):
     text = _text(client.get(f"/picker/{doc_id}/results",
                             params={"manufacturer": "WOODPECKERX", "q": "enfill"}).text)
     assert "000 ENFILL" in text
+
+
+# --------------------------------------------------------------------------- #
+# A subcontractor's document on Review (spec 2026-11-13 § 4.6)
+# --------------------------------------------------------------------------- #
+CERT_SENTENCE = ("Sure Dent Corporation is a known subcontractor of KOMETW. A subcontractor's "
+                 "certificate cannot cover all of KOMETW. Change type to specific items, then "
+                 "tick the items Sure Dent Corporation makes.")
+DECL_SENTENCE = ("Sure Dent Corporation is a known subcontractor of KOMETW. "
+                 "Check the ticked items and approve.")
+
+
+@pytest.fixture
+def kometw(monkeypatch):
+    from app import subcontractors
+    from app.playbooks import Playbook
+    monkeypatch.setattr(subcontractors, "_loaded", lambda playbooks: (
+        Playbook(slug="kometw", manufacturer="KOMETW", subcontractors=("Sure Dent Corporation",)),))
+
+
+def _sub_doc(conn, key, *, scope, doc_type):
+    _mfr(conn, "KOMETW", "977W")
+    doc_id = _doc(conn, key, scope=scope, canonical="KOMETW")
+    conn.execute("UPDATE document SET type=%s WHERE doc_id=%s", (doc_type, doc_id))
+    conn.execute(
+        "INSERT INTO evidence (doc_id, field, value, archive_url, page, verbatim, tier, "
+        "model_id, confidence, extracted_at, extract_rev) VALUES "
+        "(%s,'manufacturer','Sure Dent Corporation','file:///a.pdf',1,'Sure Dent Corporation',"
+        "'T1','m',0.95,now(),1)", (doc_id,))
+    return doc_id
+
+
+def test_review_shows_subcontractor_reason_certificate(client, conn, kometw):
+    doc_id = _sub_doc(conn, "sub-cert", scope="manufacturer", doc_type="EC")
+    conn.commit()
+    text = _text(client.get(f"/staging/{doc_id}/detail").text)
+    assert CERT_SENTENCE in text
+    assert "Approve for all" not in text
+    assert "Change type..." in text
+
+
+def test_review_shows_subcontractor_reason_declaration(client, conn, kometw):
+    doc_id = _sub_doc(conn, "sub-decl", scope="group", doc_type="DoC")
+    conn.commit()
+    text = _text(client.get(f"/staging/{doc_id}/detail").text)
+    assert DECL_SENTENCE in text
+
+
+def test_apply_bind_manufacturer_refused_with_reason(client, conn, kometw):
+    doc_id = _sub_doc(conn, "sub-bind", scope="manufacturer", doc_type="EC")
+    conn.commit()
+    resp = client.post(f"/staging/{doc_id}/apply",
+                       data={"decided_by": "user:natasa", "decision": "bind-manufacturer",
+                             "manufacturer": "KOMETW", "confirm": "1"})
+    assert resp.status_code == 422
+    assert "known subcontractor of KOMETW" in _text(resp.text)
+    assert "Nothing was changed." in _text(resp.text)
+    assert _jobs(conn) == []
+
+
+def test_subcontractor_flag_explanations():
+    from web.app import FLAG_EXPLANATIONS, REASON_CODE_CHIP
+    assert FLAG_EXPLANATIONS["subcontractor"] == (
+        "Made by a subcontractor of the brand, so nothing was published by itself")
+    assert FLAG_EXPLANATIONS["issuer-not-brand"] == (
+        "Printed by another company than the brand it was found for, so it was not "
+        "bound to that brand's whole range")
+    assert REASON_CODE_CHIP["subcontractor"] == "manufacturer"
+    assert REASON_CODE_CHIP["issuer-not-brand"] == "manufacturer"

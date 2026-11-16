@@ -341,6 +341,8 @@ EXPECTED_CHIP = {
     "ref-list-possibly-truncated": "items", "device-enumeration": "items",
     "manufacturer-unresolved": "manufacturer", "multi-manufacturer-ref": "manufacturer",
     "ref-catalogue": "manufacturer",
+    "subcontractor": "manufacturer",
+    "issuer-not-brand": "manufacturer",
     "not-a-device-document": "other", "cert-unresolved": "other",
     "date-insane": "other", "older-than-current": "other",
     "same-date-revision": "other", "downgrade-uncomparable": "other",

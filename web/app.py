@@ -119,7 +119,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 # footing on which this module already imports `app.queue` and `web/registry.py`
 # imports `app.playbooks`. It is emphatically not `app.handlers` — the review
 # UI resolves a name to offer a choice; only GATE acts on the choice.
-from app import db, heartbeat, item_picks, manufacturers, playbooks, queue, retype, unmatched_names
+from app import (db, heartbeat, item_picks, manufacturers, playbooks, queue, retype,
+                 subcontractors, unmatched_names)
 from app.currency import DOC_STATUS_FOR_ITEM
 # Export file types /import accepts. Mirrors the adapter's own set exactly, so
 # the form can never reject a file the worker would have read.
@@ -321,6 +322,9 @@ COVERAGE_LABELS = {
 # `ref-unscoped` occur on the live queue today, but the whole vocabulary is
 # mapped so a newly-emitted flag never renders as a bare slug.
 FLAG_EXPLANATIONS = {
+    "subcontractor": "Made by a subcontractor of the brand, so nothing was published by itself",
+    "issuer-not-brand": ("Printed by another company than the brand it was found for, so it was "
+                         "not bound to that brand's whole range"),
     "not-a-device-document": "This does not look like a medical device document, so it was held back from automatic filing.",
     "cert-unresolved": "This document names a certificate we do not have on file yet.",
     "ref-unscoped": "The document lists article numbers, but we could not tie them to your catalogue.",
@@ -383,6 +387,9 @@ REASON_CODE_CHIP = {
     "manufacturer-unresolved": "manufacturer",
     "multi-manufacturer-ref": "manufacturer",
     "ref-catalogue": "manufacturer",
+    # spec 2026-11-13: who printed it is not the brand it would cover
+    "subcontractor": "manufacturer",
+    "issuer-not-brand": "manufacturer",
     # about the paper itself: its kind, its dates, its certificate
     "not-a-device-document": "other",
     "cert-unresolved": "other",
@@ -794,6 +801,26 @@ def _doc_type_label(doc_type: str | None) -> str:
 #: so there is no flag sentence to fall back on, and NO_TASK_REASON would say
 #: the document "was read without problems", which is not why it is here.
 RETYPED_GROUP_INSTRUCTION = "Choose the items this document covers, then approve."
+
+
+#: Review's reason and fix for a listed subcontractor's document (spec
+#: 2026-11-13 § 4.6). A certificate also has its whole-range approval hidden.
+SUBCONTRACTOR_CERT_REASON = (
+    "{maker} is a known subcontractor of {brand}. A subcontractor's certificate cannot "
+    "cover all of {brand}. Change type to specific items, then tick the items {maker} makes.")
+SUBCONTRACTOR_DECL_REASON = ("{maker} is a known subcontractor of {brand}. "
+                             "Check the ticked items and approve.")
+
+
+def _subcontractor_reason(conn, printed: str | None, canonical: str | None,
+                          doc_type: str | None) -> str | None:
+    """The sentence above when `printed` is on some brand's subcontractors list."""
+    listed = subcontractors.listing_brands(conn, printed)
+    if not listed:
+        return None
+    brand = canonical if canonical in listed else ", ".join(listed)
+    tmpl = SUBCONTRACTOR_CERT_REASON if doc_type in ("EC", "ISO") else SUBCONTRACTOR_DECL_REASON
+    return tmpl.format(maker=printed, brand=brand)
 
 
 def _review_reason(flags: list[str] | None, *, is_mfr_binding: bool, has_task: bool,
@@ -1802,6 +1829,10 @@ def _staged_doc_detail(conn, doc_id: int) -> dict | None:
     row["regulation_words"] = REGULATION_WORDS.get(doc["regulation"] or "",
                                                    doc["regulation"] or "Not stated")
     _decorate_review_row(row)
+    row["subcontractor_reason"] = _subcontractor_reason(
+        conn, row["printed_manufacturer"], doc["canonical_manufacturer"], doc["type"])
+    if row["subcontractor_reason"]:
+        row["reason"] = row["subcontractor_reason"]
     # Binding candidates only, and every one of them: the queue exists to
     # decide which manufacturer a manufacturer-scope certificate covers, and
     # until now the panel could not express that decision. 14 of the 52
@@ -5807,6 +5838,13 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
             manufacturer = manufacturer.strip()
             if not manufacturer:
                 ctx["error"] = "manufacturer is required for a bind-manufacturer decision"
+                return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
+            # Spec 2026-11-13 § 4.5 item 3: the same refusal GATE raises, before
+            # anything is enqueued.
+            with _conn() as conn:
+                refusal = subcontractors.bind_refusal(conn, doc_id, manufacturer)
+            if refusal:
+                ctx["error"] = f"{refusal} Nothing was changed."
                 return templates.TemplateResponse(request, "_result.html", ctx, status_code=422)
             payload["manufacturer"] = manufacturer
             # Two-step on the server (spec § 3, P1a). A whole-range approval

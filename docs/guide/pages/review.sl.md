@@ -220,6 +220,25 @@ Povejte razvijalcu, kadar mora tak certifikat pokriti nov artikel.
 ga, nato ga pod **Documents** znova odprite z **Reopen this document**. Vrne se
 na Review, tam pa mu lahko spremenite vrsto.
 
+### Dokument podizvajalca
+
+Nekatere izdelke, ki se prodajajo pod blagovno znamko, izdeluje drugo podjetje,
+*podizvajalec*: Kometove poene Procodile izdeluje Sure Dent, ENFILL in ENPACK pa
+Woodpecker. Playbook znamke jih našteva. Dokument, ki ga je natisnil
+podizvajalec, se nikoli ne objavi sam in nikoli ne pokrije celotnega nabora
+znamke. Počaka tukaj, **Why it needs you** pa pove, kaj storiti:
+
+- **Certifikat:** *"Sure Dent Corporation is a known subcontractor of KOMET.
+  A subcontractor's certificate cannot cover all of KOMET. Change type to
+  specific items, then tick the items Sure Dent Corporation makes."* Gumba
+  **Approve for all ... items** ni. Pritisnite **Change type...**, nastavite
+  *What it covers* na *specific items*, potrdite, nato v izbirniku (odpre se na
+  znamki) označite artikle in pritisnite **Approve**.
+- **Izjava:** *"Sure Dent Corporation is a known subcontractor of KOMET. Check
+  the ticked items and approve."* Artikli, katerih številke izjava navaja, so že
+  označeni. Odznačite napačne, označite tiste, ki jih izjava navaja le z imenom
+  izdelka, in pritisnite **Approve**: objavijo se samo označeni artikli.
+
 ### Prikaz ene vrste razloga naenkrat
 
 Gumbi nad seznamom pokažejo dokumente, ki čakajo zaradi ene vrste razloga.
@@ -281,6 +300,8 @@ trinajst. Razvrščena so v tri skupine.
 | *The article numbers in the document do not match this group's items.* | Številke artiklov na strani pripadajo drugi družini | Ne odobrite brez preverjanja. Morda je bil vložen k napačnim izdelkom |
 | *The document lists article numbers, but we could not tie them to your catalogue.* | Najdene so bile številke artiklov, a nobena ni naša | Preverite, ali gre za izdelke, ki jih dejansko vodite |
 | *The article numbers belong to more than one manufacturer.* | Številke artiklov na strani segajo čez dva dobavitelja | Nenavadno. Pred odločitvijo preberite PDF |
+| *Made by a subcontractor of the brand, so nothing was published by itself* | Podjetje, natisnjeno na dokumentu, izdeluje nekatere izdelke blagovne znamke, na primer Sure Dent za Komet. Njegov dokument nikoli ne velja kot dokument same znamke | Sledite stavku pod **Why it needs you** (glejte *Dokument podizvajalca* zgoraj) |
+| *Printed by another company than the brand it was found for, so it was not bound to that brand's whole range* | Dokument je bil najden za eno znamko, izdalo pa ga je drugo podjetje, ki ga poznamo | Odprite PDF. Če velja za določene izdelke, uporabite **Change type...** in jih označite; če pripada drugi znamki, ga zavrnite z razlogom *Wrong manufacturer* |
 
 ### Običajno zavrnite
 

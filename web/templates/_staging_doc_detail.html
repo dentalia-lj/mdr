@@ -272,7 +272,8 @@
                        has_picker=row.mfr_options is defined and row.mfr_options|length > 0,
                        preselect=(row.mfr_suggestion.preselect if row.mfr_suggestion else none),
                        preselect_items=(row.mfr_suggestion.preselect_items if row.mfr_suggestion else none),
-                       approve_count=row.approve_links|length) }}
+                       approve_count=row.approve_links|length,
+                       whole_range_refused=row.subcontractor_reason is not none and row.subcontractor_reason) }}
       </div>
     </form>
 

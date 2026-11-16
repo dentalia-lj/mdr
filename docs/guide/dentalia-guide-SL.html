@@ -1972,6 +1972,12 @@ tbody tr:last-child td{border-bottom:0}
 </ol>
 <p>Dokument ne zapusti Review in zaradi spremembe nič ne šteje. Čez minuto je nazaj, v plošči, ki ustreza temu, kar zdaj pokriva, v njegovem razlogu pa piše <em>Type changed by ⟨vaše ime⟩ on ⟨datum⟩.</em> Nato odločite kot običajno: odobrite ali zavrnite. Vsaka sprememba vrste se shrani z vašim imenom in časom. Ponovno branje dokumenta pozneje nikoli ne spremeni tistega, kar ste nastavili pri <strong>What it covers</strong>, in mu nikoli ne poveže artiklov. Dokumentu, ki pokriva določene artikle, jih dodajte sami: tukaj z <strong>Find items this document covers…</strong>, ko je objavljen, pa pod <strong>Documents</strong> z <strong>Add items this document covers…</strong>. Dokument za celoten program, ki ste mu spremenili vrsto, velja za artikle, za katere je bil odobren, in za nobene druge: artikel, ki pride v katalog pozneje, se mu ne pridruži, ročno pa mu artiklov ni mogoče dodati. Povejte razvijalcu, kadar mora tak certifikat pokriti nov artikel.</p>
 <p><strong>Objavljen dokument.</strong> <strong>Change type...</strong> se pojavi samo pri dokumentih, ki čakajo na Review. Objavljen ali nadomeščen dokument mora najprej stran: zavrnite ga, nato ga pod <strong>Documents</strong> znova odprite z <strong>Reopen this document</strong>. Vrne se na Review, tam pa mu lahko spremenite vrsto.</p>
+<h3 id="pages/review--dokument-podizvajalca">Dokument podizvajalca</h3>
+<p>Nekatere izdelke, ki se prodajajo pod blagovno znamko, izdeluje drugo podjetje, <em>podizvajalec</em>: Kometove poene Procodile izdeluje Sure Dent, ENFILL in ENPACK pa Woodpecker. Playbook znamke jih našteva. Dokument, ki ga je natisnil podizvajalec, se nikoli ne objavi sam in nikoli ne pokrije celotnega nabora znamke. Počaka tukaj, <strong>Why it needs you</strong> pa pove, kaj storiti:</p>
+<ul>
+<li><strong>Certifikat:</strong> <em>"Sure Dent Corporation is a known subcontractor of KOMET. A subcontractor's certificate cannot cover all of KOMET. Change type to specific items, then tick the items Sure Dent Corporation makes."</em> Gumba <strong>Approve for all ... items</strong> ni. Pritisnite <strong>Change type...</strong>, nastavite <em>What it covers</em> na <em>specific items</em>, potrdite, nato v izbirniku (odpre se na znamki) označite artikle in pritisnite <strong>Approve</strong>.</li>
+<li><strong>Izjava:</strong> <em>"Sure Dent Corporation is a known subcontractor of KOMET. Check the ticked items and approve."</em> Artikli, katerih številke izjava navaja, so že označeni. Odznačite napačne, označite tiste, ki jih izjava navaja le z imenom izdelka, in pritisnite <strong>Approve</strong>: objavijo se samo označeni artikli.</li>
+</ul>
 <h3 id="pages/review--prikaz-ene-vrste-razloga-naenkrat">Prikaz ene vrste razloga naenkrat</h3>
 <p>Gumbi nad seznamom pokažejo dokumente, ki čakajo zaradi ene vrste razloga. <strong>All reasons</strong> spet pokaže vse.</p>
 <div class="tw"><table><thead><tr>
@@ -2106,6 +2112,16 @@ tbody tr:last-child td{border-bottom:0}
 <td><em>The article numbers belong to more than one manufacturer.</em></td>
 <td>Številke artiklov na strani segajo čez dva dobavitelja</td>
 <td>Nenavadno. Pred odločitvijo preberite PDF</td>
+</tr>
+<tr>
+<td><em>Made by a subcontractor of the brand, so nothing was published by itself</em></td>
+<td>Podjetje, natisnjeno na dokumentu, izdeluje nekatere izdelke blagovne znamke, na primer Sure Dent za Komet. Njegov dokument nikoli ne velja kot dokument same znamke</td>
+<td>Sledite stavku pod <strong>Why it needs you</strong> (glejte <em>Dokument podizvajalca</em> zgoraj)</td>
+</tr>
+<tr>
+<td><em>Printed by another company than the brand it was found for, so it was not bound to that brand's whole range</em></td>
+<td>Dokument je bil najden za eno znamko, izdalo pa ga je drugo podjetje, ki ga poznamo</td>
+<td>Odprite PDF. Če velja za določene izdelke, uporabite <strong>Change type...</strong> in jih označite; če pripada drugi znamki, ga zavrnite z razlogom <em>Wrong manufacturer</em></td>
 </tr>
 </tbody></table></div>
 <h3 id="pages/review--običajno-zavrnite">Običajno zavrnite</h3>

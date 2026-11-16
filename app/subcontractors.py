@@ -73,3 +73,22 @@ def moved_names(playbooks) -> set[str]:
     canonicals = {manufacturers.normalize(pb.manufacturer) for pb in playbooks}
     return {manufacturers.normalize(e) for pb in playbooks for e in pb.subcontractors
             if manufacturers.normalize(e) not in canonicals}
+
+
+def bind_refusal(conn, doc_id: int, manufacturer: str | None) -> str | None:
+    """Why a person may not bind this document to `manufacturer`'s whole range,
+    or None. Any printed manufacturer on the document that `manufacturer` lists
+    as a subcontractor refuses it (spec 2026-11-13 § 4.5 item 3). The web route
+    asks the same question before enqueueing."""
+    if not manufacturer:
+        return None
+    canonicals = manufacturers.resolve_canonicals(conn, manufacturer) or [manufacturer]
+    for r in conn.execute("SELECT DISTINCT value FROM evidence WHERE doc_id=%s "
+                          "AND field='manufacturer'", (doc_id,)).fetchall():
+        listed_by = listing_brands(conn, r["value"])
+        for brand in canonicals:
+            if brand in listed_by:
+                return (f"{r['value']} is a known subcontractor of {brand}: its certificate "
+                        f"cannot cover all of {brand}. Change type to specific items, then "
+                        f"tick the items {r['value']} makes.")
+    return None

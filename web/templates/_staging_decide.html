@@ -21,10 +21,14 @@
    staged. #}
 {% macro buttons(doc_id, is_mfr_binding, manufacturer_name, bind_items=None,
                  has_picker=False, preselect=None, preselect_items=None,
-                 approve_count=0) %}
+                 approve_count=0, whole_range_refused=False) %}
 <div class="decide-actions">
   {% if is_mfr_binding %}
-    {% if manufacturer_name %}
+    {% if whole_range_refused %}
+    {# Spec 2026-11-13 § 4.5 item 3: a listed subcontractor's certificate never
+       covers its brand's whole range. The server refuses it too. #}
+    <span class="hint">Not for the whole range: use Change type above, then tick the items.</span>
+    {% elif manufacturer_name %}
     {# The name reaches the route through the hidden input beside this button,
        carried with the form's other fields: htmx sends the enclosing form's
        values with a button's own non-GET request. C16 (2026-08-17) put the
