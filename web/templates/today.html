@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_ui.html" as ui %}
+{% import "_filed_match.html" as fm %}
 {% block title %}Today — Dentalia Compliance Registry{% endblock %}
 {% block content %}
 {#- Today (office UI redesign spec § 4): the office's first screen. Four lists
@@ -153,6 +154,57 @@
   <p class="hint">Open the document and use Remove on the wrong item.</p>
   {% endif %}
 </section>
+
+{#- Filed, but maybe ours (2026-11-13): filed documents with no item whose
+    printed numbers match, loosely, a Business Central number of their
+    manufacturer (web/filed_matches.py). It suggests and writes nothing: the
+    person opens the document and adds the item there. Shown only when there
+    is something to look at. The first 12 rows show; the rest fold open in
+    place rather than on a page of their own. -#}
+{% if filed.total %}
+{% macro filed_rows(rows) -%}
+  <table class="filed-match-table">
+    <colgroup><col class="c-kind"><col class="c-doc"><col class="c-mfr"><col class="c-printed"><col><col class="c-go"></colgroup>
+    <thead><tr><th>Match</th><th>Document</th><th>Manufacturer</th><th>Printed</th><th>Business Central item</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rows %}{% set m = r.match %}
+    <tr>
+      <td>{{ fm.chip(r.kind) }}</td>
+      {#- 970 of 1,045 filed documents are declarations: the type is named only
+          when it is something else, so the row stays one line. -#}
+      <td>Doc {{ r.doc_id }}{% if r.doc_type != "DoC" %} <span class="hint-inline">{{ r.doc_type | doc_type }}</span>{% endif %}
+        {%- if r.undated %} <span class="hint-inline">no issue date</span>{% endif %}</td>
+      <td>{{ r.manufacturer }}</td>
+      <td>{{ fm.number(m.printed_head, m.printed_match) }}</td>
+      <td>{{ fm.bc_item(m) }}
+        {%- if r.more %} <span class="hint-inline">+{{ r.more | num }} more</span>{% endif %}</td>
+      <td class="today-go"><a href="/documents/{{ r.doc_id }}">Open</a></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+{%- endmacro %}
+<section class="card today-list" id="today-filed">
+  <h2>Filed, but maybe ours <span class="today-n">{{ filed.total | num }}</span></h2>
+  <p>Documents the system filed because no Business Central item number matched what
+    they print. These print a number that is the same as, or close to, a number of the
+    same manufacturer. Open one, check, and add the item if it is ours.</p>
+  <p class="match-key">
+    {% for kind, words in filed_words.items() if filed.counts[kind] %}
+    <span class="match-chip match-{{ kind }}">{{ words[0] }} · {{ filed.counts[kind] | num }}</span>
+    {% endfor %}
+  </p>
+  <div class="table-wrap">{{ filed_rows(filed.rows[:12]) }}</div>
+  {% if filed.total > 12 %}
+  <details class="filed-more">
+    <summary>See all {{ filed.total | num }}</summary>
+    <div class="table-wrap">{{ filed_rows(filed.rows[12:]) }}</div>
+  </details>
+  {% endif %}
+  <p class="hint">A document leaves this list once it has an item,
+    or once you reject it. A number that is a word ("S-tip") can match by chance.</p>
+</section>
+{% endif %}
 
 <section class="card" id="today-coverage">
   {#- D4, the figure to quote to Dentalia, from the one helper and the one
