@@ -33,11 +33,11 @@ never clobber a real handler.
 | `email.poll` | `handlers/email_poll.py:361` | `extract.doc` | `test_email_poll_handler.py` |
 | `email.request` | `handlers/email_request.py:869` | `email.reminder` | `test_email_request_handler.py` |
 | `email.reminder` | `handlers/email_request.py:1036` | nothing; defers its own job to the next rung | `test_email_request_handler.py` |
-| `eudamed.sync` | `handlers/eudamed.py:226` | nothing | `test_eudamed_handler.py` |
-| `eudamed.certregister` | `handlers/eudamed.py:424` | nothing | `test_eudamed_handler.py` |
+| `eudamed.sync` | `handlers/eudamed.py:275` | nothing | `test_eudamed_handler.py` |
+| `eudamed.certregister` | `handlers/eudamed.py:457` | nothing | `test_eudamed_handler.py` |
 
 **Running the register by hand.** `POST /scheduler/run/eudamed.certregister` (the **Run now** button on `/scheduler`) enqueues one pull with the cron's own empty payload and dedupe key, so a hand-run and the cron collapse into one job. This is currently the ONLY way the register refreshes: `eudamed_certregister_enabled` is off by default, so the `eudamed.certregister` cron tick fires and does nothing. (The reason used to be that the `scheduler` service sat behind compose profile `full`; that service was deleted 2026-09-02 and the crons run on the queue, so the flag is now the whole story.) Everything on `/expiry` that reads `certificate_drift`, `certificate_drift_candidate`, `certificate_status_alert` and `certificate_gap` is therefore as old as the last hand-run.
-| `eudamed.sweep` | `handlers/eudamed.py:730` | nothing, never self-emits | `test_eudamed_handler.py` |
+| `eudamed.sweep` | `handlers/eudamed.py:763` | nothing, never self-emits | `test_eudamed_handler.py` |
 | `report.weekly` | `handlers/report.py:168` | nothing | `test_report_handler.py` |
 | `scheduler.tick` | `handlers/scheduler_tick.py:93` | itself, forever (`queue.defer`) | `test_scheduler_tick.py` |
 | `playbook.reonboard` | `handlers/playbook_probe.py:86` | **nothing** — the only `app.crawl` consumer that emits no `fetch.url` | `test_playbook_probe.py`, `test_playbook_probe_web.py` |
@@ -185,6 +185,7 @@ Five fixed lines each: **consumes** (payload fields), **writes** (tables),
 - writes: `eudamed_mirror` / `eudamed_certificate` + `manufacturer_srn` + `manufacturer` / `eudamed_mirror` + `manufacturer.srn_probed_at` + `manufacturer_srn` + `eudamed_sweep_state`
 - emits: nothing, in all three
 - fails how: non-200, non-JSON, a filter that stops filtering, exceeding `MAX_DEVICES`, or never reaching a last page all raise — dead-letter rather than silently truncate. `_assert_srn` raises on a mismatched echoed SRN
+- **`eudamed.sync` stores each page as it arrives (since 2026-11-12).** A refusal on a later page (non-200 such as 429, non-JSON, or a contradicting empty page) ends the walk and keeps the pages already read, reporting `incomplete: 1` and a note naming the page. A refusal on page 0 still raises; an integrity failure (foreign record, `MAX_DEVICES`, no last page) on any page still raises and the runner rolls every page back. Before this, pages were held in memory until the last one and a 429 anywhere discarded all of them (production job 29512). The sweep and the certificate register are unchanged
 - note: `eudamed.sweep` is released by a human and never self-emits
 - **a sweep that stored zero devices does NOT stamp `last_swept_at`** and stays on the due list, reporting `empty_sweep`. Zero devices for a *trusted* SRN is a failed call, not an empty catalogue — the SRN came off a certificate or a double-gated article probe, so the manufacturer is registered by construction. Before this guard (job 35679, IVOCLAR, 2026-09-02) an empty sweep finished `done`, stamped itself swept and cleared `due_at`, buying 90 days of silence for a run that wrote nothing
 - **an empty `content` that contradicts its own envelope raises.** EUDAMED degrades under load to a 200 carrying a valid Spring envelope whose `content` is `[]` before it degrades to an HTTP 307 block page (reproduced live 2026-09-02, host and worker container alike). `_is_last()` used to read that as a clean end of pagination, which is how jobs 35679/35701 swept IVOCLAR on page 0 and stored nothing. A page is now an error when the envelope says there was more (`last: false`, or `number < totalPages - 1` with `totalElements > 0`); a genuinely empty manufacturer (`totalElements: 0`) and a malformed body with no counts both still end the walk quietly

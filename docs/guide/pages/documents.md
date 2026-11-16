@@ -116,6 +116,13 @@ to browse everything.
 - **Look up in EUDAMED** runs in the background. A message confirms it was
   queued, or that it was already checked today. Its result appears as a new
   table on this same page once it is done — refresh to see it.
+- **EUDAMED is not answering these lookups at the moment.** Since November
+  2026 it turns away automated requests, so the lookup fails and no table
+  appears. Nothing is wrong with the document; a developer is moving the lookup
+  to EUDAMED's official channel.
+- If EUDAMED stops answering partway through a large device group, the table
+  shows the devices that came back before it stopped. It may not be the whole
+  group.
 - Everything else on this page is for reading only. Nothing you click here
   changes a document's status.
 

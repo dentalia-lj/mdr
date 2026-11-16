@@ -115,6 +115,12 @@ prazno, če želite brskati po vsem.
 - **Look up in EUDAMED** teče v ozadju. Sporočilo potrdi, da je bilo vloženo v
   vrsto, ali da je bilo že danes preverjeno. Rezultat se pojavi kot nova
   tabela na isti strani, ko je gotovo — osvežite, da ga vidite.
+- **EUDAMED trenutno ne odgovarja na ta poizvedovanja.** Od novembra 2026
+  zavrača samodejne zahteve, zato poizvedba ne uspe in tabela se ne pojavi. Z
+  dokumentom ni nič narobe; razvijalec poizvedbo prenaša na uradni kanal
+  EUDAMED.
+- Če EUDAMED sredi velike skupine naprav neha odgovarjati, tabela pokaže
+  naprave, ki so prišle, preden se je ustavil. Morda ni cela skupina.
 - Vse drugo na tej strani je le za branje. Nič, kar tu kliknete, ne spremeni
   statusa dokumenta.
 
