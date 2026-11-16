@@ -226,3 +226,9 @@ the whole table, not only the task that just changed.
 - **Rule:** Before reporting a screen change as done, render it (the branch's web app on the local database, plus a headless screenshot) and compare it with the approved mockup.
 - **Why:** I reported the "Filed, but maybe ours" card as done on green tests. Denis asked "verified?". The first screenshot showed rows in a different order from the mockup (leading zeros before prefix). The tests had pinned my order, not the mockup's.
 - **How to apply:** `docker compose run -d --rm --name <x>-preview -p 127.0.0.1:8099:8000 -v <worktree>:/preview -w /preview -e API_DATABASE_URL=...dentalia_api... -e WEB_REQUIRE_AUTHENTICATED_USER=false test python -m web.app`, then a Playwright screenshot of the section from inside that container. Check the order, labels and colours against the mockup before writing "done".
+
+## 2026-11-16 "Pushed" means the commit is an ancestor of origin/main, not a commit count
+- Rule: before saying a merge is on main or deployable, run `git merge-base --is-ancestor <commit> origin/main` and check a file from the change exists in `git ls-tree origin/main`.
+- Why: I reported "origin/main contains 0429efb" from `rev-list --count 0429efb..origin/main` = 1, which only says origin/main has one commit the merge lacks. The merge had gone main -> branch, never branch -> main; Denis deployed main without the work.
+- How to apply: say the direction of every merge ("main into the branch" vs "the branch into main"), and verify ancestry before any push or deploy step.
+- Follow-up, same day: I then committed the Dentaurum fix on the worktree branch and told Denis to push; his push from main found nothing again. Rule: when a change is ready to ship, I land it on main myself (fast-forward from the worktree in the main checkout, push, verify ancestry on origin) and only then hand over the deploy. Never leave "on the branch, not on main" for Denis to discover.

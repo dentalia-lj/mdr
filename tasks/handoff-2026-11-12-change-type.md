@@ -73,7 +73,7 @@ Tests only through `./scripts/test.sh`.
 
 Doc 165 (Sure Dent QMS certificate, bound to all 262 KOMET MD items) waits for this
 feature. Repair path agreed 2026-11-12: Reject (reason wrong manufacturer), Reopen,
-Change type to "specific items", tick the 16 Sure Dent items (BC primary code 077-A, live BC 2026-11-12; the July export had 14,
+Change type to "specific items", [DONE 2026-11-16: relinked to the 16 Procodile points (077-A) only, per Nataša; see docs/superpowers/specs/2026-11-13-subcontractors-design.md § 6] tick the 16 Sure Dent items (BC primary code 077-A,
 the GPPR/PPPR gutta-percha points). Remind Denis as soon as Change type is deployed.
 
 ## Status 2026-11-12 (execution started)
