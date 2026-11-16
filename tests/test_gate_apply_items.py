@@ -256,6 +256,80 @@ def test_add_items_refuses_a_filed_document_with_no_issue_date(conn):
     assert _link(conn, doc_id, "A1") is None
 
 
+# --- an issue date with the items (2026-11-16) ---------------------------------
+# A filed document that prints no date can be published only with one; the
+# person sends it with the items. Only on a filed document with NO date: a date
+# read off the page is never overwritten this way.
+
+_SRC = "No date printed; scan date from PDF metadata, issued on or before"
+
+
+def _undated_filed(conn, key):
+    doc_id = _doc(conn, key, status="filed")
+    conn.execute("UPDATE document SET validity_from=NULL WHERE doc_id=%s", (doc_id,))
+    _item(conn, "A1")
+    return doc_id
+
+
+def _date_evidence(conn, doc_id):
+    return [tuple(r.values()) for r in conn.execute(
+        "SELECT value, verbatim, tier, confidence FROM evidence "
+        "WHERE doc_id=%s AND field='validity_from' ORDER BY id", (doc_id,))]
+
+
+def test_add_items_with_an_issue_date_publishes_an_undated_filed_document(conn):
+    doc_id = _undated_filed(conn, "filed-dated-by-person")
+    gh.handle_gate_apply(conn, _job(doc_id, decision="add-items", items=["A1"],
+                                    issue_date="2025-03-11", issue_date_source=_SRC))
+    assert _doc_status(conn, doc_id) == "production"
+    assert str(conn.execute("SELECT validity_from FROM document WHERE doc_id=%s",
+                            (doc_id,)).fetchone()["validity_from"]) == "2025-03-11"
+    # the person's value, with where it came from as its source text
+    assert [(v, vb, t, float(c)) for v, vb, t, c in _date_evidence(conn, doc_id)] == [
+        ("2025-03-11", _SRC, "T3", 1.0)]
+    assert _detail(conn, doc_id, "add-items") == {
+        "items": 1, "manufacturer": MFR, "from": "filed",
+        "issue_date": "2025-03-11", "issue_date_source": _SRC}
+
+
+@pytest.mark.parametrize("status", ["production", "staged"])
+def test_an_issue_date_is_refused_on_anything_but_a_filed_document(conn, status):
+    doc_id = _doc(conn, f"dated-{status}", status=status)
+    conn.execute("UPDATE document SET validity_from=NULL WHERE doc_id=%s", (doc_id,))
+    _item(conn, "A1")
+    # a staged document is refused by add-items itself, before the date
+    with pytest.raises(ValueError, match="issue date|not 'production' or 'filed'"):
+        gh.handle_gate_apply(conn, _job(doc_id, decision="add-items", items=["A1"],
+                                        issue_date="2025-03-11", issue_date_source=_SRC))
+    assert _date_evidence(conn, doc_id) == []
+
+
+def test_an_issue_date_never_overwrites_a_date_already_held(conn):
+    doc_id = _doc(conn, "filed-has-date", status="filed")
+    before = conn.execute("SELECT validity_from FROM document WHERE doc_id=%s",
+                          (doc_id,)).fetchone()["validity_from"]
+    assert before is not None
+    _item(conn, "A1")
+    with pytest.raises(ValueError, match="already has an issue date"):
+        gh.handle_gate_apply(conn, _job(doc_id, decision="add-items", items=["A1"],
+                                        issue_date="2025-03-11", issue_date_source=_SRC))
+    assert conn.execute("SELECT validity_from, status FROM document WHERE doc_id=%s",
+                        (doc_id,)).fetchone() == {"validity_from": before, "status": "filed"}
+    assert _link(conn, doc_id, "A1") is None
+
+
+@pytest.mark.parametrize("extra, why", [
+    ({"issue_date": "2025-03-11"}, "issue_date_source"),
+    ({"issue_date": "11.03.2025", "issue_date_source": _SRC}, "YYYY-MM-DD"),
+    ({"issue_date": "2999-01-01", "issue_date_source": _SRC}, "future"),
+])
+def test_an_issue_date_must_be_a_past_date_with_its_source(conn, extra, why):
+    doc_id = _undated_filed(conn, f"bad-date-{why}")
+    with pytest.raises(ValueError, match=why):
+        gh.handle_gate_apply(conn, _job(doc_id, decision="add-items", items=["A1"], **extra))
+    assert _doc_status(conn, doc_id) == "filed" and _date_evidence(conn, doc_id) == []
+
+
 def test_add_items_without_items_raises(conn):
     doc_id = _doc(conn, "empty", status="production")
     with pytest.raises(ValueError, match="items is required"):
