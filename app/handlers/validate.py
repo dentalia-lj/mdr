@@ -149,6 +149,7 @@ import re
 from app import manufacturers
 from app import playbooks as playbooks_mod
 from app import queue
+from app import subcontractors
 from app.dates import parse_date
 from app.config import load_config
 from app.extract import tiers
@@ -887,8 +888,21 @@ def handle_validate_doc(conn, job: dict) -> dict:
         flags: list[str] = list(shape_flags)
         if _enumerates_devices(_stored_text(conn, content_hash)):
             flags.append("device-enumeration")
+        # A listed subcontractor's certificate is never its brand's (spec
+        # 2026-11-13 § 4.4). Relative to the brand it reached: through one of
+        # that brand's groups, or with no group at all. Shofu's own certificate
+        # through a Shofu group is Shofu's, although Komet lists SHOFU.
+        sub_of = subcontractors.listing_brands(conn, _val(fields, "manufacturer"))
+        if sub_of and (group_id is None or manufacturer in sub_of):
+            flags.append("subcontractor")
+            if group_id is None:
+                manufacturer = sub_of[0] if len(sub_of) == 1 else None
+        else:
+            sub_of = []
         candidate = {"content_hash": content_hash, "extract_rev": extract_rev,
                      "group_id": group_id, "route": "mfr-binding"}
+        if sub_of:
+            candidate["subcontractor_of"] = sub_of
         if flags:
             candidate["flags"] = flags
         if manufacturer:
@@ -931,8 +945,14 @@ def handle_validate_doc(conn, job: dict) -> dict:
     links: list[dict] = []
     resolved_group_id = group_id
     multi_group_matches = 0
+    # Brands that list the printed issuer as a subcontractor (spec 2026-11-13
+    # § 4.4); kept only when the document reached one of them.
+    listed_by = subcontractors.listing_brands(conn, _val(fields, "manufacturer"))
+    sub_of: list[str] = []
     if group_id is not None:
         group = _get_group(conn, group_id)
+        if group is not None and group["canonical_manufacturer"] in listed_by:
+            sub_of = listed_by
         if group is not None:
             ref_gate, links = _ref_gate_for_group(conn, group, ref_list, basic_udi_di,
                                                   basis_override)
@@ -968,6 +988,24 @@ def handle_validate_doc(conn, job: dict) -> dict:
                     # staging via gate.py's existing flag-cap logic.
                     flags.append("multi-group-match")
                     multi_group_matches = match_count
+            elif groups_found == 0 and listed_by:
+                # A listed subcontractor's declaration: its name resolves to no
+                # group of its own, so scope it by the brands that list it. The
+                # links ride the `subcontractor` flag, which GATE caps at staged.
+                sub_of = listed_by
+                for brand in listed_by:
+                    b_links, b_count, _, b_primary = _links_for_manufacturer(
+                        conn, brand, ref_list, basic_udi_di, basis_override)
+                    if b_links and resolved_group_id is None:
+                        resolved_group_id = b_primary
+                    seen = {l["item_ref"] for l in links}
+                    links += [l for l in b_links if l["item_ref"] not in seen]
+                    if b_count > 1:
+                        multi_group_matches = max(multi_group_matches, b_count)
+                if links:
+                    ref_gate = True
+                else:
+                    flags.append("no-ref-overlap")
             elif groups_found == 0:
                 # Canonicalization (alias hit, or the raw-string fallback on a
                 # miss) still didn't land on any group in the catalogue — the
@@ -1153,6 +1191,9 @@ def handle_validate_doc(conn, job: dict) -> dict:
             # see the note there ([task4-cert-anomaly]).
             flags.append("cert-unresolved")
 
+    if sub_of:
+        flags.append("subcontractor")
+
     candidate = {
         "content_hash": content_hash, "extract_rev": extract_rev,
         "group_id": resolved_group_id,
@@ -1165,6 +1206,8 @@ def handle_validate_doc(conn, job: dict) -> dict:
         candidate["archive_url"] = archive_url
     if manual_task_id is not None:
         candidate["manual_task_id"] = manual_task_id
+    if sub_of:
+        candidate["subcontractor_of"] = sub_of
 
     queue.enqueue(
         conn, "gate.candidate", candidate,

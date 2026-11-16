@@ -2229,3 +2229,90 @@ def test_no_card_adds_no_field_to_the_candidate(conn):
     vh.handle_validate_doc(conn, {"payload": {
         "content_hash": "vh-nocard", "extract_rev": 1, "group_id": 7}})
     assert "manual_task_id" not in _gate_jobs(conn, "vh-nocard")[0]["payload"]
+
+
+# --------------------------------------------------------------------------- #
+# Listed subcontractors (spec 2026-11-13-subcontractors-design.md § 4.4)
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def subs_playbooks(monkeypatch):
+    """BRANDCO lists "Maker Corp" and the own-brand SHOFUCO. In memory, so the
+    repository's playbooks/ never decide these tests."""
+    from app import subcontractors
+    from app.playbooks import Playbook
+    pbs = (Playbook(slug="brandco", manufacturer="BRANDCO",
+                    subcontractors=("Maker Corp", "SHOFUCO")),
+           Playbook(slug="shofuco", manufacturer="SHOFUCO", aliases=("Shofu Inc.",)))
+    monkeypatch.setattr(subcontractors, "_loaded", lambda playbooks: pbs)
+    return pbs
+
+
+def test_whole_range_subcontractor_through_brand_group(conn, subs_playbooks):
+    group_id = _seed_group(conn, canonical_manufacturer="BRANDCO")
+    _seed(conn, "vh-sub-1", _fields(coverage_scope=_ev("manufacturer"), ref_list=_ev([]),
+                                    manufacturer=_ev("Maker Corp")))
+    vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": "vh-sub-1", "extract_rev": 1, "group_id": group_id}})
+    p = _payload(conn, "vh-sub-1")
+    assert p["route"] == "mfr-binding"
+    assert "subcontractor" in p["flags"]
+    assert p["subcontractor_of"] == ["BRANDCO"]
+    assert p["manufacturer"] == "BRANDCO"
+
+
+def test_whole_range_subcontractor_no_group(conn, subs_playbooks):
+    _seed(conn, "vh-sub-2", _fields(coverage_scope=_ev("manufacturer"), ref_list=_ev([]),
+                                    manufacturer=_ev("Maker Corp")))
+    vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": "vh-sub-2", "extract_rev": 1, "group_id": None}})
+    p = _payload(conn, "vh-sub-2")
+    assert "subcontractor" in p["flags"]
+    assert p["subcontractor_of"] == ["BRANDCO"]
+    assert p["manufacturer"] == "BRANDCO"
+
+
+def test_whole_range_own_brand_shofu(conn, subs_playbooks):
+    conn.execute("INSERT INTO manufacturer_alias (raw_name, canonical_name) "
+                 "VALUES ('Shofu Inc.', 'SHOFUCO')")
+    group_id = _seed_group(conn, canonical_manufacturer="SHOFUCO")
+    _seed(conn, "vh-sub-3", _fields(coverage_scope=_ev("manufacturer"), ref_list=_ev([]),
+                                    manufacturer=_ev("Shofu Inc.")))
+    vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": "vh-sub-3", "extract_rev": 1, "group_id": group_id}})
+    p = _payload(conn, "vh-sub-3")
+    assert "subcontractor" not in (p.get("flags") or [])
+    assert "subcontractor_of" not in p
+
+
+def test_declaration_subcontractor_no_group_links_brand_items(conn, subs_playbooks):
+    group_id = _seed_group(conn, canonical_manufacturer="BRANDCO")
+    _seed_member(conn, group_id, "IT-SUB", mfr_ref="REF-SUB")
+    _seed(conn, "vh-sub-4", _fields(ref_list=_ev(["REF-SUB"]), manufacturer=_ev("Maker Corp")))
+    vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": "vh-sub-4", "extract_rev": 1, "group_id": None}})
+    p = _payload(conn, "vh-sub-4")
+    assert p["links"] == [{"item_ref": "IT-SUB", "match_basis": "ref-list"}]
+    assert "subcontractor" in p["flags"]
+    assert "manufacturer-unresolved" not in p["flags"]
+    assert p["subcontractor_of"] == ["BRANDCO"]
+    assert p["group_id"] == group_id
+
+
+def test_declaration_subcontractor_through_group(conn, subs_playbooks):
+    group_id = _seed_group(conn, canonical_manufacturer="BRANDCO")
+    _seed_member(conn, group_id, "IT-SUB5", mfr_ref="REF-SUB5")
+    _seed(conn, "vh-sub-5", _fields(ref_list=_ev(["REF-SUB5"]), manufacturer=_ev("Maker Corp")))
+    vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": "vh-sub-5", "extract_rev": 1, "group_id": group_id}})
+    p = _payload(conn, "vh-sub-5")
+    assert "subcontractor" in p["flags"]
+    assert p["subcontractor_of"] == ["BRANDCO"]
+
+
+def test_declaration_unlisted_unknown_name_unchanged(conn, subs_playbooks):
+    _seed(conn, "vh-sub-6", _fields(ref_list=_ev(["REF-NONE"]), manufacturer=_ev("Nobody GmbH")))
+    vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": "vh-sub-6", "extract_rev": 1, "group_id": None}})
+    p = _payload(conn, "vh-sub-6")
+    assert "manufacturer-unresolved" in p["flags"]
+    assert "subcontractor" not in p["flags"]
