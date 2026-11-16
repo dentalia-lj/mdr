@@ -362,3 +362,17 @@ def test_after_the_alias_validate_resolves_the_document_revalidate_sent(conn):
     assert "manufacturer-unresolved" not in (after.get("flags") or [])
     assert after.get("emitted") is True
 
+
+
+def test_listed_subcontractor_is_not_an_alias_suggestion(conn, monkeypatch):
+    """The page must never invite re-adding the alias the subcontractors list
+    replaced (spec 2026-11-13 § 4.6)."""
+    from app import subcontractors
+    from app.playbooks import Playbook
+    monkeypatch.setattr(subcontractors, "_loaded", lambda playbooks: (
+        Playbook(slug="kometz", manufacturer="KOMETZ", subcontractors=("Sure Dent Corporation",)),))
+    _mfr(conn, "KOMETZ", ["9077"], slug="kometz")
+    _items(conn, "KOMETZ", "9077", ["GPPR04045", "GPPR04050", "GPPR05035"])
+    _doc(conn, "Sure Dent Corporation", refs=["GPPR04045", "GPPR04050", "GPPR05035"])
+    [g] = un.find(conn, min_ref_len=6).groups
+    assert (g.suggestion.level, g.suggestion.manufacturer) == ("subcontractor", "KOMETZ")

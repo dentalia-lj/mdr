@@ -690,3 +690,19 @@ def test_remove_link_counts_an_older_document_as_left(client, conn):
                  "VALUES ('A1', %s, 'manual', 'production')", (older,))
     conn.commit()
     assert "will have no IFU left" not in _text(_ask(client, doc_id).text)
+
+
+def test_picker_search_offers_listing_brand_items(client, conn, monkeypatch):
+    """A Woodpecker document can be given Komet's ENFILL (spec 2026-11-13 § 4.6)."""
+    from app import subcontractors
+    from app.playbooks import Playbook
+    monkeypatch.setattr(subcontractors, "_loaded", lambda playbooks: (
+        Playbook(slug="komet", manufacturer="KOMETX", subcontractors=("WOODPECKERX",)),))
+    _mfr(conn, "KOMETX", "077X")
+    _mfr(conn, "WOODPECKERX", "430X")
+    _item(conn, "000 ENFILL", "ENFILL", raw="077X")
+    doc_id = _doc(conn, "wp-enfill", canonical="WOODPECKERX")
+    conn.commit()
+    text = _text(client.get(f"/picker/{doc_id}/results",
+                            params={"manufacturer": "WOODPECKERX", "q": "enfill"}).text)
+    assert "000 ENFILL" in text

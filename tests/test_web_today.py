@@ -970,3 +970,20 @@ def test_link_checks_ignore_what_is_not_published(client, conn):
     card = _text(_section(client.get("/").text, "today-links"))
     assert "to look at" not in card
     assert "No published links yet" in card
+
+
+def test_link_check_accepts_listing_brand_items(client, conn, monkeypatch):
+    """A Woodpecker document linked to Komet's ENFILL is not a crossing: Komet
+    lists WOODPECKER as a subcontractor (spec 2026-11-13 § 4.6)."""
+    from app import subcontractors
+    from app.playbooks import Playbook
+    monkeypatch.setattr(subcontractors, "_loaded", lambda playbooks: (
+        Playbook(slug="kometco", manufacturer="KOMETCO", subcontractors=("WOODCO",)),))
+    _maker(conn, "KOMETCO", "977")
+    _maker(conn, "WOODCO", "930")
+    _item(conn, "LC-ENFILL", manufacturer="977")
+    doc_id = _published(conn, "WOODCO")
+    _link(conn, "LC-ENFILL", doc_id, status="production")
+    conn.commit()
+    card = _text(_section(client.get("/").text, "today-links"))
+    assert "All 1 published link matches" in card

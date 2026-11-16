@@ -19,7 +19,7 @@ import shlex
 from collections import Counter
 from dataclasses import dataclass, field
 
-from app import manufacturers, playbooks, vendor_master
+from app import manufacturers, playbooks, subcontractors, vendor_master
 from app.manufacturers import normalize
 
 #: "Article numbers" evidence needs at least this many of the documents' REFs
@@ -99,7 +99,7 @@ def eligible_refs(ref_list, min_len: int) -> list[str]:
 
 @dataclass
 class Suggestion:
-    level: str                      # 'alias' | 'refs' | 'name' | 'none'
+    level: str                      # 'alias' | 'refs' | 'name' | 'subcontractor' | 'none'
     manufacturer: str | None = None
     slug: str | None = None
     held: int = 0                   # REFs only the suggested manufacturer holds
@@ -223,7 +223,12 @@ def find(conn, *, min_ref_len: int) -> Found:
     for key, docs in by_key.items():
         printed = Counter(d["printed"] for d in docs).most_common(1)[0][0]
         counts = _by_refs(conn, refs_by_key[key], holders)
-        suggestion = _by_alias(conn, printed, grouped)
+        # A listed subcontractor is never an alias candidate (spec 2026-11-13
+        # § 4.6): its article numbers are the brand's, and following them would
+        # re-add the alias the list replaced.
+        listed = subcontractors.listing_brands(conn, printed)
+        suggestion = (Suggestion("subcontractor", manufacturer=", ".join(listed))
+                      if listed else _by_alias(conn, printed, grouped))
         if suggestion is None:
             suggestion = counts
             if counts.level != "refs":

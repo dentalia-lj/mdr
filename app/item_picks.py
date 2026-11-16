@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Collection
 
-from app import manufacturers
+from app import subcontractors
 
 
 def check_items(conn, doc_id: int, manufacturer: str | None,
@@ -25,7 +25,9 @@ def check_items(conn, doc_id: int, manufacturer: str | None,
     refused item in `refs` alone is still refused. Empty dict when clean.
     """
     reopen = set(reopen)
-    codes = set(manufacturers.item_codes_for(conn, manufacturer)) if manufacturer else set()
+    # A manufacturer's items include those of every brand that lists it as a
+    # subcontractor (spec 2026-11-13 § 4.6): Woodpecker's 458 covers Komet's ENFILL.
+    codes = set(subcontractors.item_codes_with_listing_brands(conn, manufacturer))
     rows = conn.execute(
         "SELECT t.item_ref, m.manufacturer_raw, l.status "
         "FROM unnest(%s::text[]) AS t(item_ref) "

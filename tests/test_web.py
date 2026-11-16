@@ -3205,6 +3205,21 @@ def test_data_quality_unmatched_card_lists_names_first_with_suggestion_and_actio
     assert "No match" in html and "must not become an alias" in html
 
 
+def test_data_quality_unmatched_card_names_a_known_subcontractor(client, conn, monkeypatch):
+    """Spec 2026-11-13 § 4.6: never an alias suggestion for a listed subcontractor."""
+    from app import subcontractors
+    from app.playbooks import Playbook
+    monkeypatch.setattr(subcontractors, "_loaded", lambda playbooks: (
+        Playbook(slug="kometq", manufacturer="KOMETQ", subcontractors=("Sure Dent Corporation",)),))
+    _unmatched_mfr(conn, "KOMETQ", ["9177"], slug="kometq")
+    _unmatched_items(conn, "KOMETQ", "9177", ["GPPR04045", "GPPR04050", "GPPR05035"])
+    _unmatched_doc(conn, "Sure Dent Corporation", refs=["GPPR04045", "GPPR04050", "GPPR05035"])
+    conn.commit()
+    html = client.get("/data-quality").text
+    assert "Known subcontractor of KOMETQ" in html
+    assert 'href="/playbooks/kometq"' not in html
+
+
 def test_data_quality_unmatched_card_says_so_when_nothing_waits(client):
     assert "No document is waiting for a manufacturer name." in client.get("/data-quality").text
 

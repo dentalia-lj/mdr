@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from app import manufacturers
+from app import manufacturers, subcontractors
 
 _LINKS = """
 SELECT d.doc_id, d.type, d.canonical_manufacturer AS manufacturer,
@@ -76,7 +76,10 @@ def check(conn) -> Checks:
             f.links += r["n"]
             continue
         if mfr not in owned:
-            owned[mfr] = set(codes_for(mfr))
+            # A subcontractor owns the items of the brands that list it too
+            # (spec 2026-11-13 § 4.6), as the picker and `check_items` say.
+            owned[mfr] = set(codes_for(mfr)).union(
+                *(codes_for(b) for b in subcontractors.brands_listing(mfr)))
         if r["code"] in owned[mfr]:
             continue
         f = crossing.setdefault(r["doc_id"], Finding(r["doc_id"], r["type"], mfr))

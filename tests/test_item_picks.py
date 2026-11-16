@@ -37,3 +37,17 @@ def test_a_manufacturer_with_no_codes_owns_no_item(conn):
     _item(conn, "A1", "ACME")
     got = item_picks.check_items(conn, _doc(conn), "NOBODY", ["A1"])
     assert got == {"other-manufacturer": ["A1"]}
+
+
+def test_check_items_accepts_listing_brand_items(conn, monkeypatch):
+    """Woodpecker's declaration 458 covers Komet's ENFILL: Komet lists WOODPECKER
+    as a subcontractor (spec 2026-11-13 § 4.6)."""
+    from app import subcontractors
+    from app.playbooks import Playbook
+    monkeypatch.setattr(subcontractors, "_loaded", lambda playbooks: (
+        Playbook(slug="komet", manufacturer="KOMET", subcontractors=("WOODPECKER",)),))
+    for raw, canonical in (("077", "KOMET"), ("430", "WOODPECKER")):
+        conn.execute("INSERT INTO manufacturer_alias (raw_name, canonical_name) VALUES (%s,%s)",
+                     (raw, canonical))
+    _item(conn, "000 ENFILL", "077")
+    assert item_picks.check_items(conn, _doc(conn), "WOODPECKER", ["000 ENFILL"]) == {}

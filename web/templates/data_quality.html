@@ -49,6 +49,9 @@
             <br><span class="hint">{{ s.held }} of the {{ s.matched }} article numbers found in the catalogue belong only to {{ s.manufacturer }}
               {%- if s.matched > s.held %}; {{ s.matched - s.held }} belong to another manufacturer or to several{% endif %}.
               {%- if s.few_known %} Only {{ s.matched }} of the {{ s.listed }} it lists are in the catalogue: check the document is from the manufacturer, not a distributor.{% endif %}</span>
+          {% elif s.level == "subcontractor" %}
+            <strong>{{ s.manufacturer }}</strong> <span class="badge badge-done">Known subcontractor</span>
+            <br><span class="hint">Known subcontractor of {{ s.manufacturer }}. Its documents wait on Review for a person to tick the items it makes; its name must not become an alias.</span>
           {% elif s.level == "name" %}
             <strong>{{ s.manufacturer }}</strong> <span class="badge badge-staged">Name only</span>
             <br><span class="hint">The name contains the BC brand {{ s.manufacturer }}, which may also be a distributor.
@@ -73,6 +76,8 @@
             Add to playbook <a href="/playbooks/{{ s.slug }}"><code>{{ s.slug }}</code></a>
           {% elif s.level == "refs" %}
             No playbook yet. Start a playbook for {{ s.manufacturer }}, with this name as its first alias
+          {% elif s.level == "subcontractor" %}
+            Open each document on Review and tick the items it covers
           {% elif s.level == "name" %}
             Open one document and check the manufacturer. If right, add to
             {% if s.slug %}playbook <a href="/playbooks/{{ s.slug }}"><code>{{ s.slug }}</code></a>{% else %}a new playbook for {{ s.manufacturer }}{% endif %}

@@ -1,7 +1,7 @@
 """The Review item picker's reads (spec 2026-10-02-review-item-picker-design.md §4).
 
 Read-only, on the web's `dentalia_api` connection. The candidate set is one
-manufacturer's items, through `manufacturers.item_codes_for`; nothing outside
+manufacturer's items (`subcontractors.item_codes_with_listing_brands`: its own BC codes plus those of every brand that lists it as a subcontractor); nothing outside
 it is ever returned (§4.1). Lists are capped at CAP rows and count what they
 did not show, so the reviewer is told to narrow the word rather than shown a
 silently clipped list.
@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Callable
 
-from app import manufacturers
+from app import manufacturers, subcontractors
 
 CAP = 200
 #: Measured on the server before the picker was built (spec §4.4; the plan's
@@ -112,7 +112,9 @@ def compare(theirs: date | None, ours: date | None) -> str:
 
 
 def _codes(conn, manufacturer: str | None) -> list[str]:
-    return manufacturers.item_codes_for(conn, manufacturer) if manufacturer else []
+    # Plus the items of every brand that lists it as a subcontractor (spec
+    # 2026-11-13 § 4.6), the same set `check_items` accepts.
+    return subcontractors.item_codes_with_listing_brands(conn, manufacturer)
 
 
 def _like_escape(text: str) -> str:
