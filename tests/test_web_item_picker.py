@@ -813,3 +813,21 @@ def test_review_subcontractor_reason_keeps_the_other_reason(client, conn, kometw
     text = _text(client.get(f"/staging/{doc_id}/detail").text)
     assert DECL_SENTENCE in text
     assert FLAG_EXPLANATIONS["older-than-current"] in text
+
+
+def test_review_subcontractor_certificate_promises_no_whole_range(client, conn, kometw):
+    """A whole-range task on a subcontractor's certificate: the panel neither
+    says it covers the whole range nor counts the brand's items (found by
+    rendering the panel, 2026-11-16)."""
+    from tests.fixtures import seed_ui
+    from web.app import MFR_BINDING_REASON
+    doc_id = _sub_doc(conn, "sub-cert-task", scope="manufacturer", doc_type="EC")
+    seed_ui.seed_item(conn, "KW-1", name="bur", manufacturer_raw="977W", md_flag=True)
+    seed_ui.seed_manual_task(conn, kind="gate-manual", doc_id=doc_id, payload={
+        "route": "mfr-binding", "manufacturer": "KOMETW", "flags": ["subcontractor"]})
+    conn.commit()
+    text = _text(client.get(f"/staging/{doc_id}/detail").text)
+    assert CERT_SENTENCE in text
+    assert MFR_BINDING_REASON not in text
+    assert "makes it count for" not in text
+    assert "Approve for all" not in text

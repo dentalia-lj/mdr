@@ -45,7 +45,10 @@
   {% if held_line %}<p>{{ held_line }}</p>{% endif %}
 {% else %}
     {% if row.is_mfr_binding %}
-      {% if row.manufacturer_confirmed and row.bind_items is defined and row.bind_items is not none %}
+      {# A subcontractor's certificate never counts for its brand's whole range
+         (spec 2026-11-13 § 4.5 item 3), so no count is promised for it. #}
+      {% if row.manufacturer_confirmed and row.bind_items is defined and row.bind_items is not none
+            and not row.subcontractor_reason %}
       {# Three counts, three sentences. A count of 0 cannot reach here today --
          `_mfr_bind_target` answers None on it and the picker takes over -- but
          the branch exists so this can never read "for all 0 X items" over a

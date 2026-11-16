@@ -1838,7 +1838,10 @@ def _staged_doc_detail(conn, doc_id: int) -> dict | None:
     if row["subcontractor_reason"]:
         # Leads, and keeps any other reason the document waits for (final
         # review I1): a date or supersession flag still needs its answer.
-        rest = (row.get("reason") or "").replace(FLAG_EXPLANATIONS["subcontractor"], "").strip()
+        # A whole-range task's own sentence promises the brand's whole range,
+        # which is exactly what is refused here: replaced, never appended.
+        rest = ("" if doc["coverage_scope"] == "manufacturer" else
+                (row.get("reason") or "").replace(FLAG_EXPLANATIONS["subcontractor"], "").strip())
         row["reason"] = (f"{row['subcontractor_reason']} Also: {rest}" if rest
                          else row["subcontractor_reason"])
     # Binding candidates only, and every one of them: the queue exists to
