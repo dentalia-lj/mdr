@@ -58,6 +58,29 @@ def test_a_stale_heartbeat_is_a_condition(conn, beat):
     assert "worker" in got[0]["message"]
 
 
+def test_a_replaced_containers_leftover_row_is_not_a_condition(conn, beat):
+    """A deploy replaces the worker container; the new one beats under a new
+    hostname and the old row stays until it is pruned. Production 2026-11-12:
+    the 12:32 recreate left `worker-1@3f72cd96b05e` behind and it paged an hour
+    later while `worker-1@ac5b8206e3df` was beating every second. The service
+    is up when its freshest instance is, the same reading `heartbeat.read`
+    gives the header chip."""
+    beat("worker", instance="old-container", minutes_ago=90)
+    beat("worker", instance="new-container", minutes_ago=0)
+
+    assert conditions(conn, now=NOW) == []
+
+
+def test_every_instance_stale_is_one_condition_on_the_freshest(conn, beat):
+    beat("worker", instance="older", minutes_ago=300)
+    beat("worker", instance="newer", minutes_ago=90)
+
+    got = conditions(conn, now=NOW)
+
+    assert [c["key"] for c in got] == ["service-stale:worker:newer"]
+    assert "90 minutes" in got[0]["message"]
+
+
 # --------------------------------------------------------------------------- #
 # a queue that stopped moving
 # --------------------------------------------------------------------------- #
