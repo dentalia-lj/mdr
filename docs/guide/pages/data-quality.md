@@ -110,6 +110,7 @@ and where they genuinely disagree.
 | **Article numbers** | At least 3 of the documents' article numbers belong only to one manufacturer's products, and they are at least 80 % of those found in the catalogue. If most of what the documents list is not in the catalogue, the row warns you | Pass the name and the suggested playbook to your developer. Heed the warning: a distributor lists many manufacturers' articles |
 | **Name only** | The name contains a Business Central brand, but the article numbers do not confirm it. A brand can also be a distributor | Open one document and check the manufacturer before passing it on |
 | **No match** | Neither the article numbers nor the name point to one manufacturer | Look at the documents. It may be a distributor, whose name must never be added as a manufacturer's |
+| **Known subcontractor** | The name is on a brand's list of companies that make products for it, for example Sure Dent for Komet. Its documents are never the brand's own, so the name must not become the brand's alias | Open each document on Review and tick the items it covers (Review guide, *A document from a subcontractor*) |
 
 ### Board 2 — what each kind means
 

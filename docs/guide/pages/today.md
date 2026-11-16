@@ -87,7 +87,7 @@ something, the heading shows **N to look at** and the card names each document:
 
 | Line | What it means | What you do |
 |---|---|---|
-| **N published links reach an item another manufacturer makes in Business Central** | A published document counts for an item that BC files under a different manufacturer. The line says which, and how many items | Open the document. If the item is wrong, use **Remove** on it. If BC files the item under the wrong manufacturer, tell whoever keeps BC |
+| **N published links reach an item another manufacturer makes in Business Central** | A published document counts for an item that BC files under a different manufacturer. The line says which, and how many items. A subcontractor's document on the items of a brand that lists it (Woodpecker's on Komet's ENFILL) is not counted here | Open the document. If the item is wrong, use **Remove** on it. If BC files the item under the wrong manufacturer, tell whoever keeps BC |
 | **N published links sit under a document with no confirmed manufacturer** | A published document counts for items but no manufacturer was ever confirmed for it | Open the document and tell a developer |
 
 It cannot see a document from the right brand but the wrong maker, such as a

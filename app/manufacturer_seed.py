@@ -98,6 +98,7 @@ class SeedStats:
     #: `manufacturer_name` alias rows deleted because the name moved to a
     #: `subcontractors` list (spec 2026-11-13 § 4.1). Nothing else deletes one.
     names_removed: int = 0
+    names_removed_detail: list = field(default_factory=list)
 
     #: Rows the seed refused to touch because an existing row says something
     #: different. Never silently resolved. (subject, existing, intended)
@@ -258,6 +259,7 @@ def _remove_moved_names(conn, stats, loaded) -> None:
             conn.execute("DELETE FROM manufacturer_name WHERE name_folded=%s",
                          (r["name_folded"],))
             stats.names_removed += 1
+            stats.names_removed_detail.append(r["name"])
 
 
 def _orphan_groups(conn) -> list[tuple[str, int]]:
@@ -569,6 +571,8 @@ def render(stats: SeedStats, *, dry_run: bool = False) -> list[str]:
         f"{stats.contacts_unchanged} unchanged",
         *([f"{head}: body {stats.bodies_adopted} ADOPTED from file"]
           if stats.bodies_adopted else []),
+        *[f"  {'would remove' if dry_run else 'removed'}: {n}"
+          for n in stats.names_removed_detail],
     ]
     if stats.conflicts:
         out.append(f"\nCONFLICTS ({len(stats.conflicts)}) -- left untouched, resolve by hand:")

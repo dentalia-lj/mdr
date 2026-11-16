@@ -514,7 +514,7 @@ tbody tr:last-child td{border-bottom:0}
 </tr></thead><tbody>
 <tr>
 <td><strong>N published links reach an item another manufacturer makes in Business Central</strong></td>
-<td>A published document counts for an item that BC files under a different manufacturer. The line says which, and how many items</td>
+<td>A published document counts for an item that BC files under a different manufacturer. The line says which, and how many items. A subcontractor's document on the items of a brand that lists it (Woodpecker's on Komet's ENFILL) is not counted here</td>
 <td>Open the document. If the item is wrong, use <strong>Remove</strong> on it. If BC files the item under the wrong manufacturer, tell whoever keeps BC</td>
 </tr>
 <tr>
@@ -3651,6 +3651,11 @@ tbody tr:last-child td{border-bottom:0}
 <td><strong>No match</strong></td>
 <td>Neither the article numbers nor the name point to one manufacturer</td>
 <td>Look at the documents. It may be a distributor, whose name must never be added as a manufacturer's</td>
+</tr>
+<tr>
+<td><strong>Known subcontractor</strong></td>
+<td>The name is on a brand's list of companies that make products for it, for example Sure Dent for Komet. Its documents are never the brand's own, so the name must not become the brand's alias</td>
+<td>Open each document on Review and tick the items it covers (Review guide, <em>A document from a subcontractor</em>)</td>
 </tr>
 </tbody></table></div>
 <h3 id="pages/data-quality--board-2-what-each-kind-means">Board 2 — what each kind means</h3>

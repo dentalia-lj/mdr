@@ -651,3 +651,17 @@ def test_seed_without_subcontractors_removes_nothing(conn):
     _seed(conn, [_pb("komet", "KOMET", ["077"], ["Gebr. Brasseler GmbH & Co. KG"])])
     stats = _seed(conn, [_pb("komet", "KOMET", ["077"], ["Gebr. Brasseler GmbH & Co. KG"])])
     assert stats.names_removed == 0
+
+
+def test_seed_names_each_removed_name_in_its_report(conn):
+    """The dry run is what the operator reads before the backup and the apply,
+    so it names each name it would delete, not just a count (runbook)."""
+    from app.manufacturer_seed import render
+    _vendor(conn, [("077", "KOMET")])
+    _seed(conn, [_pb("komet", "KOMET", ["077"], ["Sure Dent Corporation"])])
+    moved = Playbook(slug="komet", manufacturer="KOMET", bc_codes=(BcCode(code="077"),),
+                     subcontractors=("Sure Dent Corporation",))
+    stats = _seed(conn, [moved])
+    assert stats.names_removed_detail == ["Sure Dent Corporation"]
+    lines = render(stats, dry_run=True)
+    assert "  would remove: Sure Dent Corporation" in lines

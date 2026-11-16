@@ -86,7 +86,7 @@ najde, naslov pokaže **N to look at**, kartica pa imenuje vsak dokument:
 
 | Vrstica | Kaj pomeni | Kaj storite |
 |---|---|---|
-| **N published links reach an item another manufacturer makes in Business Central** | Objavljen dokument šteje za artikel, ki ga BC vodi pod drugim proizvajalcem. Vrstica pove, katerim in koliko artiklov | Odprite dokument. Če je artikel napačen, na njem uporabite **Remove**. Če BC artikel vodi pod napačnim proizvajalcem, povejte tistemu, ki ureja BC |
+| **N published links reach an item another manufacturer makes in Business Central** | Objavljen dokument šteje za artikel, ki ga BC vodi pod drugim proizvajalcem. Vrstica pove, katerim in koliko artiklov. Dokument podizvajalca na artiklih znamke, ki ga našteva (Woodpeckerjev na Kometovem ENFILL), se tu ne šteje | Odprite dokument. Če je artikel napačen, na njem uporabite **Remove**. Če BC artikel vodi pod napačnim proizvajalcem, povejte tistemu, ki ureja BC |
 | **N published links sit under a document with no confirmed manufacturer** | Objavljen dokument šteje za artikle, proizvajalec zanj pa ni bil nikoli potrjen | Odprite dokument in povejte razvijalcu |
 
 Ne vidi dokumenta prave blagovne znamke, a napačnega izdelovalca, na primer

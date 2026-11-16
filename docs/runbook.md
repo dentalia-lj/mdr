@@ -577,6 +577,7 @@ Documents whose printed manufacturer name no alias knows wait on Review flagged 
 
 1. Add the name to the suggested manufacturer's playbook `aliases` (or start a playbook for it), commit, and deploy (`git pull`, `./scripts/deploy.sh`).
 2. Load it: `manufacturers seed --apply`, then `playbooks sync` (the sync is what writes `manufacturer_alias`, which VALIDATE reads). Both, in that order: on the server the sync reads aliases from the database, and only the seed copies a new alias from the file into it, so `sync` alone reports `0 inserted` and the name stays unresolved (2026-10-14, the USTOMED alias "Ulrich Storz GmbH & Co. KG").
+   A name moved from `aliases` to `subcontractors` (2026-11-13) goes the other way: the seed (with `--adopt <slug>` for the changed body) and the sync **delete** it from `manufacturer_name` and `manufacturer_alias` and report it (`names removed`, `removed: N alias row(s) moved to subcontractors`). Back up both tables first (`pg_dump -t manufacturer_name -t manufacturer_alias`), run the seed without `--apply` to read the names it would remove (`would remove: …`), and only then apply.
 3. Send the waiting documents round again:
 
 ```bash

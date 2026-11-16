@@ -110,6 +110,7 @@ prazen in kje se dejansko razhajata.
 | **Article numbers** | Vsaj 3 številke artiklov na dokumentih pripadajo samo izdelkom enega proizvajalca in predstavljajo vsaj 80 % tistih, ki so v katalogu. Če večine navedenega v katalogu ni, vas vrstica opozori | Ime in predlagani playbook posredujte razvijalcu. Upoštevajte opozorilo: distributer navaja artikle več proizvajalcev |
 | **Name only** | Ime vsebuje blagovno znamko iz Business Centrala, a številke artiklov tega ne potrdijo. Znamka je lahko tudi distributer | Odprite en dokument in preverite proizvajalca, preden predlog posredujete |
 | **No match** | Niti številke artiklov niti ime ne kažejo na enega proizvajalca | Oglejte si dokumente. Morda gre za distributerja, čigar ime nikoli ne sme postati ime proizvajalca |
+| **Known subcontractor** | Ime je na seznamu podjetij, ki izdelujejo za neko znamko, na primer Sure Dent za Komet. Njegovi dokumenti nikoli niso dokumenti same znamke, zato ime ne sme postati ime znamke | Vsak dokument odprite na Review in označite artikle, ki jih pokriva (vodnik Review, *Dokument podizvajalca*) |
 
 ### Tabla 2 — kaj pomeni posamezna vrsta
 
