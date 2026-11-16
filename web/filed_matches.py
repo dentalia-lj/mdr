@@ -23,7 +23,7 @@ links with and the picker offers items with. Only the latest reading of the
 document's numbers counts. Read-only, on the web's `dentalia_api` connection.
 
 Cost, measured on the server 2026-11-13 (911 filed documents printing 16,152
-numbers, 12,391 items of their manufacturers): about 130 ms per call, most of
+numbers, 12,391 items of their manufacturers): 130-155 ms per call, most of
 it reading the items (48 ms) and indexing them (37 ms). Link checks take 25 ms.
 If Today slows, load this card after the page (htmx `load`) before anything
 cleverer.
