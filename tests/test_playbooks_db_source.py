@@ -46,7 +46,10 @@ def _seed_real(conn):
     """The repo's 33 files, imported the way the CLI imports them."""
     raw = pb.load_raw()
     loaded = pb.load_playbooks()
-    for code, name in sorted({(bc.code, p.manufacturer)
+    # One label per code, as Business Central gives it ("DENTAURUM ORD" for
+    # 396): the playbook's own name would invent a brand "DENTAURUM" that
+    # DENTAURUM IMPLANTS contains, a BrandCollision BC does not have.
+    for code, name in sorted({(bc.code, f"{p.manufacturer} {bc.code}")
                               for p in loaded for bc in p.bc_codes}):
         conn.execute(
             "INSERT INTO vendor_master (code_source, code, name, import_batch) "

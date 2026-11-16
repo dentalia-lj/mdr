@@ -532,8 +532,11 @@ def test_every_real_playbook_seeds_a_body_that_parses_back(conn):
     real_loaded = playbooks_mod.load_playbooks()
     assert len(real_raw) == len(real_loaded) > 0
 
-    # vendor_master is the FK target for every authored code.
-    _vendor(conn, sorted({(bc.code, pb.manufacturer)
+    # vendor_master is the FK target for every authored code. Each code gets a
+    # label of its own, as Business Central gives it ("DENTAURUM ORD" for 396):
+    # labelling it with the playbook's name would invent a brand "DENTAURUM"
+    # that DENTAURUM IMPLANTS contains, a BrandCollision BC does not have.
+    _vendor(conn, sorted({(bc.code, f"{pb.manufacturer} {bc.code}")
                           for pb in real_loaded for bc in pb.bc_codes}))
 
     stats = _seed(conn, real_loaded, raw=real_raw)
