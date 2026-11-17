@@ -1,6 +1,7 @@
 # PHASES.md — Build Plan & Status
 
-v5, rebuilt 2026-09-16 after a full verification sweep. **The plan and the status
+v5, rebuilt 2026-09-16 after a full verification sweep; § 1-3 figures re-read on
+production 2026-11-17. **The plan and the status
 board.** One status per thing, stated once. Where any other file disagrees with
 this one about status, this one wins; where the PRD disagrees about a contract,
 the PRD wins.
@@ -15,7 +16,7 @@ pointer. The argument behind it lives where it belongs.
 |---|---|
 | the rulings already made — **check before proposing** | [docs/decisions.md](docs/decisions.md) |
 | per-criterion and per-finding state, with a box to tick | [docs/acceptance-and-findings.md](docs/acceptance-and-findings.md) |
-| the measurements behind § 3 | [docs/state/2026-09-16.md](docs/state/2026-09-16.md) |
+| the measurements behind § 3 | [docs/state/2026-11-17.md](docs/state/2026-11-17.md) (production); the 09-16 verification sweep: [2026-09-16.md](docs/state/2026-09-16.md) § 9 |
 | why a shipped thing was built the way it was | [docs/build-log.md](docs/build-log.md) |
 | what is deliberately not built | [docs/dev/limits.md](docs/dev/limits.md) |
 | the working engineering queue | [tasks/followups.md](tasks/followups.md) |
@@ -29,10 +30,13 @@ pointer. The argument behind it lives where it belongs.
 **Phase 0 done · Phase 1 built, eight of nine acceptance criteria met · Phase 2 at
 three sessions of five.**
 
-The pipeline runs end to end and has produced a registry of 891 documents over
-15.958 catalogue items. **Every functional item the two delivery stages owe is
-built.** What it has never done is run against a live BC feed, or have its output
-reviewed anywhere near the rate it is produced.
+The pipeline runs end to end. On production (read 2026-11-17,
+[state/2026-11-17.md](docs/state/2026-11-17.md)) the registry holds 2.112
+documents, 962 published, over 20.357 catalogue items. **Every functional item
+the two delivery stages owe is built.** BC is read by a weekly sync run by hand
+(last 2026-11-06) and written per item; review runs on production (542
+`gate.apply` decisions since 2026-11-01). Web discovery has never run there
+(`DISCOVER_HOLD=true`).
 
 **Installed on the Dentalia server 2026-09-25** (`91.98.42.140`, compose project
 `compliance`): stack up and verified, manufacturer master, playbooks and the
@@ -46,7 +50,7 @@ what is left: [deployment.md § 9](docs/dev/deployment.md).
 | Phase | Scope | Status |
 |---|---|---|
 | **0** | spike: queue, EXTRACT, GATE, corpus run | **DONE** 2026-07-13 |
-| **1** | INGEST → RESOLVE → DISCOVER → FETCH → EXTRACT → VALIDATE → GATE, review UI, KPI board | **BUILT, EIGHT OF NINE ACCEPTED** — every stage has run against real data. Measured 2026-09-16: AC1 met (1.571 of 4.265 = 36,8% against a 33% target), AC3 met by construction, AC6 met re-based (99,6%), AC2/AC4/AC5/AC7 met, AC9 measure-only. **AC8 is the single failure** and is one defect. Per criterion: [the register](docs/acceptance-and-findings.md) |
+| **1** | INGEST → RESOLVE → DISCOVER → FETCH → EXTRACT → VALIDATE → GATE, review UI, KPI board | **BUILT, EIGHT OF NINE ACCEPTED** — every stage has run against real data. Measured 2026-09-16 (dev): AC1 met (1.571 of 4.265 = 36,8% against a 33% target; **on production 2026-11-17: 1.706 of 5.043 = 33,8%, a margin of 41 items**), AC3 met by construction, AC6 met re-based (99,6%), AC2/AC4/AC5/AC7 met, AC9 measure-only. **AC8 is the single failure** and is one defect. Per criterion: [the register](docs/acceptance-and-findings.md) |
 | **2** | playbooks, discovery, onboarding, EUDAMED, email, scale | **ALL BUILT** — S2.1 and S2.3 done, S2.4 built and polling the client's mailbox since 2026-10-06, S2.5's sweep hardening done. Still open: S2.2's agent half, and the scale work sized for the ZG connection G17 struck |
 
 ### Sessions
@@ -64,7 +68,7 @@ is named and does not hold a row open. Evidence for every verdict:
 | S1.2 | RESOLVE | **DONE** 2026-07-15 | — |
 | S1.3 | DISCOVER + SearchAdapter | **DONE** 2026-07-21 | — |
 | S1.4 | FETCH + StorageAdapter + Playwright tier | **DONE** 2026-07-21 | Nothing of ours. Drive auth (G7) is the client's |
-| S1.5 | SCHEDULER + T0 layout templates | **DONE** 2026-07-23 | Ten crons; two have ever emitted a job |
+| S1.5 | SCHEDULER + T0 layout templates | **DONE** 2026-07-23 | Ten crons; on production six have a ledger run (2026-11-17) |
 | S1.6 | review UI + read API + KPI board v1 | **DONE** 2026-07-23 | Nothing. One wording residue — F35, item 1 |
 | S1.7 | per-manufacturer coverage | **DONE** 2026-09-16 | Nothing outstanding. P2 and P4 are beyond this stage; P4 is F33 |
 | S1.8 | `upload.ingest` retrospective slot | **CLOSED — not work** | a naming collision; it shipped 2026-08-04 |
@@ -97,9 +101,9 @@ listed because they are real, and because a reader needs to know who owns them.
 |---|---|---|
 | B1 | Nothing backs up the registry or the archive | **Ordered 2026-09-28** (offer 2026092301). Running on the server, measured 2026-09-30 11:52 UTC: **L0** hourly by cron since 2026-09-29 (29 verified dumps, 0 failures); **L1** to the Storage Box since 2026-09-30 11:18 UTC (2 snapshots, both run by hand, 2.54 GiB, 4.815 files: dump, archive, imports, `.env`, `caddy/users/`). **Restore test passed 2026-09-30** (clean container, only the keys, ~5 min, everything identical; ruled the offer's test). First L1 run by cron 2026-09-30 12:07 UTC, ok. Pending: box snapshots (Mitja), key handover: `tasks/todo.md`, [docs/dev/backup.md](docs/dev/backup.md). F1 |
 | B2 | Nothing can report that the queue itself is dead | **Accepted.** The in-queue half shipped 2026-09-07. The out-of-body check is missing and stays missing: Dentalia will run another app on the same server and will notice an outage that way. F16 |
-| B3 | The catalogue is a 2026-08-10 snapshot | **Not a gap.** The CSV import is the first version and is how the snapshot and the SFTP corpus arrived. The monthly tick is built — it enqueues the newest file in `ingest_watch_dir` — and is inert only because that directory is unset, which is deployment config. OData is *kasneje*, item 4 |
-| B4 | Acceptance: eight of nine met | **Sufficient.** AC1 1.571 of 4.265 = 36,8% against a 33% target. AC8's third clause closes with F23's rule change; the register tracks it |
-| B5 | Review debt grows far faster than it empties | **Needs a named reviewer.** 1.199 open human items against 13 human `gate.apply` decisions, none since 2026-09-03. The queue drains at whatever rate review is staffed for. F7 |
+| B3 | The catalogue is a 2026-08-10 snapshot | **Not a gap.** The CSV import is the first version and is how the snapshot and the SFTP corpus arrived. The monthly tick is built — it enqueues the newest file in `ingest_watch_dir` — and is inert only because that directory is unset, which is deployment config. OData is *kasneje*, item 4. **Production 2026-11-17:** refreshed from BC by the hand-run weekly sync, last 2026-11-06 (20.357 items) |
+| B4 | Acceptance: eight of nine met | **Sufficient.** AC1 on production 2026-11-17: 1.706 of 5.043 = 33,8% against a 33% target, margin 41 items (36,8% was the 09-16 dev reading). AC8's third clause closes with F23's rule change; the register tracks it |
+| B5 | Review debt grows far faster than it empties | **Needs a named reviewer.** Production 2026-11-17: 546 `gate.apply` decisions since 2026-10-02 (542 since 11-01) against 144 open tasks and 141 staged documents. The 09-16 dev figures (1.199 open items, 13 decisions) are in [state/2026-09-16.md](docs/state/2026-09-16.md). The queue drains at whatever rate review is staffed for. F7 |
 
 ### 2.2 Ours to build
 
@@ -121,7 +125,7 @@ here, so citations elsewhere stay valid.
 2. **The two crawl recipes work. They have not been run in the pipeline, by choice.** Re-verified live 2026-09-16 with `tools.crawl_judge_dryrun`, which writes nothing: **NSK** serves 1.330 unique PDFs off one page, 0 off-host, 0 capped, ranked in 27 batches for $0,48 — **DoC 129, IFU 581, ISO 6, EC 2, other 612**; **ULTRADENT** serves 147, all of them via `allow_hosts: ["assets.ctfassets.net", "downloads.ctfassets.net"]`, **IFU 134, other 13, no declarations**. robots allows both. 3 of 38 playbooks carry a `crawl` block (4 recipes — EDENTA authors two). **Not run: a real run costs about $41 for NSK** (1.330 less the ~446 safety data sheets its `doc_type_from` excludes, at the measured $0,0465 a document) **and about $7 for Ultradent**, and lands up to 1.476 staged documents on a backlog nobody has reviewed since 2026-09-03 (B5). Dev database; the spend buys nothing a production rebuild would keep. (`[static-pdf-crawl-recipe-candidates]`)
    - **Edge case, NSK: a quality cliff as the library grows.** `ceiling = max(max_links, `discovery.crawl_rank_max`)` and both are 1.500. At 1.330 links the harvest is under the ceiling, so the survivors are ranked and declarations are fetched first. Past 1.500 the harvest hits the ceiling, ranking is **skipped** as `pattern-too-broad` and the rung falls back to page order — which the 2026-09-04 measurement put at 118 declarations and 60 junk against ranking's 129 and 0. Nothing warns except a `detail.rank.skipped` line in the log.
    - **Edge case, EDENTA: never verified live, and half its recipe is inert.** Both its recipes cap at `max_links: 50`, low for a whole library, and its `doc_type_from` is the POSITIVE form (`{"13485": "ISO", "zertifikat": "EC"}`), which `discover.py:775` reads only for `null` needles — a positive rule is a probe hint and does nothing at runtime. Dry-run it before trusting it.
-3. **Discovery review capacity, not identity.** A reviewer is named (B5); what is missing is throughput — 0 `gate.apply` decisions since 2026-09-03. The 09-03 slice's rates put finishing the catalogue at ~2.000 staged links, ~1.650 staged documents and ~3.300 manual tasks against about 41 production links. Running discovery wider makes B5 and F7 worse. F15.
+3. **Discovery review capacity, not identity.** A reviewer is named (B5); throughput was the gap on dev (0 `gate.apply` decisions after 2026-09-03); on production 542 since 2026-11-01 ([state/2026-11-17.md](docs/state/2026-11-17.md) § 5). The 09-03 slice's rates put finishing the catalogue at ~2.000 staged links, ~1.650 staged documents and ~3.300 manual tasks against about 41 production links. Running discovery wider makes B5 and F7 worse. F15.
 4. **Business Central, read side.** The switch was always the planned second version, and `make_source_adapter` is a config choice over a closed enum. **The PascalCase profile and the missing-key guard were fixed 2026-09-07**: the profile maps camelCase and `_assert_profile_matches` raises `UnknownOdataProperty`. Two residues remain, both in [limits.md](docs/dev/limits.md) (a third, `manufacturer_raw` reading the wrong property, was **settled 2026-09-25** on live data: it is `manufacturerCode`): the `/ingest` form cannot build a `ref` URL, so the browser option always dead-letters (`[ingest-bc-odata-always-fails]`); no `$filter` is built, so `delta_since` is inert. **External access opened 2026-09-24**: `mail.dentalia.si:7048` from the server only, login NTLM inside `Negotiate` (built and verified live that day), `BC_*` wired to `worker`. The two residues are now provable against the real catalogue. **Read proven live 2026-10-02 and 2026-10-05** (dry runs 23729, 23737): 20.027 items in ~4 min after the paging fix (4bd2c65), 788 new or changed against the 09-25 export, nothing written by either. **First real sync applied 2026-10-06** (job 23784): 20.039 seen, 798 new or changed; the item table holds 16.603. **Ruled 2026-10-05: weekly sync, by hand for now** ([runbook](docs/runbook.md#business-central-weekly-sync-and-the-first-write)); the cron is designed ([spec](docs/superpowers/specs/2026-10-05-bc-weekly-sync-design.md)) and waits on approval.
 5. **Business Central, write side. Complete as of 2026-09-07** — the rule, the `bc.push` stage, the ledger, the item button, the bulk preview-then-apply, the `bc.push-drift` cron. **Corrected and closed 2026-09-24:** the running handler was never given a BC client, sent the bare item number as the PATCH URL, and sent no `If-Match`; all three fixed that day, plus a separate `SCHEDULER_BC_PUSH_DRIFT_ENABLED` so the cron stays off after writes go on. The supervised live PATCH and the decision to set `bc.write_enabled` were both done 2026-10-06 — F8 closed. **The supervised PATCH is item 605275** (Denis, 2026-10-05); the procedure, the values it would send and the read-back are in the runbook. Measured 2026-10-05 without writing: `dataitems` holds all 20.027 items with the three fields and is updatable per BC's metadata; the link BC would store opens. A no-change write on 2026-10-05 was refused (400 "Nimate pravic za urejanje artiklov": the BC user could read but not edit items); Dentalia granted the right 2026-10-06 (`[bc-write-permission]`). **First real write 2026-10-06 11:29 UTC** on 605275, read back from BC. `BC_WRITE_ENABLED=true` since that day; on 2026-10-07 a push of six items sent all six (job 24607). The daily drift cron stays off (`SCHEDULER_BC_PUSH_DRIFT_ENABLED=false`) until a bulk apply at `/bc-push` has been checked. Design: `docs/superpowers/specs/2026-09-07-bc-writeback-design.md`.
 6. **`MAX_VISION_PAGES = 4`** (`app/extract/llm.py:44`). Blocks 187 of DENTSPLY's 405 documents; NEODENT's 26-page declaration returned 137 of 948 refs. The corpus is exhausted, so this is about the intake ahead.
@@ -159,25 +163,26 @@ dedupe row and the interval-bucket cadence. The only place the claim survives is
 
 ## 3. Current state
 
-Headline numbers only. The reading behind them, with every measurement, its
-method, and the verification sweep that produced this rebuild, is
-[docs/state/2026-09-16.md](docs/state/2026-09-16.md). **When a newer reading is
-taken it gets a new dated file and this section repoints; the numbers here are
-never edited in place.**
+Headline numbers only, read off **production** 2026-11-17. The reading behind
+them, with its method and definitions, is
+[docs/state/2026-11-17.md](docs/state/2026-11-17.md); the previous one
+([2026-09-16.md](docs/state/2026-09-16.md)) was the dev database and carries the
+verification sweep. **When a newer reading is taken it gets a new dated file and
+this section repoints; the numbers here are never edited in place.**
 
 | | |
 |---|---|
-| Catalogue | **15.958** items · **4.265** flagged a device by BC · mirror stamped 2026-08-10, no ingest since |
-| Coverage | **99,8%** of BC-flagged devices hold a production document · **30,4%** of the catalogue does |
-| Declarations | **36,8%** of flagged devices hold an article-level DoC (AC1: 1.571 of 4.265, **target 33%, met**); 511 of those unexpired · 2.158 items hold any DoC · 55,4% of covered items hold only a manufacturer-scope certificate · **0** hold only a superseded DoC |
-| Registry | **891** documents (204 production, 244 staged, 439 filed, 4 rejected, 0 superseded) · 9.009 item links (8.194 production) · 7.562 evidence rows · 64 MB; archive 771,8 MB |
-| Where it came from | **755** documents the hand-copied SFTP corpus (9 of 15 folders scanned), 122 live web, 14 email |
-| Concentration | one ISO certificate (doc 816) carries **2.567 CARL MARTIN items**; only **12 of 384** manufacturers hold any production document |
-| Discovery | **526 of 8.208** groups ever searched (6,4%): 250 found a candidate, 276 reached the manual handoff, 0 ended empty · coverage cron fired 7 of the last 10 days · 21 documents since 09-04, all staged |
-| Review debt | **512** open tasks · **244** staged documents · 443 staged links · **13** human `gate.apply` decisions ever, none since 2026-09-03 |
-| Expiry | **88** production documents past effective expiry (67 stated, 21 staleness), touching 1.115 items · 4 renewal chases stalled, 1 live |
-| Running system | both images rebuilt and verified 2026-09-14 against **three** hashed roots (`app/`, `migrations/`, `web/`) · **2 of 10 crons** emit work · the Playwright tier has run 12 times |
-| Spend | **$43,31** over 1.779 extraction calls, 77,9% on T2 |
+| Catalogue | **20.357** items · **5.043** flagged a device by BC, 11.754 unclassified · last refreshed from BC 2026-11-06 (by hand) |
+| Coverage | **90,4%** of BC-flagged devices hold a production document · **29,5%** of the catalogue does |
+| Declarations | **33,8%** of flagged devices hold an article-level DoC (AC1: 1.706 of 5.043, **target 33%, met by 41 items**); 1.700 of those unexpired · 3.043 items hold any DoC · 47,0% of covered items are covered only through manufacturer-scope links |
+| Registry | **2.112** documents (962 production, 141 staged, 985 filed, 18 rejected, 6 superseded) · 14.804 item links (14.343 production) · 22.534 evidence rows · 85 MB |
+| Where it came from | **2.106** documents from the `/imports/` corpus, 6 uploads; none from web search or email |
+| Concentration | CARL MARTIN's ISO and EC certificates (docs 18, 19) carry **2.581 items** each; **69 of 383** manufacturers hold any production document |
+| Discovery | **0 of 8.661** groups ever searched on production (`DISCOVER_HOLD=true`) |
+| Review | **546** `gate.apply` decisions (542 since 2026-11-01) · **144** open tasks · **141** staged documents · 177 staged links |
+| Expiry | **290** production documents past effective expiry (242 still current for some item), 308 items on an expired production link · 0 renewal requests |
+| Running system | server on `9ae1f8e` (= origin/main) · **6 of 10 crons** have a ledger run · 5 dead jobs · BC writes: 21 over 7 items, last 2026-10-07 |
+| Spend | **$78,59** over 6.683 extraction calls, 75,1% on T2 |
 
 ## 4. Gap register
 

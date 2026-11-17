@@ -1,6 +1,6 @@
 # CLAUDE.md — Dentalia Compliance Pipeline
 
-Compliance document registry for Dentalia's medical-device catalogue (~16k items mirrored today, growing to roughly 100k). **One Business Central, one article numbering, one pipeline** — there is no separate Zagreb system (Denis, 2026-08-19, closing PHASES.md G17/G11); the Zagreb operation adds items, not a second integration. **The code was collapsed to match on 2026-08-26**: no catalogue picker on any form, no `code_source`/`catalogue` parameter to thread, `BcCode` is a bare code, and the KPI panels report one row rather than a per-catalogue list. The five columns holding the tag are kept and single-valued — do not reintroduce a choice over them. Discovers, fetches, extracts, validates, and stores MDR/MDD documents (DoC, EC cert, IFU, ISO) with per-value evidence. Deterministic-by-default, AI-on-exception. Steady-state cost target €10–40/month.
+Compliance document registry for Dentalia's medical-device catalogue (~16k items mirrored today, growing to roughly 100k). **One Business Central, one article numbering, one pipeline** — there is no separate Zagreb system; the Zagreb operation adds items, not a second integration (ruling 2026-08-19 in `docs/decisions.md`; code collapse in `docs/build-log.md`). No catalogue picker on any form, no `code_source`/`catalogue` parameter to thread, `BcCode` is a bare code, and the KPI panels report one row rather than a per-catalogue list. The five columns holding the tag are kept and single-valued — do not reintroduce a choice over them. Discovers, fetches, extracts, validates, and stores MDR/MDD documents (DoC, EC cert, IFU, ISO) with per-value evidence. Deterministic-by-default, AI-on-exception. Steady-state cost target €10–40/month.
 
 **End state (everything serves these two outputs):**
 1. Database linking BC `item_ref` → N evidenced compliance documents (typed, dated, current per item and type).
@@ -19,11 +19,14 @@ Read before writing any code touching the relevant area. On conflict: **contract
 | `docs/dentalia-mdr-pipeline-ground-truth.md` | Decision record, rejected options, cost baseline, phasing, **§7 domain traps** (which dates each document type carries, REF/matching pitfalls, fetch reality) — read §7 before touching extraction or validation | v1 |
 | `docs/dentalia-workflow-structured-v2.md` | Workflow decisions, email agent, UDI/EUDAMED research | v2 |
 | `docs/dentalia-etl-stage-alternatives.md` | Tooling choices + upgrade paths per stage | v1 |
-| `PHASES.md` | **Status board**: progress per session, open scope in three buckets (blockers · ours · waiting on someone), headline numbers, gap register | live, v4 2026-09-04 |
-| `docs/decisions.md` | **Every ruling** the rest depends on, 139 rows. Check before proposing anything that looks already-decided | live |
+| `PHASES.md` | **Status board**: progress per session, open scope in three buckets (blockers · ours · waiting on someone), headline numbers, gap register | live, v5 2026-09-16; § 3 production reading 2026-11-17 |
+| `docs/decisions.md` | **Every ruling** the rest depends on. Check before proposing anything that looks already-decided | live |
 | `docs/state/<date>.md` | Dated database readings behind PHASES.md § 3. Never edited after its date; a newer reading gets a new file | dated |
 | `docs/build-log.md` | Archive: done-session retrospectives, out-of-band slices, audits, closed gaps. Read for *why*; never plan from it | archive |
 | `docs/README.md` | Docs index + operational docs (architecture, runbook, troubleshooting, code-map) | live |
+| `docs/dev/` | Developer set: lifecycle, handlers, extraction, config reference, limits, deployment, backup | live |
+| `docs/officer-scenarios.md`, `docs/acceptance-and-findings.md` | The comparison list; the standing acceptance results | live |
+| `docs/test-infra.md` | Test wrapper, semaphore, `--dist loadfile` measurements, order-independence guards | live |
 
 Older PRD versions (`dentalia-master-prd.md`, `dentalia-pipeline-contract-prd.md` v2) are superseded — do not read them for contracts.
 
@@ -43,8 +46,13 @@ The FastAPI process (read API + HTMX review UI) is a **job producer only** — i
 
 1. Only `gate.candidate` / `gate.apply` handlers write `document`, `item_document`, `evidence`.
 2. Every production value carries complete evidence `(archive_url, page, verbatim, tier, model_id, confidence, extracted_at)`. GATE rejects candidates without it. `page` is required for T1/T2 evidence only — T0 filename-derived and T3 human evidence are legitimately pageless ([evidence-page] ruling, 2026-07-31).
-3. REF gate: auto-write requires `(canonical_manufacturer, catalogue article number)` pair overlap or Basic UDI-DI match. The article number is `mfr_ref` (supplier's, basis `ref-list`) **or** `item_ref` (Dentalia's own, basis `ref-item`) — client ruling C12, restated 2026-08-13: the primary item number is the key and is what is printed on the physical article. Both are production-capable only because the manufacturer is established *before* any number is compared. Links with `match_basis ∈ {name-family, fetch-context, ref-catalogue}` are **always** capped at `staged` — link-level, structurally (migrations 005, 021).
-4. Never downgrade — means never made current, not never stored. An older candidate (older candidate flags `older-than-current`, blocking, forces `manual` — unchanged). Task 5 adds a narrow, guarded exception: when both dates are present, VALIDATE ALSO emits `superseded_by_doc_id`/`auto-superseded` (only when older than the current document of every article it names), and GATE auto-files straight into the superseded chain (status `superseded`, `superseded_by` set, still archived, still evidenced, no human review) **only if** no other blocking flag survives (e.g. `no-item-identifier` still forces `manual`) AND `validity_from`'s own calibrated confidence clears `cfg.gate.high`. Any guard failure falls back to `older-than-current` forcing `manual`, same as before task 5 — never `production`, never a silent downgrade. Null dates → `downgrade-uncomparable`, never compared, caps at staged. Never delete (supersession append-only, 10-y retention).
+3. REF gate: auto-write requires `(canonical_manufacturer, catalogue article number)` pair overlap or Basic UDI-DI match. The article number is `mfr_ref` (supplier's, basis `ref-list`) **or** `item_ref` (Dentalia's own, basis `ref-item`) — client ruling C12, restated 2026-08-13: the primary item number is the key and is what is printed on the physical article. Both are production-capable only because the manufacturer is established *before* any number is compared. Links with `match_basis ∈ {name-family, fetch-context, ref-catalogue}` are **always** capped at `staged` — link-level, structurally (migrations 005, 021). `ref-eudamed` is capped the same way by ruling (2026-08-25); nothing creates that basis yet, so the CHECK does not name it.
+4. Never downgrade: an older candidate is never made current, but it is still stored, archived and evidenced. It is compared, per article it names, with the current document of the same type and regulation (capped-basis links are never compared). Both dates present:
+   - older for any article → `older-than-current` (blocking, forces `manual`);
+   - equal date on any article → `same-date-revision` (blocking; a person picks the current one);
+   - older for **every** article → VALIDATE also emits `superseded_by_doc_id` + `auto-superseded`, and GATE files it straight to `superseded` (`superseded_by` set, no human review) **only if** no other blocking flag survives (e.g. `no-item-identifier` still forces `manual`) AND `validity_from`'s own calibrated confidence clears `cfg.gate.high`. Any guard failure falls back to `older-than-current` → `manual`, never `production`, never a silent downgrade.
+
+   Null dates → `downgrade-uncomparable`, never compared, caps at staged. Never delete (supersession append-only, 10-y retention). Full rule: PRD §6 VALIDATE, rule 4.
 5. Currency is per item and per type, computed by `item_document_production` (migration 072, rulings 2026-10-02): among published documents (status `production` or `superseded`) on production links, MDR ranks first, then the newest `validity_from`; same-date documents are all current; undated rank below dated; `n.a.` never outranks MDR and competes with MDD by date. Nothing retires a whole document: neither production nor `approve` changes another document. MDR is current over MDD whatever the dates; `related` stays a pointer. The task-5 fast path still files a candidate older than the current document for every one of its articles as `superseded`.
 6. Unchanged content never re-fetched or re-parsed (fetch ledger: ETag / hash / recency window).
 7. Job types are a closed enum. New tag = PRD change + migration first, never a string.
@@ -52,7 +60,7 @@ The FastAPI process (read API + HTMX review UI) is a **job producer only** — i
 9. Job payloads immutable after enqueue. External long-running state (Batch API ids) lives in side tables (`batch_ref`), never in payload mutation.
 10. Audit entries self-contained (`job_snapshot` jsonb, `via_job` soft ref). Deleting every `job` row must leave the audit trail fully interpretable.
 11. Nothing downstream of INGEST/FETCH may know which adapter implementation is live.
-12. All LLM use: candidate ranking, document parsing, and **inbound email-body summarisation** (`email.poll`, S2.4; cheap tier only via `models.email_summary`; the summary is UI context — never evidence, never a production value, never a GATE or VALIDATE input, and never re-read by another stage). Widened from "ranking + parsing only" on 2026-08-20 so `/emails` can carry what a message asked for without persisting supplier correspondence verbatim — proposed and **ratified by Denis the same day**. LLMs never fetch. Fetching = httpx, Playwright fallback tier.
+12. All LLM use: candidate ranking, document parsing, and **inbound email-body summarisation** (`email.poll`, S2.4; cheap tier only via `models.email_summary`; the summary is UI context — never evidence, never a production value, never a GATE or VALIDATE input, and never re-read by another stage; ratified 2026-08-20, `docs/decisions.md`). LLMs never fetch. Fetching = httpx, Playwright fallback tier.
 
 ## Runtime & conventions
 
@@ -67,7 +75,7 @@ The FastAPI process (read API + HTMX review UI) is a **job producer only** — i
 - Docker Compose from day one. Two images: worker from `Dockerfile` (`FROM mcr.microsoft.com/playwright/python`), UI from `Dockerfile.web` (slim). Services: postgres, migrate, worker (replicas), web, caddy (S1.6, HTTP Basic reverse proxy — the sole ingress to `web`, gap G3 v0), test. **There is no `scheduler` service.** The standalone loop was deleted 2026-09-02; the crons run ON THE QUEUE as ten perpetual, self-deferring `scheduler.tick` jobs claimed by `worker` (migrations 054/055, then 064 and 065, `app/handlers/scheduler_tick.py`), re-armed on every worker start by `arm_crons()`.
 - Tests: pytest, against a real Postgres (compose service or testcontainers). Queue semantics, gate dispositions, and validate rules must have table-driven tests. No mocking Postgres.
 
-## Repo layout (target)
+## Repo layout
 
 ```
 app/
@@ -81,7 +89,6 @@ app/
   adapters/            # SourceAdapter, StorageAdapter, SearchAdapter, Fetcher
   extract/             # tiers.py, llm.py, t0_templates.py, t0_layout.py (templates now read from playbooks/*.json), batching.py, economics.py, pdf.py, prompts/
   urls.py              # shared URL normalization (fetch dedupe key — DISCOVER + FETCH)
-  templates/           # placeholder — UI templates live in web/templates/
 web/                   # producer UI + read API (status/KPI board, ingest, staging, manual, dead jobs, /api/*) — kept standalone, G16 closed 2026-07-23
 migrations/
 playbooks/             # per-manufacturer JSON: identity (bc_codes, aliases, domains), doc_sources, T0 parse templates — live S1.7; crawl-recipe/onboarding authoring is still Phase 2 (S2.1)
@@ -119,6 +126,9 @@ Dockerfile.web         # web UI image (slim)
   pairing, links. It cannot see wording, so the table above is on you.
   Build commands: [`docs/runbook.md`](docs/runbook.md) § Client guide.
 - Skipped rows, missed fields, missing `mfr_ref` → counted and reported on job results, never silent.
+- `tasks/followups.md`: add a new item under `## Open` in its topical
+  subsection, never at the end of the file. Completed items move to
+  `tasks/followups-done.md` (overrides the global "move to `## Done`").
 - **Every test run goes through `./scripts/test.sh`.** Never a bare `pytest` —
   a PreToolUse hook (`.claude/settings.json`) blocks it, and the wrapper is the
   only path that gets the parallelism and the cross-worktree semaphore right.
@@ -138,26 +148,15 @@ Dockerfile.web         # web UI image (slim)
   never `--build`s — the repo is bind-mounted, so rebuild by hand only when the
   Dockerfile or the dependency set changes. A flock semaphore
   (`/tmp/pytest-slots`, 4 slots) caps concurrent runs across all worktrees.
-- **Why `--dist loadfile`.** The reason is wall-clock, not correctness. Measured
-  back-to-back 2026-08-26 on a loaded machine, all 2301 green: **loadfile 154s ·
-  load 191s · worksteal 191s** · ~490s single-process. `loadfile` wins because
-  it keeps a file's tests on one worker and so reuses that worker's warm
-  fixtures; xdist's docs favour `worksteal` where test durations differ a lot,
-  and it was tried here and did not win. Numbers move with what else is running
-  — the machine has 12 cores and several sessions share it; `--heavy` when they
-  are busy.
-- `test_web.py` is **not** order-dependent, verified under reverse order, two
-  shuffled seeds, `--dist load` and `--dist worksteal`. That is a property of
-  the current tree, not a law: it holds only while every seeding fixture takes
-  `conn` (whose teardown runs conftest's `_RESET_SQL`) and `_RESET_TABLES` names
-  every table anything writes. **Both halves have failed before** — on
-  2026-08-26 `data_anomaly` and `service_heartbeat` were each missing from that
-  list and each produced real order-dependent failures, which is
-  what the older wording here was describing. `test_queue.py::
-  test_reset_clears_every_table_the_old_cascade_reached` is the guard, and it
-  only reaches tables linked by FK to its seed set: a new leaf table needs a
-  `seeds` entry too, or it slips past.
-- Don't run the full suite in the implementation loop even so — it is ~4100
+- `--dist loadfile` is a wall-clock choice (warm per-worker fixtures), not a
+  correctness one; `worksteal` was measured and lost. Tests are
+  order-independent only while (1) every seeding fixture takes `conn` and
+  (2) `_RESET_TABLES` names every table anything writes; a new leaf table
+  needs a `seeds` entry in
+  `test_queue.py::test_reset_clears_every_table_the_old_cascade_reached` too,
+  or it slips past the guard. Both halves have failed before. Measurements
+  and the full argument: `docs/test-infra.md` § 3.
+- Don't run the full suite in the implementation loop even so — it is over 4,000
   tests, and several sessions share this machine. Run the tests that cover what
   you touched, and the full suite once before committing.
   Selection rule, in order:
