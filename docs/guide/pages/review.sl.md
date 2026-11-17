@@ -239,6 +239,11 @@ znamke. Počaka tukaj, **Why it needs you** pa pove, kaj storiti:
   označeni. Odznačite napačne, označite tiste, ki jih izjava navaja le z imenom
   izdelka, in pritisnite **Approve**: objavijo se samo označeni artikli.
 
+Izbirnik se odpre na znamki tudi, ko dokument še nima svojega proizvajalca, in
+pove zakaj: *"Sure Dent Corporation, named on the document, is a known
+subcontractor of KOMET. Only KOMET's items can be found."* **Change** ponudi
+celoten seznam proizvajalcev.
+
 Woodpecker, Shofu in Becht so tudi samostojne znamke. Njihovi dokumenti veljajo
 za dokumente podizvajalca le, kadar so bili najdeni za Komet. Certifikat Shofu,
 najden za Shofu, pokrije artikle Shofu kot doslej.

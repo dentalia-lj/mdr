@@ -934,3 +934,70 @@ def test_item_page_has_no_made_by_row_for_an_ordinary_item(client, conn):
     _item(conn, "ORD-1", "ordinary")
     conn.commit()
     assert "Made by" not in _text(client.get("/items/ORD-1").text)
+
+
+# --------------------------------------------------------------------------- #
+# The picker starts on the brand a subcontractor makes for (2026-11-17, doc 390)
+# --------------------------------------------------------------------------- #
+def _printed(conn, doc_id, value, *, tier="T2", verbatim=None):
+    conn.execute(
+        "INSERT INTO evidence (doc_id, field, value, archive_url, page, verbatim, tier, "
+        "model_id, confidence, extracted_at, extract_rev) VALUES "
+        "(%s,'manufacturer',%s,'file:///a.pdf',1,%s,%s,'m',0.95,now(),1)",
+        (doc_id, value, verbatim or value, tier))
+
+
+def test_the_picker_starts_on_the_brand_a_subcontractor_makes_for(client, conn, kometw):
+    _mfr(conn, "KOMETW", "977W")
+    _item(conn, "000 BCS1 000", "BIOSEAL 2G", raw="977W")
+    doc_id = _doc(conn, "meta", canonical=None)
+    _printed(conn, doc_id, "Sure Dent Corporation")
+    conn.commit()
+    body = client.get(f"/picker/{doc_id}").text
+    text = _text(body)
+    assert ("Manufacturer: KOMETW Sure Dent Corporation, named on the document, "
+            "is a known subcontractor of KOMETW. Only KOMETW's items can be found.") in text
+    assert 'name="q"' in body
+    assert 'value="KOMETW" data-picker-manufacturer' in body
+    assert "000 BCS1 000" in _text(client.get(
+        f"/picker/{doc_id}/results", params={"manufacturer": "KOMETW", "q": "bioseal"}).text)
+
+
+def test_change_on_a_subcontractor_default_offers_the_full_list(client, conn, kometw):
+    _mfr(conn, "KOMETW", "977W")
+    _item(conn, "000 BCS1 000", "BIOSEAL 2G", raw="977W")
+    doc_id = _doc(conn, "meta-change", canonical=None)
+    _printed(conn, doc_id, "Sure Dent Corporation")
+    conn.commit()
+    body = client.get(f"/picker/{doc_id}").text
+    assert f'hx-get="/picker/{doc_id}?choose=1"' in body
+    chooser = _text(client.get(f"/picker/{doc_id}", params={"choose": "1"}).text)
+    assert "Which manufacturer made these items?" in chooser
+
+
+def test_a_maker_in_its_own_right_gets_no_brand_default(client, conn, monkeypatch):
+    """Shofu's own document stays Shofu's although KOMET lists SHOFU."""
+    from app import subcontractors
+    from app.playbooks import Playbook
+    monkeypatch.setattr(subcontractors, "_loaded", lambda playbooks: (
+        Playbook(slug="kometw", manufacturer="KOMETW", subcontractors=("SHOFUW",)),))
+    _mfr(conn, "KOMETW", "977W")
+    _mfr(conn, "SHOFUW", "SHOFUW")
+    _item(conn, "000 BCS1 000", "BIOSEAL 2G", raw="977W")
+    doc_id = _doc(conn, "shofu", canonical=None)
+    _printed(conn, doc_id, "SHOFUW")
+    conn.commit()
+    text = _text(client.get(f"/picker/{doc_id}").text)
+    assert "Which manufacturer made these items?" in text
+    assert "known subcontractor" not in text
+
+
+def test_t0_playbook_identity_does_not_pick_the_brand(client, conn, kometw):
+    """Only the document's own readings name its maker (as `made_by`)."""
+    _mfr(conn, "KOMETW", "977W")
+    _item(conn, "000 BCS1 000", "BIOSEAL 2G", raw="977W")
+    doc_id = _doc(conn, "t0-only", canonical=None)
+    _printed(conn, doc_id, "Sure Dent Corporation", tier="T0",
+             verbatim="playbook identity: Sure Dent Corporation")
+    conn.commit()
+    assert "Which manufacturer made these items?" in _text(client.get(f"/picker/{doc_id}").text)

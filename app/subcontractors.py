@@ -74,6 +74,26 @@ def subcontracted_for(conn, printed: str | None, brand: str | None,
     return [] if own_makers(conn, printed, playbooks) else listed
 
 
+def brand_for_document(conn, doc_id: int, playbooks=None) -> tuple[str, str] | None:
+    """(brand, printed name) when the document's own readings name a listed
+    subcontractor of exactly one brand, else None (2026-11-17, doc 390: Meta
+    Biomed's declaration for Komet's BIOSEAL). The item picker starts on that
+    brand instead of asking. T0's "playbook identity" does not count, as in
+    `made_by`; a maker in its own right gets no brand (`subcontracted_for`)."""
+    rows = conn.execute(
+        "SELECT DISTINCT value FROM evidence WHERE doc_id = %s AND field = 'manufacturer' "
+        "AND value IS NOT NULL "
+        "AND NOT (tier = 'T0' AND coalesce(verbatim, '') LIKE 'playbook identity%%') "
+        "ORDER BY value", (doc_id,)).fetchall()
+    found: dict[str, str] = {}
+    for r in rows:
+        for brand in subcontracted_for(conn, r["value"], None, playbooks):
+            found.setdefault(brand, r["value"])
+    if len(found) != 1:
+        return None
+    return next(iter(found.items()))
+
+
 def made_by(conn, item_ref: str, brand: str | None, playbooks=None) -> list[dict]:
     """Who makes `item_ref` for `brand`, read off its published documents
     (2026-11-16): one entry per listed subcontractor that printed a published

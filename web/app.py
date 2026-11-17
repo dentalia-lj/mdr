@@ -5527,9 +5527,12 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         }
 
     @app.get("/picker/{doc_id:int}", response_class=HTMLResponse)
-    def picker_open(request: Request, doc_id: int, manufacturer: str = ""):
+    def picker_open(request: Request, doc_id: int, manufacturer: str = "",
+                    choose: bool = False):
         """The item picker's body, loaded into the panel's <dialog> (picker
-        spec §3)."""
+        spec §3). A document with no manufacturer whose printed name is a
+        listed subcontractor of one brand starts on that brand (2026-11-17);
+        `choose` (the Change button) asks instead."""
         with _conn() as conn:
             doc = _picker_doc(conn, doc_id)
             if doc is None:
@@ -5538,7 +5541,13 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                     {"request": request, "error": "Items can be chosen only for a document "
                      "that covers specific items. Nothing was changed."}, status_code=404)
             mfr, locked = _picker_manufacturer(conn, doc, manufacturer)
+            via = None
+            if mfr is None and not choose:
+                hit = subcontractors.brand_for_document(conn, doc_id)
+                if hit and hit[0] in {o["canonical_name"] for o in _picker_mfr_options(conn)}:
+                    mfr, via = hit
             ctx = _picker_ctx(request, doc, mfr, locked)
+            ctx["via"] = via
             if mfr is None:
                 evidence = conn.execute(
                     "SELECT field, value FROM evidence WHERE doc_id=%s", (doc_id,)).fetchall()

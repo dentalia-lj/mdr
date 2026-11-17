@@ -8,10 +8,16 @@
   {% if manufacturer and locked %}
   <p class="lock">Manufacturer: <b>{{ manufacturer }}</b>
     <span class="hint">locked, from the document. Only its items can be found.</span></p>
+  {% elif manufacturer and via %}
+  <p class="lock">Manufacturer: <b>{{ manufacturer }}</b>
+    <span class="hint">{{ via }}, named on the document, is a known subcontractor of
+      {{ manufacturer }}. Only {{ manufacturer }}'s items can be found.</span>
+    <button type="button" class="linkbtn" hx-get="/picker/{{ doc.doc_id }}?choose=1"
+            hx-target="closest .picker-body">Change</button></p>
   {% elif manufacturer %}
   <p class="lock">Manufacturer: <b>{{ manufacturer }}</b>
     <span class="hint">chosen by you. Only its items can be found.</span>
-    <button type="button" class="linkbtn" hx-get="/picker/{{ doc.doc_id }}"
+    <button type="button" class="linkbtn" hx-get="/picker/{{ doc.doc_id }}?choose=1"
             hx-target="closest .picker-body">Change</button></p>
   {% endif %}
 </div>

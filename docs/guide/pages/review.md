@@ -240,6 +240,11 @@ brand's whole range. It waits here, and **Why it needs you** says what to do:
   it names by product name only, and press **Approve**: only the ticked items
   are published.
 
+The picker opens on the brand even when the document has no manufacturer of
+its own yet, and says why: *"Sure Dent Corporation, named on the document, is
+a known subcontractor of KOMET. Only KOMET's items can be found."* **Change**
+offers the full list of manufacturers.
+
 Woodpecker, Shofu and Becht are also brands of their own. Their documents are
 treated as a subcontractor's only when they were found for Komet. A Shofu
 certificate found for Shofu covers Shofu's items as before.
