@@ -38,8 +38,8 @@ Rule set (PRD v3 §6 / handbook §6, verbatim flag names win over this docstring
      above mentioned" clause — see `_enumerates_devices`) carries flag
      `device-enumeration` on the binding candidate; GATE's C16 machine bind
      refuses on it and the document stages for a human instead.
-  3. Date sanity: from <= to AND each date in a plausible year band -> flag
-   `date-insane` otherwise (handbook vocab).
+  3. Date sanity: from < to, issue date not in the future, AND each date in a
+     plausible year band -> flag `date-insane` otherwise (handbook vocab).
   4. Never-downgrade (C7), per article the candidate names (per-item currency,
      migration 072): the candidate is compared with the current document of
      the same type and regulation of EACH of its own articles, not of its
@@ -1101,6 +1101,11 @@ def handle_validate_doc(conn, job: dict) -> dict:
     elif validity_from is not None and validity_from > datetime.date.today():
         # An issue date cannot lie ahead: T0 read "date of issue until March
         # 27, 2030" as the issue date on docs 481, 483 and 484 (2026-11-09).
+        flags.append("date-insane")
+    elif validity_from is not None and validity_from == validity_to:
+        # Nothing is issued on the day it expires. The same misread put the one
+        # date into both fields on 481 and 483; with a past year it passes every
+        # rule above (2026-11-18).
         flags.append("date-insane")
 
     # C7 (never-downgrade), per article (spec 2026-09-15 §3.3 item 3). The

@@ -2156,6 +2156,33 @@ def test_an_issue_date_of_today_is_not_insane(conn):
     assert "date-insane" not in _payload(conn, "vh-today")["flags"]
 
 
+def test_an_issue_date_equal_to_the_expiry_is_insane(conn):
+    """2026-11-09: T0 read "date of issue until March 27, 2030" into both dates
+    on docs 481 and 483. A document is not issued on the day it expires; the
+    same misread with a past year passes every other date rule."""
+    group_id = _seed_group(conn)
+    _seed_member(conn, group_id, "IT-1", mfr_ref="196.644.050")
+    _seed(conn, "vh-sameday", _fields(validity_from=_ev("2025-03-27"),
+                                      validity_to=_ev("2025-03-27")))
+
+    vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": "vh-sameday", "extract_rev": 1, "group_id": group_id}})
+
+    assert "date-insane" in _payload(conn, "vh-sameday")["flags"]
+
+
+def test_an_expiry_one_day_after_issue_is_not_insane(conn):
+    group_id = _seed_group(conn)
+    _seed_member(conn, group_id, "IT-1", mfr_ref="196.644.050")
+    _seed(conn, "vh-nextday", _fields(validity_from=_ev("2025-03-27"),
+                                      validity_to=_ev("2025-03-28")))
+
+    vh.handle_validate_doc(conn, {"payload": {
+        "content_hash": "vh-nextday", "extract_rev": 1, "group_id": group_id}})
+
+    assert "date-insane" not in _payload(conn, "vh-nextday")["flags"]
+
+
 def test_a_future_dated_current_document_cannot_make_a_candidate_older(conn):
     group_id = _seed_group(conn)
     _seed_member(conn, group_id, "IT-1", mfr_ref="196.644.050")
