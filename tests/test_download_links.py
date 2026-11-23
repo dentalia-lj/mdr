@@ -176,3 +176,60 @@ def test_shop_urls_point_at_the_link_route(guarded, conn):
     staff = guarded.get("/api/items/DL-URL/documents",
                         headers={"X-Forwarded-User": "admin"}).json()
     assert staff["documents"][0]["url"] == f"{BASE}/documents/{doc}/file"
+
+
+# ------------------------------------------------------------------ limits #
+# 2026-11-23 webshop API spec § 5.5: block per customer IP, alert per key.
+
+def test_download_429_has_retry_after(test_db_url, tmp_path, conn):
+    client = _client(tmp_path, rate_downloads_per_ip_min=1)
+    urls = []
+    for ref in ("DL-L1", "DL-L2"):
+        doc = _seed_item_with_doc(conn, ref, validity_to="2099-01-01")
+        _with_file(conn, tmp_path, doc)
+        urls.append(client.get(f"/api/documents/{doc}/link", headers=KEY).json()["url"])
+    ip = {"X-Forwarded-For": "203.0.113.9"}
+    assert client.get(_path(urls[0]), headers=ip).status_code == 200
+    assert client.get(_path(urls[0]), headers=ip).status_code == 200  # same doc: free
+    refused = client.get(_path(urls[1]), headers=ip)
+    assert refused.status_code == 429
+    assert 0 < int(refused.headers["Retry-After"]) <= 60
+    # another customer is unaffected
+    assert client.get(_path(urls[1]), headers={"X-Forwarded-For": "198.51.100.1"}).status_code == 200
+
+
+def test_api_ceiling_is_per_key_and_spares_staff(test_db_url, tmp_path, conn):
+    client = _client(tmp_path, rate_api_per_min=2)
+    _seed_item_with_doc(conn, "DL-CEIL", validity_to="2099-01-01")
+    path = "/api/items/DL-CEIL/documents"
+    assert client.get(path, headers=KEY).status_code == 200
+    assert client.get(path, headers=KEY).status_code == 200
+    refused = client.get(path, headers=KEY)
+    assert refused.status_code == 429
+    assert "Retry-After" in refused.headers
+    staff = {"X-Forwarded-User": "admin"}
+    assert all(client.get(path, headers=staff).status_code == 200 for _ in range(5))
+
+
+def test_key_alert_shows_on_the_kpi(test_db_url, tmp_path, conn):
+    client = _client(tmp_path, alert_docs_per_key_day=1)
+    doc = _seed_item_with_doc(conn, "DL-KPI", validity_to="2099-01-01")
+    client.get(f"/api/documents/{doc}/link", headers=KEY)
+    webshop = client.get("/api/kpi", headers={"X-Forwarded-User": "admin"}).json()["webshop"]
+    assert webshop["alert_per_day"] == 1
+    assert sum(webshop["links_today"].values()) == 1
+    # the key itself never appears, only its fingerprint
+    assert "shop-key-1" not in str(webshop)
+
+
+def test_status_board_shows_the_webstore_tile(test_db_url, tmp_path, conn):
+    client = _client(tmp_path, alert_docs_per_key_day=1)
+    staff = {"X-Forwarded-User": "admin"}
+    page = client.get("/status", headers=staff).text
+    assert "webstore documents today" in page
+    assert 'tile-alert" id="webshop-tile"' not in page
+    for ref in ("DL-ST1", "DL-ST2"):
+        doc = _seed_item_with_doc(conn, ref, validity_to="2099-01-01")
+        client.get(f"/api/documents/{doc}/link", headers=KEY)
+    page = client.get("/status", headers=staff).text
+    assert 'tile-alert" id="webshop-tile"' in page

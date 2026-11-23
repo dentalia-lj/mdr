@@ -29,7 +29,9 @@ import time
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
+
+from web import access
 
 from web.item_docs import local_today, shop_visible_document
 
@@ -71,13 +73,16 @@ def register_routes(app, conn_factory, cfg) -> None:
     from web.app import _document_file_response  # cycle, as in web/item_link.py
 
     @app.get("/api/documents/{doc_id:int}/link")
-    def api_document_link(doc_id: int):
+    def api_document_link(request: Request, doc_id: int):
         if not cfg.download_link_secret:
             raise HTTPException(status_code=404, detail=NOT_AVAILABLE)
         with conn_factory() as conn:
             row = shop_visible_document(conn, doc_id, local_today())
         if row is None:
             raise HTTPException(status_code=404, detail=NOT_AVAILABLE)
+        if access.caller(request) == access.SERVICE:
+            # Counted, never blocked (spec § 5.5): one key serves every customer.
+            request.app.state.limiter.note_link(access.key_id(request), doc_id)
         token, exp = sign(doc_id, cfg.download_link_secret, now=int(time.time()),
                           ttl_s=cfg.download_link_ttl_s)
         return {
@@ -86,7 +91,7 @@ def register_routes(app, conn_factory, cfg) -> None:
         }
 
     @app.get("/d/{token}", include_in_schema=False)
-    def download(token: str):
+    def download(request: Request, token: str):
         if not cfg.download_link_secret:
             raise HTTPException(status_code=404, detail=NOT_AVAILABLE)
         doc_id = verify(token, cfg.download_link_secret, now=int(time.time()))
@@ -96,6 +101,10 @@ def register_routes(app, conn_factory, cfg) -> None:
             row = shop_visible_document(conn, doc_id, local_today())
         if row is None:
             raise HTTPException(status_code=404, detail=NOT_AVAILABLE)
+        retry = request.app.state.limiter.check_download(access.client_ip(request), doc_id)
+        if retry is not None:
+            raise HTTPException(status_code=429, detail=access.RATE_LIMITED,
+                                headers={"Retry-After": str(retry)})
         # Bytes only, never a redirect: `_document_file_response` hands an
         # http(s) archive_url to the browser as a 307, which here would turn a
         # five-minute link into a permanent storage address.

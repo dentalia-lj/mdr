@@ -24,6 +24,7 @@ dev, tests) and every caller is `staff`. That is the existing contract of
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import re
 from collections.abc import Callable
@@ -212,6 +213,29 @@ def _refuse(path: str, cls: str = ANON) -> None:
     raise HTTPException(status_code=403, detail="staff access required")
 
 
+def client_ip(request) -> str:
+    """The customer's address: the FIRST `X-Forwarded-For` entry. Safe only
+    because the host Caddy sets that entry itself and ignores what the client
+    sent, and the compose Caddy trusts the host Caddy (`trusted_proxies`).
+    Without a proxy (local dev, tests without the header) it is the peer."""
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    first = forwarded.split(",", 1)[0].strip()
+    if first:
+        return first
+    return request.client.host if request.client else ""
+
+
+def key_id(request) -> str:
+    """A fingerprint of the caller's key for counters and logs: the key itself
+    is a secret and never leaves `classify`."""
+    key = request.headers.get("X-API-Key", "")
+    return hashlib.sha256(key.encode()).hexdigest()[:8]
+
+
+#: Every 429 says the same thing; `Retry-After` carries the number.
+RATE_LIMITED = "too many requests; retry after the number of seconds in Retry-After"
+
+
 def caller(request: Request) -> str:
     """The caller class `guard` recorded for this request. Routes read it to
     decide the webstore view (`for_shop`) rather than classifying again."""
@@ -227,5 +251,11 @@ def guard(cfg) -> Callable[[Request], None]:
         request.state.caller = cls
         if cls not in allowed_classes(request.url.path):
             _refuse(request.url.path, cls)
+        limiter = getattr(request.app.state, "limiter", None)
+        if cls == SERVICE and limiter is not None and request.url.path.startswith("/api/"):
+            retry = limiter.check_api(key_id(request))
+            if retry is not None:
+                raise HTTPException(status_code=429, detail=RATE_LIMITED,
+                                    headers={"Retry-After": str(retry)})
 
     return _guard

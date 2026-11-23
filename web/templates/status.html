@@ -69,6 +69,14 @@
       <div class="n">{{ in_flight_docs }}</div>
       <div class="label">Documents being read</div>
     </a>
+    {#- The webstore key's distinct documents linked today (web/limits.py),
+        amber past the alert threshold. An alert, never a block: Erpium has
+        one key for all its customers. Process memory, reset on a deploy. -#}
+    {%- set ws_n = webshop.links_today.values() | sum -%}
+    <div class="stat-tile{% if ws_n > webshop.alert_per_day %} tile-alert{% endif %}" id="webshop-tile">
+      <div class="n">{{ ws_n }}</div>
+      <div class="label">webstore documents today · alert above {{ webshop.alert_per_day }}</div>
+    </div>
     <div class="stat-tile">
       <div class="n">€{{ kpi.spend.trailing_30d.eur }}</div>
       <div class="label">30d · guideline €{{ kpi.spend.monthly_cap_eur }}</div>

@@ -139,7 +139,7 @@ from app.config import Web, load_config
 from app.compliance import EXPIRY_HORIZON_DAYS
 
 log = logging.getLogger("dentalia.web")
-from web import access, bc_push_view, catalogue, download_links, failures, item_link, item_picker, missing, onboarding, registry, scheduler_view, words
+from web import access, bc_push_view, catalogue, download_links, limits, failures, item_link, item_picker, missing, onboarding, registry, scheduler_view, words
 from web import filed_matches, link_checks, uploads
 from web.item_docs import item_documents
 # Re-exported: the Today page and the menu counts read the Missing documents
@@ -2997,6 +2997,13 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         dependencies=[Depends(access.guard(cfg))],
     )
     app.state.web_cfg = cfg
+    # One process, one limiter (web/limits.py): counters reset on a deploy.
+    app.state.limiter = limits.Limiter(
+        api_per_min=cfg.rate_api_per_min,
+        ip_docs_per_min=cfg.rate_downloads_per_ip_min,
+        ip_docs_per_day=cfg.rate_downloads_per_ip_day,
+        key_alert_per_day=cfg.alert_docs_per_key_day,
+    )
 
     # Registered through the router, so the global dependency DOES apply --
     # that is the entire point of not using FastAPI's built-ins here. Paths
@@ -4852,6 +4859,7 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                 # were on the header strip until it went; this is where they
                 # live now, on the operator's own board.
                 "services": _pulse_services(conn),
+                "webshop": app.state.limiter.snapshot(),
                 "job_types": JOB_TYPES,
                 "job_statuses": JOB_STATUS_ORDER,
                 "stage_by_type": STAGE_BY_TYPE,
@@ -6625,7 +6633,11 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
     @app.get("/api/kpi")
     def api_kpi():
         with _conn() as conn:
-            return _kpi_board(conn, budget_cfg)
+            board = _kpi_board(conn, budget_cfg)
+        # Process memory, not the database: today's webstore links per key
+        # fingerprint against the alert threshold (web/limits.py).
+        board["webshop"] = app.state.limiter.snapshot()
+        return board
 
     return app
 

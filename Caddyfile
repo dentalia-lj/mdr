@@ -14,6 +14,20 @@
 # Pointing this site block at a real hostname instead of `:8000` is the one
 # line that turns on Caddy's automatic TLS — not done here (loopback-only v0).
 
+# Global options. `trusted_proxies`: the host Caddy in front of this one sets
+# X-Forwarded-For to the real client and ignores whatever the client sent.
+# Without trusting it here, this Caddy REPLACES that header with its peer
+# address (measured 2026-11-23 on caddy:2.8), so `web` would see every
+# customer as 172.18.0.1 and the per-IP download limit (web/limits.py) would
+# be one global limit. Docker's default bridge pool, not `private_ranges`, and
+# not the single gateway address, which follows the compose network's subnet.
+# Only the host and our own containers can reach this loopback-published site.
+{
+	servers {
+		trusted_proxies static 172.16.0.0/12
+	}
+}
+
 :8000 {
 	# Access logging is OFF by default in Caddy, which meant a rejected login
 	# left no trace anywhere: on 2026-08-17 "no 401s in the log" was read as
