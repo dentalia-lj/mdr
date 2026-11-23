@@ -624,6 +624,12 @@ class Web:
     # is correct for same-origin browser use and wrong for a webshop backend
     # embedding our links in its own pages.
     public_base_url: str = ""
+    # Signs the webstore's download links (2026-11-23 webshop API spec § 5.4).
+    # A SECRET: .env, beside `api_keys`. Empty switches `/api/documents/{id}/link`
+    # and `/d/*` off (404) -- it never means "unsigned". Rotating it only kills
+    # links issued in the last `download_link_ttl_s`.
+    download_link_secret: str = ""
+    download_link_ttl_s: int = 300
     # The proxy logins that count as operators (office UI redesign spec § 2,
     # D6), matched exactly against `trusted_user_header`. EMPTY MEANS EVERY
     # LOGIN IS AN OPERATOR: that keeps today's single shared login working
@@ -1173,6 +1179,13 @@ def load_config() -> Config:
         bc_link_key=_str("WEB_BC_LINK_KEY", _dig(t, "web", "bc_link_key"), ""),
         public_base_url=_str(
             "WEB_PUBLIC_BASE_URL", _dig(t, "web", "public_base_url"), ""
+        ),
+        download_link_secret=_str(
+            "WEB_DOWNLOAD_LINK_SECRET", _dig(t, "web", "download_link_secret"), ""
+        ),
+        download_link_ttl_s=_int(
+            "WEB_DOWNLOAD_LINK_TTL_S", _dig(t, "web", "download_link_ttl_s"),
+            Web.download_link_ttl_s,
         ),
         operator_users=_str_list(
             "WEB_OPERATOR_USERS", _dig(t, "web", "operator_users"), Web.operator_users

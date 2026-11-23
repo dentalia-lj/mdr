@@ -93,6 +93,22 @@ def _shop_rows(conn, docs: list, today: date) -> list:
     return out
 
 
+def shop_visible_document(conn, doc_id: int, today: date) -> dict | None:
+    """`archive_url` and `content_hash` of a document the webstore may hand a
+    customer, or None: published and current for at least one item
+    (`item_document_production`) and not past its legal expiry. The same rule
+    the webstore's lists apply, so a link can never fetch what a list would
+    not show."""
+    row = conn.execute(
+        "SELECT d.archive_url, d.content_hash FROM document d "
+        "WHERE d.doc_id = %s AND EXISTS ("
+        "  SELECT 1 FROM item_document_production p WHERE p.doc_id = d.doc_id)",
+        (doc_id,)).fetchone()
+    if row is None or is_legally_expired(legal_expiry(conn, [doc_id]).get(doc_id), today):
+        return None
+    return row
+
+
 def decorate_documents(conn, docs, *, view: str = "full", base_url: str = "",
                        for_shop: bool = False, today: date | None = None) -> list:
     """Add `name` and `url` to production document rows, in place, and apply
@@ -135,7 +151,8 @@ def decorate_documents(conn, docs, *, view: str = "full", base_url: str = "",
         d["name"] = f"{name}, valid to {d['valid_to']}" if d["valid_to"] else name
         # Constructed, never read from the database: `archive_url` is a storage
         # handle, not a link (2026-08-24 correction, docs/specs/read-api.md).
-        d["url"] = f"{base_url}/documents/{d['doc_id']}/file"
+        d["url"] = (f"{base_url}/api/documents/{d['doc_id']}/link" if for_shop
+                    else f"{base_url}/documents/{d['doc_id']}/file")
         if view == "customer":
             for field in CUSTOMER_HIDDEN_DOC_FIELDS:
                 d.pop(field, None)

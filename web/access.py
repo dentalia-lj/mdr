@@ -57,6 +57,7 @@ SERVICE_ROUTES = tuple(re.compile(p) for p in (
     # `.+` needs at least one character between, which the batch has not.
     r"^/api/items/.+/documents$",
     r"^/api/items/documents$",
+    r"^/api/documents/\d+/link$",
 ))
 
 
@@ -72,6 +73,11 @@ def allowed_classes(path: str) -> frozenset[str]:
         # auth (Caddyfile), so the stylesheet request the page then makes
         # carries no credential of any kind. Locking this down would serve an
         # unstyled page to the one consumer this whole surface exists for.
+        return _ANY
+    if path.startswith("/d/"):
+        # A signed download link (`web/download_links.py`). The customer's
+        # browser follows a 302 here with nothing attached: the token is the
+        # credential, checked by the route.
         return _ANY
     if path.startswith("/item/"):
         return _ITEM_LINK

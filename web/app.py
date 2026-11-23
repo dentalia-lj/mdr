@@ -139,7 +139,7 @@ from app.config import Web, load_config
 from app.compliance import EXPIRY_HORIZON_DAYS
 
 log = logging.getLogger("dentalia.web")
-from web import access, bc_push_view, catalogue, failures, item_link, item_picker, missing, onboarding, registry, scheduler_view, words
+from web import access, bc_push_view, catalogue, download_links, failures, item_link, item_picker, missing, onboarding, registry, scheduler_view, words
 from web import filed_matches, link_checks, uploads
 from web.item_docs import item_documents
 # Re-exported: the Today page and the menu counts read the Missing documents
@@ -3289,6 +3289,7 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
     bc_push_view.register_routes(app, templates, _conn, cfg,
                                  require_operator=require_operator)
     catalogue.register_routes(app, _conn, cfg)
+    download_links.register_routes(app, _conn, cfg)
 
     @app.get("/healthz")
     def healthz():

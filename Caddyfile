@@ -75,6 +75,9 @@
 		not path /healthz
 		not path /item/*
 		not path /static/*
+		# A signed download link: the customer's browser carries no credential,
+		# the token is one (web/download_links.py).
+		not path /d/*
 		not header X-API-Key *
 	}
 
@@ -97,8 +100,8 @@
 	# after it a staff path on the API name would get the login prompt.
 	@api_host_refused {
 		host api.cw.dentalia.si
-		not path /item/* /static/* /healthz
-		not path_regexp ^/api/(manufacturers(/[^/]+(/documents)?)?|items/(.+/)?documents)$
+		not path /item/* /static/* /healthz /d/*
+		not path_regexp ^/api/(manufacturers(/[^/]+(/documents)?)?|items/(.+/)?documents|documents/[0-9]+/link)$
 	}
 	handle @api_host_refused {
 		respond "Not found" 404

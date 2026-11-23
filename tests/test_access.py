@@ -57,6 +57,9 @@ def guarded(test_db_url, tmp_path):
     ("/api/kpi", {STAFF}),
     ("/api/documents/7", {STAFF}),
     ("/documents/42/file", {STAFF}),
+    # the download link: issued to the key, used by a credential-less browser
+    ("/api/documents/7/link", {SERVICE, STAFF}),
+    ("/d/7.1700000000.abc", {STAFF, SERVICE, BC, ANON}),
     ("/documents/42", {STAFF}),
     ("/documents", {STAFF}),
     ("/archive/ab/cd/x.pdf", {STAFF}),
@@ -292,7 +295,7 @@ def _api_host_lets_through(path: str) -> bool:
     # opened to machines by allowed_classes
     "/api/items/X/documents", "/api/items/documents", "/api/manufacturers",
     "/api/manufacturers/VOCO/documents", "/item/1.02.003",
-    "/static/css/style.css", "/healthz",
+    "/static/css/style.css", "/healthz", "/api/documents/7/link", "/d/7.1.x",
     # staff-only, so office UI (and staff-only API on the API host)
     "/api/items", "/api/documents/7", "/api/kpi", "/api/manufacturers/VOCO/items",
     "/documents/12/file",
@@ -367,3 +370,12 @@ def test_service_key_cannot_fetch_a_file_by_id(guarded, conn):
                                  link_status="staged")
     resp = guarded.get(f"/documents/{doc_id}/file", headers={"X-API-Key": API_KEY})
     assert resp.status_code == 403
+
+
+def test_download_path_skips_the_login():
+    """The customer's browser follows a 302 to `/d/...` with nothing attached.
+    Without this exception `@protected` would answer it with a Basic-auth
+    prompt."""
+    text = _CADDYFILE.read_text()
+    block = text.split("@protected {", 1)[1].split("\n\t}", 1)[0]
+    assert "not path /d/*" in block
