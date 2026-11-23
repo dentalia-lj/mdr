@@ -87,13 +87,18 @@
 	# tests/test_access.py keeps the two lists equal. The office name is
 	# unchanged and still serves everything, /api/* included.
 	#
+	# The /api/ regexp is web/access.py SERVICE_ROUTES, folded into one line:
+	# only the webstore's routes (2026-11-23). Staff-only /api/ routes (KPI,
+	# evidence, the item list per manufacturer) answer 404 on this name, and so
+	# does /documents/{id}/file, which served any document by id to the key.
+	#
 	# Written BEFORE `handle @protected` on purpose: Caddy keeps `handle` blocks
 	# with named matchers in written order and runs the first that matches, so
 	# after it a staff path on the API name would get the login prompt.
 	@api_host_refused {
 		host api.cw.dentalia.si
-		not path /api/* /item/* /static/* /healthz
-		not path_regexp ^/documents/[0-9]+/file$
+		not path /item/* /static/* /healthz
+		not path_regexp ^/api/(manufacturers(/[^/]+(/documents)?)?|items/(.+/)?documents)$
 	}
 	handle @api_host_refused {
 		respond "Not found" 404

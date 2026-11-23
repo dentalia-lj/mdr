@@ -6567,7 +6567,7 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
     # (`expires`, migration 034) -- the one behavioral change a consumer can
     # observe versus the old raw-`validity_to` response (docs/specs/read-api.md).
     @app.get("/api/items/{item_ref:path}/documents")
-    def api_item_documents(item_ref: str, view: str = "full",
+    def api_item_documents(request: Request, item_ref: str, view: str = "full",
                            include_superseded: bool = False):
         """Production documents for one item, plus the item's own identity.
 
@@ -6583,11 +6583,14 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         route only turns its ValueError into the status code, so the batch
         endpoint in `web/catalogue.py` cannot decide the question differently.
         """
+        # The webstore key gets the webstore view whatever it asks for
+        # (2026-11-23 webshop API spec § 5.2); `item_docs` refuses the flag.
+        for_shop = access.caller(request) == access.SERVICE
         with _conn() as conn:
             try:
                 return item_documents(
                     conn, item_ref, view=view, base_url=cfg.public_base_url,
-                    include_superseded=include_superseded,
+                    include_superseded=include_superseded, for_shop=for_shop,
                 )
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc

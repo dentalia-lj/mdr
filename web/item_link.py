@@ -6,9 +6,11 @@ reason this URL carries a shared static key instead of a per-item signature:
 BC cannot compute anything (Denis, 2026-08-25).
 
 One URL, two renderings. A support rep clicking from the item card gets a page
-they can read and download from; the webshop backend asking with
+they can read and download from; a client asking with
 `Accept: application/json` (or `?format=json`, because BC's client may send
-`*/*`) gets the same payload as JSON.
+`*/*`) gets the same payload as JSON. The webshop is NOT one of them since
+2026-11-23: its key no longer reaches `/item/*` and it reads `/api/` instead,
+in the webstore view (2026-11-23 webshop API spec § 5.1).
 
 Read-only. The access policy in `web/access.py` decides who gets here at all.
 """

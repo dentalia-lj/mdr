@@ -45,10 +45,18 @@ def guarded(test_db_url, tmp_path):
 
 @pytest.mark.parametrize("path,expected", [
     ("/healthz", {STAFF, SERVICE, BC, ANON}),
-    ("/item/12345", {BC, SERVICE, STAFF}),
+    # The webstore key reaches the webstore routes and nothing else
+    # (docs/superpowers/specs/2026-11-23-webshop-api-design.md § 5.1).
+    ("/item/12345", {BC, STAFF}),
     ("/api/items/12345/documents", {SERVICE, STAFF}),
-    ("/api/kpi", {SERVICE, STAFF}),
-    ("/documents/42/file", {SERVICE, STAFF}),
+    ("/api/items/documents", {SERVICE, STAFF}),
+    ("/api/manufacturers", {SERVICE, STAFF}),
+    ("/api/manufacturers/VOCO", {SERVICE, STAFF}),
+    ("/api/manufacturers/VOCO/documents", {SERVICE, STAFF}),
+    ("/api/manufacturers/VOCO/items", {STAFF}),
+    ("/api/kpi", {STAFF}),
+    ("/api/documents/7", {STAFF}),
+    ("/documents/42/file", {STAFF}),
     ("/documents/42", {STAFF}),
     ("/documents", {STAFF}),
     ("/archive/ab/cd/x.pdf", {STAFF}),
@@ -282,9 +290,12 @@ def _api_host_lets_through(path: str) -> bool:
 
 @pytest.mark.parametrize("path", [
     # opened to machines by allowed_classes
-    "/api/items", "/api/documents/7", "/item/1.02.003", "/static/css/style.css",
-    "/healthz", "/documents/12/file",
-    # staff-only, so office UI
+    "/api/items/X/documents", "/api/items/documents", "/api/manufacturers",
+    "/api/manufacturers/VOCO/documents", "/item/1.02.003",
+    "/static/css/style.css", "/healthz",
+    # staff-only, so office UI (and staff-only API on the API host)
+    "/api/items", "/api/documents/7", "/api/kpi", "/api/manufacturers/VOCO/items",
+    "/documents/12/file",
     "/", "/items", "/documents", "/documents/12", "/documents/12/file/x",
     "/archive/GC/a.pdf", "/api-reference", "/staging", "/import", "/scheduler",
 ])
@@ -329,3 +340,30 @@ def test_robots_txt_disallows_everything_before_login_and_refusal():
     body = text[robots:].split("\n\t}", 1)[0]
     assert "User-agent: *" in body
     assert re.search(r"^\s*Disallow: /\s*$", body, re.M)
+
+
+# --------------------------------------------------------------------------- #
+# The webstore key (2026-11-23 webshop API spec § 5.1)
+# --------------------------------------------------------------------------- #
+
+def test_service_key_on_a_staff_api_route_is_403(guarded):
+    """A valid key on a route that is not the webstore's: 403, so Erpium can
+    tell 'wrong route' from 'wrong key' (401)."""
+    assert guarded.get("/api/kpi", headers={"X-API-Key": API_KEY}).status_code == 403
+    assert guarded.get("/api/documents/1", headers={"X-API-Key": API_KEY}).status_code == 403
+
+
+def test_service_key_cannot_open_the_item_card(guarded, conn):
+    """`/item/*` hands out the full view and PDF bytes outside the download
+    links and every limit. The key gets the same 404 any stranger gets."""
+    _seed_item_with_doc(conn, "ACC-CARD")
+    resp = guarded.get("/item/ACC-CARD?format=json", headers={"X-API-Key": API_KEY})
+    assert resp.status_code == 404
+
+
+def test_service_key_cannot_fetch_a_file_by_id(guarded, conn):
+    """The archive leak: any status, by sequential id. Closed to the key."""
+    doc_id = _seed_item_with_doc(conn, "ACC-FILE", doc_status="staged",
+                                 link_status="staged")
+    resp = guarded.get(f"/documents/{doc_id}/file", headers={"X-API-Key": API_KEY})
+    assert resp.status_code == 403

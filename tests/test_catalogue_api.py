@@ -195,18 +195,20 @@ def test_batch_with_no_refs_is_400(client):
 
 # ------------------------------------------------------------------- access #
 
-@pytest.mark.parametrize("path", [
-    "/api/manufacturers",
-    "/api/manufacturers/X",
-    "/api/manufacturers/X/documents",
-    "/api/manufacturers/X/items",
-    "/api/items/documents",
+@pytest.mark.parametrize("path,shop", [
+    ("/api/manufacturers", True),
+    ("/api/manufacturers/X", True),
+    ("/api/manufacturers/X/documents", True),
+    # the supplier map: staff only since 2026-11-23 (webshop API spec § 5.1)
+    ("/api/manufacturers/X/items", False),
+    ("/api/items/documents", True),
 ])
-def test_every_new_endpoint_inherits_the_api_policy(path):
-    """Under /api/, therefore service+staff and never bc, never anonymous.
-    Asserted, not assumed."""
+def test_every_new_endpoint_inherits_the_api_policy(path, shop):
+    """Under /api/, therefore never bc, never anonymous; the webstore key only
+    where the webstore needs it. Asserted, not assumed."""
     from web.access import SERVICE, STAFF, allowed_classes
-    assert allowed_classes(path) == frozenset({SERVICE, STAFF})
+    expected = {SERVICE, STAFF} if shop else {STAFF}
+    assert allowed_classes(path) == frozenset(expected)
 
 
 # ------------------------------------------------- 053: bound-but-unlinked #
@@ -296,3 +298,77 @@ def test_batch_customer_view_refuses_include_superseded(client, conn):
     resp = client.get(
         "/api/items/documents?ref=BAT-SUP-CUST&view=customer&include_superseded=true")
     assert resp.status_code == 400
+
+
+# --------------------------------------------------------------------------- #
+# The webstore key (2026-11-23 webshop API spec § 5.2): forced customer view,
+# real-expired documents dropped, the two widening flags refused. Staff and the
+# BC card are unchanged.
+# --------------------------------------------------------------------------- #
+
+SHOP_KEY = "shop-key-1"
+BC_KEY = "bc-shared"
+KEY = {"X-API-Key": SHOP_KEY}
+STAFF = {"X-Forwarded-User": "admin"}
+
+
+@pytest.fixture
+def guarded(test_db_url, tmp_path):
+    return TestClient(create_app(Web(
+        api_database_url=API_TEST_URL, imports_dir=str(tmp_path),
+        require_authenticated_user=True, api_keys=SHOP_KEY, bc_link_key=BC_KEY,
+    )), raise_server_exceptions=False)
+
+
+def _doc_ids(payload):
+    return {d["doc_id"] for d in payload["documents"]}
+
+
+def test_shop_view_drops_real_expired_on_every_route(guarded, conn, canonical):
+    expired = _seed_item_with_doc(conn, "SHOP-EXP", manufacturer_raw=MFR,
+                                  validity_from="2000-01-01", validity_to="2001-01-01")
+    valid = _seed_item_with_doc(conn, "SHOP-OK", manufacturer_raw=MFR,
+                                validity_to="2099-01-01")
+    for headers, sees_expired in ((KEY, False), (STAFF, True)):
+        one = guarded.get("/api/items/SHOP-EXP/documents", headers=headers).json()
+        assert (expired in _doc_ids(one)) is sees_expired
+        batch = guarded.get("/api/items/documents?ref=SHOP-EXP&ref=SHOP-OK",
+                            headers=headers).json()
+        assert (expired in _doc_ids(batch["items"][0])) is sees_expired
+        assert valid in _doc_ids(batch["items"][1])
+        line = guarded.get(f"/api/manufacturers/{canonical}/documents",
+                           headers=headers).json()
+        assert (expired in _doc_ids(line)) is sees_expired
+        assert valid in _doc_ids(line)
+
+
+def test_view_full_is_ignored_for_the_key(guarded, conn, canonical):
+    _seed_item_with_doc(conn, "SHOP-FULL", manufacturer_raw=MFR, validity_to="2099-01-01")
+    for path in ("/api/items/SHOP-FULL/documents?view=full",
+                 "/api/items/documents?ref=SHOP-FULL&view=full",
+                 f"/api/manufacturers/{canonical}/documents?view=full"):
+        body = guarded.get(path, headers=KEY).json()
+        docs = body["items"][0]["documents"] if "items" in body else body["documents"]
+        assert docs, path
+        assert all("match_basis" not in d and "expiry_basis" not in d for d in docs), path
+
+
+@pytest.mark.parametrize("path", [
+    "/api/items/SHOP-FLAG/documents?include_superseded=true",
+    "/api/items/documents?ref=SHOP-FLAG&include_superseded=true",
+    "/api/manufacturers/{c}/documents?include_unlinked=true",
+])
+def test_the_key_cannot_widen_the_row_set(guarded, conn, canonical, path):
+    _seed_item_with_doc(conn, "SHOP-FLAG", manufacturer_raw=MFR, validity_to="2099-01-01")
+    assert guarded.get(path.format(c=canonical), headers=KEY).status_code == 400
+    # staff keeps both flags
+    assert guarded.get(path.format(c=canonical), headers=STAFF).status_code == 200
+
+
+def test_bc_card_is_unchanged_by_the_shop_view(guarded, conn):
+    """The BC card shares `item_documents` but is not the webstore: it still
+    lists the expired document, in the view it asked for."""
+    expired = _seed_item_with_doc(conn, "SHOP-BC", validity_from="2000-01-01",
+                                  validity_to="2001-01-01")
+    body = guarded.get(f"/item/SHOP-BC?format=json&view=customer&k={BC_KEY}").json()
+    assert expired in _doc_ids(body)

@@ -22,10 +22,20 @@ from __future__ import annotations
 
 from fastapi import HTTPException, Query, Request
 
+from web import access
+
 from web.item_docs import (
     CUSTOMER_HIDDEN_DOC_FIELDS,
     decorate_documents,
     item_documents,
+)
+
+#: `include_unlinked` widens the row set to documents bound to the
+#: manufacturer through no item, and that branch has no status filter. The
+#: webstore key never gets it (2026-11-23 webshop API spec § 5.2).
+SHOP_UNLINKED_REFUSAL = (
+    "`include_unlinked` is not available to API keys: it returns documents "
+    "that are not published for any item."
 )
 
 # ~16k items today, ~100k at target.
@@ -62,8 +72,8 @@ def manufacturer_summary(conn, canonical_name: str) -> dict | None:
 
 
 def manufacturer_documents(conn, canonical_name: str, *, view: str = "full",
-                           base_url: str = "", include_unlinked: bool = False
-                           ) -> list[dict] | None:
+                           base_url: str = "", include_unlinked: bool = False,
+                           for_shop: bool = False) -> list[dict] | None:
     """Every production document reachable from any item of this manufacturer,
     DEDUPED.
 
@@ -120,7 +130,8 @@ def manufacturer_documents(conn, canonical_name: str, *, view: str = "full",
             "  WHERE d.canonical_manufacturer = %s "
             ") l ORDER BY doc_id",
             (codes, canonical_name)).fetchall()
-    return decorate_documents(conn, docs, view=view, base_url=base_url)
+    return decorate_documents(conn, docs, view=view, base_url=base_url,
+                              for_shop=for_shop)
 
 
 def manufacturer_items(conn, canonical_name: str, *, page: int, per_page: int
@@ -180,12 +191,17 @@ def register_routes(app, conn_factory, cfg) -> None:
         return {"manufacturers": out, "total": len(out)}
 
     @app.get("/api/manufacturers/{canonical_name:path}/documents")
-    def api_manufacturer_documents(canonical_name: str, view: str = "full",
+    def api_manufacturer_documents(request: Request, canonical_name: str,
+                                   view: str = "full",
                                    include_unlinked: bool = False):
+        for_shop = access.caller(request) == access.SERVICE
+        if for_shop and include_unlinked:
+            raise HTTPException(status_code=400, detail=SHOP_UNLINKED_REFUSAL)
         with conn_factory() as conn:
             docs = manufacturer_documents(conn, canonical_name, view=view,
                                           base_url=cfg.public_base_url,
-                                          include_unlinked=include_unlinked)
+                                          include_unlinked=include_unlinked,
+                                          for_shop=for_shop)
         if docs is None:
             raise HTTPException(status_code=404, detail="unknown manufacturer")
         return {"canonical_name": canonical_name, "documents": docs}
@@ -246,7 +262,8 @@ def register_routes(app, conn_factory, cfg) -> None:
                 items = [
                     item_documents(conn, r, view=view,
                                    base_url=cfg.public_base_url,
-                                   include_superseded=include_superseded)
+                                   include_superseded=include_superseded,
+                                   for_shop=access.caller(request) == access.SERVICE)
                     for r in ref
                 ]
             except ValueError as exc:
