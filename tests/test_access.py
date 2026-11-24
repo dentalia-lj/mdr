@@ -394,3 +394,11 @@ def test_compose_caddy_trusts_the_host_caddy():
     lines = [ln.strip() for ln in _CADDYFILE.read_text().splitlines()
              if ln.strip().startswith("trusted_proxies")]
     assert lines == ["trusted_proxies static private_ranges"]
+
+
+def test_a_request_the_guard_never_saw_is_anonymous():
+    """`caller()` must fail closed: if the guard ever did not run, the route
+    must not hand out the staff view (2026-11-23 final review)."""
+    from types import SimpleNamespace
+    from web.access import caller
+    assert caller(SimpleNamespace(state=SimpleNamespace())) == ANON

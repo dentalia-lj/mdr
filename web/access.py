@@ -241,7 +241,8 @@ RATE_LIMITED = "too many requests; retry after the number of seconds in Retry-Af
 def caller(request: Request) -> str:
     """The caller class `guard` recorded for this request. Routes read it to
     decide the webstore view (`for_shop`) rather than classifying again."""
-    return getattr(request.state, "caller", STAFF)
+    # ANON, not STAFF: if the guard ever did not run, fail closed.
+    return getattr(request.state, "caller", ANON)
 
 
 def guard(cfg) -> Callable[[Request], None]:

@@ -262,3 +262,19 @@ def test_a_private_client_address_behind_the_proxy_is_reported(test_db_url, tmp_
             client.get(_path(url), headers={"X-Forwarded-For": "172.18.0.1"})
     warned = [r for r in caplog.records if "private" in r.getMessage()]
     assert len(warned) == 1
+
+
+def test_staff_are_never_ip_limited(test_db_url, tmp_path, conn):
+    """Denis, 2026-11-24: no IP limit for staff. Without a proxy every caller
+    classifies staff, which is how this runs the download as staff."""
+    client = TestClient(create_app(Web(
+        api_database_url=API_TEST_URL, imports_dir=str(tmp_path),
+        archive_root=str(tmp_path), public_base_url=BASE,
+        download_link_secret=SECRET, rate_downloads_per_ip_min=1)),
+        raise_server_exceptions=False)
+    paths = []
+    for ref in ("DL-STAFF1", "DL-STAFF2", "DL-STAFF3"):
+        doc = _seed_item_with_doc(conn, ref, validity_to="2099-01-01")
+        _with_file(conn, tmp_path, doc)
+        paths.append(_path(client.get(f"/api/documents/{doc}/link").json()["url"]))
+    assert [client.get(p).status_code for p in paths] == [200, 200, 200]

@@ -132,7 +132,11 @@ def register_routes(app, conn_factory, cfg) -> None:
             log.warning("webstore download from private address %s behind the proxy: "
                         "the compose Caddy is not passing the client address through "
                         "(trusted_proxies), so every customer shares one per-IP limit", ip)
-        retry = request.app.state.limiter.check_download(ip, doc_id)
+        # No IP limit for staff (Denis, 2026-11-24). In production `/d/*` skips
+        # the login, so no request here classifies staff there; this is for an
+        # office user on a dev or proxy-less setup.
+        retry = (None if access.caller(request) == access.STAFF
+                 else request.app.state.limiter.check_download(ip, doc_id))
         if retry is not None:
             raise HTTPException(status_code=429, detail=access.RATE_LIMITED,
                                 headers={"Retry-After": str(retry)})
