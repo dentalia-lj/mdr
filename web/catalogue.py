@@ -41,6 +41,11 @@ SHOP_UNLINKED_REFUSAL = (
     "that are not published for any item."
 )
 
+#: How many linked items one webstore document lists (spec § 5.9). 528 of 557
+#: documents cover 1-39 items (2026-11-24); an ISO certificate covers up to
+#: 2,581, which uncapped would make one manufacturer page hundreds of KB.
+SHOP_ITEMS_CAP = 50
+
 # ~16k items today, ~100k at target.
 DEFAULT_PER_PAGE = 100
 MAX_PER_PAGE = 500
@@ -145,6 +150,35 @@ def manufacturer_documents(conn, canonical_name: str, *, view: str = "full",
         "JOIN item_mirror i ON i.item_ref = ip.item_ref "
         "WHERE i.manufacturer_raw = ANY(%s) "
     )
+    if for_shop:
+        # Same query, one row per (document, item) instead of DISTINCT ON, so
+        # the items each document is current for come from the rows already
+        # read (spec § 5.9): no second pass over the currency view.
+        rows = conn.execute(
+            "SELECT ip.doc_id, ip.match_basis, ip.type, ip.regulation, "
+            "       ip.validity_from AS valid_from, ip.expires AS valid_to, "
+            "       ip.expiry_basis, ip.item_ref, i.name AS item_name "
+            "FROM item_document_production ip "
+            "JOIN item_mirror i ON i.item_ref = ip.item_ref "
+            "WHERE i.manufacturer_raw = ANY(%s) ORDER BY ip.doc_id, ip.item_ref",
+            (codes,)).fetchall()
+        by_doc: dict[int, dict] = {}
+        items: dict[int, list] = {}
+        for r in rows:
+            items.setdefault(r["doc_id"], []).append(
+                {"item_ref": r["item_ref"], "item_name": r["item_name"]})
+            if r["doc_id"] not in by_doc:
+                by_doc[r["doc_id"]] = {k: r[k] for k in (
+                    "doc_id", "match_basis", "type", "regulation", "valid_from",
+                    "valid_to", "expiry_basis")}
+        docs = decorate_documents(conn, list(by_doc.values()), view=view,
+                                  base_url=base_url, for_shop=True)
+        for d in docs:
+            linked_items = items[d["doc_id"]]
+            d["item_count"] = len(linked_items)
+            d["items"] = linked_items[:SHOP_ITEMS_CAP]
+            d["items_truncated"] = len(linked_items) > SHOP_ITEMS_CAP
+        return docs
     if not include_unlinked:
         docs = conn.execute(
             f"SELECT DISTINCT ON (doc_id) * FROM ({linked}) l ORDER BY doc_id",

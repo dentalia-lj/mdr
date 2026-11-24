@@ -509,3 +509,59 @@ def test_webstore_counts_agree_between_list_detail_and_documents(guarded, conn):
     detail = guarded.get(f"/api/manufacturers/{mid}", headers=KEY).json()
     docs = guarded.get(f"/api/manufacturers/{mid}/documents", headers=KEY).json()["documents"]
     assert listed["documents"] == detail["documents"] == len(docs) == 1
+
+
+
+# --------------------------------------------------------------------------- #
+# Telling documents apart (spec § 5.9)
+# --------------------------------------------------------------------------- #
+
+def _maker(conn, prefix):
+    import uuid
+    tag = uuid.uuid4().hex[:6]
+    code, name = f"{prefix}{tag}", f"{prefix} Maker {tag}"
+    conn.execute("INSERT INTO manufacturer_alias (raw_name, canonical_name, source) "
+                 "VALUES (%s,%s,'self-seed')", (code, name))
+    mid = conn.execute("INSERT INTO manufacturer (canonical_name) VALUES (%s) RETURNING id",
+                       (name,)).fetchone()["id"]
+    conn.execute("INSERT INTO manufacturer_name (name_folded, name, manufacturer_id, kind) "
+                 "VALUES (%s,%s,%s,'canonical')", (name.casefold(), name, mid))
+    conn.commit()
+    return tag, code, mid
+
+
+def test_shop_documents_carry_file_name_and_items(guarded, conn):
+    tag, code, mid = _maker(conn, "F")
+    doc = _seed_item_with_doc(conn, f"FN-A-{tag}", manufacturer_raw=code, validity_to="2099-01-01")
+    conn.execute("INSERT INTO item_mirror (item_ref, name, manufacturer_raw, catalogue, updated_at) "
+                 "VALUES (%s,'Second Widget',%s,'LJ',now())", (f"FN-B-{tag}", code))
+    conn.execute("INSERT INTO item_document (item_ref, doc_id, match_basis, status) "
+                 "VALUES (%s,%s,'ref-list','production')", (f"FN-B-{tag}", doc))
+    conn.execute("UPDATE document SET archive_url=%s WHERE doc_id=%s",
+                 ("/archive/DW/ifu/0123456789ab__CreaFILL_Flow_IFU.pdf", doc))
+    conn.commit()
+    (d,) = guarded.get(f"/api/manufacturers/{mid}/documents", headers=KEY).json()["documents"]
+    assert d["file_name"] == "CreaFILL_Flow_IFU.pdf"
+    assert d["item_count"] == 2
+    assert d["items"] == [{"item_ref": f"FN-A-{tag}", "item_name": "Widget"},
+                          {"item_ref": f"FN-B-{tag}", "item_name": "Second Widget"}]
+    assert d["items_truncated"] is False
+    # staff payload unchanged
+    staff = guarded.get(f"/api/manufacturers/{mid}/documents", headers=STAFF).json()["documents"]
+    assert "items" not in staff[0] and "file_name" not in staff[0]
+
+
+def test_shop_items_are_capped(guarded, conn):
+    from web.catalogue import SHOP_ITEMS_CAP
+    tag, code, mid = _maker(conn, "K")
+    doc = _seed_item_with_doc(conn, f"CAP-0-{tag}", manufacturer_raw=code, validity_to="2099-01-01")
+    for n in range(1, SHOP_ITEMS_CAP + 5):
+        ref = f"CAP-{n}-{tag}"
+        conn.execute("INSERT INTO item_mirror (item_ref, name, manufacturer_raw, catalogue, updated_at) "
+                     "VALUES (%s,'W',%s,'LJ',now())", (ref, code))
+        conn.execute("INSERT INTO item_document (item_ref, doc_id, match_basis, status) "
+                     "VALUES (%s,%s,'ref-list','production')", (ref, doc))
+    conn.commit()
+    (d,) = guarded.get(f"/api/manufacturers/{mid}/documents", headers=KEY).json()["documents"]
+    assert d["item_count"] == SHOP_ITEMS_CAP + 5
+    assert len(d["items"]) == SHOP_ITEMS_CAP and d["items_truncated"] is True

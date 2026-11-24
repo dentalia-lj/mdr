@@ -10,7 +10,7 @@ import pytest
 
 from tests.test_web import _seed_item_with_doc
 from web.item_docs import (
-    CUSTOMER_HIDDEN_DOC_FIELDS, CUSTOMER_HIDDEN_ITEM_FIELDS, is_legally_expired, item_documents,
+    CUSTOMER_HIDDEN_DOC_FIELDS, CUSTOMER_HIDDEN_ITEM_FIELDS, file_name_of, is_legally_expired, item_documents,
 )
 
 
@@ -267,3 +267,29 @@ def test_shop_view_drops_a_document_whose_certificate_expired(conn):
     conn.commit()
     assert item_documents(conn, "ID-SHOP-CERT", for_shop=True)["documents"] == []
     assert len(item_documents(conn, "ID-SHOP-CERT")["documents"]) == 1
+
+
+
+@pytest.mark.parametrize("archive_url,expected", [
+    ("/archive/DENTAL_WORLD/ifu/0123456789ab__CreaFILL_Flow_IFU.pdf", "CreaFILL_Flow_IFU.pdf"),
+    ("file:///srv/archive/GC/doc/abcdef012345__Fuji_Plus.pdf", "Fuji_Plus.pdf"),
+    ("/imports/corpus/VOCO DoC 2021.pdf", "VOCO DoC 2021.pdf"),
+    # a name that merely starts like a hash prefix keeps it
+    ("/archive/x/abc__notahash.pdf", "abc__notahash.pdf"),
+    ("", ""),
+    (None, ""),
+])
+def test_file_name_of(archive_url, expected):
+    assert file_name_of(archive_url) == expected
+
+
+def test_shop_view_carries_the_file_name(conn):
+    doc = _seed_item_with_doc(conn, "ID-FNAME", validity_to="2099-01-01")
+    conn.execute("UPDATE document SET archive_url=%s WHERE doc_id=%s",
+                 ("/archive/DW/ifu/0123456789ab__Canal_Prep_IFU.pdf", doc))
+    conn.commit()
+    (d,) = item_documents(conn, "ID-FNAME", for_shop=True)["documents"]
+    assert d["file_name"] == "Canal_Prep_IFU.pdf"
+    assert "item_count" not in d and "items" not in d
+    # staff payload unchanged
+    assert "file_name" not in item_documents(conn, "ID-FNAME")["documents"][0]

@@ -22,7 +22,9 @@ question each; the choice between them is the only thing this module decides.
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 #: The office's calendar. "Expired" is judged on Dentalia's date, not UTC's.
@@ -58,6 +60,19 @@ _LEGAL_EXPIRY_SQL = (
     "                    AND c.status IN ('production', 'superseded') "
     "WHERE d.doc_id = ANY(%s)"
 )
+
+
+#: The archive stores a file as `{hash12}__{original name}` (StorageAdapter).
+_ARCHIVE_PREFIX = re.compile(r"^[0-9a-f]{12}__")
+
+
+def file_name_of(archive_url: str | None) -> str:
+    """The document's original file name: the basename of its storage handle,
+    without the archive's hash prefix. Never a path."""
+    if not archive_url:
+        return ""
+    path = urlsplit(archive_url).path if "://" in archive_url else archive_url
+    return _ARCHIVE_PREFIX.sub("", path.rsplit("/", 1)[-1])
 
 
 def local_today() -> date:
@@ -131,6 +146,13 @@ def decorate_documents(conn, docs, *, view: str = "full", base_url: str = "",
     if for_shop:
         docs = _shop_rows(conn, docs, today or local_today())
         view = "customer"
+        # Erpium's tree shows file names today, and the derived `name` is the
+        # same for every IFU of one manufacturer (spec § 5.9).
+        handles = {r["doc_id"]: r["archive_url"] for r in conn.execute(
+            "SELECT doc_id, archive_url FROM document WHERE doc_id = ANY(%s)",
+            ([d["doc_id"] for d in docs],)).fetchall()} if docs else {}
+        for d in docs:
+            d["file_name"] = file_name_of(handles.get(d["doc_id"]))
     # One batched query, not one per doc. DISTINCT ON ... ORDER BY extract_rev
     # DESC reads only the LATEST extraction revision (014) -- a re-extraction
     # must not leave the name stuck on a stale rev-1 value.

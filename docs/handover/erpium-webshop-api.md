@@ -45,6 +45,18 @@ usually does).
 {"id": 41, "canonical_name": "IVOCLAR", "documents": [Document, ...]}
 ```
 
+Here each document also says which of the manufacturer's items it covers, so
+you can link a document to your product pages:
+
+```json
+"item_count": 4,
+"items": [{"item_ref": "1.02.003", "item_name": "CREAFILL FLOW A2 BRIZGA 2G"}, ...],
+"items_truncated": false
+```
+
+`items` lists at most 50; `items_truncated` is true when `item_count` is
+larger (an ISO certificate can cover thousands of items).
+
 ### Documents per item: `GET /api/items/{item_ref}/documents`
 
 `item_ref` is Dentalia's article number, as in Business Central. It may contain
@@ -82,6 +94,7 @@ null entries, so you can draw one row per line.
   "valid_from": "2026-06-25",
   "valid_to": "2031-06-29",
   "name": "CARL MARTIN EC (MDR), valid to 2031-06-29",
+  "file_name": "533216_CECertificate.pdf",
   "url": "https://api.cw.dentalia.si/api/documents/19/link"
 }
 ```
@@ -91,7 +104,8 @@ null entries, so you can draw one row per line.
 | `type` | `DoC` (declaration of conformity), `EC` (CE certificate), `IFU` (instructions for use), `ISO` (quality-system certificate), `SPP` (system or procedure pack statement), `other` |
 | `regulation` | `MDR`, `MDD`, `n.a.` (ISO certificates and some instructions) |
 | `valid_to` | The expiry the document or its certificate states. `null` when there is none, which is normal for a class I declaration of conformity |
-| `name` | A display label in **English**. Build your own Slovenian label from `type`, `regulation` and `valid_to` |
+| `name` | A display label in **English**. It does not tell two documents of one type apart (all of a manufacturer's IFUs read the same); use `file_name` for that, or build your own Slovenian label from `type`, `regulation` and `valid_to` |
+| `file_name` | The document's original file name, as the manufacturer published it |
 | `url` | Not for a page. See downloads below |
 
 ## Downloads: on the customer's click

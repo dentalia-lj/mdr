@@ -282,6 +282,12 @@ and nothing else:
   expired or altered, `404` not visible.
 - **Manufacturer list:** only manufacturers with at least one visible document,
   without `codes`.
+- **`file_name`** on every document: the original file name (basename of
+  `archive_url`, archive hash prefix removed). The derived `name` is the same for
+  every IFU of one manufacturer, so this is what tells them apart.
+- **Manufacturer documents** also carry `item_count`, `items` (`[{item_ref,
+  item_name}]`, at most 50) and `items_truncated`: the manufacturer's items each
+  document is current for. Not on the item routes (spec § 5.9).
 - **Limits** (`web/limits.py`): `429` + `Retry-After` past 1,200 calls a minute
   per key, or past 30 distinct documents a minute / 100 a day per customer IP on
   `/d/*`. Per key and day, 200 distinct documents linked raises an alert, never a
