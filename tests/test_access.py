@@ -61,6 +61,7 @@ def guarded(test_db_url, tmp_path):
     ("/documents/42/file", {STAFF}),
     # the download link: issued to the key, used by a credential-less browser
     ("/api/documents/7/link", {SERVICE, STAFF}),
+    ("/api/search", {SERVICE, STAFF}),
     ("/d/7.1700000000.abc", {STAFF, SERVICE, BC, ANON}),
     ("/documents/42", {STAFF}),
     ("/documents", {STAFF}),
@@ -297,7 +298,7 @@ def _api_host_lets_through(path: str) -> bool:
     # opened to machines by allowed_classes
     "/api/items/X/documents", "/api/items/documents", "/api/manufacturers",
     "/api/manufacturers/12/documents", "/api/manufacturers/12", "/item/1.02.003",
-    "/static/css/style.css", "/healthz", "/api/documents/7/link", "/d/7.1.x",
+    "/static/css/style.css", "/healthz", "/api/documents/7/link", "/d/7.1.x", "/api/search",
     # staff-only, so office UI (and staff-only API on the API host)
     "/api/items", "/api/documents/7", "/api/kpi", "/api/manufacturers/12/items",
     "/api/manufacturers/by-name/VOCO/documents", "/api/manufacturers/VOCO",

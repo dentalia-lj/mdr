@@ -84,6 +84,26 @@ null entries, so you can draw one row per line.
 {"items": [ItemDocuments, ...], "total": 2}
 ```
 
+### Search: `GET /api/search?q=...`
+
+One query box. `q` is 2 to 100 characters and is matched, in this order,
+against Dentalia's item number, the supplier's article number, a Basic UDI-DI
+printed on a document, and the item's name (fuzzy). Each item comes back once,
+with `matched_on` saying which of `item_ref`, `mfr_ref`, `basic_udi_di` or
+`name` found it. At most 20 items, and only items that have documents.
+Manufacturer names that match come back separately, as tree entries.
+
+```json
+{
+  "query": "oralni gel",
+  "manufacturers": [{"id": 41, "canonical_name": "...", "items": 12, "documents": 3}],
+  "items": [ {ItemDocuments, "matched_on": "name"}, ... ]
+}
+```
+
+BC items carry no UDI, so a UDI search finds a document carrying that Basic
+UDI-DI and returns the items that document covers.
+
 ### The document object
 
 ```json

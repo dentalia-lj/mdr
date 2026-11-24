@@ -60,7 +60,7 @@ curl "https://HOST/item/{{ example_ref or 'ITEM' }}?k=$WEB_BC_LINK_KEY"</code></
   <li><strong>Routes:</strong> <code>/api/manufacturers</code>,
     <code>/api/manufacturers/{id}</code>, <code>/api/manufacturers/{id}/documents</code>,
     <code>/api/items/{item_ref}/documents</code>, <code>/api/items/documents</code>,
-    <code>/api/documents/{doc_id}/link</code>. Nothing else.</li>
+    <code>/api/documents/{doc_id}/link</code>, <code>/api/search</code>. Nothing else.</li>
   <li><strong>Always the customer view.</strong> <code>view=full</code> is ignored;
     <code>include_unlinked</code> and <code>include_superseded</code> answer <code>400</code>.</li>
   <li><strong>Only documents a clinic may be shown:</strong> published, current for
@@ -82,6 +82,14 @@ curl "https://HOST/item/{{ example_ref or 'ITEM' }}?k=$WEB_BC_LINK_KEY"</code></
 <pre><code># on the customer's click, server-side
 curl -H "X-API-Key: $WEB_API_KEYS" https://HOST/api/documents/{{ example_doc_id or 'DOC_ID' }}/link
 # {"url": "https://HOST/d/&lt;doc_id&gt;.&lt;exp&gt;.&lt;sig&gt;", "expires_at": "&hellip;"}</code></pre>
+
+<h3><code>GET /api/search?q=</code></h3>
+<p><strong>service</strong> &middot; <strong>staff</strong> &mdash; the webstore's
+query box. <code>q</code> (2&ndash;100 characters) is matched in order on item
+number, supplier article number, a document's Basic UDI-DI and item name (fuzzy).
+Up to 20 items with their documents, each with <code>matched_on</code>; only items
+that have documents. Matching manufacturers come back under
+<code>manufacturers</code>, never with their items.</p>
 
 <h3><code>GET /api/documents/{doc_id}/link</code></h3>
 <p><strong>service</strong> &middot; <strong>staff</strong> &mdash; a signed

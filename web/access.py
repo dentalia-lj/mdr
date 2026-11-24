@@ -61,6 +61,7 @@ SERVICE_ROUTES = tuple(re.compile(p) for p in (
     r"^/api/items/.+/documents$",
     r"^/api/items/documents$",
     r"^/api/documents/\d+/link$",
+    r"^/api/search$",
 ))
 
 

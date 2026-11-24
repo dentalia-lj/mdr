@@ -293,6 +293,13 @@ and nothing else:
   `/d/*`. Per key and day, 200 distinct documents linked raises an alert, never a
   block.
 
+**Search** (`GET /api/search?q=`, spec § 5.10, `web/search.py`): `q` 2–100
+characters (else `400`), matched in order on `item_ref` and `mfr_ref` (exact,
+case-insensitive), a document's `basic_udi_di` (spaces ignored), then item name
+(`pg_trgm`). At most 20 items, each the item payload plus `matched_on`, and only
+items with a document the caller may be shown. Matching manufacturer names come
+back as `manufacturers` (tree entries, never their items). Key and staff.
+
 `url` changing meaning in this view is the second deliberate exception to § 5's
 additive-only rule, made for the same reason as the first: no external consumer
 was live yet.
