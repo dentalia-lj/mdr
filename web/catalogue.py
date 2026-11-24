@@ -27,7 +27,10 @@ from web import access
 from web.item_docs import (
     CUSTOMER_HIDDEN_DOC_FIELDS,
     decorate_documents,
+    is_legally_expired,
     item_documents,
+    legal_expiry,
+    local_today,
 )
 
 #: `include_unlinked` widens the row set to documents bound to the
@@ -52,9 +55,42 @@ def _codes(conn, canonical_name: str) -> list[str]:
         "ORDER BY raw_name", (canonical_name,)).fetchall()]
 
 
-def manufacturer_summary(conn, canonical_name: str) -> dict | None:
-    """Identity plus PRODUCTION counts, or None if no such canonical name."""
-    codes = _codes(conn, canonical_name)
+def _resolve_id(conn, mfr_id: int) -> tuple[str, list[str]] | None:
+    """`(current canonical name, BC codes)` for `manufacturer.id`, or None.
+
+    Resolved through EVERY name the manufacturer has had, not only the
+    current one (2026-11-23 webshop API spec § 5.3). The UI rename writes
+    `manufacturer` and `manufacturer_name` (the old name demoted to an alias)
+    but not `manufacturer_alias`, which keeps the old canonical name until the
+    next `playbooks sync`; looking the codes up by the new name alone would
+    404 the webstore's saved id in between."""
+    row = conn.execute("SELECT canonical_name FROM manufacturer WHERE id=%s",
+                       (mfr_id,)).fetchone()
+    if row is None:
+        return None
+    codes = [r["raw_name"] for r in conn.execute(
+        "SELECT DISTINCT a.raw_name FROM manufacturer_alias a "
+        "WHERE a.canonical_name = %s OR a.canonical_name IN ("
+        "  SELECT n.name FROM manufacturer_name n WHERE n.manufacturer_id = %s) "
+        "ORDER BY a.raw_name", (row["canonical_name"], mfr_id)).fetchall()]
+    return row["canonical_name"], codes
+
+
+def _id_by_name(conn, canonical_name: str) -> int | None:
+    """The stable id behind a name, current or former; None when the name has
+    no `manufacturer` row (an alias-only spelling)."""
+    row = conn.execute(
+        "SELECT id FROM manufacturer WHERE canonical_name = %s UNION "
+        "SELECT manufacturer_id FROM manufacturer_name WHERE name = %s LIMIT 1",
+        (canonical_name, canonical_name)).fetchone()
+    return row["id"] if row else None
+
+
+def manufacturer_summary(conn, canonical_name: str, *, codes: list[str] | None = None
+                         ) -> dict | None:
+    """Identity plus PRODUCTION counts, or None if no such canonical name.
+    `codes` given = already resolved by id (`_resolve_id`)."""
+    codes = codes if codes is not None else _codes(conn, canonical_name)
     if not codes:
         return None
     row = conn.execute(
@@ -73,7 +109,8 @@ def manufacturer_summary(conn, canonical_name: str) -> dict | None:
 
 def manufacturer_documents(conn, canonical_name: str, *, view: str = "full",
                            base_url: str = "", include_unlinked: bool = False,
-                           for_shop: bool = False) -> list[dict] | None:
+                           for_shop: bool = False, codes: list[str] | None = None
+                           ) -> list[dict] | None:
     """Every production document reachable from any item of this manufacturer,
     DEDUPED.
 
@@ -97,7 +134,7 @@ def manufacturer_documents(conn, canonical_name: str, *, view: str = "full",
     than a `view` value because `view` is the PROJECTION (full/customer) and
     this is the ROW SET -- one knob per question.
     """
-    codes = _codes(conn, canonical_name)
+    codes = codes if codes is not None else _codes(conn, canonical_name)
     if not codes:
         return None
     linked = (
@@ -134,11 +171,11 @@ def manufacturer_documents(conn, canonical_name: str, *, view: str = "full",
                               for_shop=for_shop)
 
 
-def manufacturer_items(conn, canonical_name: str, *, page: int, per_page: int
-                       ) -> dict | None:
+def manufacturer_items(conn, canonical_name: str, *, page: int, per_page: int,
+                       codes: list[str] | None = None) -> dict | None:
     """One page of this manufacturer's items, each with its production
     document count."""
-    codes = _codes(conn, canonical_name)
+    codes = codes if codes is not None else _codes(conn, canonical_name)
     if not codes:
         return None
     total = conn.execute(
@@ -164,13 +201,64 @@ def manufacturer_items(conn, canonical_name: str, *, page: int, per_page: int
     }
 
 
+# One row per `manufacturer.id`, its codes found through every name it has had
+# (see `_resolve_id`), with the item count and the PUBLISHED document ids.
+_SHOP_LIST_SQL = """
+WITH names AS (
+  SELECT m.id, m.canonical_name, m.canonical_name AS name FROM manufacturer m
+  UNION
+  SELECT m.id, m.canonical_name, n.name FROM manufacturer m
+    JOIN manufacturer_name n ON n.manufacturer_id = m.id
+), codes AS (
+  SELECT DISTINCT nm.id, nm.canonical_name, a.raw_name
+    FROM names nm JOIN manufacturer_alias a ON a.canonical_name = nm.name
+)
+SELECT c.id, c.canonical_name,
+       count(DISTINCT i.item_ref) AS items,
+       coalesce(array_agg(DISTINCT ip.doc_id) FILTER (WHERE ip.doc_id IS NOT NULL),
+                '{}') AS doc_ids
+  FROM codes c
+  LEFT JOIN item_mirror i ON i.manufacturer_raw = c.raw_name
+  LEFT JOIN item_document_production ip ON ip.item_ref = i.item_ref
+ GROUP BY c.id, c.canonical_name
+"""
+
+
+def shop_manufacturers(conn, today) -> list[dict]:
+    """The webstore's manufacturer tree (2026-11-23 webshop API spec § 5.3):
+    `id`, name and counts, no BC codes, and only manufacturers with at least
+    one document the webstore may show -- the same legal-expiry rule
+    `decorate_documents(for_shop=True)` applies, so a manufacturer listed here
+    never opens on an empty documents page."""
+    rows = conn.execute(_SHOP_LIST_SQL).fetchall()
+    legal = legal_expiry(conn, sorted({d for r in rows for d in r["doc_ids"]}))
+    out = []
+    for r in rows:
+        visible = [d for d in r["doc_ids"]
+                   if not is_legally_expired(legal.get(d), today)]
+        if visible:
+            out.append({"id": r["id"], "canonical_name": r["canonical_name"],
+                        "items": r["items"], "documents": len(visible)})
+    return out
+
+
 def register_routes(app, conn_factory, cfg) -> None:
     from web import registry
 
     @app.get("/api/manufacturers")
-    def api_manufacturers(q: str = Query(default="")):
+    def api_manufacturers(request: Request, q: str = Query(default="")):
+        needle = q.strip().lower()
+        if access.caller(request) == access.SERVICE:
+            with conn_factory() as conn:
+                rows = shop_manufacturers(conn, local_today())
+            if needle:
+                rows = [r for r in rows if needle in r["canonical_name"].lower()]
+            rows.sort(key=lambda r: (-r["items"], r["canonical_name"]))
+            return {"manufacturers": rows, "total": len(rows)}
         with conn_factory() as conn:
             rows = registry.manufacturer_rows(conn)
+            ids = {r["canonical_name"]: _id_by_name(conn, r["canonical_name"])
+                   for r in rows}
         # `manufacturer_rows` already joins item_document_production, so its
         # `docs` count is production-only. Renamed to `documents` here to match
         # every other payload in this API.
@@ -180,51 +268,104 @@ def register_routes(app, conn_factory, cfg) -> None:
         # been authored, which is a crawl-authoring concern belonging to the
         # UI. A consumer has no idea what a playbook is and should not have its
         # result order depend on one.
-        needle = q.strip().lower()
         if needle:
             rows = [r for r in rows
                     if needle in r["canonical_name"].lower()
                     or any(needle in c.lower() for c in r["codes"])]
         rows = sorted(rows, key=lambda r: (-r["items"], r["canonical_name"]))
-        out = [{"canonical_name": r["canonical_name"], "codes": r["codes"],
+        out = [{"id": ids.get(r["canonical_name"]),
+                "canonical_name": r["canonical_name"], "codes": r["codes"],
                 "items": r["items"], "documents": r["docs"]} for r in rows]
         return {"manufacturers": out, "total": len(out)}
 
-    @app.get("/api/manufacturers/{canonical_name:path}/documents")
-    def api_manufacturer_documents(request: Request, canonical_name: str,
-                                   view: str = "full",
-                                   include_unlinked: bool = False):
+    # ---- by stable id: the webstore's paths (spec § 5.3) -------------------
+    def _by_id(conn, mfr_id: int) -> tuple[str, list[str]]:
+        found = _resolve_id(conn, mfr_id)
+        if found is None:
+            raise HTTPException(status_code=404, detail="unknown manufacturer")
+        return found
+
+    def _documents(request, canonical_name, codes, view, include_unlinked):
         for_shop = access.caller(request) == access.SERVICE
         if for_shop and include_unlinked:
             raise HTTPException(status_code=400, detail=SHOP_UNLINKED_REFUSAL)
         with conn_factory() as conn:
-            docs = manufacturer_documents(conn, canonical_name, view=view,
+            return manufacturer_documents(conn, canonical_name, view=view,
                                           base_url=cfg.public_base_url,
                                           include_unlinked=include_unlinked,
-                                          for_shop=for_shop)
+                                          for_shop=for_shop, codes=codes)
+
+    def _summary(request, canonical_name, codes, mfr_id):
+        with conn_factory() as conn:
+            out = manufacturer_summary(conn, canonical_name, codes=codes)
+            if out is not None and mfr_id is None:
+                mfr_id = _id_by_name(conn, canonical_name)
+        if out is None:
+            raise HTTPException(status_code=404, detail="unknown manufacturer")
+        out = {"id": mfr_id, **out}
+        if access.caller(request) == access.SERVICE:
+            out.pop("codes", None)
+        return out
+
+    @app.get("/api/manufacturers/{mfr_id:int}/documents")
+    def api_manufacturer_documents(request: Request, mfr_id: int,
+                                   view: str = "full",
+                                   include_unlinked: bool = False):
+        with conn_factory() as conn:
+            name, codes = _by_id(conn, mfr_id)
+        docs = _documents(request, name, codes, view, include_unlinked)
+        return {"id": mfr_id, "canonical_name": name, "documents": docs or []}
+
+    @app.get("/api/manufacturers/{mfr_id:int}/items")
+    def api_manufacturer_items(mfr_id: int, page: int = 1,
+                               per_page: int = DEFAULT_PER_PAGE):
+        page = max(1, page)
+        per_page = max(1, min(per_page, MAX_PER_PAGE))
+        with conn_factory() as conn:
+            name, codes = _by_id(conn, mfr_id)
+            out = manufacturer_items(conn, name, page=page, per_page=per_page,
+                                     codes=codes)
+        if out is None:
+            raise HTTPException(status_code=404, detail="unknown manufacturer")
+        return {"id": mfr_id, **out}
+
+    @app.get("/api/manufacturers/{mfr_id:int}")
+    def api_manufacturer(request: Request, mfr_id: int):
+        with conn_factory() as conn:
+            name, codes = _by_id(conn, mfr_id)
+        return _summary(request, name, codes, mfr_id)
+
+    # ---- by name: staff only (access.SERVICE_ROUTES does not list them) ----
+    # A canonical name can be a bare BC code like `077` (RESOLVE stores an
+    # unmapped code as its own name), so "numeric means id" would be wrong the
+    # day one appears; names get their own prefix instead.
+    @app.get("/api/manufacturers/by-name/{canonical_name:path}/documents")
+    def api_manufacturer_documents_by_name(request: Request, canonical_name: str,
+                                           view: str = "full",
+                                           include_unlinked: bool = False):
+        docs = _documents(request, canonical_name, None, view, include_unlinked)
         if docs is None:
             raise HTTPException(status_code=404, detail="unknown manufacturer")
-        return {"canonical_name": canonical_name, "documents": docs}
+        with conn_factory() as conn:
+            mfr_id = _id_by_name(conn, canonical_name)
+        return {"id": mfr_id, "canonical_name": canonical_name, "documents": docs}
 
-    @app.get("/api/manufacturers/{canonical_name:path}/items")
-    def api_manufacturer_items(canonical_name: str, page: int = 1,
-                               per_page: int = DEFAULT_PER_PAGE):
+    @app.get("/api/manufacturers/by-name/{canonical_name:path}/items")
+    def api_manufacturer_items_by_name(canonical_name: str, page: int = 1,
+                                       per_page: int = DEFAULT_PER_PAGE):
         page = max(1, page)
         per_page = max(1, min(per_page, MAX_PER_PAGE))
         with conn_factory() as conn:
             out = manufacturer_items(conn, canonical_name, page=page,
                                      per_page=per_page)
+            mfr_id = _id_by_name(conn, canonical_name) if out else None
         if out is None:
             raise HTTPException(status_code=404, detail="unknown manufacturer")
-        return out
+        return {"id": mfr_id, **out}
 
-    @app.get("/api/manufacturers/{canonical_name:path}")
-    def api_manufacturer(canonical_name: str):
-        with conn_factory() as conn:
-            out = manufacturer_summary(conn, canonical_name)
-        if out is None:
-            raise HTTPException(status_code=404, detail="unknown manufacturer")
-        return out
+    @app.get("/api/manufacturers/by-name/{canonical_name:path}")
+    def api_manufacturer_by_name(request: Request, canonical_name: str):
+        return _summary(request, canonical_name, None, None)
 
     # Registered here rather than beside the single-item route so the whole of
     # slice 2 lives in one module. No collision with

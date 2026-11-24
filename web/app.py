@@ -6520,7 +6520,7 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         ctx = {
             "example_ref": None, "example_full": None,
             "example_customer": None, "example_doc_id": None,
-            "example_manufacturer": None,
+            "example_manufacturer": None, "example_manufacturer_id": None,
             "default_per_page": catalogue.DEFAULT_PER_PAGE,
             "max_per_page": catalogue.MAX_PER_PAGE,
             "max_batch_refs": catalogue.MAX_BATCH_REFS,
@@ -6539,6 +6539,9 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                                           base_url=cfg.public_base_url)
                 # default=str: dates are date objects, not JSON scalars.
                 ctx["example_manufacturer"] = full.get("manufacturer")
+                ctx["example_manufacturer_id"] = (
+                    catalogue._id_by_name(conn, full["manufacturer"])
+                    if full.get("manufacturer") else None)
                 ctx["example_full"] = json.dumps(full, indent=2, default=str)
                 ctx["example_customer"] = json.dumps(customer, indent=2, default=str)
         return templates.TemplateResponse(request, "api_reference.html", ctx)

@@ -52,8 +52,10 @@ _SERVICE_API = frozenset({SERVICE, STAFF})
 #: this tuple line for line (`tests/test_access.py`).
 SERVICE_ROUTES = tuple(re.compile(p) for p in (
     r"^/api/manufacturers$",
-    r"^/api/manufacturers/[^/]+$",
-    r"^/api/manufacturers/[^/]+/documents$",
+    # By stable `manufacturer.id` only; the name-addressed forms live under
+    # `/by-name/` and are staff's (2026-11-23 webshop API spec § 5.3).
+    r"^/api/manufacturers/\d+$",
+    r"^/api/manufacturers/\d+/documents$",
     # The single item (`:path`, refs contain `/`) and, separately, the batch:
     # `.+` needs at least one character between, which the batch has not.
     r"^/api/items/.+/documents$",

@@ -51,6 +51,22 @@ def canonical(conn):
     return row["canonical_name"]
 
 
+@pytest.fixture
+def mfr_id(conn, canonical):
+    """`manufacturer.id` for the canonical name 077 maps to, with the canonical
+    `manufacturer_name` row production carries for every manufacturer
+    (measured 2026-11-23: 384 of 384)."""
+    conn.execute("INSERT INTO manufacturer (canonical_name) VALUES (%s) "
+                 "ON CONFLICT (canonical_name) DO NOTHING", (canonical,))
+    mid = conn.execute("SELECT id FROM manufacturer WHERE canonical_name=%s",
+                       (canonical,)).fetchone()["id"]
+    conn.execute("INSERT INTO manufacturer_name (name_folded, name, manufacturer_id, kind) "
+                 "VALUES (%s,%s,%s,'canonical') ON CONFLICT DO NOTHING",
+                 (canonical.casefold(), canonical, mid))
+    conn.commit()
+    return mid
+
+
 # --------------------------------------------------------------------- list #
 
 def test_manufacturers_list_counts_only_production(client, conn, canonical):
@@ -74,7 +90,7 @@ def test_manufacturers_list_filters_by_q(client, conn, canonical):
 
 def test_manufacturer_detail_returns_identity_and_counts(client, conn, canonical):
     _seed_item_with_doc(conn, "CAT-DET", manufacturer_raw=MFR)
-    body = client.get(f"/api/manufacturers/{canonical}").json()
+    body = client.get(f"/api/manufacturers/by-name/{canonical}").json()
     assert body["canonical_name"] == canonical
     assert MFR in body["codes"]
     assert body["items"] >= 1
@@ -82,7 +98,7 @@ def test_manufacturer_detail_returns_identity_and_counts(client, conn, canonical
 
 
 def test_unknown_manufacturer_is_404(client):
-    assert client.get("/api/manufacturers/No Such Maker Ltd").status_code == 404
+    assert client.get("/api/manufacturers/by-name/No Such Maker Ltd").status_code == 404
 
 
 # ---------------------------------------------------------------- documents #
@@ -99,7 +115,7 @@ def test_manufacturer_documents_are_deduped_across_items(client, conn, canonical
         "INSERT INTO item_document (item_ref, doc_id, match_basis, status) "
         "VALUES ('CAT-D2',%s,'ref-list','production') ON CONFLICT DO NOTHING", (doc_id,))
     conn.commit()
-    docs = client.get(f"/api/manufacturers/{canonical}/documents").json()["documents"]
+    docs = client.get(f"/api/manufacturers/by-name/{canonical}/documents").json()["documents"]
     ids = [d["doc_id"] for d in docs]
     assert ids.count(doc_id) == 1, "a shared document was listed once per item"
 
@@ -107,7 +123,7 @@ def test_manufacturer_documents_are_deduped_across_items(client, conn, canonical
 def test_manufacturer_documents_customer_view_drops_internals(client, conn, canonical):
     _seed_item_with_doc(conn, "CAT-DCUST", manufacturer_raw=MFR)
     docs = client.get(
-        f"/api/manufacturers/{canonical}/documents?view=customer").json()["documents"]
+        f"/api/manufacturers/by-name/{canonical}/documents?view=customer").json()["documents"]
     assert docs
     assert "match_basis" not in docs[0]
     assert "expiry_basis" not in docs[0]
@@ -116,7 +132,7 @@ def test_manufacturer_documents_customer_view_drops_internals(client, conn, cano
 def test_manufacturer_documents_exclude_staged(client, conn, canonical):
     _seed_item_with_doc(conn, "CAT-DSTG", link_status="staged", manufacturer_raw=MFR)
     ids = [d["doc_id"] for d in
-           client.get(f"/api/manufacturers/{canonical}/documents").json()["documents"]]
+           client.get(f"/api/manufacturers/by-name/{canonical}/documents").json()["documents"]]
     staged = conn.execute(
         "SELECT doc_id FROM item_document WHERE item_ref='CAT-DSTG'").fetchone()
     assert staged["doc_id"] not in ids
@@ -128,13 +144,13 @@ def test_manufacturer_items_paginate(client, conn, canonical):
     for n in range(5):
         _seed_item_with_doc(conn, f"CAT-P{n}", manufacturer_raw=MFR)
     body = client.get(
-        f"/api/manufacturers/{canonical}/items?page=1&per_page=2").json()
+        f"/api/manufacturers/by-name/{canonical}/items?page=1&per_page=2").json()
     assert len(body["items"]) == 2
     assert body["page"] == 1 and body["per_page"] == 2
     assert body["total"] >= 5
     assert body["pages"] >= 3
     page2 = client.get(
-        f"/api/manufacturers/{canonical}/items?page=2&per_page=2").json()
+        f"/api/manufacturers/by-name/{canonical}/items?page=2&per_page=2").json()
     assert {i["item_ref"] for i in body["items"]} & {
         i["item_ref"] for i in page2["items"]} == set(), "pages overlap"
 
@@ -143,14 +159,14 @@ def test_per_page_is_capped(client, conn, canonical):
     """~16k items today, ~100k at target. An uncapped per_page is a way to ask
     this endpoint for the whole catalogue in one request."""
     body = client.get(
-        f"/api/manufacturers/{canonical}/items?per_page=99999").json()
+        f"/api/manufacturers/by-name/{canonical}/items?per_page=99999").json()
     assert body["per_page"] <= 500
 
 
 def test_page_beyond_the_end_is_empty_not_an_error(client, conn, canonical):
     _seed_item_with_doc(conn, "CAT-END", manufacturer_raw=MFR)
     body = client.get(
-        f"/api/manufacturers/{canonical}/items?page=9999&per_page=50").json()
+        f"/api/manufacturers/by-name/{canonical}/items?page=9999&per_page=50").json()
     assert body["items"] == []
     assert body["total"] >= 1
 
@@ -197,10 +213,14 @@ def test_batch_with_no_refs_is_400(client):
 
 @pytest.mark.parametrize("path,shop", [
     ("/api/manufacturers", True),
-    ("/api/manufacturers/X", True),
-    ("/api/manufacturers/X/documents", True),
+    ("/api/manufacturers/12", True),
+    ("/api/manufacturers/12/documents", True),
     # the supplier map: staff only since 2026-11-23 (webshop API spec § 5.1)
-    ("/api/manufacturers/X/items", False),
+    ("/api/manufacturers/12/items", False),
+    # addressed by name: staff only, the webstore uses the stable id
+    ("/api/manufacturers/by-name/X", False),
+    ("/api/manufacturers/by-name/X/documents", False),
+    ("/api/manufacturers/X", False),
     ("/api/items/documents", True),
 ])
 def test_every_new_endpoint_inherits_the_api_policy(path, shop):
@@ -235,11 +255,11 @@ def test_a_bound_document_with_no_links_is_hidden_by_default(client, conn, canon
     doc_id = _seed_bound_doc(conn, canonical, "cat-bound-1")
     conn.commit()
 
-    body = client.get(f"/api/manufacturers/{canonical}/documents").json()
+    body = client.get(f"/api/manufacturers/by-name/{canonical}/documents").json()
     assert doc_id not in [d["doc_id"] for d in body["documents"]]
 
     widened = client.get(
-        f"/api/manufacturers/{canonical}/documents?include_unlinked=true").json()
+        f"/api/manufacturers/by-name/{canonical}/documents?include_unlinked=true").json()
     assert doc_id in [d["doc_id"] for d in widened["documents"]]
 
 
@@ -251,7 +271,7 @@ def test_a_link_only_document_still_resolves_with_no_binding(client, conn, canon
     _seed_item_with_doc(conn, "CAT-FALLBACK", manufacturer_raw=MFR)
     conn.commit()
 
-    body = client.get(f"/api/manufacturers/{canonical}/documents").json()
+    body = client.get(f"/api/manufacturers/by-name/{canonical}/documents").json()
     assert body["documents"], "a link-only document must still be returned"
     assert all(d["doc_id"] for d in body["documents"])
 
@@ -268,7 +288,7 @@ def test_the_widened_view_does_not_duplicate_a_document_that_is_both(
     conn.commit()
 
     body = client.get(
-        f"/api/manufacturers/{canonical}/documents?include_unlinked=true").json()
+        f"/api/manufacturers/by-name/{canonical}/documents?include_unlinked=true").json()
     ids = [d["doc_id"] for d in body["documents"]]
     assert ids.count(doc_id) == 1
 
@@ -324,7 +344,7 @@ def _doc_ids(payload):
     return {d["doc_id"] for d in payload["documents"]}
 
 
-def test_shop_view_drops_real_expired_on_every_route(guarded, conn, canonical):
+def test_shop_view_drops_real_expired_on_every_route(guarded, conn, mfr_id):
     expired = _seed_item_with_doc(conn, "SHOP-EXP", manufacturer_raw=MFR,
                                   validity_from="2000-01-01", validity_to="2001-01-01")
     valid = _seed_item_with_doc(conn, "SHOP-OK", manufacturer_raw=MFR,
@@ -336,17 +356,17 @@ def test_shop_view_drops_real_expired_on_every_route(guarded, conn, canonical):
                             headers=headers).json()
         assert (expired in _doc_ids(batch["items"][0])) is sees_expired
         assert valid in _doc_ids(batch["items"][1])
-        line = guarded.get(f"/api/manufacturers/{canonical}/documents",
+        line = guarded.get(f"/api/manufacturers/{mfr_id}/documents",
                            headers=headers).json()
         assert (expired in _doc_ids(line)) is sees_expired
         assert valid in _doc_ids(line)
 
 
-def test_view_full_is_ignored_for_the_key(guarded, conn, canonical):
+def test_view_full_is_ignored_for_the_key(guarded, conn, mfr_id):
     _seed_item_with_doc(conn, "SHOP-FULL", manufacturer_raw=MFR, validity_to="2099-01-01")
     for path in ("/api/items/SHOP-FULL/documents?view=full",
                  "/api/items/documents?ref=SHOP-FULL&view=full",
-                 f"/api/manufacturers/{canonical}/documents?view=full"):
+                 f"/api/manufacturers/{mfr_id}/documents?view=full"):
         body = guarded.get(path, headers=KEY).json()
         docs = body["items"][0]["documents"] if "items" in body else body["documents"]
         assert docs, path
@@ -356,13 +376,13 @@ def test_view_full_is_ignored_for_the_key(guarded, conn, canonical):
 @pytest.mark.parametrize("path", [
     "/api/items/SHOP-FLAG/documents?include_superseded=true",
     "/api/items/documents?ref=SHOP-FLAG&include_superseded=true",
-    "/api/manufacturers/{c}/documents?include_unlinked=true",
+    "/api/manufacturers/{m}/documents?include_unlinked=true",
 ])
-def test_the_key_cannot_widen_the_row_set(guarded, conn, canonical, path):
+def test_the_key_cannot_widen_the_row_set(guarded, conn, mfr_id, path):
     _seed_item_with_doc(conn, "SHOP-FLAG", manufacturer_raw=MFR, validity_to="2099-01-01")
-    assert guarded.get(path.format(c=canonical), headers=KEY).status_code == 400
+    assert guarded.get(path.format(m=mfr_id), headers=KEY).status_code == 400
     # staff keeps both flags
-    assert guarded.get(path.format(c=canonical), headers=STAFF).status_code == 200
+    assert guarded.get(path.format(m=mfr_id), headers=STAFF).status_code == 200
 
 
 def test_bc_card_is_unchanged_by_the_shop_view(guarded, conn):
@@ -372,3 +392,98 @@ def test_bc_card_is_unchanged_by_the_shop_view(guarded, conn):
                                   validity_to="2001-01-01")
     body = guarded.get(f"/item/SHOP-BC?format=json&view=customer&k={BC_KEY}").json()
     assert expired in _doc_ids(body)
+
+
+
+# --------------------------------------------------------------------------- #
+# Manufacturers by stable id (2026-11-23 webshop API spec § 5.3)
+# --------------------------------------------------------------------------- #
+
+def test_manufacturer_by_id(guarded, conn, canonical, mfr_id):
+    _seed_item_with_doc(conn, "ID-DET", manufacturer_raw=MFR, validity_to="2099-01-01")
+    body = guarded.get(f"/api/manufacturers/{mfr_id}", headers=KEY).json()
+    assert body["id"] == mfr_id
+    assert body["canonical_name"] == canonical
+    assert body["items"] >= 1
+    assert "codes" not in body
+
+
+def test_documents_by_id(guarded, conn, canonical, mfr_id):
+    doc = _seed_item_with_doc(conn, "ID-DOCS", manufacturer_raw=MFR, validity_to="2099-01-01")
+    body = guarded.get(f"/api/manufacturers/{mfr_id}/documents", headers=KEY).json()
+    assert body["id"] == mfr_id and body["canonical_name"] == canonical
+    assert doc in _doc_ids(body)
+
+
+def test_unknown_id_is_404(guarded):
+    assert guarded.get("/api/manufacturers/999999999/documents", headers=KEY).status_code == 404
+
+
+def test_by_name_paths_are_staff_only(guarded, conn, canonical, mfr_id):
+    _seed_item_with_doc(conn, "ID-BYNAME", manufacturer_raw=MFR, validity_to="2099-01-01")
+    path = f"/api/manufacturers/by-name/{canonical}/documents"
+    assert guarded.get(path, headers=KEY).status_code == 403
+    assert guarded.get(path, headers=STAFF).status_code == 200
+
+
+def test_id_survives_a_rename_without_playbooks_sync(guarded, conn):
+    """The UI rename writes `manufacturer` and `manufacturer_name`, not
+    `manufacturer_alias`, which keeps the old name until `playbooks sync`.
+    The id must still find the codes, and answer with the NEW name."""
+    import uuid
+
+    from web import registry
+    tag = uuid.uuid4().hex[:6]
+    code, old, new = f"R{tag}", f"Old Maker {tag}", f"New Maker {tag}"
+    conn.execute("INSERT INTO manufacturer_alias (raw_name, canonical_name, source) "
+                 "VALUES (%s,%s,'self-seed')", (code, old))
+    mid = conn.execute("INSERT INTO manufacturer (canonical_name) VALUES (%s) RETURNING id",
+                       (old,)).fetchone()["id"]
+    conn.execute("INSERT INTO manufacturer_name (name_folded, name, manufacturer_id, kind) "
+                 "VALUES (%s,%s,%s,'canonical')", (old.casefold(), old, mid))
+    conn.commit()
+    doc = _seed_item_with_doc(conn, f"ID-REN-{tag}", manufacturer_raw=code,
+                              validity_to="2099-01-01")
+    registry.rename_manufacturer(conn, canonical_name=old, new_name=new,
+                                 note="test rename", user="t", confirm=True)
+    conn.commit()
+    body = guarded.get(f"/api/manufacturers/{mid}/documents", headers=KEY).json()
+    assert body["canonical_name"] == new
+    assert doc in _doc_ids(body)
+    listed = guarded.get("/api/manufacturers", headers=KEY).json()["manufacturers"]
+    row = next(m for m in listed if m["id"] == mid)
+    assert row["canonical_name"] == new and row["documents"] >= 1
+
+
+def test_shop_list_has_ids_no_codes_and_no_empty_rows(guarded, conn, mfr_id):
+    _seed_item_with_doc(conn, "ID-LIST", manufacturer_raw=MFR, validity_to="2099-01-01")
+    rows = guarded.get("/api/manufacturers", headers=KEY).json()["manufacturers"]
+    assert rows and all("codes" not in r for r in rows)
+    assert all(isinstance(r["id"], int) and r["documents"] >= 1 for r in rows)
+    assert mfr_id in {r["id"] for r in rows}
+
+
+def test_shop_list_drops_a_manufacturer_whose_only_document_expired(guarded, conn):
+    import uuid
+    tag = uuid.uuid4().hex[:6]
+    code, name = f"E{tag}", f"Expired Only {tag}"
+    conn.execute("INSERT INTO manufacturer_alias (raw_name, canonical_name, source) "
+                 "VALUES (%s,%s,'self-seed')", (code, name))
+    mid = conn.execute("INSERT INTO manufacturer (canonical_name) VALUES (%s) RETURNING id",
+                       (name,)).fetchone()["id"]
+    conn.execute("INSERT INTO manufacturer_name (name_folded, name, manufacturer_id, kind) "
+                 "VALUES (%s,%s,%s,'canonical')", (name.casefold(), name, mid))
+    conn.commit()
+    _seed_item_with_doc(conn, f"ID-EXPONLY-{tag}", manufacturer_raw=code,
+                        validity_from="2000-01-01", validity_to="2001-01-01")
+    shop = {r["id"] for r in guarded.get("/api/manufacturers", headers=KEY).json()["manufacturers"]}
+    assert mid not in shop
+    staff = guarded.get("/api/manufacturers", headers=STAFF).json()["manufacturers"]
+    assert any(r["canonical_name"] == name for r in staff)
+
+
+def test_staff_list_keeps_codes_and_gains_ids(guarded, conn, canonical, mfr_id):
+    _seed_item_with_doc(conn, "ID-STAFF", manufacturer_raw=MFR, validity_to="2099-01-01")
+    rows = guarded.get("/api/manufacturers", headers=STAFF).json()["manufacturers"]
+    row = next(r for r in rows if r["canonical_name"] == canonical)
+    assert MFR in row["codes"] and row["id"] == mfr_id

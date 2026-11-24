@@ -115,7 +115,7 @@
 	@api_host_refused {
 		host api.cw.dentalia.si
 		not path /item/* /static/* /healthz /d/*
-		not path_regexp ^/api/(manufacturers(/[^/]+(/documents)?)?|items/(.+/)?documents|documents/[0-9]+/link)$
+		not path_regexp ^/api/(manufacturers(/[0-9]+(/documents)?)?|items/(.+/)?documents|documents/[0-9]+/link)$
 	}
 	handle @api_host_refused {
 		respond "Not found" 404

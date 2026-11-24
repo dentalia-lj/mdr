@@ -51,9 +51,11 @@ def guarded(test_db_url, tmp_path):
     ("/api/items/12345/documents", {SERVICE, STAFF}),
     ("/api/items/documents", {SERVICE, STAFF}),
     ("/api/manufacturers", {SERVICE, STAFF}),
-    ("/api/manufacturers/VOCO", {SERVICE, STAFF}),
-    ("/api/manufacturers/VOCO/documents", {SERVICE, STAFF}),
-    ("/api/manufacturers/VOCO/items", {STAFF}),
+    ("/api/manufacturers/12", {SERVICE, STAFF}),
+    ("/api/manufacturers/12/documents", {SERVICE, STAFF}),
+    ("/api/manufacturers/12/items", {STAFF}),
+    ("/api/manufacturers/VOCO", {STAFF}),
+    ("/api/manufacturers/by-name/VOCO/documents", {STAFF}),
     ("/api/kpi", {STAFF}),
     ("/api/documents/7", {STAFF}),
     ("/documents/42/file", {STAFF}),
@@ -294,10 +296,11 @@ def _api_host_lets_through(path: str) -> bool:
 @pytest.mark.parametrize("path", [
     # opened to machines by allowed_classes
     "/api/items/X/documents", "/api/items/documents", "/api/manufacturers",
-    "/api/manufacturers/VOCO/documents", "/item/1.02.003",
+    "/api/manufacturers/12/documents", "/api/manufacturers/12", "/item/1.02.003",
     "/static/css/style.css", "/healthz", "/api/documents/7/link", "/d/7.1.x",
     # staff-only, so office UI (and staff-only API on the API host)
-    "/api/items", "/api/documents/7", "/api/kpi", "/api/manufacturers/VOCO/items",
+    "/api/items", "/api/documents/7", "/api/kpi", "/api/manufacturers/12/items",
+    "/api/manufacturers/by-name/VOCO/documents", "/api/manufacturers/VOCO",
     "/documents/12/file",
     "/", "/items", "/documents", "/documents/12", "/documents/12/file/x",
     "/archive/GC/a.pdf", "/api-reference", "/staging", "/import", "/scheduler",
