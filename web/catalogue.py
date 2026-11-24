@@ -26,6 +26,7 @@ from web import access
 
 from web.item_docs import (
     CUSTOMER_HIDDEN_DOC_FIELDS,
+    OTHER_DOCUMENT_SQL,
     decorate_documents,
     is_legally_expired,
     item_documents,
@@ -79,6 +80,30 @@ def _resolve_id(conn, mfr_id: int) -> tuple[str, list[str]] | None:
         "  SELECT n.name FROM manufacturer_name n WHERE n.manufacturer_id = %s) "
         "ORDER BY a.raw_name", (row["canonical_name"], mfr_id)).fetchall()]
     return row["canonical_name"], codes
+
+
+def _names(conn, mfr_id: int, current: str) -> list[str]:
+    """Every name the manufacturer has had, current first."""
+    return [current] + [r["name"] for r in conn.execute(
+        "SELECT name FROM manufacturer_name WHERE manufacturer_id=%s AND name <> %s "
+        "ORDER BY name", (mfr_id, current)).fetchall()]
+
+
+def other_documents(conn, names: list[str], *, exclude: set[int], base_url: str = ""
+                    ) -> list[dict]:
+    """The manufacturer's other documents, in the webstore view (Denis,
+    2026-11-24): bound to any of its names (`OTHER_DOCUMENT_SQL`), not already
+    in `documents`, not past their legal expiry. Measured 2026-11-24 against
+    Erpium's FTP tree: with these the webstore shows 1,661 of its 2,579
+    files instead of 493."""
+    rows = conn.execute(
+        "SELECT d.doc_id, NULL::text AS match_basis, d.type, d.regulation, "
+        "       d.validity_from AS valid_from, d.validity_to AS valid_to, "
+        "       NULL::text AS expiry_basis "
+        "FROM document d WHERE d.canonical_manufacturer = ANY(%s) AND "
+        + OTHER_DOCUMENT_SQL + " ORDER BY d.doc_id", (names,)).fetchall()
+    rows = [r for r in rows if r["doc_id"] not in exclude]
+    return decorate_documents(conn, rows, base_url=base_url, for_shop=True)
 
 
 def _id_by_name(conn, canonical_name: str) -> int | None:
@@ -258,21 +283,44 @@ SELECT c.id, c.canonical_name,
 """
 
 
+_SHOP_OTHER_SQL = (
+    "WITH names AS ("
+    "  SELECT m.id, m.canonical_name AS name FROM manufacturer m UNION "
+    "  SELECT n.manufacturer_id, n.name FROM manufacturer_name n) "
+    "SELECT DISTINCT names.id, d.doc_id FROM names "
+    "JOIN document d ON d.canonical_manufacturer = names.name WHERE "
+    + OTHER_DOCUMENT_SQL
+)
+
+
 def shop_manufacturers(conn, today) -> list[dict]:
     """The webstore's manufacturer tree (2026-11-23 webshop API spec § 5.3):
     `id`, name and counts, no BC codes, and only manufacturers with at least
-    one document the webstore may show -- the same legal-expiry rule
-    `decorate_documents(for_shop=True)` applies, so a manufacturer listed here
-    never opens on an empty documents page."""
-    rows = conn.execute(_SHOP_LIST_SQL).fetchall()
-    legal = legal_expiry(conn, sorted({d for r in rows for d in r["doc_ids"]}))
+    one document the webstore may show -- in `documents` (covering items we
+    sell) or `other_documents` (Denis, 2026-11-24) -- by the same legal-expiry
+    rule `decorate_documents(for_shop=True)` applies, so a manufacturer listed
+    here never opens on an empty page."""
+    rows = {r["id"]: r for r in conn.execute(_SHOP_LIST_SQL).fetchall()}
+    other: dict[int, set[int]] = {}
+    for r in conn.execute(_SHOP_OTHER_SQL).fetchall():
+        other.setdefault(r["id"], set()).add(r["doc_id"])
+    legal = legal_expiry(conn, sorted(
+        {d for r in rows.values() for d in r["doc_ids"]} | {d for s in other.values() for d in s}))
+
+    def live(ids):
+        return {d for d in ids if not is_legally_expired(legal.get(d), today)}
+
+    names = {r["id"]: r["canonical_name"] for r in conn.execute(
+        "SELECT id, canonical_name FROM manufacturer WHERE id = ANY(%s)",
+        (list(set(rows) | set(other)),)).fetchall()}
     out = []
-    for r in rows:
-        visible = [d for d in r["doc_ids"]
-                   if not is_legally_expired(legal.get(d), today)]
-        if visible:
-            out.append({"id": r["id"], "canonical_name": r["canonical_name"],
-                        "items": r["items"], "documents": len(visible)})
+    for mid in set(rows) | set(other):
+        main = live(rows[mid]["doc_ids"]) if mid in rows else set()
+        rest = live(other.get(mid, set())) - main
+        if main or rest:
+            out.append({"id": mid, "canonical_name": names[mid],
+                        "items": rows[mid]["items"] if mid in rows else 0,
+                        "documents": len(main), "other_documents": len(rest)})
     return out
 
 
@@ -339,8 +387,12 @@ def register_routes(app, conn_factory, cfg) -> None:
                 # The webstore's count is the webstore's rule: the same
                 # documents `/documents` returns and the list counts, never
                 # the expired ones (2026-11-23 final review).
-                out["documents"] = len(manufacturer_documents(
-                    conn, canonical_name, for_shop=True, codes=codes) or [])
+                main = manufacturer_documents(
+                    conn, canonical_name, for_shop=True, codes=codes) or []
+                out["documents"] = len(main)
+                out["other_documents"] = len(other_documents(
+                    conn, _names(conn, mfr_id, canonical_name) if mfr_id else [canonical_name],
+                    exclude={d["doc_id"] for d in main}))
         if out is None:
             raise HTTPException(status_code=404, detail="unknown manufacturer")
         out = {"id": mfr_id, **out}
@@ -354,8 +406,15 @@ def register_routes(app, conn_factory, cfg) -> None:
                                    include_unlinked: bool = False):
         with conn_factory() as conn:
             name, codes = _by_id(conn, mfr_id)
-        docs = _documents(request, name, codes, view, include_unlinked)
-        return {"id": mfr_id, "canonical_name": name, "documents": docs or []}
+        docs = _documents(request, name, codes, view, include_unlinked) or []
+        out = {"id": mfr_id, "canonical_name": name, "documents": docs}
+        if access.caller(request) == access.SERVICE:
+            # The webstore only: staff have `include_unlinked` for this.
+            with conn_factory() as conn:
+                out["other_documents"] = other_documents(
+                    conn, _names(conn, mfr_id, name),
+                    exclude={d["doc_id"] for d in docs}, base_url=cfg.public_base_url)
+        return out
 
     @app.get("/api/manufacturers/{mfr_id:int}/items")
     def api_manufacturer_items(mfr_id: int, page: int = 1,

@@ -108,16 +108,32 @@ def _shop_rows(conn, docs: list, today: date) -> list:
     return out
 
 
+#: A manufacturer's OTHER document (Denis, 2026-11-24): held, read and bound to
+#: a manufacturer, but current for no item Dentalia sells -- filed, or
+#: published with no published link. `other_documents` on the manufacturer
+#: page lists exactly these; a link may be issued for them. Older published
+#: versions (production links, current for nothing) are history, not this.
+#: SQL over `document d`, so the list and the link check share one rule.
+OTHER_DOCUMENT_SQL = (
+    "d.canonical_manufacturer IS NOT NULL AND (d.status = 'filed' "
+    " OR (d.status = 'production' AND NOT EXISTS ("
+    "   SELECT 1 FROM item_document l WHERE l.doc_id = d.doc_id "
+    "   AND l.status = 'production')))"
+)
+
+
 def shop_visible_document(conn, doc_id: int, today: date) -> dict | None:
     """`archive_url` and `content_hash` of a document the webstore may hand a
-    customer, or None: published and current for at least one item
-    (`item_document_production`) and not past its legal expiry. The same rule
+    customer, or None: current for at least one item
+    (`item_document_production`) or one of a manufacturer's other documents
+    (`OTHER_DOCUMENT_SQL`), and not past its legal expiry. The same rule
     the webstore's lists apply, so a link can never fetch what a list would
     not show."""
     row = conn.execute(
         "SELECT d.archive_url, d.content_hash FROM document d "
-        "WHERE d.doc_id = %s AND EXISTS ("
-        "  SELECT 1 FROM item_document_production p WHERE p.doc_id = d.doc_id)",
+        "WHERE d.doc_id = %s AND (EXISTS ("
+        "  SELECT 1 FROM item_document_production p WHERE p.doc_id = d.doc_id) "
+        "  OR (" + OTHER_DOCUMENT_SQL + "))",
         (doc_id,)).fetchone()
     if row is None or is_legally_expired(legal_expiry(conn, [doc_id]).get(doc_id), today):
         return None

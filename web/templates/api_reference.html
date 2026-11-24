@@ -69,7 +69,9 @@ curl "https://HOST/item/{{ example_ref or 'ITEM' }}?k=$WEB_BC_LINK_KEY"</code></
   <li><strong>Telling documents apart:</strong> every document carries
     <code>file_name</code>, the original file name; on
     <code>/api/manufacturers/{id}/documents</code> also <code>item_count</code>,
-    <code>items</code> (at most 50) and <code>items_truncated</code>.</li>
+    <code>items</code> (at most 50) and <code>items_truncated</code>, plus
+    <code>other_documents</code>: documents of the manufacturer covering no item
+    Dentalia sells (filed, or published with no item link).</li>
   <li><strong>Files on click:</strong> the page links to the webstore's own URL. On a
     click its server calls <code>/api/documents/{doc_id}/link</code> and answers the
     browser with a <code>302</code> to the returned <code>url</code>

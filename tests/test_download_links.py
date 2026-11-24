@@ -278,3 +278,24 @@ def test_staff_are_never_ip_limited(test_db_url, tmp_path, conn):
         _with_file(conn, tmp_path, doc)
         paths.append(_path(client.get(f"/api/documents/{doc}/link").json()["url"]))
     assert [client.get(p).status_code for p in paths] == [200, 200, 200]
+
+
+def test_link_for_another_document_of_the_manufacturer(guarded, conn, tmp_path):
+    """Listed under `other_documents`, so a link must work; a filed document
+    bound to no manufacturer is listed nowhere and gets none."""
+    conn.execute("INSERT INTO manufacturer (canonical_name) VALUES ('Some Maker') "
+                 "ON CONFLICT (canonical_name) DO NOTHING")
+    bound = conn.execute(
+        "INSERT INTO document (type, regulation, coverage_scope, content_hash, archive_url, "
+        "status, canonical_manufacturer) VALUES ('DoC','MDR','group',%s,'/x.pdf','filed','Some Maker') "
+        "RETURNING doc_id", (f"dl-other-{tmp_path.name}",)).fetchone()["doc_id"]
+    loose = conn.execute(
+        "INSERT INTO document (type, regulation, coverage_scope, content_hash, archive_url, "
+        "status) VALUES ('DoC','MDR','group',%s,'/y.pdf','filed') RETURNING doc_id",
+        (f"dl-loose-{tmp_path.name}",)).fetchone()["doc_id"]
+    conn.commit()
+    _with_file(conn, tmp_path, bound)
+    url = guarded.get(f"/api/documents/{bound}/link", headers=KEY)
+    assert url.status_code == 200
+    assert guarded.get(_path(url.json()["url"])).status_code == 200
+    assert guarded.get(f"/api/documents/{loose}/link", headers=KEY).status_code == 404

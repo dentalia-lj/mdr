@@ -565,3 +565,77 @@ def test_shop_items_are_capped(guarded, conn):
     (d,) = guarded.get(f"/api/manufacturers/{mid}/documents", headers=KEY).json()["documents"]
     assert d["item_count"] == SHOP_ITEMS_CAP + 5
     assert len(d["items"]) == SHOP_ITEMS_CAP and d["items_truncated"] is True
+
+
+# --------------------------------------------------------------------------- #
+# Other documents of the manufacturer (Denis, 2026-11-24): held and read, but
+# covering no item Dentalia sells. A separate list, never mixed into
+# `documents`.
+# --------------------------------------------------------------------------- #
+
+def _bound(conn, name, status, *, validity_to=None, tag=""):
+    return conn.execute(
+        "INSERT INTO document (type, regulation, coverage_scope, content_hash, archive_url, "
+        "status, canonical_manufacturer, validity_to) VALUES ('DoC','MDR','group',%s,"
+        "%s,%s,%s,%s) RETURNING doc_id",
+        (f"other-{uuid.uuid4().hex}", f"/archive/X/doc/0123456789ab__Other_{status}{tag}.pdf",
+         status, name, validity_to)).fetchone()["doc_id"]
+
+
+import uuid  # noqa: E402  (used by _bound)
+
+
+def _other_setup(conn):
+    tag, code, mid = _maker(conn, "O")
+    name = conn.execute("SELECT canonical_name FROM manufacturer WHERE id=%s", (mid,)).fetchone()["canonical_name"]
+    main = _seed_item_with_doc(conn, f"OT-{tag}", manufacturer_raw=code, validity_to="2099-01-01")
+    docs = {
+        "main": main,
+        "filed": _bound(conn, name, "filed", validity_to="2099-01-01"),
+        "prod_no_link": _bound(conn, name, "production"),
+        "staged": _bound(conn, name, "staged"),
+        "rejected": _bound(conn, name, "rejected"),
+        "filed_expired": _bound(conn, name, "filed", validity_to="2001-01-01", tag="old"),
+    }
+    conn.commit()
+    return mid, name, docs
+
+
+def test_other_documents_are_listed_separately(guarded, conn):
+    mid, _, docs = _other_setup(conn)
+    body = guarded.get(f"/api/manufacturers/{mid}/documents", headers=KEY).json()
+    assert [d["doc_id"] for d in body["documents"]] == [docs["main"]]
+    other = {d["doc_id"]: d for d in body["other_documents"]}
+    assert set(other) == {docs["filed"], docs["prod_no_link"]}
+    d = other[docs["filed"]]
+    assert d["file_name"] == "Other_filed.pdf"
+    assert d["url"].endswith(f"/api/documents/{docs['filed']}/link")
+    assert "items" not in d and "match_basis" not in d
+
+
+def test_staff_payload_has_no_other_documents(guarded, conn):
+    mid, _, _ = _other_setup(conn)
+    body = guarded.get(f"/api/manufacturers/{mid}/documents", headers=STAFF).json()
+    assert "other_documents" not in body
+
+
+def test_other_documents_follow_a_rename(guarded, conn):
+    """Bound under the old name, still the same manufacturer after a rename."""
+    from web import registry
+    mid, name, docs = _other_setup(conn)
+    registry.rename_manufacturer(conn, canonical_name=name, new_name=name + " Renamed",
+                                 note="test", user="t", confirm=True)
+    conn.commit()
+    body = guarded.get(f"/api/manufacturers/{mid}/documents", headers=KEY).json()
+    assert docs["filed"] in {d["doc_id"] for d in body["other_documents"]}
+
+
+def test_a_manufacturer_with_only_other_documents_is_in_the_tree(guarded, conn):
+    tag, code, mid = _maker(conn, "Q")
+    name = conn.execute("SELECT canonical_name FROM manufacturer WHERE id=%s", (mid,)).fetchone()["canonical_name"]
+    _bound(conn, name, "filed", validity_to="2099-01-01")
+    conn.commit()
+    rows = {r["id"]: r for r in guarded.get("/api/manufacturers", headers=KEY).json()["manufacturers"]}
+    assert rows[mid]["documents"] == 0 and rows[mid]["other_documents"] == 1
+    detail = guarded.get(f"/api/manufacturers/{mid}", headers=KEY).json()
+    assert detail["other_documents"] == 1

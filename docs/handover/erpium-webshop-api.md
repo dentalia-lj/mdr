@@ -23,18 +23,24 @@ cache it as long as you like. `?q=` filters by name.
 ```json
 {
   "manufacturers": [
-    {"id": 41, "canonical_name": "IVOCLAR", "items": 1981, "documents": 87}
+    {"id": 41, "canonical_name": "IVOCLAR", "items": 1981, "documents": 87,
+     "other_documents": 79}
   ],
   "total": 58
 }
 ```
+
+`documents` counts documents covering products Dentalia sells,
+`other_documents` the rest (see below). A manufacturer is listed when either
+is above zero.
 
 Use `id` in your URLs. It stays the same when a manufacturer is renamed; the
 name does not.
 
 ### One manufacturer: `GET /api/manufacturers/{id}`
 
-`{"id", "canonical_name", "items", "documents"}`. `404` for an unknown id.
+`{"id", "canonical_name", "items", "documents", "other_documents"}`. `404` for
+an unknown id.
 
 ### Documents per manufacturer: `GET /api/manufacturers/{id}/documents`
 
@@ -56,6 +62,12 @@ you can link a document to your product pages:
 
 `items` lists at most 50; `items_truncated` is true when `item_count` is
 larger (an ISO certificate can cover thousands of items).
+
+The same response also has **`other_documents`**: the manufacturer's documents
+that cover no product Dentalia sells (for example declarations for products
+not in the catalogue, or company-wide certificates). Same document object,
+without `items`. Show them apart from `documents`, e.g. under "Druga
+dokumentacija proizvajalca". Downloads work the same way.
 
 ### Documents per item: `GET /api/items/{item_ref}/documents`
 

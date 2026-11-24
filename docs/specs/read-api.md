@@ -285,6 +285,10 @@ and nothing else:
 - **`file_name`** on every document: the original file name (basename of
   `archive_url`, archive hash prefix removed). The derived `name` is the same for
   every IFU of one manufacturer, so this is what tells them apart.
+- **Other documents** (spec § 5.11): manufacturer documents also return
+  `other_documents`, documents bound to the manufacturer that are `filed` or
+  published with no published link, not past legal expiry; the tree and the
+  detail carry an `other_documents` count. Links may be issued for them.
 - **Manufacturer documents** also carry `item_count`, `items` (`[{item_ref,
   item_name}]`, at most 50) and `items_truncated`: the manufacturer's items each
   document is current for. Not on the item routes (spec § 5.9).
