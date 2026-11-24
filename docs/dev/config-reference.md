@@ -423,10 +423,40 @@ Keep them apart: an alert must never become a channel for supplier mail.
 | `web.api_keys` | str | `""` | `WEB_API_KEYS` |
 | `web.bc_link_key` | str | `""` | `WEB_BC_LINK_KEY` |
 | `web.public_base_url` | str | `""` | `WEB_PUBLIC_BASE_URL` |
+| `web.download_link_secret` | str | `""` | `WEB_DOWNLOAD_LINK_SECRET` |
+| `web.download_link_ttl_s` | int | `300` | `WEB_DOWNLOAD_LINK_TTL_S` |
+| `web.rate_api_per_min` | int | `1200` | `WEB_RATE_API_PER_MIN` |
+| `web.rate_downloads_per_ip_min` | int | `30` | `WEB_RATE_DOWNLOADS_PER_IP_MIN` |
+| `web.rate_downloads_per_ip_day` | int | `100` | `WEB_RATE_DOWNLOADS_PER_IP_DAY` |
+| `web.alert_docs_per_key_day` | int | `200` | `WEB_ALERT_DOCS_PER_KEY_DAY` |
 | `web.operator_users` | tuple[str] | `()` | `WEB_OPERATOR_USERS` (comma-separated; whitespace stripped, empty entries dropped; a TOML array also works) |
 
 Empty `api_keys` disables the service caller class entirely. It never means
 "allow all". Empty `bc_link_key` makes `/item/*` return 404.
+
+**The webstore keys** (2026-11-23 webshop API spec, `web/download_links.py`,
+`web/limits.py`). Each needs a line under `web.environment` in
+`docker-compose.yml`; `.env` alone does not reach the container.
+
+- `download_link_secret` is a **secret** (top of `.env`). It signs the
+  five-minute links `/api/documents/{id}/link` hands the webstore. **Empty
+  switches webstore downloads off** (both routes 404); it never means
+  "unsigned". Rotating it kills only the links issued in the last
+  `download_link_ttl_s`.
+- `download_link_ttl_s`: a link's lifetime. It only has to cover the redirect
+  and a slow first byte, because the webstore asks for a fresh link on every
+  click. Raised, a collected link lives longer; lowered below a minute, slow
+  connections start getting 410.
+- `rate_downloads_per_ip_min` / `rate_downloads_per_ip_day`: distinct
+  documents one customer address may download (a repeat is free). **Set too
+  low, real customers get 429**; a clinic behind one shared address counts as
+  one customer.
+- `rate_api_per_min`: per API key, every `/api/` call. Erpium has ONE key for
+  all its customers, so **set too low, every webstore customer is refused at
+  once**. It is a loop ceiling, not a quota.
+- `alert_docs_per_key_day`: distinct documents linked under one key in a day
+  before a WARNING and an amber status-board tile. **Never blocks.**
+- All counters live in the `web` process and reset on a restart.
 
 `operator_users` is the opposite way round, on purpose: **empty means every
 login is an operator** (office UI redesign spec § 2), which keeps today's single
