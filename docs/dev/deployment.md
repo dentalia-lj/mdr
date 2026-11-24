@@ -280,7 +280,7 @@ database-free. A read-API call does, since it answers from the database as
 disagree):
 
 ```bash
-k=$(sed -n 's/^WEB_API_KEYS=//p' .env)
+k=$(sed -n 's/^WEB_API_KEYS=//p' .env | cut -d, -f1)
 curl -s -w '\n%{http_code}\n' -H "X-API-Key: $k" http://127.0.0.1:8000/api/items/TEST-0/documents
 unset k
 ```
@@ -294,6 +294,52 @@ a real password on the next deploy (measured: the stored verifier changed
 across one `schema-drift` run). 008 was edited in place that day, by ruling, to
 set the literal only when the role has no password; a set password is left
 alone, pinned by `tests/test_migration_api_role.py`.
+
+### 3.4 Adding, rotating or removing a web API key
+
+`WEB_API_KEYS` is a comma-separated list; each value is one consumer's
+`X-API-Key` (the `service` caller class, `web/access.py`). Erpium's webstore
+key belongs here. A new consumer gets its **own** key, added beside the
+existing ones, so nobody else's calls break. `read -s` keeps the key off the
+screen and out of shell history (it is in `sed`'s arguments for the instant
+`sed` runs, so a `ps` at that moment would see it):
+
+```bash
+cd /srv/compliance/app
+cp -p .env .env.bak-$(date +%F)                                  # -p keeps .env's permissions
+read -rs -p 'New key: ' K; echo
+sed -i "s|^WEB_API_KEYS=\(.\+\)$|WEB_API_KEYS=\1,$K|; s|^WEB_API_KEYS=$|WEB_API_KEYS=$K|" .env
+unset K
+grep -c '^WEB_API_KEYS=' .env                                        # expect 1
+sed -n 's/^WEB_API_KEYS=//p' .env | tr ',' '\n' | grep -c .          # keys now
+docker compose up -d web                                             # not restart: env changes need up -d
+docker compose exec -T web sh -c 'echo "$WEB_API_KEYS" | tr , "\n" | grep -c .' </dev/null
+```
+
+The last two counts must agree. `up -d web` recreates only `web`: a few
+seconds of downtime, and the in-memory rate counters reset. Generate a key
+with `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`, or use
+the one the consumer sends; never put a key in a document you hand over, send
+it separately.
+
+**Check it** from outside, with the new key (a JSON `200` with `manufacturers`;
+`401 valid X-API-Key required` means the key is not in the list `web` sees):
+
+```bash
+read -rs -p 'Key: ' K; echo
+curl -s -o /dev/null -w '%{http_code}\n' -H "X-API-Key: $K" https://api.cw.dentalia.si/api/manufacturers
+unset K
+```
+
+To compare keys without printing them, compare fingerprints:
+`printf %s "$K" | sha256sum | cut -c1-12` for the key in hand, and
+`sed -n 's/^WEB_API_KEYS=//p' .env | tr , '\n' | while read -r k; do printf %s "$k" | sha256sum | cut -c1-12; done`
+for the server's list.
+
+**Rotate** = add the new value, let the consumer switch, then remove the old
+one. **Remove** = edit the line in `.env` by hand (delete the value and its
+comma), then `docker compose up -d web`. An empty `WEB_API_KEYS` switches the
+whole `service` class off; it never means "allow everyone".
 
 ## 4. Persistence
 
