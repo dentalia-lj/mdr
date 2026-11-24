@@ -4,10 +4,14 @@ item's paperwork is (spec §6)."""
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
 from tests.test_web import _seed_item_with_doc
-from web.item_docs import CUSTOMER_HIDDEN_DOC_FIELDS, CUSTOMER_HIDDEN_ITEM_FIELDS, item_documents
+from web.item_docs import (
+    CUSTOMER_HIDDEN_DOC_FIELDS, CUSTOMER_HIDDEN_ITEM_FIELDS, file_name_of, is_legally_expired, item_documents,
+)
 
 
 def test_full_view_carries_the_internal_fields(conn):
@@ -176,3 +180,116 @@ def test_include_superseded_marks_which_document_is_current(conn):
             item_documents(conn, "ID-CURRENT", include_superseded=True)["documents"]}
     assert docs[new]["current"] is True
     assert docs[old]["current"] is False
+
+
+# --------------------------------------------------------------------------- #
+# The webstore view (2026-11-23 webshop API spec § 5.2)
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("legal_to,expected", [
+    (date(2049, 12, 31), True),
+    # the expiry day itself is still valid
+    (date(2050, 1, 1), False),
+    (date(2050, 1, 2), False),
+    # no legal date (a class I DoC): never expires, only comes up for review
+    (None, False),
+])
+def test_is_legally_expired(legal_to, expected):
+    assert is_legally_expired(legal_to, date(2050, 1, 1)) is expected
+
+
+def test_shop_view_drops_a_real_expired_document(conn):
+    _seed_item_with_doc(conn, "ID-SHOP-EXP", validity_to="2001-01-01",
+                        validity_from="2000-01-01")
+    assert item_documents(conn, "ID-SHOP-EXP", for_shop=True)["documents"] == []
+    # staff still sees it, to renew it
+    assert len(item_documents(conn, "ID-SHOP-EXP")["documents"]) == 1
+
+
+def test_shop_view_keeps_a_valid_document_in_the_customer_projection(conn):
+    _seed_item_with_doc(conn, "ID-SHOP-OK", validity_to="2099-01-01")
+    out = item_documents(conn, "ID-SHOP-OK", for_shop=True)
+    (doc,) = out["documents"]
+    assert str(doc["valid_to"]) == "2099-01-01"
+    assert "valid to 2099-01-01" in doc["name"]
+    for field in CUSTOMER_HIDDEN_DOC_FIELDS:
+        assert field not in doc
+    for field in CUSTOMER_HIDDEN_ITEM_FIELDS:
+        assert field not in out
+
+
+def test_shop_view_blanks_a_staleness_date(conn):
+    """A DoC with an issue date and no stated expiry gets a review horizon
+    (`staleness`). Printed on a clinic's page it reads as an expiry, so the
+    webstore gets no date at all; staff keeps it."""
+    _seed_item_with_doc(conn, "ID-SHOP-STALE", validity_to=None,
+                        validity_from="2001-01-01")
+    staff = item_documents(conn, "ID-SHOP-STALE")["documents"][0]
+    assert staff["expiry_basis"] == "staleness"
+    assert staff["valid_to"] is not None
+    (doc,) = item_documents(conn, "ID-SHOP-STALE", for_shop=True)["documents"]
+    assert doc["valid_to"] is None
+    assert "valid to" not in doc["name"]
+
+
+def test_shop_view_shows_the_stated_date_not_the_review_horizon(conn):
+    """Issued 2024, stating validity to 2099: the review horizon (2029) wins
+    `document_effective_expiry`, basis `staleness`. The clinic gets the
+    document's own 2099, never 2029."""
+    _seed_item_with_doc(conn, "ID-SHOP-LATE", validity_from="2024-01-01",
+                        validity_to="2099-01-01")
+    staff = item_documents(conn, "ID-SHOP-LATE")["documents"][0]
+    assert staff["expiry_basis"] == "staleness"
+    (doc,) = item_documents(conn, "ID-SHOP-LATE", for_shop=True)["documents"]
+    assert str(doc["valid_to"]) == "2099-01-01"
+
+
+def test_shop_view_drops_a_passed_stated_date_hidden_behind_staleness(conn):
+    """Issued 2015, stating 2022: the horizon (2020) wins, basis `staleness`,
+    yet the document's own validity ended in 2022. Dropped."""
+    _seed_item_with_doc(conn, "ID-SHOP-HIDDEN", validity_from="2015-01-01",
+                        validity_to="2022-01-01")
+    assert item_documents(conn, "ID-SHOP-HIDDEN")["documents"][0]["expiry_basis"] == "staleness"
+    assert item_documents(conn, "ID-SHOP-HIDDEN", for_shop=True)["documents"] == []
+
+
+def test_shop_view_drops_a_document_whose_certificate_expired(conn):
+    """A DoC with no date of its own, citing a production certificate that
+    expired: the legal expiry is the certificate's."""
+    doc_id = _seed_item_with_doc(conn, "ID-SHOP-CERT", validity_to=None,
+                                 validity_from=None)
+    cert = conn.execute(
+        "INSERT INTO document (type, regulation, validity_to, status, content_hash, "
+        "archive_url, coverage_scope) VALUES ('EC','MDR','2001-01-01','production',"
+        "%s,'/archive/c.pdf','group') RETURNING doc_id",
+        (f"h-cert-{doc_id}",)).fetchone()["doc_id"]
+    conn.execute("UPDATE document SET cert_doc_id=%s WHERE doc_id=%s", (cert, doc_id))
+    conn.commit()
+    assert item_documents(conn, "ID-SHOP-CERT", for_shop=True)["documents"] == []
+    assert len(item_documents(conn, "ID-SHOP-CERT")["documents"]) == 1
+
+
+
+@pytest.mark.parametrize("archive_url,expected", [
+    ("/archive/DENTAL_WORLD/ifu/0123456789ab__CreaFILL_Flow_IFU.pdf", "CreaFILL_Flow_IFU.pdf"),
+    ("file:///srv/archive/GC/doc/abcdef012345__Fuji_Plus.pdf", "Fuji_Plus.pdf"),
+    ("/imports/corpus/VOCO DoC 2021.pdf", "VOCO DoC 2021.pdf"),
+    # a name that merely starts like a hash prefix keeps it
+    ("/archive/x/abc__notahash.pdf", "abc__notahash.pdf"),
+    ("", ""),
+    (None, ""),
+])
+def test_file_name_of(archive_url, expected):
+    assert file_name_of(archive_url) == expected
+
+
+def test_shop_view_carries_the_file_name(conn):
+    doc = _seed_item_with_doc(conn, "ID-FNAME", validity_to="2099-01-01")
+    conn.execute("UPDATE document SET archive_url=%s WHERE doc_id=%s",
+                 ("/archive/DW/ifu/0123456789ab__Canal_Prep_IFU.pdf", doc))
+    conn.commit()
+    (d,) = item_documents(conn, "ID-FNAME", for_shop=True)["documents"]
+    assert d["file_name"] == "Canal_Prep_IFU.pdf"
+    assert "item_count" not in d and "items" not in d
+    # staff payload unchanged
+    assert "file_name" not in item_documents(conn, "ID-FNAME")["documents"][0]

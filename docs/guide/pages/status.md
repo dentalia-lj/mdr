@@ -85,6 +85,7 @@ Then the seven tiles, in the order they appear:
 | **dead jobs** | Failed tasks that still need someone. A task somebody already sent back is not counted, so this tile and [Failed tasks](failed.md) read the same number | **A developer's** — see below |
 | **sweep due** | Suppliers due a EUDAMED check. Nothing runs until you press **Start the check** | **Yours**, occasional |
 | **Documents being read** | How many documents the system is reading right now | Informational |
+| **webstore documents today · alert above 200** | How many different documents the webstore has opened for its customers today. Amber above the threshold: unusually many, possibly someone copying documents. Nothing is blocked | Worth noticing, a developer's to look into |
 | **the euro amount, and "30d of €…"** | What the system has spent in the last 30 days, against its monthly cap | Worth watching, rarely urgent |
 
 **Documents being read** counts the same thing as the [Processing](processing.md)
@@ -155,6 +156,7 @@ higher than the table.
 | **dead jobs** above zero | Some task failed repeatedly and gave up | Open [Failed tasks](failed.md). The first two sections have a button each and are yours; the third is a developer's, and its **Re-run all** is an operator control | A developer's, once re-running does not clear it |
 | **sweep due** above zero | A supplier is due a EUDAMED check | Open the tile and press **Start the check** when you have a moment | Yours, not urgent |
 | **Documents being read** high and not moving | The machine looks busy but nothing is finishing | Not something to diagnose yourself. Tell a developer | A developer's |
+| **webstore documents today** amber | The webstore opened more documents today than normal use explains | Mention it to a developer. The webstore keeps working; nothing is switched off | A developer's |
 | 30-day spend near or over its cap | The system is costing more than usual this month | Mention it. Do not try to stop anything yourself | A developer's to size, yours to notice |
 
 ---

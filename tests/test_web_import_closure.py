@@ -131,8 +131,8 @@ def test_tiers_still_exports_the_same_list():
 #: nothing should join the web image's import graph without someone confirming
 #: it runs in that image.
 WEB_MODULES = [
-    "web.access", "web.app", "web.bc_push_view", "web.catalogue", "web.failures", "web.filed_matches",
-    "web.item_docs", "web.item_link", "web.item_picker", "web.link_checks", "web.missing", "web.onboarding", "web.registry",
+    "web.access", "web.app", "web.bc_push_view", "web.catalogue", "web.download_links", "web.failures", "web.filed_matches",
+    "web.item_docs", "web.item_link", "web.item_picker", "web.limits", "web.link_checks", "web.missing", "web.onboarding", "web.registry", "web.search",
     "web.scheduler_view", "web.uploads", "web.words",
 ]
 

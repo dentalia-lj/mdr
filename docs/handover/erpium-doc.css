@@ -1,0 +1,14 @@
+@page { size: A4; margin: 18mm 16mm 18mm 16mm; }
+body { font-family: "Inter", "Segoe UI", Arial, sans-serif; font-size: 10pt; line-height: 1.45; color: #1d2433; }
+header#title-block-header { border-bottom: 2px solid #2f6f5e; margin-bottom: 18pt; padding-bottom: 8pt; }
+h1.title { font-size: 20pt; margin: 0 0 4pt; color: #1d2433; }
+p.subtitle { font-size: 11pt; color: #55607a; margin: 0; }
+h1 { font-size: 14pt; color: #2f6f5e; margin: 20pt 0 6pt; page-break-after: avoid; }
+code { font-family: "JetBrains Mono", Consolas, monospace; font-size: 8.6pt; background: #f2f4f7; padding: 0 2pt; border-radius: 2pt; }
+pre { background: #f6f8fa; border: 1px solid #dde2ea; border-radius: 4pt; padding: 6pt 8pt; overflow-wrap: anywhere; white-space: pre-wrap; page-break-inside: auto; }
+pre code { background: none; padding: 0; font-size: 8pt; }
+table { border-collapse: collapse; width: 100%; margin: 6pt 0 10pt; page-break-inside: auto; }
+th, td { border: 1px solid #dde2ea; padding: 3pt 5pt; vertical-align: top; text-align: left; }
+th { background: #eef3f1; }
+tr { page-break-inside: avoid; }
+em { color: #55607a; }

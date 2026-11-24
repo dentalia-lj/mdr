@@ -14,6 +14,22 @@
 # Pointing this site block at a real hostname instead of `:8000` is the one
 # line that turns on Caddy's automatic TLS — not done here (loopback-only v0).
 
+# Global options. `trusted_proxies`: the host Caddy in front of this one sets
+# X-Forwarded-For to the real client and ignores whatever the client sent.
+# Without trusting it here, this Caddy REPLACES that header with its peer
+# address (measured 2026-11-23 on caddy:2.8), so `web` would see every
+# customer as 172.18.0.1 and the per-IP download limit (web/limits.py) would
+# be one global limit. `private_ranges`, not the gateway address (it follows
+# the compose network's subnet) and not 172.16.0.0/12 alone (Docker falls back
+# to 192.168.0.0/16 when that pool is used up). Safe because this site is
+# published on loopback only: the host and our own containers are the only
+# peers that can reach it. web/download_links.py warns if it ever stops working.
+{
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
 :8000 {
 	# Access logging is OFF by default in Caddy, which meant a rejected login
 	# left no trace anywhere: on 2026-08-17 "no 401s in the log" was read as
@@ -75,6 +91,9 @@
 		not path /healthz
 		not path /item/*
 		not path /static/*
+		# A signed download link: the customer's browser carries no credential,
+		# the token is one (web/download_links.py).
+		not path /d/*
 		not header X-API-Key *
 	}
 
@@ -87,13 +106,18 @@
 	# tests/test_access.py keeps the two lists equal. The office name is
 	# unchanged and still serves everything, /api/* included.
 	#
+	# The /api/ regexp is web/access.py SERVICE_ROUTES, folded into one line:
+	# only the webstore's routes (2026-11-23). Staff-only /api/ routes (KPI,
+	# evidence, the item list per manufacturer) answer 404 on this name, and so
+	# does /documents/{id}/file, which served any document by id to the key.
+	#
 	# Written BEFORE `handle @protected` on purpose: Caddy keeps `handle` blocks
 	# with named matchers in written order and runs the first that matches, so
 	# after it a staff path on the API name would get the login prompt.
 	@api_host_refused {
 		host api.cw.dentalia.si
-		not path /api/* /item/* /static/* /healthz
-		not path_regexp ^/documents/[0-9]+/file$
+		not path /item/* /static/* /healthz /d/*
+		not path_regexp ^/api/(manufacturers(/[0-9]+(/documents)?)?|items/(.+/)?documents|documents/[0-9]+/link|search)$
 	}
 	handle @api_host_refused {
 		respond "Not found" 404

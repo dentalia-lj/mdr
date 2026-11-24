@@ -16,7 +16,7 @@ Normative sources (this spec adds only what they leave open — do not restate):
 | GET | `/api/documents/{doc_id}` | One production or superseded document + its complete evidence |
 | GET | `/api/kpi` | The KPI board (same numbers as `GET /`) |
 
-All three are read-only, production-visibility only (Invariant 1: the web process holds zero write grants on `document`/`item_document`/`evidence`). None of these routes carries auth logic of its own: the global dependency in `web/access.py` decides, `service` + `staff` for all three, and without a credential Caddy answers 401 before the app is reached. The catalogue and batch endpoints are in § 4b.
+All three are read-only, production-visibility only (Invariant 1: the web process holds zero write grants on `document`/`item_document`/`evidence`). None of these routes carries auth logic of its own: the global dependency in `web/access.py` decides. Since 2026-11-23 `/api/kpi` and `/api/documents/{doc_id}` are **staff only**; an API key reaches the item endpoint and the § 4b catalogue in the webstore view (§ 4c). The catalogue and batch endpoints are in § 4b, the download links in § 4c.
 
 ## 2. `GET /api/items/{item_ref}/documents`
 
@@ -207,10 +207,16 @@ webshop fetches server-side and renders into its own pages under its own login.
 
 | Method | Path | Returns |
 |---|---|---|
-| GET | `/api/manufacturers?q=` | Every manufacturer, BC codes, production item and document counts |
-| GET | `/api/manufacturers/{canonical_name}` | One manufacturer's identity and production counts |
-| GET | `/api/manufacturers/{canonical_name}/documents?view=` | Production documents across the line, **deduped by `doc_id`** |
-| GET | `/api/manufacturers/{canonical_name}/items?page=&per_page=` | That manufacturer's items, paginated |
+| GET | `/api/manufacturers?q=` | Every manufacturer with its stable `id`, BC codes (staff), production item and document counts |
+| GET | `/api/manufacturers/{id}` | One manufacturer's identity and production counts |
+| GET | `/api/manufacturers/{id}/documents?view=` | Production documents across the line, **deduped by `doc_id`** |
+| GET | `/api/manufacturers/{id}/items?page=&per_page=` | That manufacturer's items, paginated (**staff only** since 2026-11-23) |
+
+**Addressed by `manufacturer.id`** since 2026-11-23: a name changes on a UI
+rename and can be a bare BC code like `077`. The id resolves through every name
+the manufacturer has had, so it keeps working between a rename and the next
+`playbooks sync`. Staff keep the name forms under
+`/api/manufacturers/by-name/{canonical_name}` (+ `/documents`, `/items`).
 | GET | `/api/items/documents?ref=&ref=&view=` | Several items in one call, for an order page (`?include_superseded` applies to every entry) |
 
 **Deduplication** on `/documents` is the reason the endpoint exists: one ISO
@@ -248,6 +254,59 @@ itself is shared with the item endpoints through
 a document looks like.
 
 `?view=customer` applies to `/documents` and to the batch exactly as in §2.
+
+## 4c. The webstore key (2026-11-23)
+
+Full design: `docs/superpowers/specs/2026-11-23-webshop-api-design.md`. What a
+caller with an `X-API-Key` gets, which since that date is the webstore (Erpium)
+and nothing else:
+
+- **Routes:** `/api/manufacturers`, `/api/manufacturers/{id}`,
+  `/api/manufacturers/{id}/documents`, `/api/items/{item_ref}/documents`,
+  `/api/items/documents`, `/api/documents/{doc_id}/link`. Any other `/api/`
+  route: `403` from the app, though on `api.cw.dentalia.si` Caddy answers first with
+  plain `404 Not found`. `/item/*` and `/documents/{id}/file`: refused.
+- **Always the customer view**; `view=full` is ignored. `include_unlinked` and
+  `include_superseded`: `400`.
+- **Rows:** a document past its **legal** expiry is dropped. Legal expiry is
+  `LEAST(document.validity_to, the cited production/superseded certificate's
+  validity_to)`, deliberately not `document_effective_expiry.expires`, which also
+  folds in the five-year DoC review horizon (ruling 2026-09-11).
+- **`valid_to` is the legal expiry**, so a class I DoC with no stated date shows
+  `null` and its `name` carries no "valid to". The staff view is unchanged and
+  keeps the effective expiry and its basis.
+- **`url`** is `/api/documents/{doc_id}/link`, which the webstore's server calls
+  on a customer's click. Response: `{"url": "<base>/d/<token>", "expires_at"}`.
+  The token is signed (`WEB_DOWNLOAD_LINK_SECRET`) and valid 5 minutes. `/d/*`
+  needs no credential, re-checks visibility, never redirects to storage. `410`
+  expired or altered, `404` not visible.
+- **Manufacturer list:** only manufacturers with at least one visible document,
+  without `codes`.
+- **`file_name`** on every document: the original file name (basename of
+  `archive_url`, archive hash prefix removed). The derived `name` is the same for
+  every IFU of one manufacturer, so this is what tells them apart.
+- **Other documents** (spec § 5.11): manufacturer documents also return
+  `other_documents`, documents bound to the manufacturer that are `filed` or
+  published with no published link, not past legal expiry; the tree and the
+  detail carry an `other_documents` count. Links may be issued for them.
+- **Manufacturer documents** also carry `item_count`, `items` (`[{item_ref,
+  item_name}]`, at most 50) and `items_truncated`: the manufacturer's items each
+  document is current for. Not on the item routes (spec § 5.9).
+- **Limits** (`web/limits.py`): `429` + `Retry-After` past 1,200 calls a minute
+  per key, or past 30 distinct documents a minute / 100 a day per customer IP on
+  `/d/*`. Per key and day, 200 distinct documents linked raises an alert, never a
+  block.
+
+**Search** (`GET /api/search?q=`, spec § 5.10, `web/search.py`): `q` 2–100
+characters (else `400`), matched in order on `item_ref` and `mfr_ref` (exact,
+case-insensitive), a document's `basic_udi_di` (spaces ignored), then item name
+(`pg_trgm`). At most 20 items, each the item payload plus `matched_on`, and only
+items with a document the caller may be shown. Matching manufacturer names come
+back as `manufacturers` (tree entries, never their items). Key and staff.
+
+`url` changing meaning in this view is the second deliberate exception to § 5's
+additive-only rule, made for the same reason as the first: no external consumer
+was live yet.
 
 ## 5. Evolution rule
 

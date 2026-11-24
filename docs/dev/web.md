@@ -77,10 +77,21 @@ most-privileged first in `classify()` (`web/access.py:109-122`): a staff
 browser that also happens to carry an API key still classifies `staff`. Path
 matching in `allowed_classes()` (`web/access.py:49-72`) is **default-deny**:
 anything not named is staff-only, so a route added later is private until
-someone deliberately opens it. `/documents/{id}/file` is service-reachable
-(the shop relays bytes) but `/documents/{id}` and `/documents` are not — a
-prefix match can't tell those apart, so `_DOC_FILE_RE` (`web/access.py:46`)
-carries its own pattern.
+someone deliberately opens it.
+
+**The webstore key** (2026-11-23 webshop API spec). `SERVICE` reaches only the
+`/api/` routes in `access.SERVICE_ROUTES` (manufacturer list, one
+manufacturer and its documents by `id`, item documents, the batch, and
+`/api/documents/{id}/link`); any other `/api/` route answers a valid key with
+403, a bad key with 401. It no longer reaches `/item/*` or
+`/documents/{id}/file` (which served any document by id, any status). `guard`
+records the class on `request.state.caller`; routes read `access.caller()` and
+pass `for_shop=True` to `item_docs`, which forces the customer view, drops
+documents past their legal expiry (`LEAST(validity_to, cited certificate
+validity_to)`, never the five-year review horizon) and points `url` at the link
+route. `/d/{token}` is open to anyone: the signed token is the credential
+(`web/download_links.py`). Limits are `web/limits.py`, one in-memory `Limiter`
+on `app.state.limiter`.
 
 Refusal codes differ by surface, deliberately (`web/access.py:125-133`):
 `/item/*` returns 404 (a 403 would confirm the item exists to an

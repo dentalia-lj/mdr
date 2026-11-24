@@ -10,9 +10,9 @@ The classes exist because three consumers reach this app three different ways
 and only one of them has a browser:
 
 - `staff`   -- Caddy Basic auth, already deployed, unchanged.
-- `service` -- the webshop BACKEND, server-to-server, `X-API-Key`. It fetches
-               and relays to its own logged-in customers, which is why no
-               public tier exists at all.
+- `service` -- the webshop BACKEND (Erpium), server-to-server, `X-API-Key`.
+               Only the webstore routes (`SERVICE_ROUTES`), always in the
+               webstore view (2026-11-23 webshop API spec).
 - `bc`      -- a Business Central item-card hyperlink, `?k=`. BC builds links
                by string concatenation, so anything BC must COMPUTE (an HMAC,
                a per-item token) is unusable. Hence one shared static key.
@@ -24,6 +24,7 @@ dev, tests) and every caller is `staff`. That is the existing contract of
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import re
 from collections.abc import Callable
@@ -37,13 +38,31 @@ ANON = "anon"
 
 _ANY = frozenset({STAFF, SERVICE, BC, ANON})
 _STAFF_ONLY = frozenset({STAFF})
-_ITEM_LINK = frozenset({BC, SERVICE, STAFF})
+# The BC card's surface. NOT the webstore's: with a key, `/item/*` would hand
+# out the full view and PDF bytes outside the download links and every limit
+# (2026-11-23 webshop API spec § 5.1). Erpium uses `/api/`.
+_ITEM_LINK = frozenset({BC, STAFF})
 _SERVICE_API = frozenset({SERVICE, STAFF})
 
-# `/documents/{id}/file` is service-reachable so the shop can relay bytes;
-# `/documents/{id}` and `/documents` are UI pages and are not. A prefix match
-# cannot tell those apart, so this one path gets a pattern.
-_DOC_FILE_RE = re.compile(r"^/documents/\d+/file$")
+#: The only `/api/` routes an `X-API-Key` caller may reach: the webstore's
+#: (2026-11-23 webshop API spec § 5.1). Everything else under `/api/` is staff
+#: only -- the KPI board, a document's full evidence, the item list per
+#: manufacturer (the supplier map). Anchored, because a prefix would open
+#: whatever is mounted under it later. `Caddyfile`'s API-host allowlist mirrors
+#: this tuple line for line (`tests/test_access.py`).
+SERVICE_ROUTES = tuple(re.compile(p) for p in (
+    r"^/api/manufacturers$",
+    # By stable `manufacturer.id` only; the name-addressed forms live under
+    # `/by-name/` and are staff's (2026-11-23 webshop API spec § 5.3).
+    r"^/api/manufacturers/\d+$",
+    r"^/api/manufacturers/\d+/documents$",
+    # The single item (`:path`, refs contain `/`) and, separately, the batch:
+    # `.+` needs at least one character between, which the batch has not.
+    r"^/api/items/.+/documents$",
+    r"^/api/items/documents$",
+    r"^/api/documents/\d+/link$",
+    r"^/api/search$",
+))
 
 
 def allowed_classes(path: str) -> frozenset[str]:
@@ -59,16 +78,23 @@ def allowed_classes(path: str) -> frozenset[str]:
         # carries no credential of any kind. Locking this down would serve an
         # unstyled page to the one consumer this whole surface exists for.
         return _ANY
+    if path.startswith("/d/"):
+        # A signed download link (`web/download_links.py`). The customer's
+        # browser follows a 302 here with nothing attached: the token is the
+        # credential, checked by the route.
+        return _ANY
     if path.startswith("/item/"):
         return _ITEM_LINK
     if path.startswith("/api/"):
-        return _SERVICE_API
+        if any(rx.match(path) for rx in SERVICE_ROUTES):
+            return _SERVICE_API
+        return _STAFF_ONLY
     if path.startswith("/archive/"):
         # Served BY PATH, therefore walkable. Staff only, even with a valid
-        # API key -- `/documents/{id}/file` is the supported way to get bytes.
+        # API key. So is `/documents/{id}/file` (default below): it serves
+        # ANY document by sequential id, staged and rejected included, and was
+        # the key's way into the whole archive until 2026-11-23.
         return _STAFF_ONLY
-    if _DOC_FILE_RE.match(path):
-        return _SERVICE_API
     return _STAFF_ONLY
 
 
@@ -171,22 +197,69 @@ def classify(request, cfg) -> str:
     return ANON
 
 
-def _refuse(path: str) -> None:
+#: A valid key on an `/api/` route that is not the webstore's. 403, not 401,
+#: so the caller can tell "wrong route" from "wrong key".
+SERVICE_ROUTE_REFUSAL = "this route is not available to API keys"
+
+
+def _refuse(path: str, cls: str = ANON) -> None:
     """Refusal codes differ by surface on purpose (spec §7): `/item/*` returns
     404 because a 403 would confirm the item exists, while a service caller
-    deserves a diagnosable 401."""
+    deserves a diagnosable 401 -- or, holding a valid key on a staff-only
+    `/api/` route, a 403."""
     if path.startswith("/item/"):
         raise HTTPException(status_code=404, detail="not found")
     if path.startswith("/api/"):
+        if cls == SERVICE:
+            raise HTTPException(status_code=403, detail=SERVICE_ROUTE_REFUSAL)
         raise HTTPException(status_code=401, detail="valid X-API-Key required")
     raise HTTPException(status_code=403, detail="staff access required")
 
 
+def client_ip(request) -> str:
+    """The customer's address: the FIRST `X-Forwarded-For` entry. Safe only
+    because the host Caddy sets that entry itself and ignores what the client
+    sent, and the compose Caddy trusts the host Caddy (`trusted_proxies`).
+    Without a proxy (local dev, tests without the header) it is the peer."""
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    first = forwarded.split(",", 1)[0].strip()
+    if first:
+        return first
+    return request.client.host if request.client else ""
+
+
+def key_id(request) -> str:
+    """A fingerprint of the caller's key for counters and logs: the key itself
+    is a secret and never leaves `classify`."""
+    key = request.headers.get("X-API-Key", "")
+    return hashlib.sha256(key.encode()).hexdigest()[:8]
+
+
+#: Every 429 says the same thing; `Retry-After` carries the number.
+RATE_LIMITED = "too many requests; retry after the number of seconds in Retry-After"
+
+
+def caller(request: Request) -> str:
+    """The caller class `guard` recorded for this request. Routes read it to
+    decide the webstore view (`for_shop`) rather than classifying again."""
+    # ANON, not STAFF: if the guard ever did not run, fail closed.
+    return getattr(request.state, "caller", ANON)
+
+
 def guard(cfg) -> Callable[[Request], None]:
-    """Build the global dependency. Sync, deliberately -- see module docstring."""
+    """Build the global dependency. Sync, deliberately -- see module docstring.
+    Records the class on `request.state.caller` (read back by `caller()`)."""
 
     def _guard(request: Request) -> None:
-        if classify(request, cfg) not in allowed_classes(request.url.path):
-            _refuse(request.url.path)
+        cls = classify(request, cfg)
+        request.state.caller = cls
+        if cls not in allowed_classes(request.url.path):
+            _refuse(request.url.path, cls)
+        limiter = getattr(request.app.state, "limiter", None)
+        if cls == SERVICE and limiter is not None and request.url.path.startswith("/api/"):
+            retry = limiter.check_api(key_id(request))
+            if retry is not None:
+                raise HTTPException(status_code=429, detail=RATE_LIMITED,
+                                    headers={"Retry-After": str(retry)})
 
     return _guard

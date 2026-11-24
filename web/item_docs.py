@@ -22,6 +22,14 @@ question each; the choice between them is the only thing this module decides.
 
 from __future__ import annotations
 
+import re
+from datetime import date, datetime
+from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
+
+#: The office's calendar. "Expired" is judged on Dentalia's date, not UTC's.
+_LOCAL = ZoneInfo("Europe/Ljubljana")
+
 # Named rather than inlined so the tests can assert the projection is complete
 # without restating the list and drifting from it.
 CUSTOMER_HIDDEN_ITEM_FIELDS = ("manufacturer_code",)
@@ -37,7 +45,103 @@ CUSTOMER_HISTORY_REFUSAL = (
 )
 
 
-def decorate_documents(conn, docs, *, view: str = "full", base_url: str = "") -> list:
+# The LEGAL end of a document's validity: its own stated `validity_to`, or the
+# expiry of the production/superseded certificate it cites, whichever is
+# earlier. Deliberately NOT `document_effective_expiry.expires`: that one also
+# folds in the five-year review horizon for a DoC (ruling 2026-09-11, "review
+# due, not expired"), and when the horizon wins its `basis` is `staleness` --
+# which hides BOTH a later stated date the clinic should see and an earlier
+# stated or certificate expiry that has really passed. The certificate join is
+# the view's own (migration 027), restated here only for its two inputs.
+_LEGAL_EXPIRY_SQL = (
+    "SELECT d.doc_id, LEAST(d.validity_to, c.validity_to) AS legal_to "
+    "FROM document d "
+    "LEFT JOIN document c ON c.doc_id = d.cert_doc_id "
+    "                    AND c.status IN ('production', 'superseded') "
+    "WHERE d.doc_id = ANY(%s)"
+)
+
+
+#: The archive stores a file as `{hash12}__{original name}` (StorageAdapter).
+_ARCHIVE_PREFIX = re.compile(r"^[0-9a-f]{12}__")
+
+
+def file_name_of(archive_url: str | None) -> str:
+    """The document's original file name: the basename of its storage handle,
+    without the archive's hash prefix. Never a path."""
+    if not archive_url:
+        return ""
+    path = urlsplit(archive_url).path if "://" in archive_url else archive_url
+    return _ARCHIVE_PREFIX.sub("", path.rsplit("/", 1)[-1])
+
+
+def local_today() -> date:
+    return datetime.now(_LOCAL).date()
+
+
+def is_legally_expired(legal_to: date | None, today: date) -> bool:
+    """True when the legal validity ended before `today`. The expiry day
+    itself still counts as valid; no legal date never expires."""
+    return legal_to is not None and legal_to < today
+
+
+def legal_expiry(conn, doc_ids: list[int]) -> dict[int, date | None]:
+    if not doc_ids:
+        return {}
+    return {r["doc_id"]: r["legal_to"]
+            for r in conn.execute(_LEGAL_EXPIRY_SQL, (list(doc_ids),)).fetchall()}
+
+
+def _shop_rows(conn, docs: list, today: date) -> list:
+    """The webstore's row set and dates (2026-11-23 webshop API spec § 5.2):
+    a document past its legal expiry is dropped, and `valid_to` is the legal
+    expiry, so a review horizon is never shown as a date. Runs BEFORE naming,
+    so `name` follows."""
+    legal = legal_expiry(conn, [d["doc_id"] for d in docs])
+    out = []
+    for d in docs:
+        legal_to = legal.get(d["doc_id"])
+        if is_legally_expired(legal_to, today):
+            continue
+        d["valid_to"] = legal_to
+        out.append(d)
+    return out
+
+
+#: A manufacturer's OTHER document (Denis, 2026-11-24): held, read and bound to
+#: a manufacturer, but current for no item Dentalia sells -- filed, or
+#: published with no published link. `other_documents` on the manufacturer
+#: page lists exactly these; a link may be issued for them. Older published
+#: versions (production links, current for nothing) are history, not this.
+#: SQL over `document d`, so the list and the link check share one rule.
+OTHER_DOCUMENT_SQL = (
+    "d.canonical_manufacturer IS NOT NULL AND (d.status = 'filed' "
+    " OR (d.status = 'production' AND NOT EXISTS ("
+    "   SELECT 1 FROM item_document l WHERE l.doc_id = d.doc_id "
+    "   AND l.status = 'production')))"
+)
+
+
+def shop_visible_document(conn, doc_id: int, today: date) -> dict | None:
+    """`archive_url` and `content_hash` of a document the webstore may hand a
+    customer, or None: current for at least one item
+    (`item_document_production`) or one of a manufacturer's other documents
+    (`OTHER_DOCUMENT_SQL`), and not past its legal expiry. The same rule
+    the webstore's lists apply, so a link can never fetch what a list would
+    not show."""
+    row = conn.execute(
+        "SELECT d.archive_url, d.content_hash FROM document d "
+        "WHERE d.doc_id = %s AND (EXISTS ("
+        "  SELECT 1 FROM item_document_production p WHERE p.doc_id = d.doc_id) "
+        "  OR (" + OTHER_DOCUMENT_SQL + "))",
+        (doc_id,)).fetchone()
+    if row is None or is_legally_expired(legal_expiry(conn, [doc_id]).get(doc_id), today):
+        return None
+    return row
+
+
+def decorate_documents(conn, docs, *, view: str = "full", base_url: str = "",
+                       for_shop: bool = False, today: date | None = None) -> list:
     """Add `name` and `url` to production document rows, in place, and apply
     the view projection.
 
@@ -46,7 +150,25 @@ def decorate_documents(conn, docs, *, view: str = "full", base_url: str = "") ->
     copy of this is how two endpoints start disagreeing about a field.
 
     `docs` rows must already carry `doc_id`, `type`, `regulation`, `valid_to`.
+
+    `for_shop` is the webstore caller (an `X-API-Key`): legally expired rows
+    go, `valid_to` becomes the legal expiry (never the review horizon), and
+    the customer projection is forced. It is
+    keyed on the CALLER, never inferred from `view`, because the BC card asks
+    for `view=customer` too and must not change. **Returns the list to use**:
+    with `for_shop` it is a filtered copy, so a caller that ignores the return
+    value would serve the unfiltered rows.
     """
+    if for_shop:
+        docs = _shop_rows(conn, docs, today or local_today())
+        view = "customer"
+        # Erpium's tree shows file names today, and the derived `name` is the
+        # same for every IFU of one manufacturer (spec § 5.9).
+        handles = {r["doc_id"]: r["archive_url"] for r in conn.execute(
+            "SELECT doc_id, archive_url FROM document WHERE doc_id = ANY(%s)",
+            ([d["doc_id"] for d in docs],)).fetchall()} if docs else {}
+        for d in docs:
+            d["file_name"] = file_name_of(handles.get(d["doc_id"]))
     # One batched query, not one per doc. DISTINCT ON ... ORDER BY extract_rev
     # DESC reads only the LATEST extraction revision (014) -- a re-extraction
     # must not leave the name stuck on a stale rev-1 value.
@@ -67,7 +189,8 @@ def decorate_documents(conn, docs, *, view: str = "full", base_url: str = "") ->
         d["name"] = f"{name}, valid to {d['valid_to']}" if d["valid_to"] else name
         # Constructed, never read from the database: `archive_url` is a storage
         # handle, not a link (2026-08-24 correction, docs/specs/read-api.md).
-        d["url"] = f"{base_url}/documents/{d['doc_id']}/file"
+        d["url"] = (f"{base_url}/api/documents/{d['doc_id']}/link" if for_shop
+                    else f"{base_url}/documents/{d['doc_id']}/file")
         if view == "customer":
             for field in CUSTOMER_HIDDEN_DOC_FIELDS:
                 d.pop(field, None)
@@ -76,7 +199,7 @@ def decorate_documents(conn, docs, *, view: str = "full", base_url: str = "") ->
 
 def item_documents(
     conn, item_ref: str, *, view: str = "full", base_url: str = "",
-    include_superseded: bool = False,
+    include_superseded: bool = False, for_shop: bool = False,
 ) -> dict:
     """Production documents for one item, plus the item's own identity.
 
@@ -99,7 +222,7 @@ def item_documents(
 
     Refused outright in the customer view: see `CUSTOMER_HISTORY_REFUSAL`.
     """
-    if include_superseded and view == "customer":
+    if include_superseded and (view == "customer" or for_shop):
         raise ValueError(CUSTOMER_HISTORY_REFUSAL)
     item = conn.execute(
         "SELECT m.name, m.mfr_ref, m.manufacturer_raw AS manufacturer_code, "
@@ -126,7 +249,10 @@ def item_documents(
         f"FROM {source} WHERE item_ref = %s ORDER BY {order}",
         (item_ref,),
     ).fetchall()
-    decorate_documents(conn, docs, view=view, base_url=base_url)
+    docs = decorate_documents(conn, docs, view=view, base_url=base_url,
+                              for_shop=for_shop)
+    if for_shop:
+        view = "customer"
 
     out = {
         "item_ref": item_ref,

@@ -84,6 +84,7 @@ Nato sedem ploščic, v vrstnem redu, kot se pojavijo:
 | **dead jobs** | Spodletela opravila, ki še potrebujejo koga. Opravilo, ki ga je kdo že poslal nazaj, ni šteto, zato ta ploščica in [Failed tasks](failed.sl.md) kažeta isto število | **Razvijalčev** — glejte spodaj |
 | **sweep due** | Dobavitelji, pri katerih je na vrsti preverjanje EUDAMED. Nič se ne zažene, dokler ne pritisnete **Start the check** | **Vaš**, občasno |
 | **Documents being read** | Koliko dokumentov sistem trenutno bere | Informativno |
+| **webstore documents today · alert above 200** | Koliko različnih dokumentov je spletna trgovina danes odprla svojim kupcem. Oranžno nad pragom: nenavadno veliko, morda jih nekdo kopira. Nič se ne blokira | Vredno opaziti, razvijalčevo za preverjanje |
 | **the euro amount, and "30d of €…"** | Kaj je sistem porabil v zadnjih 30 dneh, glede na mesečno omejitev | Vredno spremljati, redko nujno |
 
 **Documents being read** šteje isto kot stran
@@ -155,6 +156,7 @@ razpredelnice.
 | **manual queue** narašča | Več stvari potrebuje človeka | Odprite [Manual](manual.sl.md) in preverite, katere vrstice so res vaše | Vaše, da obdelate |
 | **dead jobs** nad nič | Neko opravilo je večkrat spodletelo in obupalo | Odprite [Failed tasks](failed.sl.md). Prva dva razdelka imata vsak svoj gumb in sta vaša; tretji je razvijalčev, njegov **Re-run all** pa je operaterski gumb | Razvijalčevo, če ponovni zagon tega ne odpravi |
 | **sweep due** nad nič | Dobavitelj je na vrsti za preverjanje EUDAMED | Odprite ploščico in pritisnite **Start the check**, ko imate čas | Vaše, ni nujno |
+| **webstore documents today** oranžno | Spletna trgovina je danes odprla več dokumentov, kot jih pojasni običajna uporaba | Povejte razvijalcu. Trgovina deluje naprej; nič se ne izklopi | Razvijalčevo |
 | **Documents being read** visoko in se ne premika | Zdi se, da je stroj zaposlen, a nič se ne dokonča | Tega ne diagnosticirajte sami. Povejte razvijalcu | Razvijalčevo |
 | 30-dnevna poraba blizu ali nad omejitvijo | Sistem ta mesec stane več kot običajno | Omenite. Ne poskušajte ničesar ustaviti sami | Razvijalčevo, da presodi, vaše, da opazite |
 

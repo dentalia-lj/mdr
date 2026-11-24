@@ -101,6 +101,26 @@ cannot appear at all until someone has named at least one person.
 **`/item/{ref}?k=…` 404s, or `/api/*` answers 401, with a key you believe is right.**
 Not a routing bug — the app's own caller-class policy (`web/access.py`), which Caddy no longer stands in front of for these two paths. Check, in order: is `WEB_BC_LINK_KEY` / `WEB_API_KEYS` actually set on the **`web`** service (`docker compose exec web env | grep WEB_`)? Empty disables the class outright, so `/item/*` 404s for every key and no `X-API-Key` is a service credential. Is the key you sent in the list — `WEB_API_KEYS` is comma-separated, and surrounding whitespace is stripped but nothing else is. `/item/*` answers **404 rather than 403** by design (a 403 would confirm the item exists), so "not found" here usually means "wrong key", not "wrong item". A `service` key reaching `/items`, `/staging` or `/archive/*` is a **403** and is also by design: those are staff-only. `docker compose up -d --build web` after changing the code, and remember compose env changes need `up -d`, not `restart`.
 
+**The webstore's download link answers 404, 410 or 429.**
+`410`: the link expired (they live `WEB_DOWNLOAD_LINK_TTL_S`, 5 minutes) or was
+altered. The webstore must ask `/api/documents/{id}/link` again on each click,
+never store our `url`. `404` on the link route or on `/d/*`: the document is not
+one the webstore may show (unpublished, not current for any item, or past its
+legal expiry), or `WEB_DOWNLOAD_LINK_SECRET` is empty on the `web` service.
+`429` with `Retry-After`: one customer address passed 30 distinct documents in a
+minute or 100 in a day, or the key passed `WEB_RATE_API_PER_MIN`. If every
+customer gets 429 at once, check that the compose `Caddyfile` still has
+`trusted_proxies static private_ranges`: without it `web` sees every customer as
+the proxy's address. The `web` log says so once, as a WARNING starting
+"webstore download from private address".
+
+**An API key gets 403, or a plain-text `Not found`, on an `/api/` route.**
+Deliberate since 2026-11-23: the key reaches only the webstore routes
+(`web/access.py` `SERVICE_ROUTES`). On `api.cw.dentalia.si` Caddy answers any
+other `/api/` path with plain `404 Not found` before the app sees it; the app's
+JSON `403` only shows on the office name or `127.0.0.1:8000`. Use a staff login
+for `/api/kpi`, `/api/documents/{id}` and the item lists.
+
 **A 404 or 403 comes back as an HTML page, not `{"detail": ...}`.**
 Deliberate since 2026-09-14 (office UI redesign, spec § 9 P7a). `_error_response` in
 `create_app` picks the body, for an `HTTPException` and for an unhandled 500

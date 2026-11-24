@@ -139,7 +139,9 @@ from app.config import Web, load_config
 from app.compliance import EXPIRY_HORIZON_DAYS
 
 log = logging.getLogger("dentalia.web")
-from web import access, bc_push_view, catalogue, failures, item_link, item_picker, missing, onboarding, registry, scheduler_view, words
+from web import access, bc_push_view, catalogue, download_links, limits, failures, item_link, item_picker, missing, onboarding, registry, scheduler_view, words
+# Aliased: `create_app` has a local `search` (a filter value) that would shadow it.
+from web import search as search_api
 from web import filed_matches, link_checks, uploads
 from web.item_docs import item_documents
 # Re-exported: the Today page and the menu counts read the Missing documents
@@ -2997,6 +2999,13 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         dependencies=[Depends(access.guard(cfg))],
     )
     app.state.web_cfg = cfg
+    # One process, one limiter (web/limits.py): counters reset on a deploy.
+    app.state.limiter = limits.Limiter(
+        api_per_min=cfg.rate_api_per_min,
+        ip_docs_per_min=cfg.rate_downloads_per_ip_min,
+        ip_docs_per_day=cfg.rate_downloads_per_ip_day,
+        key_alert_per_day=cfg.alert_docs_per_key_day,
+    )
 
     # Registered through the router, so the global dependency DOES apply --
     # that is the entire point of not using FastAPI's built-ins here. Paths
@@ -3289,6 +3298,8 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
     bc_push_view.register_routes(app, templates, _conn, cfg,
                                  require_operator=require_operator)
     catalogue.register_routes(app, _conn, cfg)
+    download_links.register_routes(app, _conn, cfg)
+    search_api.register_routes(app, _conn, cfg)
 
     @app.get("/healthz")
     def healthz():
@@ -4851,6 +4862,7 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                 # were on the header strip until it went; this is where they
                 # live now, on the operator's own board.
                 "services": _pulse_services(conn),
+                "webshop": app.state.limiter.snapshot(),
                 "job_types": JOB_TYPES,
                 "job_statuses": JOB_STATUS_ORDER,
                 "stage_by_type": STAGE_BY_TYPE,
@@ -6511,7 +6523,7 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         ctx = {
             "example_ref": None, "example_full": None,
             "example_customer": None, "example_doc_id": None,
-            "example_manufacturer": None,
+            "example_manufacturer": None, "example_manufacturer_id": None,
             "default_per_page": catalogue.DEFAULT_PER_PAGE,
             "max_per_page": catalogue.MAX_PER_PAGE,
             "max_batch_refs": catalogue.MAX_BATCH_REFS,
@@ -6530,6 +6542,9 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
                                           base_url=cfg.public_base_url)
                 # default=str: dates are date objects, not JSON scalars.
                 ctx["example_manufacturer"] = full.get("manufacturer")
+                ctx["example_manufacturer_id"] = (
+                    catalogue._id_by_name(conn, full["manufacturer"])
+                    if full.get("manufacturer") else None)
                 ctx["example_full"] = json.dumps(full, indent=2, default=str)
                 ctx["example_customer"] = json.dumps(customer, indent=2, default=str)
         return templates.TemplateResponse(request, "api_reference.html", ctx)
@@ -6567,7 +6582,7 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
     # (`expires`, migration 034) -- the one behavioral change a consumer can
     # observe versus the old raw-`validity_to` response (docs/specs/read-api.md).
     @app.get("/api/items/{item_ref:path}/documents")
-    def api_item_documents(item_ref: str, view: str = "full",
+    def api_item_documents(request: Request, item_ref: str, view: str = "full",
                            include_superseded: bool = False):
         """Production documents for one item, plus the item's own identity.
 
@@ -6583,11 +6598,14 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
         route only turns its ValueError into the status code, so the batch
         endpoint in `web/catalogue.py` cannot decide the question differently.
         """
+        # The webstore key gets the webstore view whatever it asks for
+        # (2026-11-23 webshop API spec § 5.2); `item_docs` refuses the flag.
+        for_shop = access.caller(request) == access.SERVICE
         with _conn() as conn:
             try:
                 return item_documents(
                     conn, item_ref, view=view, base_url=cfg.public_base_url,
-                    include_superseded=include_superseded,
+                    include_superseded=include_superseded, for_shop=for_shop,
                 )
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -6621,7 +6639,11 @@ def create_app(web_cfg: Web | None = None) -> FastAPI:
     @app.get("/api/kpi")
     def api_kpi():
         with _conn() as conn:
-            return _kpi_board(conn, budget_cfg)
+            board = _kpi_board(conn, budget_cfg)
+        # Process memory, not the database: today's webstore links per key
+        # fingerprint against the alert threshold (web/limits.py).
+        board["webshop"] = app.state.limiter.snapshot()
+        return board
 
     return app
 

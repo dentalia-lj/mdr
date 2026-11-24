@@ -624,6 +624,19 @@ class Web:
     # is correct for same-origin browser use and wrong for a webshop backend
     # embedding our links in its own pages.
     public_base_url: str = ""
+    # Signs the webstore's download links (2026-11-23 webshop API spec § 5.4).
+    # A SECRET: .env, beside `api_keys`. Empty switches `/api/documents/{id}/link`
+    # and `/d/*` off (404) -- it never means "unsigned". Rotating it only kills
+    # links issued in the last `download_link_ttl_s`.
+    download_link_secret: str = ""
+    download_link_ttl_s: int = 300
+    # Webstore rate limits (2026-11-23 webshop API spec § 5.5). Block per
+    # customer IP on downloads, never on the key: Erpium has ONE key for all its
+    # customers, so the per-key numbers are a loop ceiling and an alert.
+    rate_api_per_min: int = 1200
+    rate_downloads_per_ip_min: int = 30
+    rate_downloads_per_ip_day: int = 100
+    alert_docs_per_key_day: int = 200
     # The proxy logins that count as operators (office UI redesign spec § 2,
     # D6), matched exactly against `trusted_user_header`. EMPTY MEANS EVERY
     # LOGIN IS AN OPERATOR: that keeps today's single shared login working
@@ -1173,6 +1186,25 @@ def load_config() -> Config:
         bc_link_key=_str("WEB_BC_LINK_KEY", _dig(t, "web", "bc_link_key"), ""),
         public_base_url=_str(
             "WEB_PUBLIC_BASE_URL", _dig(t, "web", "public_base_url"), ""
+        ),
+        download_link_secret=_str(
+            "WEB_DOWNLOAD_LINK_SECRET", _dig(t, "web", "download_link_secret"), ""
+        ),
+        download_link_ttl_s=_int(
+            "WEB_DOWNLOAD_LINK_TTL_S", _dig(t, "web", "download_link_ttl_s"),
+            Web.download_link_ttl_s,
+        ),
+        rate_api_per_min=_int(
+            "WEB_RATE_API_PER_MIN", _dig(t, "web", "rate_api_per_min"), Web.rate_api_per_min,
+        ),
+        rate_downloads_per_ip_min=_int(
+            "WEB_RATE_DOWNLOADS_PER_IP_MIN", _dig(t, "web", "rate_downloads_per_ip_min"), Web.rate_downloads_per_ip_min,
+        ),
+        rate_downloads_per_ip_day=_int(
+            "WEB_RATE_DOWNLOADS_PER_IP_DAY", _dig(t, "web", "rate_downloads_per_ip_day"), Web.rate_downloads_per_ip_day,
+        ),
+        alert_docs_per_key_day=_int(
+            "WEB_ALERT_DOCS_PER_KEY_DAY", _dig(t, "web", "alert_docs_per_key_day"), Web.alert_docs_per_key_day,
         ),
         operator_users=_str_list(
             "WEB_OPERATOR_USERS", _dig(t, "web", "operator_users"), Web.operator_users

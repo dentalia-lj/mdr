@@ -27,8 +27,13 @@ policy is one table, in <code>web/access.py</code>, and it is default-deny.</p>
     <tr>
       <td><code>service</code></td>
       <td><code>X-API-Key</code> header</td>
-      <td>The webshop backend. Fetches server-side and relays to its own
-        logged-in customers, which is why nothing here is public.</td>
+      <td>The webstore backend (Erpium). Calls server-side. Since 2026-11-23
+        it reaches only the webstore routes, always in the customer view, and
+        hands its customers files through five-minute download links
+        (<a href="#webstore">below</a>). A valid key on any other
+        <code>/api/</code> route gets <code>403</code> here, and plain
+        <code>404 Not found</code> on <code>api.cw.dentalia.si</code>, where
+        Caddy answers first.</td>
     </tr>
     <tr>
       <td><code>bc</code></td>
@@ -49,11 +54,62 @@ curl -H "X-API-Key: $WEB_API_KEYS" https://HOST/api/items/{{ example_ref or 'ITE
 # bc — the item-card link
 curl "https://HOST/item/{{ example_ref or 'ITEM' }}?k=$WEB_BC_LINK_KEY"</code></pre>
 
+<h2 id="webstore">The webstore: what a key gets</h2>
+<p>Full design: <code>docs/superpowers/specs/2026-11-23-webshop-api-design.md</code>.</p>
+<ul>
+  <li><strong>Routes:</strong> <code>/api/manufacturers</code>,
+    <code>/api/manufacturers/{id}</code>, <code>/api/manufacturers/{id}/documents</code>,
+    <code>/api/items/{item_ref}/documents</code>, <code>/api/items/documents</code>,
+    <code>/api/documents/{doc_id}/link</code>, <code>/api/search</code>. Nothing else.</li>
+  <li><strong>Always the customer view.</strong> <code>view=full</code> is ignored;
+    <code>include_unlinked</code> and <code>include_superseded</code> answer <code>400</code>.</li>
+  <li><strong>Only documents a clinic may be shown:</strong> published, current for
+    the item, and not past their legal expiry. <code>valid_to</code> is that legal
+    expiry, so a class I DoC with no stated date shows <code>null</code>.</li>
+  <li><strong>Telling documents apart:</strong> every document carries
+    <code>file_name</code>, the original file name; on
+    <code>/api/manufacturers/{id}/documents</code> also <code>item_count</code>,
+    <code>items</code> (at most 50) and <code>items_truncated</code>, plus
+    <code>other_documents</code>: documents of the manufacturer covering no item
+    Dentalia sells (filed, or published with no item link).</li>
+  <li><strong>Files on click:</strong> the page links to the webstore's own URL. On a
+    click its server calls <code>/api/documents/{doc_id}/link</code> and answers the
+    browser with a <code>302</code> to the returned <code>url</code>
+    (<code>/d/&hellip;</code>, valid 5 minutes, no key in it). Never put that
+    <code>url</code> or the key into a page.</li>
+  <li><strong>Limits:</strong> <code>429</code> with <code>Retry-After</code> past
+    1,200 calls a minute per key, or past 30 distinct documents a minute / 100 a day
+    per customer address on <code>/d/</code>.</li>
+</ul>
+<pre><code># on the customer's click, server-side
+curl -H "X-API-Key: $WEB_API_KEYS" https://HOST/api/documents/{{ example_doc_id or 'DOC_ID' }}/link
+# {"url": "https://HOST/d/&lt;doc_id&gt;.&lt;exp&gt;.&lt;sig&gt;", "expires_at": "&hellip;"}</code></pre>
+
+<h3><code>GET /api/search?q=</code></h3>
+<p><strong>service</strong> &middot; <strong>staff</strong> &mdash; the webstore's
+query box. <code>q</code> (2&ndash;100 characters) is matched in order on item
+number, supplier article number, a document's Basic UDI-DI and item name (fuzzy).
+Up to 20 items with their documents, each with <code>matched_on</code>; only items
+that have documents. Matching manufacturers come back under
+<code>manufacturers</code>, never with their items.</p>
+
+<h3><code>GET /api/documents/{doc_id}/link</code></h3>
+<p><strong>service</strong> &middot; <strong>staff</strong> &mdash; a signed
+download link for one document, valid <code>WEB_DOWNLOAD_LINK_TTL_S</code>
+(5 minutes). <code>404</code> when the document is not one the webstore may show,
+or when <code>WEB_DOWNLOAD_LINK_SECRET</code> is empty.</p>
+
+<h3><code>GET /d/{token}</code></h3>
+<p><strong>anyone</strong> &mdash; the token is the credential. Serves the PDF
+inline after checking, again, that the document may be shown. <code>410</code>
+expired or altered, <code>404</code> no longer visible, <code>429</code> past the
+per-address limit.</p>
+
 <h2>Endpoints</h2>
 
 {# ---------------------------------------------------------------- #}
 <h3><code>GET /item/{item_ref}</code></h3>
-<p><strong>bc</strong> &middot; <strong>service</strong> &middot; <strong>staff</strong>
+<p><strong>bc</strong> &middot; <strong>staff</strong>
 &mdash; one item and its production documents. This is the URL BC puts on the
 item card and the one a support rep sends a client to.</p>
 
@@ -158,27 +214,27 @@ catalogue identity.</p>
 
 {# ---------------------------------------------------------------- #}
 <h3><code>GET /item/{item_ref}/documents.zip</code></h3>
-<p><strong>bc</strong> &middot; <strong>service</strong> &middot; <strong>staff</strong>
+<p><strong>bc</strong> &middot; <strong>staff</strong>
 &mdash; every production document for the item, one archive. The "papers" a
 client asks for on the phone are plural. <code>404</code> when the item has no
 reachable production documents &mdash; an empty archive is a worse answer than
 saying there is nothing.</p>
 
 <h3><code>GET /item/{item_ref}/documents/{doc_id}</code></h3>
-<p><strong>bc</strong> &middot; <strong>service</strong> &middot; <strong>staff</strong>
+<p><strong>bc</strong> &middot; <strong>staff</strong>
 &mdash; one of the item's documents, the PDF the card's <em>Open</em> link
 serves on the BC key alone. Only a production document with a production link
 to <em>that</em> item; any other <code>doc_id</code> is a <code>404</code>, like
-the rest of <code>/item/*</code>. The webshop keeps using
-<code>/documents/{doc_id}/file</code> below.</p>
+the rest of <code>/item/*</code>. Not open to an API key: the webstore uses
+<code>/api/documents/{doc_id}/link</code>.</p>
 
 <h3><code>GET /documents/{doc_id}/file</code></h3>
-<p><strong>service</strong> &middot; <strong>staff</strong> &mdash; the archived
-PDF. This is the supported way to get bytes; the webshop relays them under its
-own origin.</p>
+<p><strong>staff</strong> &mdash; the archived PDF, any status. Closed to API
+keys since 2026-11-23: by sequential id it opened the whole archive, staged and
+rejected documents included.</p>
 
 <h3><code>GET /api/documents/{doc_id}</code></h3>
-<p><strong>service</strong> &middot; <strong>staff</strong> &mdash; one
+<p><strong>staff</strong> &mdash; one
 production document and its complete evidence.
 <strong class="warn">Internal.</strong> Carries <code>model_id</code>,
 <code>confidence</code> and <code>verbatim</code>. Never render this to a
@@ -190,11 +246,13 @@ and it is 1.0 for a regulation its printed citation proves.{% if example_doc_id 
 <a href="/api/documents/{{ example_doc_id }}">/api/documents/{{ example_doc_id }}</a>.{% endif %}</p>
 
 <h3><code>GET /api/kpi</code></h3>
-<p><strong>service</strong> &middot; <strong>staff</strong> &mdash; the KPI
+<p><strong>staff</strong> &mdash; the KPI
 board, the same numbers the status page shows. Top-level keys:
 <code>coverage</code>, <code>match_basis</code>, <code>missing_mfr_ref</code>,
 <code>staging</code>, <code>manual_by_kind</code>, <code>dead_jobs</code>,
-<code>jobs_by_type_status</code>, <code>spend</code>. Not rendered inline here:
+<code>jobs_by_type_status</code>, <code>spend</code>, and
+<code>webshop</code> (today's distinct documents linked per key fingerprint and
+the alert threshold, from process memory). Not rendered inline here:
 it measures ~478ms and this page is not worth half a second.
 <a href="/api/kpi">Try it</a>.</p>
 
@@ -210,17 +268,26 @@ line has nothing, which a shorter array cannot tell you.</p>
 
 <h3><code>GET /api/manufacturers</code></h3>
 <p><strong>service</strong> &middot; <strong>staff</strong> &mdash; every
-manufacturer with its BC codes and its production item and document counts.
-<code>?q=</code> filters on name or code.</p>
+manufacturer with its stable <code>id</code> and its production item and
+document counts. <code>?q=</code> filters on name (staff: also on code).
+<strong>With an API key</strong> it is the webstore's tree: no BC
+<code>codes</code>, and only manufacturers with at least one document the
+webstore may show (published and not past its legal expiry).</p>
 
-<h3><code>GET /api/manufacturers/{canonical_name}</code></h3>
+<h3><code>GET /api/manufacturers/{id}</code></h3>
 <p><strong>service</strong> &middot; <strong>staff</strong> &mdash; one
-manufacturer's identity, its BC codes, and production counts.
-<code>404</code> if the canonical name is unknown.
-{% if example_manufacturer %}Try
-<a href="/api/manufacturers/{{ example_manufacturer }}">/api/manufacturers/{{ example_manufacturer }}</a>.{% endif %}</p>
+manufacturer's identity and production counts, addressed by the stable
+<code>id</code> from the list. The id survives a rename; the name does not.
+BC codes for staff only. <code>404</code> if the id is unknown.
+{% if example_manufacturer_id %}Try
+<a href="/api/manufacturers/{{ example_manufacturer_id }}">/api/manufacturers/{{ example_manufacturer_id }}</a>.{% endif %}</p>
+<p>Staff can also address a manufacturer by name:
+<code>/api/manufacturers/by-name/{canonical_name}</code>, with the same
+<code>/documents</code> and <code>/items</code> beneath it. Not open to an API
+key, and not "a number means an id": a canonical name can be a bare BC code
+such as <code>077</code>.</p>
 
-<h3><code>GET /api/manufacturers/{canonical_name}/documents</code></h3>
+<h3><code>GET /api/manufacturers/{id}/documents</code></h3>
 <p><strong>service</strong> &middot; <strong>staff</strong> &mdash; every
 production document reachable from any item of this manufacturer,
 <strong>deduped</strong>. That dedupe is the point: one ISO 13485 certificate
@@ -232,7 +299,7 @@ and bury the handful that differ. Takes <code>view</code>.</p>
   <code>mfr-bound</code> (<code>view=customer</code> drops that field, as it
   does everywhere). That set is large and is <em>not coverage</em>: a filed
   document is real, held and evidenced, and explicitly says we stock nothing it
-  covers. Measured 2026-09-16, <code>/api/manufacturers/VOCO/documents</code>
+  covers. Measured 2026-09-16, VOCO's documents endpoint
   returns 32 of the 283 documents held under that name; the other 251 reach no
   stocked item. Off by default because returning them unannounced would change
   what your existing payload means.</p>
@@ -240,8 +307,9 @@ and bury the handful that differ. Takes <code>view</code>.</p>
   fields), <code>include_unlinked</code> is the <em>row set</em> (which
   documents). Same split as <code>include_superseded</code> above.</p>
 
-<h3><code>GET /api/manufacturers/{canonical_name}/items</code></h3>
-<p><strong>service</strong> &middot; <strong>staff</strong> &mdash; that
+<h3><code>GET /api/manufacturers/{id}/items</code></h3>
+<p><strong>staff</strong> only (since 2026-11-23: it is Dentalia's supplier
+map) &mdash; that
 manufacturer's items, each with its production document count.
 <strong>Paginated, and not optionally</strong>: ~16k items are mirrored today
 and ~100k is the target.</p>
