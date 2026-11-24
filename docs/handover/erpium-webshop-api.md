@@ -125,7 +125,6 @@ All errors are `{"detail": "..."}`.
 |---|---|
 | `400` | A parameter you may not use (`include_unlinked`, `include_superseded`, an empty batch, more than 100 refs) |
 | `401` | No key, or a wrong one |
-| `403` | Your key is fine, but the route is not one of the above |
-| `404` | Unknown manufacturer, or a document that may not be shown (also on the link) |
+| `404` | Unknown manufacturer, a document that may not be shown (also on the link), or a path that is not one of the routes above. For an unknown path the body is plain text `Not found`, not JSON |
 | `410` | The download link expired or was changed: ask for a new one |
 | `429` | Over a limit, see `Retry-After` |

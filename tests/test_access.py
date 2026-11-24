@@ -384,11 +384,13 @@ def test_download_path_skips_the_login():
     assert "not path /d/*" in block
 
 
-def test_compose_caddy_trusts_only_docker_networks():
+def test_compose_caddy_trusts_the_host_caddy():
     """Measured 2026-11-23 on caddy:2.8: from an untrusted peer the incoming
     X-Forwarded-For is REPLACED by the peer address, so without this every
     customer reaches `web` as 172.18.0.1 and the per-IP download limit becomes
-    one global limit. Docker's default bridge pool, not `private_ranges`."""
+    one global limit. `private_ranges`, because Docker falls back to
+    192.168.0.0/16 when its 172.16/12 pool is used up and the site is
+    loopback-published, so only the host and our containers can reach it."""
     lines = [ln.strip() for ln in _CADDYFILE.read_text().splitlines()
              if ln.strip().startswith("trusted_proxies")]
-    assert lines == ["trusted_proxies static 172.16.0.0/12"]
+    assert lines == ["trusted_proxies static private_ranges"]

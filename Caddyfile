@@ -19,12 +19,14 @@
 # Without trusting it here, this Caddy REPLACES that header with its peer
 # address (measured 2026-11-23 on caddy:2.8), so `web` would see every
 # customer as 172.18.0.1 and the per-IP download limit (web/limits.py) would
-# be one global limit. Docker's default bridge pool, not `private_ranges`, and
-# not the single gateway address, which follows the compose network's subnet.
-# Only the host and our own containers can reach this loopback-published site.
+# be one global limit. `private_ranges`, not the gateway address (it follows
+# the compose network's subnet) and not 172.16.0.0/12 alone (Docker falls back
+# to 192.168.0.0/16 when that pool is used up). Safe because this site is
+# published on loopback only: the host and our own containers are the only
+# peers that can reach it. web/download_links.py warns if it ever stops working.
 {
 	servers {
-		trusted_proxies static 172.16.0.0/12
+		trusted_proxies static private_ranges
 	}
 }
 

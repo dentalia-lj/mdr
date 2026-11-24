@@ -31,7 +31,9 @@ policy is one table, in <code>web/access.py</code>, and it is default-deny.</p>
         it reaches only the webstore routes, always in the customer view, and
         hands its customers files through five-minute download links
         (<a href="#webstore">below</a>). A valid key on any other
-        <code>/api/</code> route gets <code>403</code>.</td>
+        <code>/api/</code> route gets <code>403</code> here, and plain
+        <code>404 Not found</code> on <code>api.cw.dentalia.si</code>, where
+        Caddy answers first.</td>
     </tr>
     <tr>
       <td><code>bc</code></td>

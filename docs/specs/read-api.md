@@ -264,7 +264,8 @@ and nothing else:
 - **Routes:** `/api/manufacturers`, `/api/manufacturers/{id}`,
   `/api/manufacturers/{id}/documents`, `/api/items/{item_ref}/documents`,
   `/api/items/documents`, `/api/documents/{doc_id}/link`. Any other `/api/`
-  route: `403`. `/item/*` and `/documents/{id}/file`: refused.
+  route: `403` from the app, though on `api.cw.dentalia.si` Caddy answers first with
+  plain `404 Not found`. `/item/*` and `/documents/{id}/file`: refused.
 - **Always the customer view**; `view=full` is ignored. `include_unlinked` and
   `include_superseded`: `400`.
 - **Rows:** a document past its **legal** expiry is dropped. Legal expiry is

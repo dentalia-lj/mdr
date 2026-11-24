@@ -296,14 +296,21 @@ def register_routes(app, conn_factory, cfg) -> None:
                                           for_shop=for_shop, codes=codes)
 
     def _summary(request, canonical_name, codes, mfr_id):
+        for_shop = access.caller(request) == access.SERVICE
         with conn_factory() as conn:
             out = manufacturer_summary(conn, canonical_name, codes=codes)
             if out is not None and mfr_id is None:
                 mfr_id = _id_by_name(conn, canonical_name)
+            if out is not None and for_shop:
+                # The webstore's count is the webstore's rule: the same
+                # documents `/documents` returns and the list counts, never
+                # the expired ones (2026-11-23 final review).
+                out["documents"] = len(manufacturer_documents(
+                    conn, canonical_name, for_shop=True, codes=codes) or [])
         if out is None:
             raise HTTPException(status_code=404, detail="unknown manufacturer")
         out = {"id": mfr_id, **out}
-        if access.caller(request) == access.SERVICE:
+        if for_shop:
             out.pop("codes", None)
         return out
 

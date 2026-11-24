@@ -487,3 +487,25 @@ def test_staff_list_keeps_codes_and_gains_ids(guarded, conn, canonical, mfr_id):
     rows = guarded.get("/api/manufacturers", headers=STAFF).json()["manufacturers"]
     row = next(r for r in rows if r["canonical_name"] == canonical)
     assert MFR in row["codes"] and row["id"] == mfr_id
+
+
+def test_webstore_counts_agree_between_list_detail_and_documents(guarded, conn):
+    """One rule for every count the key sees: an expired document is in none."""
+    import uuid
+    tag = uuid.uuid4().hex[:6]
+    code, name = f"C{tag}", f"Count Maker {tag}"
+    conn.execute("INSERT INTO manufacturer_alias (raw_name, canonical_name, source) "
+                 "VALUES (%s,%s,'self-seed')", (code, name))
+    mid = conn.execute("INSERT INTO manufacturer (canonical_name) VALUES (%s) RETURNING id",
+                       (name,)).fetchone()["id"]
+    conn.execute("INSERT INTO manufacturer_name (name_folded, name, manufacturer_id, kind) "
+                 "VALUES (%s,%s,%s,'canonical')", (name.casefold(), name, mid))
+    conn.commit()
+    _seed_item_with_doc(conn, f"CNT-OK-{tag}", manufacturer_raw=code, validity_to="2099-01-01")
+    _seed_item_with_doc(conn, f"CNT-OLD-{tag}", manufacturer_raw=code,
+                        validity_from="2000-01-01", validity_to="2001-01-01")
+    listed = next(r for r in guarded.get("/api/manufacturers", headers=KEY).json()["manufacturers"]
+                  if r["id"] == mid)
+    detail = guarded.get(f"/api/manufacturers/{mid}", headers=KEY).json()
+    docs = guarded.get(f"/api/manufacturers/{mid}/documents", headers=KEY).json()["documents"]
+    assert listed["documents"] == detail["documents"] == len(docs) == 1

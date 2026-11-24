@@ -127,3 +127,16 @@ def test_client_ip_without_a_proxy_is_the_peer():
     from web.access import client_ip
     req = SimpleNamespace(headers={}, client=SimpleNamespace(host="127.0.0.1"))
     assert client_ip(req) == "127.0.0.1"
+
+
+def test_stale_entries_are_dropped():
+    """Every address that ever downloaded used to stay in memory until a deploy."""
+    clock = Clock(_at(2050, 6, 1, 23, 0, 0))
+    lim = _limiter(clock)
+    for n in range(50):
+        lim.check_download(f"203.0.113.{n}", 1)
+        lim.check_api(f"k{n}")
+    assert lim.tracked() == {"ips": 50, "keys": 50}
+    clock.t = _at(2050, 6, 2, 0, 5, 0)
+    lim.check_download("198.51.100.1", 1)
+    assert lim.tracked() == {"ips": 1, "keys": 0}

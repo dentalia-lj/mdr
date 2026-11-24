@@ -44,6 +44,7 @@ class Limiter:
         self._ip_min: dict[str, tuple[int, set]] = {}         # ip -> (minute, new docs)
         self._key_day: dict[str, tuple[object, set]] = {}     # key -> (day, docs)
         self._alerted: dict[str, object] = {}                 # key -> day warned
+        self._swept: tuple[int, object] | None = None         # (minute, day) last swept
 
     # ------------------------------------------------------------ clock #
     def _now(self) -> tuple[float, int, object]:
@@ -59,11 +60,32 @@ class Limiter:
                                     datetime.min.time(), tzinfo=self._tz)
         return max(1, int(midnight.timestamp() - now))
 
+    def _sweep(self, minute: int, day) -> None:
+        """Drop entries from past minutes and days, once per minute. Without
+        it every address that ever downloaded stays in memory until a deploy.
+        Caller holds the lock."""
+        if self._swept == (minute, day):
+            return
+        self._swept = (minute, day)
+        self._api = {k: v for k, v in self._api.items() if v[0] == minute}
+        self._ip_min = {k: v for k, v in self._ip_min.items() if v[0] == minute}
+        self._ip_day = {k: v for k, v in self._ip_day.items() if v[0] == day}
+        self._key_day = {k: v for k, v in self._key_day.items() if v[0] == day}
+        self._alerted = {k: d for k, d in self._alerted.items() if d == day}
+
+    def tracked(self) -> dict:
+        """How many addresses and keys the limiter holds right now."""
+        with self._lock:
+            _, minute, day = self._now()
+            self._sweep(minute, day)
+            return {"ips": len(self._ip_day), "keys": len(self._api)}
+
     # ------------------------------------------------------------ checks #
     def check_api(self, key_id: str) -> int | None:
         """Seconds to wait, or None. Counts the call when it passes."""
         with self._lock:
-            now, minute, _ = self._now()
+            now, minute, day = self._now()
+            self._sweep(minute, day)
             m, n = self._api.get(key_id, (minute, 0))
             if m != minute:
                 n = 0
@@ -77,6 +99,7 @@ class Limiter:
         free; a new one counts against the minute and the day."""
         with self._lock:
             now, minute, day = self._now()
+            self._sweep(minute, day)
             d, seen = self._ip_day.get(ip, (day, set()))
             if d != day:
                 seen = set()

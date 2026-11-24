@@ -233,3 +233,32 @@ def test_status_board_shows_the_webstore_tile(test_db_url, tmp_path, conn):
         client.get(f"/api/documents/{doc}/link", headers=KEY)
     page = client.get("/status", headers=staff).text
     assert 'tile-alert" id="webshop-tile"' in page
+
+
+# --------------------------------------------------------- final review fixes #
+
+@pytest.mark.parametrize("token", [
+    "1.2.é",                      # non-ASCII signature: compare_digest raised
+    "².1700000000.abc",           # isdigit() True, int() raised
+    "1." + "9" * 5000 + ".abc",        # int() limit
+    "0019.1700000000.abc",             # non-canonical doc id
+])
+def test_a_malformed_token_is_410_not_500(guarded, token):
+    assert guarded.get(f"/d/{token}").status_code == 410
+
+
+def test_a_private_client_address_behind_the_proxy_is_reported(test_db_url, tmp_path,
+                                                                conn, caplog):
+    """If the compose Caddy stops trusting its peer, every customer arrives as
+    the proxy's private address and the per-IP limit becomes one global limit.
+    That must be loud, once."""
+    import logging
+    client = _client(tmp_path)
+    doc = _seed_item_with_doc(conn, "DL-PRIV", validity_to="2099-01-01")
+    _with_file(conn, tmp_path, doc)
+    with caplog.at_level(logging.WARNING, logger="web.download_links"):
+        for _ in range(2):
+            url = client.get(f"/api/documents/{doc}/link", headers=KEY).json()["url"]
+            client.get(_path(url), headers={"X-Forwarded-For": "172.18.0.1"})
+    warned = [r for r in caplog.records if "private" in r.getMessage()]
+    assert len(warned) == 1

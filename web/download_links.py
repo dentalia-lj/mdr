@@ -25,6 +25,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import ipaddress
+import logging
+import re
 import time
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
@@ -34,6 +37,14 @@ from fastapi import HTTPException, Request
 from web import access
 
 from web.item_docs import local_today, shop_visible_document
+
+log = logging.getLogger(__name__)
+
+#: The only shape `sign` produces: canonical ASCII digits (a leading zero
+#: would be a second spelling of the same document) and a 43-character
+#: unpadded base64url SHA-256. Anything else is refused before any parsing,
+#: so a garbled link reads as expired (410) rather than as a server error.
+_TOKEN = re.compile(r"(0|[1-9][0-9]{0,17})\.([1-9][0-9]{0,17})\.([A-Za-z0-9_-]{43})")
 
 #: Both refusals one constant each, so the route, the tests and the handover
 #: doc cannot word them three ways.
@@ -58,19 +69,33 @@ def verify(token: str, secret: str, now: int) -> int | None:
     another secret, or past its expiry. Constant-time on the signature."""
     if not secret:
         return None
-    parts = token.split(".")
-    if len(parts) != 3 or not parts[0].isdigit() or not parts[1].isdigit():
+    m = _TOKEN.fullmatch(token)
+    if m is None:
         return None
-    doc_id, exp = int(parts[0]), int(parts[1])
-    if not hmac.compare_digest(parts[2], _sig(secret, doc_id, exp)):
+    doc_id, exp = int(m.group(1)), int(m.group(2))
+    if not hmac.compare_digest(m.group(3), _sig(secret, doc_id, exp)):
         return None
     if int(now) > exp:
         return None
     return doc_id
 
 
+def _is_private(ip: str) -> bool:
+    try:
+        return ipaddress.ip_address(ip).is_private
+    except ValueError:
+        return False
+
+
 def register_routes(app, conn_factory, cfg) -> None:
     from web.app import _document_file_response  # cycle, as in web/item_link.py
+
+    # Behind the proxy a customer's address is public. A private one means
+    # the compose Caddy stopped trusting its peer and replaced the client's
+    # X-Forwarded-For with its own address: every customer is then one IP and
+    # the per-IP limit one global limit (2026-11-23 final review). Said once
+    # per process, loudly, rather than discovered as a wave of 429s.
+    warned = {"private": False}
 
     @app.get("/api/documents/{doc_id:int}/link")
     def api_document_link(request: Request, doc_id: int):
@@ -101,7 +126,13 @@ def register_routes(app, conn_factory, cfg) -> None:
             row = shop_visible_document(conn, doc_id, local_today())
         if row is None:
             raise HTTPException(status_code=404, detail=NOT_AVAILABLE)
-        retry = request.app.state.limiter.check_download(access.client_ip(request), doc_id)
+        ip = access.client_ip(request)
+        if cfg.require_authenticated_user and not warned["private"] and _is_private(ip):
+            warned["private"] = True
+            log.warning("webstore download from private address %s behind the proxy: "
+                        "the compose Caddy is not passing the client address through "
+                        "(trusted_proxies), so every customer shares one per-IP limit", ip)
+        retry = request.app.state.limiter.check_download(ip, doc_id)
         if retry is not None:
             raise HTTPException(status_code=429, detail=access.RATE_LIMITED,
                                 headers={"Retry-After": str(retry)})

@@ -110,12 +110,16 @@ legal expiry), or `WEB_DOWNLOAD_LINK_SECRET` is empty on the `web` service.
 `429` with `Retry-After`: one customer address passed 30 distinct documents in a
 minute or 100 in a day, or the key passed `WEB_RATE_API_PER_MIN`. If every
 customer gets 429 at once, check that the compose `Caddyfile` still has
-`trusted_proxies static 172.16.0.0/12`: without it `web` sees every customer as
-the proxy's address.
+`trusted_proxies static private_ranges`: without it `web` sees every customer as
+the proxy's address. The `web` log says so once, as a WARNING starting
+"webstore download from private address".
 
-**An API key gets 403 on an `/api/` route.** Deliberate since 2026-11-23: the
-key reaches only the webstore routes (`web/access.py` `SERVICE_ROUTES`). Use a
-staff login for `/api/kpi`, `/api/documents/{id}` and the item lists.
+**An API key gets 403, or a plain-text `Not found`, on an `/api/` route.**
+Deliberate since 2026-11-23: the key reaches only the webstore routes
+(`web/access.py` `SERVICE_ROUTES`). On `api.cw.dentalia.si` Caddy answers any
+other `/api/` path with plain `404 Not found` before the app sees it; the app's
+JSON `403` only shows on the office name or `127.0.0.1:8000`. Use a staff login
+for `/api/kpi`, `/api/documents/{id}` and the item lists.
 
 **A 404 or 403 comes back as an HTML page, not `{"detail": ...}`.**
 Deliberate since 2026-09-14 (office UI redesign, spec § 9 P7a). `_error_response` in
