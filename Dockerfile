@@ -6,7 +6,7 @@
 # a working Chromium + system deps without extra setup. Noble = Ubuntu 24.04,
 # ships Python 3.12 (satisfies requires-python >=3.12). Tag verified to exist on
 # mcr.microsoft.com (manifest inspect); newest available at scaffold time.
-FROM mcr.microsoft.com/playwright/python:v1.61.0-noble AS app
+FROM mcr.microsoft.com/playwright/python:v1.65.2-noble AS app
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

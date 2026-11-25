@@ -75,14 +75,15 @@ ingest = [
 fetch = [
     "httpx>=0.27",            # S1.4 FETCH: conditional-GET transport (shared with S1.3 SearchAdapter)
     # Pinned exact (not >=) to match the Dockerfile base image
-    # mcr.microsoft.com/playwright/python:v1.61.0-noble, which ships browser
-    # binaries for 1.61.0 only (chromium-1228 / chromium_headless_shell-1228).
+    # mcr.microsoft.com/playwright/python:v1.65.2-noble, which ships browser
+    # binaries for 1.65.2 only (1.61.0 -> 1.65.2 on 2026-11-25 for the
+    # exploited Chromium CVE-2026-125350; the old image carried Chrome 149).
     # An unpinned resolve picks up whatever is newest on PyPI (1.62.0 seen
     # 2026-09-02), whose client looks for a binary revision (1234) the image
     # doesn't have -> BrowserType.launch fails (followup
     # [playwright-browser-version-mismatch]). Bump this in lockstep with the
     # Dockerfile base image tag, never independently.
-    "playwright==1.61.0",     # S1.4 FETCH: bot-wall render fallback (base image ships Chromium)
+    "playwright==1.65.2",     # S1.4 FETCH: bot-wall render fallback (base image ships Chromium)
 ]
 email = [
     # S2.4 email.poll: imaplib + the `email` package are STDLIB, so there is no
