@@ -237,3 +237,8 @@ the whole table, not only the task that just changed.
 - Rule: a push to origin is announced in the message before it runs, with the commit, and waits for Denis's go. The 11-16 rule "land it on main myself and push" covers who does the work, not permission to do it silently.
 - Why: I fast-forwarded main and pushed 457d0e0 (picker fix) in the same step as the merge, and Denis found out only when his own `git push` said nothing was left. He was angry: a push is outward-facing and he decides when it happens.
 - How to apply: finish with "457d0e0 is on main locally; push it?" and push only on his yes. Then verify ancestry on origin/main as before.
+
+## 2026-11-25 Name the download before a heavy local build
+- Rule: before a build or pull on Denis's machine that downloads more than a few hundred MB, say what it fetches, its size and a time estimate, and why it has to run locally, then start it.
+- Why: for the Playwright 1.61 -> 1.65.2 bump I started `docker compose build worker test` with no word on cost; it pulled an 875 MB browser layer at ~350 KB/s for about 40 minutes. Denis asked "why are we doing this now to my dev?" only once it was slow.
+- How to apply: check layer sizes first (registry manifest, as done afterwards) and give the figure in the same message that starts the build; offer the alternative (commit unverified, build on the server) in one line.
