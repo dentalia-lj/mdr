@@ -260,6 +260,8 @@ _Retired from this index when they were ruled or closed, all six with their full
 
 ### Ops, tests and configuration
 
+- [ ] 2026-11-25 [host-caddy-cve-bump] `WAITING on Matija` The server's host Caddy (shared with PocketBase, in front of our compose Caddy) was v2.11.4 per `docs/2026-09-18-server-audit.md:77`; not re-read since. 2.11.4 carries the path-matcher auth fixes (CVE-2026-27585, CVE-2026-52844); 2.11.8 and 2.11.9 add mostly FastCGI fixes. Our compose Caddy moved 2.8 -> 2.11.9 on 2026-11-25. Read its version and bump only once Matija confirms
+
 - [ ] 2026-11-17 [phases-s2-reverify] PHASES § 2 rows and § 4 gaps were not re-checked against the code and the 2026-11-17 production reading; only B3, B4, B5, item 3 and S1.5 were updated. One sweep in the shape of `docs/state/2026-09-16.md` § 9
 - [ ] 2026-11-17 [scheduler-test-bomb-duplicate] `[scheduler-test-date-bomb]` (11-10) and `[scheduler-test-clock-bomb]` (11-16) describe one bug; fold into one entry
 - [ ] 2026-11-17 [followups-tags-moved] `app/handlers/validate.py:70` and `app/extract/pdf.py:90` cite `tasks/followups.md` for `[validate-itemid]` and `[llm-text-budget-is-flat]`, now in `tasks/followups-done.md`

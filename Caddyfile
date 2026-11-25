@@ -8,7 +8,7 @@
 #
 # `basic_auth` (renamed from `basicauth` in Caddy 2.8) hashes are bcrypt.
 # Generate one with, e.g.:
-#   docker run --rm -it caddy:2.8 caddy hash-password    (type it at the prompt)
+#   docker run --rm -it caddy:2.11.9 caddy hash-password    (type it at the prompt)
 # then set DENTALIA_WEB_USER / DENTALIA_WEB_PASSWORD_HASH in .env.
 #
 # Pointing this site block at a real hostname instead of `:8000` is the one
@@ -17,7 +17,8 @@
 # Global options. `trusted_proxies`: the host Caddy in front of this one sets
 # X-Forwarded-For to the real client and ignores whatever the client sent.
 # Without trusting it here, this Caddy REPLACES that header with its peer
-# address (measured 2026-11-23 on caddy:2.8), so `web` would see every
+# address (measured 2026-11-23 on caddy:2.8; trusted pass-through re-measured
+# on 2.11.9, 2026-11-25), so `web` would see every
 # customer as 172.18.0.1 and the per-IP download limit (web/limits.py) would
 # be one global limit. `private_ranges`, not the gateway address (it follows
 # the compose network's subnet) and not 172.16.0.0/12 alone (Docker falls back

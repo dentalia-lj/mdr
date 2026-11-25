@@ -119,7 +119,7 @@ Change code in the repository, never in the server's checkout: a local edit
 there makes the next `git pull` refuse or merge.
 
 It restarts `worker` and `web` only. A pull that touched `Caddyfile` needs
-`docker compose restart caddy` (plain `up -d` keeps the old config), and one that touched `playbooks/` needs the
+`docker compose restart caddy` (plain `up -d` keeps the old config), one that changed the `caddy` image tag needs `docker compose pull caddy && docker compose up -d --no-deps caddy`, and one that touched `playbooks/` needs the
 database updated too, since the pipeline reads playbooks from there
 ([deployment.md § 5.1](docs/dev/deployment.md)).
 
@@ -162,7 +162,7 @@ Four values have no default and compose refuses to start without them:
 |---|---|
 | `PGDATA_HOST` | A directory of its own for this checkout's Postgres data. On WSL2 it must be a native Linux path, not `/mnt/...` |
 | `ANTHROPIC_API_KEY` | Your key. Every document that is not handled by a template escalates to a model |
-| `DENTALIA_WEB_PASSWORD_HASH` | `docker run --rm -it caddy:2.8 caddy hash-password`, then type a password at the prompt. Do not pass it on the command line, where it lands in your shell history |
+| `DENTALIA_WEB_PASSWORD_HASH` | `docker run --rm -it caddy:2.11.9 caddy hash-password`, then type a password at the prompt. Do not pass it on the command line, where it lands in your shell history |
 | `ARCHIVE_HOST` | Only when the production overlay is loaded. A local checkout leaves it unset |
 
 Then:

@@ -171,7 +171,10 @@ way.
 | `migrate` | One-shot, applies pending `migrations/*.sql`, exits 0 | worker image |
 | `worker` | Claim → dispatch → finish loop. **Runs the crons too** | `Dockerfile` |
 | `web` | Producer UI + read API, connects as the write-less `dentalia_api` role | `Dockerfile.web` |
-| `caddy` | HTTP Basic reverse proxy, the sole ingress | `caddy:2.8` |
+| `caddy` | HTTP Basic reverse proxy, the sole ingress | `caddy:2.11.9` |
+
+`postgres` and `caddy` run stock images that `scripts/deploy.sh` never pulls;
+a tag change needs the manual step in § 5.1.
 
 **There is no `scheduler` service.** The ten crons run on the queue as perpetual
 self-deferring `scheduler.tick` jobs, re-armed on every worker start by
@@ -225,7 +228,7 @@ Three groups of what you do set:
 |---|---|
 | `PGDATA_HOST` | Host directory for Postgres data. No default since 2026-09-11 |
 | `ANTHROPIC_API_KEY` | `${ANTHROPIC_API_KEY:?}` in the worker env |
-| `DENTALIA_WEB_PASSWORD_HASH` | `docker run --rm -it caddy:2.8 caddy hash-password`, then type the password at the prompt, and **single-quote** the result in `.env`. Not `--plaintext`, which leaves it in shell history and `ps`; and not `docker compose run caddy`, which needs this very hash to start and pulls up the whole stack behind it |
+| `DENTALIA_WEB_PASSWORD_HASH` | `docker run --rm -it caddy:2.11.9 caddy hash-password`, then type the password at the prompt, and **single-quote** the result in `.env`. Not `--plaintext`, which leaves it in shell history and `ps`; and not `docker compose run caddy`, which needs this very hash to start and pulls up the whole stack behind it |
 
 ### 3.2 Set these or regret it later
 
@@ -430,8 +433,17 @@ git pull
 a forgotten `git pull` still prints "Deployed and verified", against old code.
 Pull first, every time.
 
-Two kinds of change it does not carry, because they live outside what it
+Three kinds of change it does not carry, because they live outside what it
 rebuilds and restarts:
+
+- **The `caddy` image tag in `docker-compose.yml`** (2.8 -> 2.11.9 on
+  2026-11-25). Caddy runs a stock image that `deploy.sh` never pulls. After a
+  pull that changed the tag:
+  ```bash
+  docker compose pull caddy
+  docker compose up -d --no-deps caddy    # recreates it on the new image
+  docker compose exec caddy caddy version # confirm
+  ```
 
 - **`Caddyfile` or `caddy/users/`.** `deploy.sh` restarts `worker` and `web`
   only. After a pull that touched either, `docker compose restart caddy`, then confirm the

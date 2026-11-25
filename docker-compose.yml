@@ -384,9 +384,13 @@ services:
 
   # G3 v0 auth (PHASES.md gap G3): HTTP Basic reverse proxy in front of `web`
   # (see Caddyfile). Sole ingress on API_PORT — `web` itself publishes
-  # nothing. Pinned to 2.8+ (basic_auth was `basicauth` before 2.8).
+  # nothing. Needs 2.8+ (basic_auth was `basicauth` before 2.8). Pinned to an
+  # exact patch release: 2.11.9 since 2026-11-25, for the path-matcher auth
+  # bypasses CVE-2026-27585 (fixed 2.11.1) and CVE-2026-52844 (fixed 2.11.4).
+  # deploy.sh never pulls this image: a tag change needs the manual step in
+  # docs/dev/deployment.md § 5.1.
   caddy:
-    image: caddy:2.8
+    image: caddy:2.11.9
     # Caddy is the sole ingress (G3 v0), so if it is down nothing is reachable
     # and the UI cannot report its own unreachability. This probe is for
     # `docker compose ps` and for restart policy, not for the status strip.
@@ -404,7 +408,7 @@ services:
       retries: 3
     environment:
       DENTALIA_WEB_USER: ${DENTALIA_WEB_USER:-admin}
-      # Generate with: docker run --rm -it caddy:2.8 caddy hash-password (type it at
+      # Generate with: docker run --rm -it caddy:2.11.9 caddy hash-password (type it at
       # the prompt), and single-quote the hash in .env: see .env.example
       DENTALIA_WEB_PASSWORD_HASH: "${DENTALIA_WEB_PASSWORD_HASH:?set DENTALIA_WEB_PASSWORD_HASH in .env}"
     restart: unless-stopped

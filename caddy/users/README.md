@@ -15,7 +15,7 @@ it in this directory. `docker-compose.yml` mounts the directory read-only at
 Generate a hash with:
 
 ```bash
-docker run --rm -it caddy:2.8 caddy hash-password    # type it at the prompt
+docker run --rm -it caddy:2.11.9 caddy hash-password    # type it at the prompt
 ```
 
 Not `--plaintext`, which leaves the password in shell history and `ps`.
