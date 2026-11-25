@@ -42,6 +42,112 @@ file, through the download flow described below.
 
 All calls are `GET` and answer JSON (UTF-8), except the file download.
 
+# Calling the API
+
+The key goes in a request header, never in the URL. Every call below runs on
+your server.
+
+**curl**
+
+```bash
+# the manufacturer tree
+curl -sS -H "X-API-Key: $DENTALIA_API_KEY" "https://api.cw.dentalia.si/api/manufacturers"
+
+# search (curl encodes the query)
+curl -sS -H "X-API-Key: $DENTALIA_API_KEY" -G "https://api.cw.dentalia.si/api/search" \
+     --data-urlencode "q=creafill"
+
+# an article number containing "/" is URL-encoded: 0800/25 -> 0800%2F25
+curl -sS -H "X-API-Key: $DENTALIA_API_KEY" "https://api.cw.dentalia.si/api/items/0800%2F25/documents"
+
+# several articles: repeat ref
+curl -sS -H "X-API-Key: $DENTALIA_API_KEY" \
+     "https://api.cw.dentalia.si/api/items/documents?ref=0800%2F25&ref=0000177"
+
+# a download link for one document, then the file itself (no key)
+curl -sS -H "X-API-Key: $DENTALIA_API_KEY" "https://api.cw.dentalia.si/api/documents/709/link"
+curl -sS -o document.pdf "<url from the previous answer>"
+```
+
+**PHP** (the curl extension). One function for every call:
+
+```php
+<?php
+// dentalia_api.php: one function for every call. The key comes from the
+// environment (or your config), never from code you ship to a browser.
+const DENTALIA_API = 'https://api.cw.dentalia.si';
+
+function dentalia_get(string $path, string $query = ''): array
+{
+    $url = DENTALIA_API . $path . ($query === '' ? '' : '?' . $query);
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_HTTPHEADER     => ['X-API-Key: ' . getenv('DENTALIA_API_KEY')],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 10,
+    ]);
+    $body = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    curl_close($ch);
+    if ($body === false) {
+        throw new RuntimeException('Dentalia API not reachable');
+    }
+    $data = json_decode($body, true);
+    if ($status !== 200) {
+        throw new RuntimeException("Dentalia API $status: " . ($data['detail'] ?? $body));
+    }
+    return $data;
+}
+```
+
+Using it:
+
+```php
+<?php
+require 'dentalia_api.php';
+
+// The manufacturer tree
+$tree = dentalia_get('/api/manufacturers');
+
+// One manufacturer's documents, by its id from the tree
+$page = dentalia_get('/api/manufacturers/' . $tree['manufacturers'][0]['id'] . '/documents');
+
+// Documents of one article. rawurlencode, because article numbers can contain "/"
+$item = dentalia_get('/api/items/' . rawurlencode('0800/25') . '/documents');
+
+// Several articles at once: ref=A&ref=B. Not http_build_query(), which would
+// send ref[0]=A&ref[1]=B
+$refs = ['0800/25', 'NO-SUCH-ITEM'];
+$batch = dentalia_get('/api/items/documents',
+    implode('&', array_map(fn ($r) => 'ref=' . rawurlencode($r), $refs)));
+
+// Search
+$hits = dentalia_get('/api/search', http_build_query(['q' => 'creafill']));
+```
+
+A batch sent as `ref[0]=A&ref[1]=B` (what `http_build_query()` produces for a
+list) answers `400` ("at least one ref is required").
+
+The download on click (section 6), as your own page:
+
+```php
+<?php
+// Your URL for a document, e.g. /dokumentacija.php?doc=709. Asks for a fresh
+// link on every click and sends the browser there.
+require 'dentalia_api.php';
+
+$docId = (int) ($_GET['doc'] ?? 0);
+try {
+    $link = dentalia_get("/api/documents/$docId/link");
+} catch (RuntimeException $e) {
+    http_response_code(404);
+    exit('Document not available');
+}
+header('Cache-Control: no-store');
+header('Location: ' . $link['url'], true, 302);
+exit;
+```
+
 # What you can rely on
 
 - You only receive documents a clinic may be shown: every one has been read
@@ -596,7 +702,8 @@ Every error is JSON with a `detail` text. The texts below are the real ones.
 |---|---|---|
 | `400` | A query or parameter that is not allowed | ``q` must be 2 to 100 characters` |
 | `400` | | ``include_unlinked` is not available to API keys: it returns documents that are not published for any item.` |
-| `401` | No key, or a wrong key | `valid X-API-Key required` |
+| `401` | No `X-API-Key` header at all. Answered by our proxy before the API: empty body, header `WWW-Authenticate: Basic`, so a browser would show a login box | (no body) |
+| `401` | A wrong key | `valid X-API-Key required` |
 | `404` | Unknown manufacturer | `unknown manufacturer` |
 | `404` | A document that may not be shown, or unknown, when asking for a link | `document not available` |
 | `410` | A download link that expired or was changed | `this download link has expired or is not valid; open the document again` |
